@@ -492,7 +492,7 @@ export default function App(){
   }
   function importAll(){
     setImportError("");
-    try{var d=JSON.parse(importText);var cos=d.companies||(Array.isArray(d)?d:null),lib=d.library||null;if(!cos&&!lib){setImportError("No data found.");return;}if(cos&&Array.isArray(cos)){setCompanies(cos);window.storage.set("companies",JSON.stringify(cos)).catch(function(){});}if(lib&&Array.isArray(lib)){setSaved(lib);window.storage.set("library",JSON.stringify(lib)).catch(function(){});}setImportText("");setShowDataPanel(false);}
+    try{var d=JSON.parse(importText);var cos=d.companies||(Array.isArray(d)?d:null),lib=d.library||null;if(!cos&&!lib){setImportError("No data found.");return;}if(cos&&Array.isArray(cos)){setCompanies(cos);supabase.from("companies").upsert({id:"shared",data:JSON.stringify(cos)}).catch(function(){});}if(lib&&Array.isArray(lib)){setSaved(lib);window.storage.set("library",JSON.stringify(lib)).catch(function(){});}setImportText("");setShowDataPanel(false);}
     catch(e){setImportError("Invalid JSON: "+e.message);}
   }
   function applyPriceImport(){
