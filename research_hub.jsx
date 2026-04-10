@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from "react"; import { createClient } from "https://esm.sh/@supabase/supabase-js@2"; const supabase = createClient("https://vesnqbxswmggdfevqokt.supabase.co","sb_publishable_7kqbGZlL_im9kIpgFXLA-A_9CdqsyiT");
 
 const PORTFOLIOS=["FIV","IV","FGL","GL","EM","SC"];
 const TIER_ORDER=["MC1","MC2","MC3","MC4","MC5","INTL","US1","US2","EM1","EM2","EM3","EM4","SC1","SC2","SC3","SC4","SC5","F MC","W MC","F SC","W SC","Hit TP","Gave Up"];
