@@ -478,7 +478,7 @@ export default function App(){
     var iv=setInterval(async function(){if(done){clearInterval(iv);return;}attempts++;var got=await loadFromStorage();if(got){done=true;clearInterval(iv);}else if(attempts>60){clearInterval(iv);setLoadStatus({companies:0,library:0});setReady(true);}},500);
     return function(){done=true;clearInterval(iv);};
   },[]);
-  useEffect(function(){if(ready)window.storage.set("library",JSON.stringify(saved)).catch(function(){});},[saved,ready]);
+  useEffect(function(){if(ready)supabase.from("library").upsert({id:"shared",data:JSON.stringify(saved)});},[saved,ready]);
   useEffect(function(){if(ready)window.storage.set("companies",JSON.stringify(companies)).catch(function(){});},[companies,ready]); useEffect(function(){if(ready&&lastPriceUpdate)window.storage.set("lastPriceUpdate",lastPriceUpdate).catch(function(){});},[lastPriceUpdate,ready]); useEffect(function(){if(ready)window.storage.set("entryComments",JSON.stringify(entryComments)).catch(function(){});},[entryComments,ready]);
   useEffect(function(){if(!output||!companies.length)return;setAutoTagSuggestions(detectCompanyTags(output,companies));},[output]);
 
