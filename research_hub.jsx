@@ -328,7 +328,7 @@ function CoRow({company,onSelect,onDelete,onUpdate,compact,visibleCols,selected,
     {show("Updated")&&<div style={td}><span style={{fontSize:10,color:company.lastUpdated?T.textSuccess:T.border}}>{company.lastUpdated||"--"}</span></div>}
     {show("Status")&&<div style={td} onClick={function(e){e.stopPropagation();}}>
       {missing.length>0&&<span title={"Missing: "+missing.join(", ")} style={{fontSize:10,marginRight:4,color:T.textWarn}}>⚠</span>}
-      <select value={company.status||""} onChange={function(e){onUpdate(company.id,{status:e.target.value});}} style={{fontSize:11,padding:"2px 7px",borderRadius:99,border:"none",background:sCfg.bg,color:sCfg.color,cursor:"pointer",fontWeight:500,appearance:"none",WebkitAppearance:"none"}}><option value="">--</option><option>Own</option><option>Focus</option><option>Watch</option><option>Sold</option></select>
+      <select value={company.status||""} onChange={function(e){onUpdate(company.id,{status:e.target.value});}} style={{fontSize:11,padding:"2px 5px",borderRadius:99,border:"none",background:sCfg.bg,color:sCfg.color,cursor:"pointer",fontWeight:500,appearance:"none",WebkitAppearance:"none"}}><option value="">--</option><option>Own</option><option>Focus</option><option>Watch</option><option>Sold</option></select>
     </div>}
     {show("Del")&&<div style={{...td,paddingRight:0}}><span onClick={function(e){e.stopPropagation();onDelete(company.id);}} style={{fontSize:11,color:T.textDanger,cursor:"pointer"}}>Del</span></div>}
   </div>);
