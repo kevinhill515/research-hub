@@ -468,12 +468,6 @@ export default function App(){
   useEffect(function(){if(selCo){setPendingVal(Object.assign({},selCo.valuation||{}));}else{setPendingVal(null);}},[selCo&&selCo.id]);
 
   async function loadFromStorage(){     setLoadStatus({companies:null,library:null});var coOk=false,libOk=false;     try{var r=await supabase.from("library").select("data").eq("id","shared").single();if(r.data){var d=JSON.parse(r.data.data);if(Array.isArray(d)&&d.length){setSaved(d);libOk=d.length;}}}catch(e){}     try{var r2=await supabase.from("companies").select("data").eq("id","shared").single();if(r2.data){var d2=JSON.parse(r2.data.data);if(Array.isArray(d2)&&d2.length){setCompanies(d2);coOk=d2.length;}}}catch(e){}     try{var r3=await supabase.from("meta").select("value").eq("key","lastPriceUpdate").single();if(r3.data)setLastPriceUpdate(r3.data.value);}catch(e){}     try{var r4=await supabase.from("meta").select("value").eq("key","entryComments").single();if(r4.data)setEntryComments(JSON.parse(r4.data.value));}catch(e){}     setLoadStatus({companies:coOk,library:libOk});setReady(true);return coOk||libOk;}
-    setLoadStatus({companies:null,library:null});var coOk=false,libOk=false;
-try{var r=await supabase.from("library").select("data").eq("id","shared").single();if(r.data){var d=JSON.parse(r.data.data);if(Array.isArray(d)&&d.length){setSaved(d);libOk=d.length;}}}catch(e){}
-    try{var r2=await supabase.from("companies").select("data").eq("id","shared").single();if(r2.data){var d2=JSON.parse(r2.data.data);if(Array.isArray(d2)&&d2.length){setCompanies(d2);coOk=d2.length;}}}catch(e){}
-    try{var r3=await supabase.from("meta").select("value").eq("key","lastPriceUpdate").single();if(r3.data)setLastPriceUpdate(r3.data.value);}catch(e){}
-    try{var r4=await supabase.from("meta").select("value").eq("key","entryComments").single();if(r4.data)setEntryComments(JSON.parse(r4.data.value));}catch(e){}
-    setLoadStatus({companies:coOk,library:libOk});setReady(true);return coOk||libOk;}
   useEffect(function(){
     var done=false,attempts=0;
     var iv=setInterval(async function(){if(done){clearInterval(iv);return;}attempts++;var got=await loadFromStorage();if(got){done=true;clearInterval(iv);}else if(attempts>60){clearInterval(iv);setLoadStatus({companies:0,library:0});setReady(true);}},500);
