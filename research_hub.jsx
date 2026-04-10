@@ -437,7 +437,7 @@ export default function App(){
   const [showShortcuts,setShowShortcuts]=useState(false);
   const [autoTagSuggestions,setAutoTagSuggestions]=useState([]);
   const [linkLibOpen,setLinkLibOpen]=useState(false);
-  const [showTmplSearch,setShowTmplSearch]=useState(false);
+  const [showTmplSearch,setShowTmplSearch]=useState(false); const [showGlobalSearch,setShowGlobalSearch]=useState(false);
   const [quickUploadCo,setQuickUploadCo]=useState(null);
   const [pendingVal,setPendingVal]=useState(null);
   const searchRef=useRef();
@@ -451,9 +451,9 @@ export default function App(){
     function onKey(e){
       var tag=document.activeElement.tagName;var typing=tag==="INPUT"||tag==="TEXTAREA"||tag==="SELECT";
       if(e.key==="?"&&!typing){setShowShortcuts(function(s){return !s;});return;}
-      if(e.key==="Escape"){setShowShortcuts(false);setSelCo(null);setShowNew(false);setShowBulk(false);setShowDataPanel(false);setLinkLibOpen(false);setShowTmplSearch(false);setQuickUploadCo(null);setShowPriceImport(false);setPendingVal(null);return;}
+      if(e.key==="Escape"){setShowShortcuts(false);setSelCo(null);setShowNew(false);setShowBulk(false);setShowDataPanel(false);setLinkLibOpen(false);setShowTmplSearch(false);setQuickUploadCo(null);setShowGlobalSearch(false);setShowPriceImport(false);setPendingVal(null);return;}
       if(typing)return;
-      if(e.key==="/"){e.preventDefault();if(searchRef.current)searchRef.current.focus();return;}
+      if(e.key==="/"){e.preventDefault();setShowGlobalSearch(true);return;}
       if(e.key==="n"){setTab("companies");setShowNew(true);}
       if(e.key==="b"){setTab("companies");setShowBulk(true);}
       if(e.key==="d"){setTab("dashboard");setSelCo(null);}
