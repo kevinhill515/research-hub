@@ -335,7 +335,7 @@ function CoRow({company,onSelect,onDelete,onUpdate,compact,visibleCols,selected,
 }
 
 export default function App(){
-  const [dark,setDark]=useState(false);
+  const [dark,setDark]=useState(function(){try{return localStorage.getItem("rh_dark")==="1";}catch(e){return false;}}); useEffect(function(){try{localStorage.setItem("rh_dark",dark?"1":"0");}catch(e){};},[dark]);
   const T=mkTheme(dark);
   const INP={fontSize:13,padding:"6px 8px",borderRadius:6,border:"1px solid "+T.border,background:T.bg,color:T.text};
   const CARD={background:T.bgSec,borderRadius:8,border:"1px solid "+T.border,padding:"12px 14px",marginBottom:8};
