@@ -96,7 +96,7 @@ async function apiCall(system,content,maxTokens){
   return(data.content||[]).map(function(b){return b.text||"";}).join("");
 }
 
-function BarRow({label,clr,own,focus,watch,max,T}){
+function PriceAgeIndicator({lastPriceUpdate,T}){   if(!lastPriceUpdate)return <span style={{fontSize:10,color:T.textSec}}>Prices: never updated</span>;   var d=parseDate(lastPriceUpdate);if(!d)return null;   var days=Math.floor((Date.now()-d.getTime())/86400000);   var color=days>14?"#dc2626":days>7?"#d97706":T.textSuccess;   var label=days===0?"today":days===1?"yesterday":days+"d ago";   return <span style={{fontSize:10,color,fontWeight:days>7?600:400}}>Prices updated: {lastPriceUpdate} ({label}){days>14?" ⚠":""}</span>; }  function BarRow({label,clr,own,focus,watch,max,T}){
   var op=max>0?(own/max*100):0,fp=max>0?(focus/max*100):0,wp=max>0?(watch/max*100):0;
   return(<div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:11,fontWeight:500,color:clr,width:140,flexShrink:0}}>{label}</span><div style={{flex:1,height:14,background:"#f1f5f9",borderRadius:4,overflow:"hidden",position:"relative"}}><div style={{position:"absolute",left:0,top:0,width:op+"%",height:"100%",background:clr}}/><div style={{position:"absolute",left:op+"%",top:0,width:fp+"%",height:"100%",background:clr,opacity:0.45}}/><div style={{position:"absolute",left:(op+fp)+"%",top:0,width:wp+"%",height:"100%",background:clr,opacity:0.2}}/></div><div style={{fontSize:11,width:130,flexShrink:0,textAlign:"right"}}>{own>0&&<span style={{color:"#166534",fontWeight:500}}>{own} own</span>}{focus>0&&<span style={{color:"#1e40af"}}>{own>0?" · ":""}{focus} foc</span>}{watch>0&&<span style={{color:"#854d0e"}}>{(own>0||focus>0)?" · ":""}{watch} w</span>}</div></div>);
 }
@@ -366,7 +366,7 @@ export default function App(){
   const [showNew,setShowNew]=useState(false);
   const [showBulk,setShowBulk]=useState(false);
   const [showPriceImport,setShowPriceImport]=useState(false);
-  const [priceImportText,setPriceImportText]=useState("");
+  const [priceImportText,setPriceImportText]=useState(""); const [lastPriceUpdate,setLastPriceUpdate]=useState(null);
   const [showRestore,setShowRestore]=useState(false);
   const [restoreText,setRestoreText]=useState("");
   const [newName,setNewName]=useState("");
@@ -479,7 +479,7 @@ export default function App(){
     return function(){done=true;clearInterval(iv);};
   },[]);
   useEffect(function(){if(ready)window.storage.set("library",JSON.stringify(saved)).catch(function(){});},[saved,ready]);
-  useEffect(function(){if(ready)window.storage.set("companies",JSON.stringify(companies)).catch(function(){});},[companies,ready]);
+  useEffect(function(){if(ready)window.storage.set("companies",JSON.stringify(companies)).catch(function(){});},[companies,ready]); useEffect(function(){if(ready&&lastPriceUpdate)window.storage.set("lastPriceUpdate",lastPriceUpdate).catch(function(){});},[lastPriceUpdate,ready]);
   useEffect(function(){if(!output||!companies.length)return;setAutoTagSuggestions(detectCompanyTags(output,companies));},[output]);
 
   function exportAll(){
@@ -504,7 +504,7 @@ export default function App(){
     lines.forEach(function(line){var delim=line.indexOf("\t")>=0?"\t":",";var parts=line.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});if(parts.length>=2){var ticker=parts[0].toUpperCase();var price=parseFloat(parts[1]);if(ticker&&!isNaN(price))map[ticker]=price;}});
     var count=0;
     setCompanies(function(prev){return prev.map(function(c){var t=(c.ticker||"").toUpperCase();if(map[t]!==undefined){count++;return Object.assign({},c,{valuation:Object.assign({},c.valuation||{},{price:map[t]})});}return c;});});
-    setPriceImportText("");setShowPriceImport(false);setTimeout(function(){alert("Updated prices for "+count+" companies.");},100);
+    setPriceImportText("");setShowPriceImport(false);setLastPriceUpdate(todayStr());setTimeout(function(){alert("Updated prices for "+count+" companies.");},100);
   }
   function findDupes(){
     var groups={};companies.forEach(function(c){var key=(c.ticker||c.name||"").toUpperCase().trim();if(!key)return;if(!groups[key])groups[key]=[];groups[key].push(c);});
@@ -708,7 +708,7 @@ export default function App(){
         <div style={{display:"flex",gap:6,alignItems:"center",flex:1,flexWrap:"wrap"}}>
           <span style={{fontSize:11,color:T.textSec}}>Storage:</span>
           <span style={{...PILL(),background:loadStatus.companies===null?T.bgTer:loadStatus.companies>0?"#dcfce7":"#fef9c3",color:loadStatus.companies===null?T.textSec:loadStatus.companies>0?"#166534":"#854d0e",border:"none"}}>{loadStatus.companies===null?"loading…":loadStatus.companies>0?"✓ "+loadStatus.companies+" cos":"⚠ none"}</span>
-          <span style={{...PILL(),background:loadStatus.library===null?T.bgTer:loadStatus.library>0?"#dcfce7":"#fef9c3",color:loadStatus.library===null?T.textSec:loadStatus.library>0?"#166534":"#854d0e",border:"none"}}>{loadStatus.library===null?"loading…":loadStatus.library>0?"✓ "+loadStatus.library+" lib":"⚠ none"}</span>
+          <span style={{...PILL(),background:loadStatus.library===null?T.bgTer:loadStatus.library>0?"#dcfce7":"#fef9c3",color:loadStatus.library===null?T.textSec:loadStatus.library>0?"#166534":"#854d0e",border:"none"}}>{loadStatus.library===null?"loading…":loadStatus.library>0?"✓ "+loadStatus.library+" lib":"⚠ none"}</span> {lastPriceUpdate&&<PriceAgeIndicator lastPriceUpdate={lastPriceUpdate} T={T}/>}
         </div>
         <button onClick={function(){setShowTmplSearch(true);}} style={{fontSize:11,padding:"3px 10px"}}>🔍 Templates</button>
         <button onClick={function(){setDark(function(d){return !d;});}} style={{fontSize:11,padding:"3px 10px"}}>{dark?"☀ Light":"🌙 Dark"}</button>
