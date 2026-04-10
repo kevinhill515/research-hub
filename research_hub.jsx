@@ -330,7 +330,7 @@ function CoRow({company,onSelect,onDelete,onUpdate,compact,visibleCols,selected,
       {missing.length>0&&<span title={"Missing: "+missing.join(", ")} style={{fontSize:10,marginRight:4,color:T.textWarn}}>⚠</span>}
       <select value={company.status||""} onChange={function(e){onUpdate(company.id,{status:e.target.value});}} style={{fontSize:11,padding:"2px 5px",borderRadius:99,border:"none",background:sCfg.bg,color:sCfg.color,cursor:"pointer",fontWeight:500,appearance:"none",WebkitAppearance:"none"}}><option value="">--</option><option>Own</option><option>Focus</option><option>Watch</option><option>Sold</option></select>
     </div>}
-    {show("Del")&&<div style={{...td,paddingRight:0}}><span onClick={function(e){e.stopPropagation();onDelete(company.id);}} style={{fontSize:11,color:T.textDanger,cursor:"pointer"}}>Del</span></div>}
+    {show("Flag")&&<div style={{...td}} onClick={function(e){e.stopPropagation();}}><FlagCell value={company.flag||""} onUpdate={function(v){onUpdate(company.id,{flag:v});}} T={T}/></div>} {show("Del")&&<div style={{...td,paddingRight:0}}><span onClick={function(e){e.stopPropagation();onDelete(company.id);}} style={{fontSize:11,color:T.textDanger,cursor:"pointer"}}>Del</span></div>}
   </div>);
 }
 
@@ -580,7 +580,7 @@ export default function App(){
     setPendingVal(Object.assign({},newVal));return u;
   }
 
-  var usedCountries=Array.from(new Set(companies.map(function(c){return c.country;}).filter(Boolean))).sort();
+  var flaggedCos=companies.filter(function(c){return c.flag;}).sort(function(a,b){return(a.flag==="Urgent"?0:1)-(b.flag==="Urgent"?0:1);}); var usedCountries=Array.from(new Set(companies.map(function(c){return c.country;}).filter(Boolean))).sort();
   var usedSectors=Array.from(new Set(companies.map(function(c){return c.sector;}).filter(Boolean))).sort();
   var displayedCos=sortCos(companies.filter(function(c){
     if(coFilter!=="All"&&(c.portfolios||[]).indexOf(coFilter)<0)return false;
@@ -717,7 +717,7 @@ export default function App(){
         <button onClick={function(){setShowShortcuts(true);}} style={{fontSize:11,padding:"3px 10px"}}>? Keys</button>
         <button onClick={function(){setShowDataPanel(function(s){return !s;});}} style={{fontSize:11,padding:"3px 10px"}}>{showDataPanel?"Close":"Import/Export"}</button>
       </div>
-      {showDataPanel&&(<div style={{...CARD,marginBottom:12}}><div style={{fontSize:13,fontWeight:500,marginBottom:8,color:T.text}}>Data backup &amp; restore</div><div style={{display:"flex",gap:8,marginBottom:12}}><button onClick={exportAll} style={{fontSize:12,padding:"6px 14px",fontWeight:500}}>{copied==="exportall"?"✓ Copied!":"⬆ Copy full backup"}</button></div><textarea value={importText} onChange={function(e){setImportText(e.target.value);setImportError("");}} placeholder='Paste backup JSON here to restore...' style={{...TA(80),fontFamily:"monospace",marginBottom:6}}/>{importError&&<div style={{fontSize:12,color:T.textDanger,marginBottom:6}}>{importError}</div>}<div style={{display:"flex",gap:8}}><button onClick={importAll} disabled={!importText.trim()} style={{fontSize:12,padding:"6px 14px",fontWeight:500}}>⬇ Restore</button><span onClick={function(){setShowDataPanel(false);}} style={LNK}>Cancel</span></div></div>)}
+      {flaggedCos.length>0&&(<div style={{marginBottom:8,padding:"8px 14px",background:"#fff5f5",border:"1px solid #fca5a5",borderRadius:8,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}><span style={{fontSize:12,fontWeight:600,color:"#991b1b"}}>⚑ Flagged ({flaggedCos.length}):</span>{flaggedCos.map(function(c){var fs=FLAG_STYLES[c.flag];return(<span key={c.id} onClick={function(){setSelCo(c);setTab("companies");}} style={{fontSize:11,padding:"2px 8px",borderRadius:99,background:fs.bg,color:fs.color,cursor:"pointer",border:"1px solid "+fs.color}}>{fs.icon} {c.name}</span>);})}</div>)} {showDataPanel&&(<div style={{...CARD,marginBottom:12}}><div style={{fontSize:13,fontWeight:500,marginBottom:8,color:T.text}}>Data backup &amp; restore</div><div style={{display:"flex",gap:8,marginBottom:12}}><button onClick={exportAll} style={{fontSize:12,padding:"6px 14px",fontWeight:500}}>{copied==="exportall"?"✓ Copied!":"⬆ Copy full backup"}</button></div><textarea value={importText} onChange={function(e){setImportText(e.target.value);setImportError("");}} placeholder='Paste backup JSON here to restore...' style={{...TA(80),fontFamily:"monospace",marginBottom:6}}/>{importError&&<div style={{fontSize:12,color:T.textDanger,marginBottom:6}}>{importError}</div>}<div style={{display:"flex",gap:8}}><button onClick={importAll} disabled={!importText.trim()} style={{fontSize:12,padding:"6px 14px",fontWeight:500}}>⬇ Restore</button><span onClick={function(){setShowDataPanel(false);}} style={LNK}>Cancel</span></div></div>)}
       <div style={{borderTop:"1px solid "+T.border,marginBottom:10}}/>
       <div style={{display:"flex",gap:6,marginBottom:"1rem",flexWrap:"wrap"}}>
         {[["companies","Companies"],["dashboard","Dashboard"],["synthesize","Synthesize"],["library","Library ("+saved.length+")"],["recall","Recall"],["compare","Compare"],["macro","Macro Master"]].map(function(item){return <button key={item[0]} style={TABST(tab===item[0])} onClick={function(){setTab(item[0]);if(item[0]!=="companies")setSelCo(null);}}>{item[1]}</button>;})}
