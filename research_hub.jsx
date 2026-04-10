@@ -439,7 +439,7 @@ export default function App(){
   const [linkLibOpen,setLinkLibOpen]=useState(false);
   const [showTmplSearch,setShowTmplSearch]=useState(false); const [showGlobalSearch,setShowGlobalSearch]=useState(false);
   const [quickUploadCo,setQuickUploadCo]=useState(null);
-  const [pendingVal,setPendingVal]=useState(null);
+  const [pendingVal,setPendingVal]=useState(null); const [entryComments,setEntryComments]=useState({}); const [newCommentText,setNewCommentText]=useState({});
   const searchRef=useRef();
 
   function handleSortClick(colSort){
@@ -471,7 +471,7 @@ export default function App(){
     setLoadStatus({companies:null,library:null});var coOk=false,libOk=false;
     try{var r=await window.storage.get("library");if(r&&r.value){var d=JSON.parse(r.value);if(Array.isArray(d)&&d.length){setSaved(d);libOk=d.length;}}}catch(e){}
     try{var r2=await window.storage.get("companies");if(r2&&r2.value){var d2=JSON.parse(r2.value);if(Array.isArray(d2)&&d2.length){setCompanies(d2);coOk=d2.length;}}}catch(e){}
-    setLoadStatus({companies:coOk,library:libOk});setReady(true);return coOk||libOk;
+    try{var r3=await window.storage.get("lastPriceUpdate");if(r3&&r3.value)setLastPriceUpdate(r3.value);}catch(e){} try{var r4=await window.storage.get("entryComments");if(r4&&r4.value)setEntryComments(JSON.parse(r4.value));}catch(e){} setLoadStatus({companies:coOk,library:libOk});setReady(true);return coOk||libOk;
   }
   useEffect(function(){
     var done=false,attempts=0;
@@ -479,10 +479,10 @@ export default function App(){
     return function(){done=true;clearInterval(iv);};
   },[]);
   useEffect(function(){if(ready)window.storage.set("library",JSON.stringify(saved)).catch(function(){});},[saved,ready]);
-  useEffect(function(){if(ready)window.storage.set("companies",JSON.stringify(companies)).catch(function(){});},[companies,ready]); useEffect(function(){if(ready&&lastPriceUpdate)window.storage.set("lastPriceUpdate",lastPriceUpdate).catch(function(){});},[lastPriceUpdate,ready]);
+  useEffect(function(){if(ready)window.storage.set("companies",JSON.stringify(companies)).catch(function(){});},[companies,ready]); useEffect(function(){if(ready&&lastPriceUpdate)window.storage.set("lastPriceUpdate",lastPriceUpdate).catch(function(){});},[lastPriceUpdate,ready]); useEffect(function(){if(ready)window.storage.set("entryComments",JSON.stringify(entryComments)).catch(function(){});},[entryComments,ready]);
   useEffect(function(){if(!output||!companies.length)return;setAutoTagSuggestions(detectCompanyTags(output,companies));},[output]);
 
-  function exportAll(){
+  function addComment(entryId,text){   if(!text.trim())return;   var comment={id:Date.now(),text:text.trim(),author:currentUser||"Unknown",date:todayStr()};   setEntryComments(function(prev){return Object.assign({},prev,{[entryId]:([comment].concat(prev[entryId]||[]))});});   setNewCommentText(function(prev){return Object.assign({},prev,{[entryId]:""});}); } function deleteComment(entryId,commentId){   setEntryComments(function(prev){return Object.assign({},prev,{[entryId]:(prev[entryId]||[]).filter(function(c){return c.id!==commentId;})});}); }  function exportAll(){
     var txt=JSON.stringify({companies,library:saved,exportedAt:new Date().toISOString()},null,2);
     try{var el=document.createElement("textarea");el.value=txt;el.style.position="fixed";el.style.opacity="0";document.body.appendChild(el);el.focus();el.select();document.execCommand("copy");document.body.removeChild(el);setCopied("exportall");setTimeout(function(){setCopied(null);},2000);}
     catch(e){setImportText(txt);setShowDataPanel(true);}
