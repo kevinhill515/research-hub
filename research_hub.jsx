@@ -488,7 +488,7 @@ export default function App(){
     catch(e){setImportText(txt);setShowDataPanel(true);}
   }
   function cp(text,key){try{var el=document.createElement("textarea");el.value=text;el.style.position="fixed";el.style.opacity="0";document.body.appendChild(el);el.focus();el.select();document.execCommand("copy");document.body.removeChild(el);setCopied(key);setTimeout(function(){setCopied(null);},1500);}catch(e){}}
-  function exportCSV(){
+  function exportAll(){var txt=JSON.stringify({companies,library:saved,exportedAt:new Date().toISOString()},null,2);try{var el=document.createElement("textarea");el.value=txt;el.style.position="fixed";el.style.opacity="0";document.body.appendChild(el);el.focus();el.select();document.execCommand("copy");document.body.removeChild(el);setCopied("exportall");setTimeout(function(){setCopied(null);},2000);}catch(e){setImportText(txt);setShowDataPanel(true);}}   function exportCSV(){
     var rows=[["Name","Ticker","Tier","Status","Country","Sector","Portfolios","Action","Notes","Last Reviewed","Last Updated","Price","TP","MOS%","P/E","FY1","EPS1","FY2","EPS2","W1%","W2%","Norm EPS"]];
     displayedCos.forEach(function(c){var v=c.valuation||{};var ne=calcNormEPS(v)||parseFloat(v.eps);var tp=calcTP(v.pe,ne);var mos=calcMOS(tp,v.price);rows.push([c.name,c.ticker||"",getTiers(c.tier).join("; "),c.status||"",c.country||"",c.sector||"",(c.portfolios||[]).join("; "),c.action||"",c.takeaway||"",c.lastReviewed||"",c.lastUpdated||"",v.price||"",tp!==null?tp:"",mos!==null?mos+"":"",v.pe||"",v.fy1||"",v.eps1||"",v.fy2||"",v.eps2||"",v.w1||"",v.w2||"",ne||""]);});
     var csv=rows.map(function(r){return r.map(function(v){return'"'+String(v).replace(/"/g,'""')+'"';}).join(",");}).join("\n");
