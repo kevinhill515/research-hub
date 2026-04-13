@@ -151,7 +151,7 @@ function SectionEditTab({title,content,onSave,T}){
         {bullets.length>1&&<span onClick={function(){removeBullet(i);}} style={{fontSize:11,color:T.textDanger,cursor:"pointer",flexShrink:0}}>×</span>}
       </div>);})}
       <div style={{display:"flex",gap:8,marginTop:8}}><button onClick={function(){onSave(bulletsToText(bullets));setEditing(false);}} style={{fontSize:12,padding:"6px 14px",fontWeight:500}}>Save</button>{!isEmpty&&<span onClick={function(){setEditing(false);setBullets(parseBullets(content||""));}} style={{fontSize:12,color:T.textSec,cursor:"pointer",padding:"6px 8px"}}>Cancel</span>}</div>
-    </div>):(<div style={{fontSize:13,lineHeight:1.8,color:T.text,padding:"10px 12px",background:T.bgSec,borderRadius:6,border:"1px solid "+T.border,minHeight:60}}>{bullets.filter(function(b){return b.trim();}).map(function(b,i){return <div key={i}>• {b}</div>;})}</div>)}
+    </div>):(<div style={{fontSize:13,lineHeight:1.8,color:T.text,padding:"10px 12px",background:T.bgSec,borderRadius:6,border:"1px solid "+T.border,minHeight:60}}>{bullets.filter(function(b){return b.trim();}).map(function(b,i){return <div key={i} style={{marginBottom:6}}>• {b}</div>;})}</div>)}
   </div>);}
   var isEmpty2=!content||!content.trim();
   return(<div>
