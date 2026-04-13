@@ -121,7 +121,7 @@ function SectionBlock({title,content,highlight,flashKey,T}){
 }
 
 function SectionEditTab({title,content,onSave,T}){
-  var bulletSections=new Set(["Thesis","Segments","Guidance / KPIs","Key Challenges"]);
+  var TICKER_SECTION="Overview"; var bulletSections=new Set(["Thesis","Segments","Guidance / KPIs","Key Challenges"]);
   var useBullets=bulletSections.has(title);
   var isEmpty=!content||!content.trim();
   var [editing,setEditing]=useState(isEmpty);
@@ -716,7 +716,7 @@ function applyCalImport(){if(!calImportText||!calImportText.trim())return;var ca
   var dashCountryEntries=Object.entries(dashCountryMap).filter(function(e){return e[1].own>0;}).sort(function(a,b){return b[1].own-a[1].own||(b[1].focus+b[1].watch)-(a[1].focus+a[1].watch);});
   var dashCountryMax=1;dashCountryEntries.forEach(function(e){var t=e[1].own+e[1].focus+e[1].watch;if(t>dashCountryMax)dashCountryMax=t;});
   var HEADER_COLS=[{label:"Tier(s)",sort:"Tier"},{label:"Name",sort:"Name"},{label:"Ticker",sort:null},{label:"Country",sort:"Country"},{label:"Sector",sort:"Sector"},{label:"Portfolio",sort:null},{label:"Action",sort:null},{label:"Notes",sort:null},{label:"Reviewed",sort:"Last Reviewed"},{label:"Updated",sort:null},{label:"Status",sort:null},{label:"MOS",sort:"MOS"},{label:"",sort:null}];
-  var coTabs=[{id:"template",label:"Template"},...TEMPLATE_SECTIONS.map(function(s){return{id:"section:"+s,label:s};}),{id:"earnings",label:"Earnings & Thesis Check"},
+  var coTabs=[...TEMPLATE_SECTIONS.map(function(s){return{id:"section:"+s,label:s};}),{id:"earnings",label:"Earnings & Thesis Check"},{id:"template",label:"Template"},
     {id:"linked",label:"Linked"+(linkedEntries.length>0?" ("+linkedEntries.length+")":"")},{id:"upload",label:"Upload"},{id:"history",label:"Log"+((selCo&&selCo.updateLog&&selCo.updateLog.length>0)?" ("+selCo.updateLog.length+")":"")}];
 
   return(
