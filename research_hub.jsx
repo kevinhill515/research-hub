@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 const SUPA_URL="https://vesnqbxswmggdfevqokt.supabase.co"; async function supaGet(table,key,val){var col=table==="meta"?"value":"data";var r=await fetch(SUPA_URL+"/rest/v1/"+table+"?select="+col+"&"+key+"=eq."+val,{headers:{"apikey":"sb_publishable_7kqbGZlL_im9kIpgFXLA-A_9CdqsyiT","Authorization":"Bearer sb_publishable_7kqbGZlL_im9kIpgFXLA-A_9CdqsyiT","Accept":"application/vnd.pgrst.object+json"}});if(!r.ok)return null;try{return await r.json();}catch(e){return null;}} async function supaUpsert(table,obj){return fetch(SUPA_URL+"/rest/v1/"+table,{method:"POST",headers:{"apikey":"sb_publishable_7kqbGZlL_im9kIpgFXLA-A_9CdqsyiT","Authorization":"Bearer sb_publishable_7kqbGZlL_im9kIpgFXLA-A_9CdqsyiT","Content-Type":"application/json","Prefer":"resolution=merge-duplicates"},body:JSON.stringify(obj)});}    
-
+ 
 const PORTFOLIOS=["FIV","IV","FGL","GL","EM","SC"];
 const TIER_ORDER=["MC1","MC2","MC3","MC4","MC5","INTL","US1","US2","EM1","EM2","EM3","EM4","SC1","SC2","SC3","SC4","SC5","F MC","W MC","F SC","W SC","Hit TP","Gave Up"];
 const SECTOR_ORDER=["Industrials","Information Technology","Energy","Consumer Discretionary","Materials","Consumer Staples","Financials","Health Care","Communication Services","Utilities","Real Estate"];
