@@ -147,7 +147,7 @@ function SectionEditTab({title,content,onSave,T}){
       </div>
       {bullets.map(function(b,i){return(<div key={i} style={{display:"flex",gap:6,marginBottom:4,alignItems:"center"}}>
         <span style={{fontSize:12,color:T.textSec,flexShrink:0}}>•</span>
-        <input value={b} onChange={function(e){updBullet(i,e.target.value);}} placeholder={"Point "+(i+1)} style={{fontSize:13,padding:"5px 8px",borderRadius:5,border:"1px solid "+T.border,background:T.bg,color:T.text,flex:1}}/>
+        <textarea value={b} onChange={function(e){updBullet(i,e.target.value);}} placeholder={"Point "+(i+1)} rows={1} style={{fontSize:13,padding:"5px 8px",borderRadius:5,border:"1px solid "+T.border,background:T.bg,color:T.text,flex:1,resize:"none",fontFamily:"inherit",lineHeight:1.5,overflow:"hidden",fieldSizing:"content"}}/>
         {bullets.length>1&&<span onClick={function(){removeBullet(i);}} style={{fontSize:11,color:T.textDanger,cursor:"pointer",flexShrink:0}}>×</span>}
       </div>);})}
       <div style={{display:"flex",gap:8,marginTop:8}}><button onClick={function(){onSave(bulletsToText(bullets));setEditing(false);}} style={{fontSize:12,padding:"6px 14px",fontWeight:500}}>Save</button>{!isEmpty&&<span onClick={function(){setEditing(false);setBullets(parseBullets(content||""));}} style={{fontSize:12,color:T.textSec,cursor:"pointer",padding:"6px 8px"}}>Cancel</span>}</div>
