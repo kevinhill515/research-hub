@@ -135,7 +135,7 @@ function SectionEditTab({title,content,onSave,T}){
   function removeBullet(i){setBullets(function(b){return b.filter(function(_,j){return j!==i;});});}
   function updBullet(i,v){setBullets(function(b){var n=b.slice();n[i]=v;return n;});}
   useEffect(function(){setVal(content||"");if(!content||!content.trim())setEditing(true);if(useBullets)setBullets(parseBullets(content||""));},[content]);
-  if(useBullets){return(<div>
+  if(useBullets){var hasBullets=bullets.some(function(b){return b.trim();})||bullets.length>=5;if(!hasBullets){setBullets(["","","","",""]);} return(<div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:6}}>
       <span style={{fontSize:13,fontWeight:600,color:T.text}}>{title}</span>
       <div style={{display:"flex",gap:6}}>{!editing&&<button onClick={function(){setEditing(true);setBullets(parseBullets(content||""));}} style={{fontSize:12,padding:"4px 12px"}}>Edit</button>}</div>
