@@ -466,7 +466,7 @@ export default function App(){
   const [autoTagSuggestions,setAutoTagSuggestions]=useState([]);
   const [linkLibOpen,setLinkLibOpen]=useState(false);
   const [showTmplSearch,setShowTmplSearch]=useState(false); const [showGlobalSearch,setShowGlobalSearch]=useState(false);
-  const [quickUploadCo,setQuickUploadCo]=useState(null);
+  const [quickUploadCo,setQuickUploadCo]=useState(null); const [calImportText,setCalImportText]=useState("");
   const [pendingVal,setPendingVal]=useState(null); const [entryComments,setEntryComments]=useState({}); const [newCommentText,setNewCommentText]=useState({});
   const searchRef=useRef();
 
@@ -742,7 +742,11 @@ export default function App(){
         {[["companies","Companies"],["dashboard","Dashboard"],["synthesize","Synthesize"],["library","Library ("+saved.length+")"],["recall","Recall"],["compare","Compare"],["macro","Macro Master"],["calendar","Earnings Calendar"]].map(function(item){return <button key={item[0]} style={TABST(tab===item[0])} onClick={function(){setTab(item[0]);if(item[0]!=="companies")setSelCo(null);}}>{item[1]}</button>;})}
       </div>
 
-      {tab==="calendar"&&(<div>   <div style={{fontSize:14,fontWeight:500,color:T.text,marginBottom:12}}>Upcoming Earnings — Next 30 Days</div>   <EarningsCalendar companies={companies} T={T}/> </div>)}  {tab==="dashboard"&&(<div>
+      {tab==="calendar"&&(<div>   <div style={{fontSize:14,fontWeight:500,color:T.text,marginBottom:12}}>Upcoming Earnings — Next 30 Days</div>   <EarningsCalendar companies={companies} T={T}/>   <div style={{marginTop:20,...CARD}}>     <div style={{fontSize:13,fontWeight:500,color:T.text,marginBottom:4}}>Bulk import earnings dates</div>     <div style={{fontSize:12,color:T.textSec,marginBottom:8}}>Paste two columns: Ticker and Date (YYYY-MM-DD). One per line.</div>     <textarea value={calImportText||""} onChange={function(e){setCalImportText(e.target.value);}} placeholder={"AAPL	2026-05-01
+TSM	2026-04-17
+..."} style={{...TA(100),fontFamily:"monospace",marginBottom:8}}/>     <button onClick={function(){       if(!calImportText||!calImportText.trim())return;       var lines=calImportText.trim().split(/
+?
+/).filter(function(l){return l.trim();});       var count=0;       setCompanies(function(prev){return prev.map(function(c){         var ticker=(c.ticker||"").toUpperCase();         var match=lines.find(function(l){var parts=l.split(/	|,/).map(function(s){return s.trim();});return parts[0].toUpperCase()===ticker;});         if(!match)return c;         var parts=match.split(/	|,/).map(function(s){return s.trim();});         var date=parts[1];         if(!date)return c;         var entries=(c.earningsEntries||[]).slice();         var existing=entries.find(function(e){return e.reportDate===date;});         if(existing)return c;         var newEntry=Object.assign(blankEarnings(),{reportDate:date,quarter:"",open:false});         entries.unshift(newEntry);         entries.sort(function(a,b){var da=parseDate(a.reportDate),db=parseDate(b.reportDate);if(!da&&!db)return 0;if(!da)return 1;if(!db)return -1;return db.getTime()-da.getTime();});         count++;         return Object.assign({},c,{earningsEntries:entries});       });});       setTimeout(function(){alert("Updated "+count+" companies.");setCalImportText("");},100);     }} style={{fontSize:12,padding:"6px 14px",fontWeight:500}}>Import</button>   </div> </div>)}  {tab==="dashboard"&&(<div>
         <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap",borderBottom:"1px solid "+T.border,paddingBottom:10}}>
           {[["overview","Overview"],["sectors","Sector Breakdown"],["countries","Country Breakdown"],["overlap","Portfolio Overlap"],["quality","Data Quality"]].map(function(item){return <button key={item[0]} style={TABST(dashSubTab===item[0])} onClick={function(){setDashSubTab(item[0]);}}>{item[1]}</button>;})}
         </div>
