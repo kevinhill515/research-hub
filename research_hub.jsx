@@ -49,7 +49,7 @@ function getCurrency(country){return CURRENCY_MAP[country]||"USD";}
 function calcNormEPS(v){var e1=parseFloat(v.eps1),e2=parseFloat(v.eps2),w1=parseFloat(v.w1),w2=parseFloat(v.w2);if(!isNaN(e1)&&!isNaN(e2)&&!isNaN(w1)&&!isNaN(w2)){return Math.round(((e1*w1+e2*w2)/100)*10000)/10000;}if(!isNaN(e1)&&isNaN(e2))return e1;return null;}
 function calcTP(pe,eps){var p=parseFloat(pe),e=parseFloat(eps);if(isNaN(p)||isNaN(e)||p<=0)return null;return Math.round(p*e*100)/100;}
 function calcMOS(tp,price){if(tp===null||tp===undefined)return null;var pr=parseFloat(price);if(isNaN(pr)||pr<=0)return null;return Math.round((tp-pr)/tp*1000)/10;}
-function fmtTP(val,currency){if(val===null||val===undefined)return"--";return currency+" "+val.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});}
+function fmtPrice(val){if(val===null||val===undefined||val==="")return"--";return parseFloat(val).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});} function fmtTP(val,currency){if(val===null||val===undefined)return"--";return currency+" "+val.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});}
 function fmtMOS(mos){if(mos===null||mos===undefined)return null;return(mos>0?"+":"")+mos+"%";}
 function mosBg(mos){if(mos===null)return null;if(mos>=20)return{bg:"#dcfce7",color:"#166534"};if(mos>=0)return{bg:"#fef9c3",color:"#854d0e"};return{bg:"#fee2e2",color:"#991b1b"};}
 function impliedFYLabel(v){var parts=[];if(v.fy1&&v.w1)parts.push(v.fy1+(v.w2?" "+v.w1+"%":""));if(v.fy2&&v.w2)parts.push(v.fy2+" "+v.w2+"%");return parts.join(" / ")||v.forwardYear||"";}
@@ -863,7 +863,7 @@ function applyPriceImport(){
 
           {/* SECTION TABS */}
           {coView.startsWith("section:")&&(function(){
-            var sectionName=coView.replace("section:","");var isValuation=sectionName==="Valuation";var isOverview=sectionName==="Overview";
+            var sectionName=coView.replace("section:","");var isValuation=sectionName==="Valuation";var isOverview=sectionName==="Valuation";
             return(<div>
               {isValuation&&(<div style={{marginBottom:24}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
