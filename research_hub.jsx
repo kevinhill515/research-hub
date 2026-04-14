@@ -599,7 +599,7 @@ function applyPriceImport(){
     setPendingVal(Object.assign({},newVal));return u;
   }
 
-  var flaggedCos=companies.filter(function(c){return c.flag;}).sort(function(a,b){return(a.flag==="Urgent"?0:1)-(b.flag==="Urgent"?0:1);}); var usedCountries=Array.from(new Set(companies.map(function(c){return c.country;}).filter(Boolean))).sort();
+  function handleSortClick(colSort){     if(coSort===colSort){setCoSortDir(function(d){return d==="asc"?"desc":"asc";});}     else{setCoSort(colSort);setCoSortDir(colSort==="Last Reviewed"?"desc":"asc");}   }    var flaggedCos=companies.filter(function(c){return c.flag;}).sort(function(a,b){return(a.flag==="Urgent"?0:1)-(b.flag==="Urgent"?0:1);}); var usedCountries=Array.from(new Set(companies.map(function(c){return c.country;}).filter(Boolean))).sort();
   var usedSectors=Array.from(new Set(companies.map(function(c){return c.sector;}).filter(Boolean))).sort();
   var displayedCos=sortCos(companies.filter(function(c){
     if(coFilter!=="All"&&(c.portfolios||[]).indexOf(coFilter)<0)return false;
