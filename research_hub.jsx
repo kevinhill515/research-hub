@@ -887,7 +887,7 @@ function applyPriceImport(){
                     {mos!==null&&pv.price&&<div style={{fontSize:11,color:mosStyle?mosStyle.color:T.textSec,marginTop:2}}>Price: {activeCurrency} {fmtPrice(pv.price)}</div>}
                   </div>
                 </div>
-
+ {(pv.peLow5||pv.peHigh5||pv.peAvg5||pv.peMed5)&&<div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>{[["5Yr Low",pv.peLow5],["5Yr High",pv.peHigh5],["5Yr Avg",pv.peAvg5],["5Yr Median",pv.peMed5]].map(function(item){return item[1]?(<div key={item[0]} style={{padding:"8px 14px",borderRadius:8,background:T.bgSec,border:"1px solid "+T.border,minWidth:80}}><div style={{fontSize:10,color:T.textSec,marginBottom:2}}>{item[0]} P/E</div><div style={{fontSize:16,fontWeight:600,color:T.text}}>{item[1]}x</div></div>):null;})}</div>}
                 {/* 2. Price, P/E, currency, FY month */}
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:12,marginBottom:16}}>
                   <div><label style={{fontSize:11,color:T.textSec,display:"block",marginBottom:4}}>Current Price ({activeCurrency})</label><input type="number" step="0.01" value={pv.price||""} onChange={function(e){setPendingVal(function(p){return Object.assign({},p,{price:e.target.value});});}} placeholder="e.g. 45.20" style={{...INP,width:"100%",boxSizing:"border-box"}}/></div>
