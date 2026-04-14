@@ -1,14 +1,14 @@
 import { useState, useRef, useEffect } from "react";
-import { PORTFOLIOS, TIER_ORDER, SECTOR_ORDER, COUNTRY_ORDER, SECTOR_COLORS, SECTOR_SHORT, COUNTRY_GROUPS, COUNTRY_COLORS, REGION_COLORS, REGION_GROUPS, STATUS_RANK, CURRENCY_MAP, ALL_CURRENCIES, MONTHS, CO_SORTS, FORMATS, TONES, LIB_SORTS, PRESET_TAGS, UPLOAD_TYPES, TEMPLATE_SECTIONS, SECTION_SUBHEADINGS, THESIS_STATUSES, TP_CHANGES, AVG_WPM, ALL_COLS, COMPACT_COLS, SHORTCUTS, CONF_BG, CONF_COLOR, ACTIONS, TEAM_MEMBERS, REP_ACCOUNTS, PORT_NAMES, FLAG_STYLES } from './src/constants/index.js';
-import { shortSector, sectorStyle, countryStyle, getRegion, getTiers, getCurrency, calcNormEPS, calcTP, calcMOS, fmtPrice, fmtTP, fmtMOS, mosBg, impliedFYLabel, tierPillStyle, tierBg, fmtTime, getCore, getConf, escHTML, toHTML, toMD, simScore, downloadMD, detectCompanyTags, todayStr, parseDate, daysSince, reviewedColor, mkTheme, getStatusRank, getTierIndex, getCompanyMOS, blankEarnings, sortCos, synPrompt } from './src/utils/index.js';
-import { supaGet, supaUpsert, ANTHROPIC_KEY, apiCall } from './src/api/index.js';
-import { PriceAgeIndicator, BarRow, PillEl, PortPicker, SectionBlock, StatusPill, DiffView } from './src/components/ui/index.js';
-import { SectionEditTab, EarningsEntry, NotesCell, ActionCell, FlagCell, DatePicker } from './src/components/forms/index.js';
-import { GlobalSearch, TemplateSearch, QuickUploadModal } from './src/components/modals/index.js';
-import { CoRow, OverlapMatrix } from './src/components/tables/index.js';
-import { EarningsCalendar } from './src/components/calendar/index.js';
-import { useCompanyContext } from './src/context/CompanyContext.jsx';
-import { ErrorBoundary } from './src/components/ErrorBoundary.jsx';
+import { PORTFOLIOS, TIER_ORDER, SECTOR_ORDER, COUNTRY_ORDER, SECTOR_COLORS, SECTOR_SHORT, COUNTRY_GROUPS, COUNTRY_COLORS, REGION_COLORS, REGION_GROUPS, STATUS_RANK, CURRENCY_MAP, ALL_CURRENCIES, MONTHS, CO_SORTS, FORMATS, TONES, LIB_SORTS, PRESET_TAGS, UPLOAD_TYPES, TEMPLATE_SECTIONS, SECTION_SUBHEADINGS, THESIS_STATUSES, TP_CHANGES, AVG_WPM, ALL_COLS, COMPACT_COLS, SHORTCUTS, CONF_BG, CONF_COLOR, ACTIONS, TEAM_MEMBERS, REP_ACCOUNTS, PORT_NAMES, FLAG_STYLES } from './constants/index.js';
+import { shortSector, sectorStyle, countryStyle, getRegion, getTiers, getCurrency, calcNormEPS, calcTP, calcMOS, fmtPrice, fmtTP, fmtMOS, mosBg, impliedFYLabel, tierPillStyle, tierBg, fmtTime, getCore, getConf, escHTML, toHTML, toMD, simScore, downloadMD, detectCompanyTags, todayStr, parseDate, daysSince, reviewedColor, mkTheme, getStatusRank, getTierIndex, getCompanyMOS, blankEarnings, sortCos, synPrompt } from './utils/index.js';
+import { supaGet, supaUpsert, ANTHROPIC_KEY, apiCall } from './api/index.js';
+import { PriceAgeIndicator, BarRow, PillEl, PortPicker, SectionBlock, StatusPill, DiffView } from './components/ui/index.js';
+import { SectionEditTab, EarningsEntry, NotesCell, ActionCell, FlagCell, DatePicker } from './components/forms/index.js';
+import { GlobalSearch, TemplateSearch, QuickUploadModal } from './components/modals/index.js';
+import { CoRow, OverlapMatrix } from './components/tables/index.js';
+import { EarningsCalendar } from './components/calendar/index.js';
+import { useCompanyContext } from './context/CompanyContext.jsx';
+import { ErrorBoundary } from './components/ErrorBoundary.jsx';
 
 /* Components extracted to src/components/ — see barrel index.js files in each subdirectory */
 export default function App(){
