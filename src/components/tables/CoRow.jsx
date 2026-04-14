@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { PORTFOLIOS, TIER_ORDER, COUNTRY_ORDER, SECTOR_ORDER } from '../../constants/index.js';
 import { shortSector, sectorStyle, countryStyle, getTiers, tierPillStyle, tierBg, reviewedColor, daysSince, todayStr, calcNormEPS, calcTP, calcMOS, fmtMOS, mosBg } from '../../utils/index.js';
+import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import StatusPill from '../ui/StatusPill.jsx';
 import NotesCell from '../forms/NotesCell.jsx';
 import ActionCell from '../forms/ActionCell.jsx';
@@ -10,6 +11,7 @@ import PortPicker from '../ui/PortPicker.jsx';
 import PillEl from '../ui/PillEl.jsx';
 
 function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, selected, onToggleSelect, onQuickUpload }) {
+  var { dark } = useCompanyContext();
   var [editName, setEditName] = useState(false);
   var [nameVal, setNameVal] = useState(company.name);
   var [editTicker, setEditTicker] = useState(false);
@@ -36,10 +38,10 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
 
   /* Data-driven row background kept as inline style */
   var rowBg = selected
-    ? "#1e3a5f"
+    ? (dark ? "#1e293b" : "#1e3a5f")
     : hovered
       ? undefined   /* handled via className */
-      : tierBg(company.tier);
+      : dark ? undefined : tierBg(company.tier);
 
   var portfolios = company.portfolios || [];
   var portNote = (company.portNote || "").split(/[,\s]+/).filter(Boolean);
@@ -75,7 +77,7 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
       onClick={function () { onSelect(company); }}
       onMouseEnter={function () { setHovered(true); }}
       onMouseLeave={function () { setHovered(false); }}
-      className="table-row group"
+      className={"table-row group hover:bg-slate-50 dark:hover:bg-slate-800" + (selected ? " bg-blue-950/30" : "")}
       style={rowBg ? { background: rowBg } : undefined}
     >
       {/* Checkbox */}
