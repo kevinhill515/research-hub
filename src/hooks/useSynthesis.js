@@ -36,7 +36,7 @@ export function useSynthesis(){
 
   async function synthesize(){
     var has=useSrc?sources.some(function(s){return s.text.trim();}):input.trim();if(!has)return;setLoading(true);setOutput("");setFuA("");setFuQ("");setAutoTagSuggestions([]);
-    try{var txt=useSrc?sources.filter(function(s){return s.text.trim();}).map(function(s){return"["+s.label+"]:\n"+s.text;}).join("\n\n"):input;setOutput(await apiCall(synPrompt(format,tone,custom),[{type:"text",text:txt}]));}catch(e){setOutput("Error.");}
+    try{var txt=useSrc?sources.filter(function(s){return s.text.trim();}).map(function(s){return"["+s.label+"]:\n"+s.text;}).join("\n\n"):input;setOutput(await apiCall(synPrompt(format,tone,custom),[{type:"text",text:txt}]));}catch(e){setOutput("Error: "+e.message);}
     setLoading(false);
   }
   function saveLib(force){
