@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useCompanyContext } from '../context/CompanyContext.jsx';
 import { PORTFOLIOS, TIER_ORDER, SECTOR_ORDER, COUNTRY_ORDER, ALL_COLS, COMPACT_COLS, TEMPLATE_SECTIONS, UPLOAD_TYPES, REP_ACCOUNTS } from '../constants/index.js';
 import { getCurrency, calcNormEPS, calcTP, calcMOS, fmtPrice, fmtTP, fmtMOS, impliedFYLabel, todayStr, parseDate, sortCos, blankEarnings, toHTML, downloadMD, getTiers } from '../utils/index.js';
-import { apiCall, supaUpsert, getAnthropicKey } from '../api/index.js';
+import { ANTHROPIC_KEY, apiCall, supaUpsert } from '../api/index.js';
 
 export function useCompanies(){
   const { companies, setCompanies, saved, setSaved, lastPriceUpdate, setLastPriceUpdate, currentUser, setCopied, updateCo, cp, T, fxRates, setFxRates, fxLastUpdated, setFxLastUpdated, repData, setRepData, repLastUpdated, setRepLastUpdated, specialWeights, setSpecialWeights, calLastUpdated, setCalLastUpdated, calLastUpdatedBy, setCalLastUpdatedBy } = useCompanyContext();
@@ -174,7 +174,7 @@ export function useCompanies(){
     if(!tmplRaw.trim())return;setTmplLoading(true);
     try{
       var allKeys=[...TEMPLATE_SECTIONS].map(function(s){return'"'+s+'"';}).join(", ");
-      var res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":getAnthropicKey(),"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:4000,system:"You are a JSON extractor. Extract the following sections from the provided company research template and return ONLY a valid JSON object with exactly these keys: "+allKeys+". If a section is not found, use an empty string. Return nothing else — no markdown, no backticks, no explanation.",messages:[{role:"user",content:[{type:"text",text:tmplRaw.slice(0,20000)}]}]})});
+      var res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":ANTHROPIC_KEY,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:4000,system:"You are a JSON extractor. Extract the following sections from the provided company research template and return ONLY a valid JSON object with exactly these keys: "+allKeys+". If a section is not found, use an empty string. Return nothing else — no markdown, no backticks, no explanation.",messages:[{role:"user",content:[{type:"text",text:tmplRaw.slice(0,20000)}]}]})});
       var json=await res.json();if(json.error){alert("API error: "+JSON.stringify(json.error));setTmplLoading(false);return;}
       var raw=(json.content||[]).map(function(b){return b.text||"";}).join("");
       var clean=raw.replace(/```json/g,"").replace(/```/g,"").trim();
