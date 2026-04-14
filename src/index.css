@@ -1,0 +1,16 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-surface: #ffffff;
+  --color-surface-sec: #f8fafc;
+  --color-surface-ter: #f1f5f9;
+  --color-border-default: #e2e8f0;
+  --color-border-sec: #d1d5db;
+  --color-text-primary: #111111;
+  --color-text-secondary: #6b7280;
+  --color-danger: #dc2626;
+  --color-success: #166534;
+  --color-info: #1e40af;
+  --color-warn: #854d0e;
+}
