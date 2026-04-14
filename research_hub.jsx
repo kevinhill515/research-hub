@@ -1,103 +1,8 @@
 import { useState, useRef, useEffect } from "react";
-const SUPA_URL="https://vesnqbxswmggdfevqokt.supabase.co"; async function supaGet(table,key,val){var col=table==="meta"?"value":"data";var r=await fetch(SUPA_URL+"/rest/v1/"+table+"?select="+col+"&"+key+"=eq."+val,{headers:{"apikey":"sb_publishable_7kqbGZlL_im9kIpgFXLA-A_9CdqsyiT","Authorization":"Bearer sb_publishable_7kqbGZlL_im9kIpgFXLA-A_9CdqsyiT","Accept":"application/vnd.pgrst.object+json"}});if(!r.ok)return null;try{return await r.json();}catch(e){return null;}} async function supaUpsert(table,obj){return fetch(SUPA_URL+"/rest/v1/"+table,{method:"POST",headers:{"apikey":"sb_publishable_7kqbGZlL_im9kIpgFXLA-A_9CdqsyiT","Authorization":"Bearer sb_publishable_7kqbGZlL_im9kIpgFXLA-A_9CdqsyiT","Content-Type":"application/json","Prefer":"resolution=merge-duplicates"},body:JSON.stringify(obj)});}    
+import { PORTFOLIOS, TIER_ORDER, SECTOR_ORDER, COUNTRY_ORDER, SECTOR_COLORS, SECTOR_SHORT, COUNTRY_GROUPS, COUNTRY_COLORS, REGION_COLORS, REGION_GROUPS, STATUS_RANK, CURRENCY_MAP, ALL_CURRENCIES, MONTHS, CO_SORTS, FORMATS, TONES, LIB_SORTS, PRESET_TAGS, UPLOAD_TYPES, TEMPLATE_SECTIONS, SECTION_SUBHEADINGS, THESIS_STATUSES, TP_CHANGES, AVG_WPM, ALL_COLS, COMPACT_COLS, SHORTCUTS, CONF_BG, CONF_COLOR, ACTIONS, TEAM_MEMBERS, REP_ACCOUNTS, PORT_NAMES, FLAG_STYLES } from './src/constants/index.js';
+import { shortSector, sectorStyle, countryStyle, getRegion, getTiers, getCurrency, calcNormEPS, calcTP, calcMOS, fmtPrice, fmtTP, fmtMOS, mosBg, impliedFYLabel, tierPillStyle, tierBg, fmtTime, getCore, getConf, escHTML, toHTML, toMD, simScore, downloadMD, detectCompanyTags, todayStr, parseDate, daysSince, reviewedColor, mkTheme, getStatusRank, getTierIndex, getCompanyMOS, blankEarnings, sortCos, synPrompt } from './src/utils/index.js';
+import { supaGet, supaUpsert, ANTHROPIC_KEY, apiCall } from './src/api/index.js';
 
-const PORTFOLIOS=["GL","FGL","IV","FIV","EM","SC"];
-const TIER_ORDER=["MC1","MC2","MC3","MC4","MC5","INTL","US1","US2","EM1","EM2","EM3","EM4","SC1","SC2","SC3","SC4","SC5","F MC","W MC","F SC","W SC","Hit TP","Gave Up"];
-const SECTOR_ORDER=["Industrials","Information Technology","Energy","Consumer Discretionary","Materials","Consumer Staples","Financials","Health Care","Communication Services","Utilities","Real Estate"];
-const COUNTRY_ORDER=["United States","Britain","Japan","Netherlands","France","Canada","Taiwan","Germany","Mexico","Singapore","China","Italy","Norway","Luxembourg","Ireland","Australia","Austria","Spain","Sweden","Switzerland","South Korea","Brazil","Indonesia","Chile","South Africa","India","Greece","Panama","Jordan","Denmark","Israel","Belgium","Egypt","Hungary","Russia"];
-const SECTOR_COLORS={"Industrials":{bg:"#ffedd5",color:"#9a3412"},"Information Technology":{bg:"#fef9c3",color:"#854d0e"},"Energy":{bg:"#dcfce7",color:"#166534"},"Consumer Discretionary":{bg:"#dbeafe",color:"#1e40af"},"Materials":{bg:"#f3e8ff",color:"#6b21a8"},"Consumer Staples":{bg:"#fce7f3",color:"#9d174d"},"Financials":{bg:"#fee2e2",color:"#991b1b"},"Health Care":{bg:"#f1f5f9",color:"#475569"},"Communication Services":{bg:"#ccfbf1",color:"#0f766e"},"Utilities":{bg:"#e0e7ff",color:"#3730a3"},"Real Estate":{bg:"#fef3c7",color:"#92400e"}};
-const SECTOR_SHORT={"Consumer Discretionary":"Cons Disc","Information Technology":"Info Tech","Communication Services":"Comm Svcs","Consumer Staples":"Cons Staples"};
-const COUNTRY_GROUPS={"United States":"us","Canada":"us","Mexico":"amer","Brazil":"amer","Chile":"amer","Panama":"amer","Britain":"europe","Netherlands":"europe","France":"europe","Germany":"europe","Italy":"europe","Norway":"europe","Luxembourg":"europe","Ireland":"europe","Austria":"europe","Spain":"europe","Sweden":"europe","Switzerland":"europe","Greece":"europe","Denmark":"europe","Belgium":"europe","Hungary":"europe","Russia":"europe","Japan":"asia","Taiwan":"asia","Singapore":"asia","China":"asia","South Korea":"asia","Indonesia":"asia","India":"asia","Australia":"asia","South Africa":"africa","Jordan":"africa","Israel":"africa","Egypt":"africa"};
-const COUNTRY_COLORS={us:{bg:"#ede9fe",color:"#5b21b6"},amer:{bg:"#dcfce7",color:"#166534"},europe:{bg:"#dbeafe",color:"#1e40af"},asia:{bg:"#ffe4e6",color:"#9f1239"},africa:{bg:"#fef9c3",color:"#854d0e"}};
-const REGION_COLORS={"US & Canada":"#5b21b6","Other Americas":"#166534","Europe":"#1e40af","Asia":"#9f1239","Africa & Middle East":"#854d0e"};
-const REGION_GROUPS={"US & Canada":["us"],"Other Americas":["amer"],"Europe":["europe"],"Asia":["asia"],"Africa & Middle East":["africa"]};
-const STATUS_RANK={"Own":0,"Focus":1,"Watch":2,"Sold":3,"":4};
-const CURRENCY_MAP={"United States":"USD","Canada":"CAD","Britain":"GBP","Australia":"AUD","Japan":"JPY","Switzerland":"CHF","Sweden":"SEK","Norway":"NOK","Denmark":"DKK","South Korea":"KRW","Netherlands":"EUR","France":"EUR","Germany":"EUR","Italy":"EUR","Spain":"EUR","Luxembourg":"EUR","Ireland":"EUR","Austria":"EUR","Belgium":"EUR","Greece":"EUR","Taiwan":"TWD","China":"CNY","Singapore":"SGD","India":"INR","Brazil":"BRL","Mexico":"MXN","Chile":"CLP","South Africa":"ZAR","Indonesia":"IDR","Russia":"RUB","Hungary":"HUF","Israel":"ILS","Egypt":"EGP","Jordan":"JOD","Panama":"USD"};
-const ALL_CURRENCIES=["USD","EUR","GBP","JPY","CHF","SEK","NOK","DKK","CAD","AUD","TWD","CNY","SGD","INR","BRL","MXN","CLP","ZAR","IDR","KRW","HUF","ILS","EGP","JOD","RUB"];
-const MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-const CO_SORTS=["Tier","Last Reviewed","Sector","Country","Name","MOS"];
-const FORMATS=["Key Takeaways","Executive Summary","Bullet Points","Q&A","Timeline","Conflict Detector","Custom"];
-const TONES=["Academic","Professional","Plain English"];
-const LIB_SORTS=["Pinned first","Newest","Oldest","Format","Tag"];
-const PRESET_TAGS=["Company Template","Macro","FIV","IV","FGL","GL","EM","SC"];
-const UPLOAD_TYPES=["Earnings Report","Sell Side Research","Company Release","News Article","Analyst Note","Other"];
-const TEMPLATE_SECTIONS=["Valuation","Overview","Thesis","Segments","Guidance / KPIs","Key Challenges"];
-const SECTION_SUBHEADINGS={
-  "Valuation":["Method:","Multiple:","Target EPS:","Target Price:","Key Assumptions:"],
-  "Overview":["Business:","Geography:","Market Position:","Key Products/Segments:"],
-  "Thesis":["Core Thesis:","Bull Case:","Bear Case:","Key Catalysts:"],
-  "Segments":["Segment Breakdown:","Growth Drivers:","Margins by Segment:"],
-  "Guidance / KPIs":["Revenue Guidance:","Margin Guidance:","Key KPIs:","Management Targets:"],
-  "Key Challenges":["Key Risks:","Competitive Threats:","Macro Headwinds:","Execution Risk:"]
-};
-const THESIS_STATUSES=["On track","Watch","Broken"];
-const TP_CHANGES=["Increased","Decreased","Unchanged"];
-const AVG_WPM=200;
-const ALL_COLS=["Tier(s)","Name","Ticker","Country","Sector","Portfolio","Action","Notes","Reviewed","Updated","Status","Flag","Del"];
-const COMPACT_COLS=new Set(["Tier(s)","Name","Ticker","Status","Reviewed","Flag","Del"]);
-const SHORTCUTS=[{key:"/",desc:"Focus search"},{key:"n",desc:"New company"},{key:"b",desc:"Bulk import"},{key:"d",desc:"Dashboard"},{key:"c",desc:"Companies"},{key:"s",desc:"Synthesize"},{key:"l",desc:"Library"},{key:"r",desc:"Recall"},{key:"Escape",desc:"Close/deselect"},{key:"?",desc:"Show shortcuts"}];
-const CONF_BG={"High":"#dcfce7","Medium":"#fef9c3","Low":"#fee2e2"};
-const CONF_COLOR={"High":"#166534","Medium":"#854d0e","Low":"#991b1b"};
-const ACTIONS=["Increase TP","No Action","Decrease TP"]; const TEAM_MEMBERS=["Chris","Al","Bob","Kevin","Ron","Emily"]; const REP_ACCOUNTS={"LWGA0013":"GL","LWFOCGL1":"FGL","LWIV0004":"IV","LWIF0001":"FIV","LWEA0001":"EM","LWSC0003":"SC"}; const PORT_NAMES={"GL":"Global Value","FGL":"Focused Global Value","IV":"International Value","FIV":"Focused International Value","EM":"Emerging Markets Value","SC":"International Small Cap Value"}; const FLAG_STYLES={"Needs Review":{bg:"#fef9c3",color:"#854d0e",icon:"⚑"},"Urgent":{bg:"#fee2e2",color:"#991b1b",icon:"🔴"}};
-
-function shortSector(s){return SECTOR_SHORT[s]||s;}
-function sectorStyle(s){return SECTOR_COLORS[s]||{bg:"#f1f5f9",color:"#475569"};}
-function countryStyle(c){var g=COUNTRY_GROUPS[c];return g?COUNTRY_COLORS[g]:{bg:"#f1f5f9",color:"#475569"};}
-function getRegion(country){if(!country)return null;var g=COUNTRY_GROUPS[country];return Object.keys(REGION_GROUPS).find(function(r){return REGION_GROUPS[r].indexOf(g)>=0;})||null;}
-function getTiers(t){if(!t)return[];if(Array.isArray(t))return t;return String(t).split(",").map(function(s){var tr=s.trim();return tr.indexOf(" ")===-1?tr.toUpperCase():tr.trim();}).filter(Boolean);}
-function getCurrency(country){return CURRENCY_MAP[country]||"USD";}
-function calcNormEPS(v){var e1=parseFloat(v.eps1),e2=parseFloat(v.eps2),w1=parseFloat(v.w1),w2=parseFloat(v.w2);if(!isNaN(e1)&&!isNaN(e2)&&!isNaN(w1)&&!isNaN(w2)){return Math.round(((e1*w1+e2*w2)/100)*10000)/10000;}if(!isNaN(e1)&&isNaN(e2))return e1;return null;}
-function calcTP(pe,eps){var p=parseFloat(pe),e=parseFloat(eps);if(isNaN(p)||isNaN(e)||p<=0)return null;return Math.round(p*e*100)/100;}
-function calcMOS(tp,price){if(tp===null||tp===undefined)return null;var pr=parseFloat(price);if(isNaN(pr)||pr<=0)return null;return Math.round((tp-pr)/tp*1000)/10;}
-function fmtPrice(val){if(val===null||val===undefined||val==="")return"--";return parseFloat(val).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});} function fmtTP(val,currency){if(val===null||val===undefined)return"--";return currency+" "+val.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});}
-function fmtMOS(mos){if(mos===null||mos===undefined)return null;return(mos>0?"+":"")+mos+"%";}
-function mosBg(mos){if(mos===null)return null;if(mos>=20)return{bg:"#dcfce7",color:"#166534"};if(mos>=0)return{bg:"#fef9c3",color:"#854d0e"};return{bg:"#fee2e2",color:"#991b1b"};}
-function impliedFYLabel(v){var parts=[];if(v.fy1&&v.w1)parts.push(v.fy1+(v.w2?" "+v.w1+"%":""));if(v.fy2&&v.w2)parts.push(v.fy2+" "+v.w2+"%");return parts.join(" / ")||v.forwardYear||"";}
-function tierPillStyle(t){if(!t)return{bg:"#334155",color:"#fff"};if(t.indexOf("MC")===0){var n=parseInt(t.replace("MC",""));return n<=3?{bg:"#1a3a6b",color:"#fff"}:{bg:"#b45309",color:"#fff"};}if(t==="INTL")return{bg:"#0f766e",color:"#fff"};if(t.indexOf("US")===0)return{bg:"#1a3a6b",color:"#fff"};if(t.indexOf("EM")===0)return{bg:"#92400e",color:"#fff"};if(t.indexOf("SC")===0)return{bg:"#5b21b6",color:"#fff"};if(t.indexOf("F ")===0||t.indexOf("W ")===0)return{bg:"#9d174d",color:"#fff"};if(t==="Hit TP")return{bg:"#64748b",color:"#fff"};if(t==="Gave Up")return{bg:"#94a3b8",color:"#fff"};return{bg:"#334155",color:"#fff"};}
-function tierBg(t){var tiers=getTiers(t),first=tiers[0]||"";if(!first)return"#ffffff";if(first.indexOf("MC")===0){var n=parseInt(first.replace("MC",""));return n<=3?"#e8f0f8":"#fde8d8";}if(first==="INTL")return"#d1faf4";if(first.indexOf("US")===0)return"#e8f5ee";if(first.indexOf("EM")===0)return"#fef6e4";if(first.indexOf("SC")===0)return"#f0ecfb";if(first.indexOf("F ")===0||first.indexOf("W ")===0)return"#fceef4";if(first==="Hit TP")return"#f1f5f9";if(first==="Gave Up")return"#f8fafc";return"#ffffff";}
-function fmtTime(t){var m=Math.ceil(t.trim().split(/\s+/).length/AVG_WPM);return m===1?"1 min":m+" min";}
-function getCore(t){var m=t.match(/Core finding:\s*(.+?)(\n|$)/i);return m?m[1].trim():t.slice(0,120)+"...";}
-function getConf(t){var m=t.match(/Confidence:\s*(High|Medium|Low)/i);return m?m[1]:null;}
-function escHTML(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
-function toHTML(t){return escHTML(t).replace(/\*\*(.*?)\*\*/g,"<strong>$1</strong>").replace(/\n/g,"<br/>");}
-function toMD(e){return"# "+e.title+"\nFormat: "+e.format+" | Tone: "+e.tone+" | Date: "+e.date+"\nTags: "+((e.tags||[]).join(", ")||"none")+"\n\n"+e.result;}
-function simScore(a,b){var sa=new Set(a.toLowerCase().split(/\s+/)),sb=new Set(b.toLowerCase().split(/\s+/)),i=0;sa.forEach(function(w){if(sb.has(w))i++;});return i/(sa.size+sb.size-i);}
-function downloadMD(title,content){var blob=new Blob([content],{type:"text/markdown"});var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=(title||"export").replace(/[^a-z0-9]/gi,"_")+".md";a.click();}
-function detectCompanyTags(text,companies){var found=[];companies.forEach(function(c){if(c.name&&text.toLowerCase().includes(c.name.toLowerCase()))found.push(c.name);});return Array.from(new Set(found)).slice(0,5);}
-function todayStr(){return new Date().toISOString().slice(0,10);}
-function parseDate(s){if(!s)return null;var d=new Date(s);if(!isNaN(d.getTime()))return d;var m=s.match(/^(\d{1,2})[-\/]([A-Za-z]{3})[-\/](\d{2,4})$/);if(m){var months={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};var mo=months[m[2].toLowerCase()];if(mo===undefined)return null;var yr=parseInt(m[3]);if(yr<100)yr+=2000;return new Date(yr,mo,parseInt(m[1]));}return null;}
-function daysSince(dateStr){if(!dateStr)return Infinity;var d=parseDate(dateStr);if(!d||isNaN(d.getTime()))return Infinity;return Math.floor((Date.now()-d.getTime())/86400000);}
-function reviewedColor(dateStr,T){var d=daysSince(dateStr);if(d===Infinity)return T.textDanger;if(d>90)return"#dc2626";if(d>60)return"#d97706";if(d>30)return"#ca8a04";return T.textSuccess;}
-function mkTheme(dark){return{dark,bg:dark?"#0f172a":"#ffffff",bgSec:dark?"#1e293b":"#f8fafc",bgTer:dark?"#334155":"#f1f5f9",border:dark?"#334155":"#e2e8f0",borderSec:dark?"#475569":"#d1d5db",text:dark?"#f1f5f9":"#111111",textSec:dark?"#94a3b8":"#6b7280",textDanger:dark?"#f87171":"#dc2626",textSuccess:dark?"#4ade80":"#166534",textInfo:dark?"#60a5fa":"#1e40af",textWarn:dark?"#fbbf24":"#854d0e"};}
-function getStatusRank(status){var r=STATUS_RANK[status||""];return(r!==undefined&&r!==null)?r:4;}
-function getTierIndex(x){var ts=getTiers(x.tier),best=999;for(var j=0;j<ts.length;j++){var t=ts[j].trim();var idx=TIER_ORDER.indexOf(t);if(idx<0){for(var k=0;k<TIER_ORDER.length;k++){if(TIER_ORDER[k].toUpperCase()===t.toUpperCase()){idx=k;break;}}}if(idx>=0&&idx<best){best=idx;}}return best;}
-function getCompanyMOS(c){var val=c.valuation||{};var eps=calcNormEPS(val)||parseFloat(val.eps);var tp=calcTP(val.pe,eps);return calcMOS(tp,val.price);}
-function blankEarnings(){return{id:Date.now()+Math.random(),quarter:"",reportDate:"",eps:"",tpChange:"Unchanged",newTP:"",tpRationale:"",bullets:["","","","",""],shortTakeaway:"",extendedTakeaway:"",thesisStatus:"On track",thesisNote:"",open:true};}
-
-function sortCos(list,by,dir){
-  var c=list.slice();var WF=new Set(["F MC","W MC","F SC","W SC"]);
-  function al(a,b){return a.name.localeCompare(b.name);}
-  function isWF(x){var ts=getTiers(x.tier);return ts.length>0&&WF.has(ts[0]);}
-  var m=dir==="desc"?-1:1;
-  return c.sort(function(a,b){
-    var p=0;
-    if(by==="Tier"){var ta=getTierIndex(a),tb=getTierIndex(b);if(ta===999&&tb!==999)return 1;if(tb===999&&ta!==999)return -1;p=(ta-tb)*m;if(p!==0)return p;if(isWF(a)&&isWF(b)){var cp=(a.country||"").localeCompare(b.country||"");if(cp!==0)return cp;}var sd=getStatusRank(a.status)-getStatusRank(b.status);if(sd!==0)return sd;return al(a,b);}
-    if(by==="Last Reviewed"){var hA=!!a.lastReviewed,hB=!!b.lastReviewed;if(!hA&&!hB)return al(a,b);if(!hA)return 1;if(!hB)return -1;var da=parseDate(a.lastReviewed),db=parseDate(b.lastReviewed);if(!da)return 1;if(!db)return -1;p=(db.getTime()-da.getTime())*m;if(p!==0)return p;return al(a,b);}
-    if(by==="MOS"){var ma=getCompanyMOS(a),mb=getCompanyMOS(b);if(ma===null&&mb===null)return al(a,b);if(ma===null)return 1;if(mb===null)return -1;p=(ma-mb)*m;if(p!==0)return p;return al(a,b);}
-    if(by==="Name")p=a.name.localeCompare(b.name)*m;
-    else if(by==="Country")p=(a.country||"").localeCompare(b.country||"")*m;
-    else if(by==="Sector")p=(a.sector||"").localeCompare(b.sector||"")*m;
-    if(p!==0)return p;var sd2=getStatusRank(a.status)-getStatusRank(b.status);if(sd2!==0)return sd2;return al(a,b);
-  });
-}
-
-var ANTHROPIC_KEY="";
-async function apiCall(system,content,maxTokens){
-  var mt=maxTokens||1200;var blocks=typeof content==="string"?[{type:"text",text:content}]:content;
-  var res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":ANTHROPIC_KEY,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:mt,system,messages:[{role:"user",content:blocks}]})});
-  var data=await res.json();if(data.error)throw new Error(JSON.stringify(data.error));
-  return(data.content||[]).map(function(b){return b.text||"";}).join("");
-}
 
 function PriceAgeIndicator({lastPriceUpdate,T}){   if(!lastPriceUpdate)return <span style={{fontSize:10,color:T.textSec}}>Prices: never updated</span>;   var d=parseDate(lastPriceUpdate);if(!d)return null;   var days=Math.floor((Date.now()-d.getTime())/86400000);   var color=days>14?"#dc2626":days>7?"#d97706":T.textSuccess;   var label=days===0?"today":days===1?"yesterday":days+"d ago";   return <span style={{fontSize:10,color,fontWeight:days>7?600:400}}>Prices updated: {lastPriceUpdate} ({label}){days>14?" ⚠":""}</span>; }  function BarRow({label,clr,own,focus,watch,max,T}){
   var op=max>0?(own/max*100):0,fp=max>0?(focus/max*100):0,wp=max>0?(watch/max*100):0;
@@ -679,7 +584,6 @@ function applyPriceImport(){
     setFlashSections(newFlash);setSelCo(u);setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});});
     setPendingDiff(null);setPendingMeta(null);setUpText("");setCoView("section:Valuation");
   }
-  function synPrompt(fmt,tn,cust){var fi={"Key Takeaways":"4-6 numbered takeaways.","Executive Summary":"3 paragraphs: situation, findings, implications.","Bullet Points":"Grouped bullets under 2-4 theme headers.","Q&A":"4-5 key questions with concise answers.","Timeline":"Findings chronologically.","Conflict Detector":"Find DISAGREEMENTS between sources.","Custom":cust||"Summarize."};return "Research synthesis assistant.\nFormat: "+fmt+"\nTone: "+tn+"\nInstructions: "+(fi[fmt]||"Summarize.")+"\n- Start with: **Core finding:** [one sentence]\n- Include **Confidence:** High/Medium/Low\n- End with **Gaps & next steps:** 2-3 unknowns\n- Be concise.";}
   async function synthesize(){
     var has=useSrc?sources.some(function(s){return s.text.trim();}):input.trim();if(!has)return;setLoading(true);setOutput("");setFuA("");setFuQ("");setAutoTagSuggestions([]);
     try{var txt=useSrc?sources.filter(function(s){return s.text.trim();}).map(function(s){return"["+s.label+"]:\n"+s.text;}).join("\n\n"):input;setOutput(await apiCall(synPrompt(format,tone,custom),[{type:"text",text:txt}]));}catch(e){setOutput("Error.");}
