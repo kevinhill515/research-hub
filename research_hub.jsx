@@ -33,8 +33,8 @@ const SECTION_SUBHEADINGS={
 const THESIS_STATUSES=["On track","Watch","Broken"];
 const TP_CHANGES=["Increased","Decreased","Unchanged"];
 const AVG_WPM=200;
-const ALL_COLS=["Tier(s)","Name","Ticker","Country","Sector","Portfolio","Action","Notes","Reviewed","Updated","Status","MOS","Flag","Del"];
-const COMPACT_COLS=new Set(["Tier(s)","Name","Ticker","Status","Reviewed","MOS","Flag","Del"]);
+const ALL_COLS=["Tier(s)","Name","Ticker","Country","Sector","Portfolio","Action","Notes","Reviewed","Updated","Status","Flag","Del"];
+const COMPACT_COLS=new Set(["Tier(s)","Name","Ticker","Status","Reviewed","Flag","Del"]);
 const SHORTCUTS=[{key:"/",desc:"Focus search"},{key:"n",desc:"New company"},{key:"b",desc:"Bulk import"},{key:"d",desc:"Dashboard"},{key:"c",desc:"Companies"},{key:"s",desc:"Synthesize"},{key:"l",desc:"Library"},{key:"r",desc:"Recall"},{key:"Escape",desc:"Close/deselect"},{key:"?",desc:"Show shortcuts"}];
 const CONF_BG={"High":"#dcfce7","Medium":"#fef9c3","Low":"#fee2e2"};
 const CONF_COLOR={"High":"#166534","Medium":"#854d0e","Low":"#991b1b"};
@@ -713,7 +713,7 @@ function applyPriceImport(){
   var dashCountryMap={};dashCos.forEach(function(c){if(!c.country)return;if(!dashCountryMap[c.country])dashCountryMap[c.country]={own:0,focus:0,watch:0};if(c.status==="Own")dashCountryMap[c.country].own++;else if(c.status==="Focus")dashCountryMap[c.country].focus++;else if(c.status==="Watch")dashCountryMap[c.country].watch++;});
   var dashCountryEntries=Object.entries(dashCountryMap).filter(function(e){return e[1].own>0;}).sort(function(a,b){return b[1].own-a[1].own||(b[1].focus+b[1].watch)-(a[1].focus+a[1].watch);});
   var dashCountryMax=1;dashCountryEntries.forEach(function(e){var t=e[1].own+e[1].focus+e[1].watch;if(t>dashCountryMax)dashCountryMax=t;});
-  var HEADER_COLS=[{label:"Tier(s)",sort:"Tier"},{label:"Name",sort:"Name"},{label:"Ticker",sort:null},{label:"Country",sort:"Country"},{label:"Sector",sort:"Sector"},{label:"Portfolio",sort:null},{label:"Action",sort:null},{label:"Notes",sort:null},{label:"Reviewed",sort:"Last Reviewed"},{label:"Updated",sort:null},{label:"Status",sort:null},{label:"MOS",sort:"MOS"},{label:"",sort:null}];
+  var HEADER_COLS=[{label:"Tier(s)",sort:"Tier"},{label:"Name",sort:"Name"},{label:"Ticker",sort:null},{label:"Country",sort:"Country"},{label:"Sector",sort:"Sector"},{label:"Portfolio",sort:null},{label:"Action",sort:null},{label:"Notes",sort:null},{label:"Reviewed",sort:"Last Reviewed"},{label:"Updated",sort:null},{label:"Status",sort:null},{label:"",sort:null}];
   var coTabs=[...TEMPLATE_SECTIONS.map(function(s){return{id:"section:"+s,label:s};}),{id:"earnings",label:"Earnings & Thesis Check"},{id:"template",label:"Template"},
     {id:"linked",label:"Linked"+(linkedEntries.length>0?" ("+linkedEntries.length+")":"")},{id:"upload",label:"Upload"},{id:"history",label:"Log"+((selCo&&selCo.updateLog&&selCo.updateLog.length>0)?" ("+selCo.updateLog.length+")":"")}];
 
@@ -770,8 +770,6 @@ function applyPriceImport(){
         <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10,justifyContent:"flex-end",alignItems:"center"}}>
           {confirmClear?(<div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:12,color:T.textDanger}}>Delete all {companies.length}?</span><button onClick={async function(){setCompanies([]);try{await supaUpsert("companies",{id:"shared",data:"[]"});}catch(e){}setConfirmClear(false);}} style={{fontSize:12,padding:"4px 10px",color:T.textDanger}}>Yes</button><span onClick={function(){setConfirmClear(false);}} style={LNK}>Cancel</span></div>):<button onClick={function(){setConfirmClear(true);}} style={{fontSize:12,padding:"6px 10px",color:T.textDanger}}>Clear all</button>}
           <button onClick={exportCSV} style={{fontSize:12,padding:"6px 10px"}}>⬇ CSV</button>
-          <button onClick={function(){cp(JSON.stringify(companies,null,2),"backup");}} style={{fontSize:12,padding:"6px 10px"}}>{copied==="backup"?"✓ Copied!":"Copy backup"}</button>
-          <button onClick={function(){setShowRestore(function(s){return !s;});}} style={{fontSize:12,padding:"6px 10px"}}>Restore</button>
           <button onClick={findDupes} style={{fontSize:12,padding:"6px 10px"}}>Dedupe</button>
           <button onClick={function(){setShowBulk(function(s){return !s;});setShowNew(false);setShowPriceImport(false);}} style={{fontSize:12,padding:"6px 10px"}}>Bulk import</button>
           <button onClick={function(){setShowNew(function(s){return !s;});setShowBulk(false);setShowPriceImport(false);}} style={{fontSize:12,padding:"6px 10px"}}>+ New</button>
