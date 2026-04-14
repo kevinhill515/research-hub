@@ -4,7 +4,7 @@ export async function supaGet(table,key,val){var col=table==="meta"?"value":"dat
 
 export async function supaUpsert(table,obj){return fetch(SUPA_URL+"/rest/v1/"+table,{method:"POST",headers:{"apikey":"sb_publishable_7kqbGZlL_im9kIpgFXLA-A_9CdqsyiT","Authorization":"Bearer sb_publishable_7kqbGZlL_im9kIpgFXLA-A_9CdqsyiT","Content-Type":"application/json","Prefer":"resolution=merge-duplicates"},body:JSON.stringify(obj)});}
 
-export var ANTHROPIC_KEY="";
+export var ANTHROPIC_KEY=import.meta.env.VITE_ANTHROPIC_KEY||"";
 
 export async function apiCall(system,content,maxTokens){
   var mt=maxTokens||1200;var blocks=typeof content==="string"?[{type:"text",text:content}]:content;
