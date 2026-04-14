@@ -1,6 +1,62 @@
 import { useState, useRef, useEffect } from "react";
 import { FLAG_STYLES } from '../../constants/index.js';
 
-function FlagCell({value,onUpdate,T}){   var [open,setOpen]=useState(false);var ref=useRef();   useEffect(function(){if(!open)return;function h(e){if(ref.current&&!ref.current.contains(e.target))setOpen(false);}document.addEventListener("mousedown",h);return function(){document.removeEventListener("mousedown",h);};},[open]);   var fs=value?FLAG_STYLES[value]:null;   return(<div style={{position:"relative"}} ref={ref} onClick={function(e){e.stopPropagation();}}><div onClick={function(){setOpen(function(o){return !o;});}} style={{cursor:"pointer",minWidth:20}}>{fs?<span style={{fontSize:11,padding:"2px 6px",borderRadius:99,background:fs.bg,color:fs.color,whiteSpace:"nowrap"}}>{fs.icon} {value}</span>:<span style={{fontSize:12,color:T.border}}>—</span>}</div>{open&&(<div style={{position:"absolute",top:"calc(100% + 2px)",left:0,zIndex:200,background:"#fff",border:"1px solid #e2e8f0",borderRadius:6,padding:4,boxShadow:"0 4px 12px rgba(0,0,0,0.15)",minWidth:150}}><div onClick={function(){onUpdate("");setOpen(false);}} style={{fontSize:12,padding:"5px 10px",cursor:"pointer",borderRadius:4,color:"#6b7280"}} onMouseEnter={function(e){e.currentTarget.style.background="#f1f5f9";}} onMouseLeave={function(e){e.currentTarget.style.background="";}}>— Clear flag</div>{Object.keys(FLAG_STYLES).map(function(f){var fs2=FLAG_STYLES[f];return(<div key={f} onClick={function(){onUpdate(f);setOpen(false);}} style={{fontSize:12,padding:"5px 10px",cursor:"pointer",borderRadius:4,color:fs2.color,fontWeight:500}} onMouseEnter={function(e){e.currentTarget.style.background="#f1f5f9";}} onMouseLeave={function(e){e.currentTarget.style.background="";}}>{fs2.icon} {f}</div>);})}</div>)}</div>); }
+function FlagCell({ value, onUpdate }) {
+  var [open, setOpen] = useState(false);
+  var ref = useRef();
+
+  useEffect(function () {
+    if (!open) return;
+    function h(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener("mousedown", h);
+    return function () { document.removeEventListener("mousedown", h); };
+  }, [open]);
+
+  var fs = value ? FLAG_STYLES[value] : null;
+
+  return (
+    <div className="relative" ref={ref} onClick={function (e) { e.stopPropagation(); }}>
+      <div
+        onClick={function () { setOpen(function (o) { return !o; }); }}
+        className="cursor-pointer min-w-[20px]"
+      >
+        {fs ? (
+          <span
+            className="text-xs px-2 py-0.5 rounded-full whitespace-nowrap"
+            style={{ background: fs.bg, color: fs.color }}
+          >
+            {fs.icon} {value}
+          </span>
+        ) : (
+          <span className="text-xs text-slate-300 dark:text-slate-600">{"\u2014"}</span>
+        )}
+      </div>
+
+      {open && (
+        <div className="absolute top-[calc(100%+2px)] left-0 z-[200] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md p-1 shadow-lg min-w-[150px]">
+          <div
+            onClick={function () { onUpdate(""); setOpen(false); }}
+            className="text-xs px-3 py-1.5 cursor-pointer rounded text-gray-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          >
+            {"\u2014"} Clear flag
+          </div>
+          {Object.keys(FLAG_STYLES).map(function (f) {
+            var fs2 = FLAG_STYLES[f];
+            return (
+              <div
+                key={f}
+                onClick={function () { onUpdate(f); setOpen(false); }}
+                className="text-xs px-3 py-1.5 cursor-pointer rounded font-medium hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                style={{ color: fs2.color }}
+              >
+                {fs2.icon} {f}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default FlagCell;

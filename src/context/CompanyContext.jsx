@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect } from "react";
 import { supaGet, supaUpsert } from '../api/index.js';
-import { todayStr, mkTheme } from '../utils/index.js';
+import { todayStr } from '../utils/index.js';
 
 const CompanyContext=createContext(null);
 
@@ -11,8 +11,6 @@ export function CompanyProvider({children}){
   const [showUserPicker,setShowUserPicker]=useState(false);
   useEffect(function(){try{localStorage.setItem("rh_dark",dark?"1":"0");}catch(e){};},[dark]);
   useEffect(function(){try{if(currentUser)localStorage.setItem("rh_user",currentUser);}catch(e){};},[currentUser]);
-
-  const T=mkTheme(dark);
 
   const [companies,setCompanies]=useState([]);
   const [saved,setSaved]=useState([]);
@@ -74,8 +72,7 @@ export function CompanyProvider({children}){
     addComment,
     deleteComment,
     updateCo,
-    cp,
-    T
+    cp
   };
 
   return <CompanyContext.Provider value={value}>{children}</CompanyContext.Provider>;

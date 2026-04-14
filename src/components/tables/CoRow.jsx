@@ -9,56 +9,349 @@ import DatePicker from '../forms/DatePicker.jsx';
 import PortPicker from '../ui/PortPicker.jsx';
 import PillEl from '../ui/PillEl.jsx';
 
-function CoRow({company,onSelect,onDelete,onUpdate,compact,visibleCols,selected,onToggleSelect,onQuickUpload,T}){
-  var [editName,setEditName]=useState(false);var [nameVal,setNameVal]=useState(company.name);
-  var [editTicker,setEditTicker]=useState(false);var [tickerVal,setTickerVal]=useState(company.ticker);
-  var [editCountry,setEditCountry]=useState(false);var [editSector,setEditSector]=useState(false);
-  var [hovered,setHovered]=useState(false);var [showMenu,setShowMenu]=useState(false);var menuRef=useRef();
-  useEffect(function(){if(!showMenu)return;function h(e){if(menuRef.current&&!menuRef.current.contains(e.target))setShowMenu(false);}document.addEventListener("mousedown",h);return function(){document.removeEventListener("mousedown",h);};},[showMenu]);
-  var missing=[];if(!company.country)missing.push("country");if(!company.sector)missing.push("sector");if(!company.tier)missing.push("tier");
-  var tiers=getTiers(company.tier);
-  var rowBg=selected?"#1e3a5f":T.dark?(hovered?T.bgTer:T.bgSec):(hovered?"#f8fafc":tierBg(company.tier));
-  var rinp={fontSize:11,padding:"2px 4px",borderRadius:4,border:"1px solid "+T.borderSec,background:T.bg,color:T.text};
-  var py=compact?2:5;
-  var td={display:"table-cell",verticalAlign:"middle",paddingRight:compact?6:10,paddingTop:py,paddingBottom:py,whiteSpace:"nowrap",background:rowBg,cursor:"pointer",transition:"background 0.1s",fontSize:compact?11:14};
-  var portfolios=company.portfolios||[];var portNote=(company.portNote||"").split(/[,\s]+/).filter(Boolean);
-  var cs=company.country?countryStyle(company.country):null;var ss=company.sector?sectorStyle(company.sector):null;
-  var availPortNote=PORTFOLIOS.filter(function(p){return portfolios.indexOf(p)<0;});
-  var show=function(col){return visibleCols.has(col);};
-  var hasTemplate=Object.keys(company.sections||{}).length>0;
-  var rColor=reviewedColor(company.lastReviewed,T);var rBold=daysSince(company.lastReviewed)>60;
-  var sCfg={"Own":{bg:"#dcfce7",color:"#166534"},"Focus":{bg:"#dbeafe",color:"#1e40af"},"Watch":{bg:"#fef9c3",color:"#854d0e"},"Sold":{bg:"#fee2e2",color:"#991b1b"}}[company.status]||{bg:T.bgTer,color:T.textSec};
-  var val=company.valuation||{};var normEPS=calcNormEPS(val)||parseFloat(val.eps);var tp=calcTP(val.pe,normEPS);var mos=calcMOS(tp,val.price);var mosStyle=mosBg(mos);
-  return(<div onClick={function(){onSelect(company);}} onMouseEnter={function(){setHovered(true);}} onMouseLeave={function(){setHovered(false);}} style={{display:"table-row"}}>
-    <div style={{...td,paddingRight:6,cursor:"default"}} onClick={function(e){e.stopPropagation();onToggleSelect(company.id);}}><input type="checkbox" checked={selected} onChange={function(){}} style={{cursor:"pointer"}}/></div>
-    {show("Tier(s)")&&<div style={{...td,whiteSpace:"normal"}}><PortPicker active={tiers} onChange={function(v){onUpdate(company.id,{tier:v.join(", ")});}} plusColor="#334155" opts={TIER_ORDER} pillStyleFn={tierPillStyle}/></div>}
-    {show("Name")&&<div style={td}><div style={{display:"flex",alignItems:"center",gap:4}}>
-      <span onClick={function(e){e.stopPropagation();onSelect(company);}} title="Open" style={{fontSize:11,color:T.textInfo,cursor:"pointer",padding:"1px 5px",borderRadius:3,border:"1px solid "+T.borderSec,background:T.bgSec,flexShrink:0}}>↗</span>
-      {editName?<input value={nameVal} autoFocus onChange={function(e){setNameVal(e.target.value);}} onBlur={function(){if(nameVal.trim())onUpdate(company.id,{name:nameVal.trim()});setEditName(false);}} onKeyDown={function(e){if(e.key==="Enter"){if(nameVal.trim())onUpdate(company.id,{name:nameVal.trim()});setEditName(false);}if(e.key==="Escape")setEditName(false);}} onClick={function(e){e.stopPropagation();}} style={{...rinp,fontSize:compact?12:13,fontWeight:500,minWidth:100}}/>:<span onClick={function(e){e.stopPropagation();setEditName(true);setNameVal(company.name);}} title="Click to rename" style={{fontSize:compact?12:13,fontWeight:500,color:T.text,borderBottom:"1px dashed "+T.borderSec,cursor:"text"}}>{company.name}</span>}
-      {hasTemplate&&<span title="Template loaded" style={{fontSize:8,color:T.textSuccess,flexShrink:0}}>●</span>}
-      {mosStyle&&<span title="Margin of Safety" style={{fontSize:10,padding:"1px 6px",borderRadius:99,background:mosStyle.bg,color:mosStyle.color,fontWeight:700,flexShrink:0,whiteSpace:"nowrap"}}>MOS {fmtMOS(mos)}</span>}
-      {hovered&&<div style={{position:"relative",display:"inline-block"}} onClick={function(e){e.stopPropagation();}} ref={menuRef}>
-        <span onClick={function(){setShowMenu(function(s){return !s;});}} style={{fontSize:10,color:T.textSec,cursor:"pointer",padding:"1px 4px",borderRadius:3,border:"1px solid "+T.border,marginLeft:2}}>⋯</span>
-        {showMenu&&<div style={{position:"absolute",top:"calc(100% + 2px)",left:0,zIndex:200,background:T.bg,border:"1px solid "+T.border,borderRadius:6,padding:4,boxShadow:"0 4px 12px rgba(0,0,0,0.15)",minWidth:160}}>
-          <div onClick={function(){setShowMenu(false);onQuickUpload(company);}} style={{fontSize:12,padding:"5px 10px",cursor:"pointer",borderRadius:4,color:T.text}} onMouseEnter={function(e){e.currentTarget.style.background=T.bgSec;}} onMouseLeave={function(e){e.currentTarget.style.background="transparent";}}>↑ Upload research</div>
-          <div onClick={function(){var today=todayStr();onUpdate(company.id,{lastReviewed:today});setShowMenu(false);}} style={{fontSize:12,padding:"5px 10px",cursor:"pointer",borderRadius:4,color:T.textSuccess}} onMouseEnter={function(e){e.currentTarget.style.background=T.bgSec;}} onMouseLeave={function(e){e.currentTarget.style.background="transparent";}}>✓ Mark reviewed today</div>
-        </div>}
-      </div>}
-    </div></div>}
-    {show("Ticker")&&<div style={td}>{editTicker?<input value={tickerVal} autoFocus onChange={function(e){setTickerVal(e.target.value.toUpperCase());}} onBlur={function(){if(tickerVal.trim())onUpdate(company.id,{ticker:tickerVal.trim()});setEditTicker(false);}} onKeyDown={function(e){if(e.key==="Enter"){if(tickerVal.trim())onUpdate(company.id,{ticker:tickerVal.trim()});setEditTicker(false);}if(e.key==="Escape")setEditTicker(false);}} onClick={function(e){e.stopPropagation();}} style={{...rinp,width:60}}/>:<span onClick={function(e){e.stopPropagation();setEditTicker(true);setTickerVal(company.ticker);}} style={{fontSize:11,padding:"1px 5px",borderRadius:99,border:"1px solid "+T.border,background:T.bgSec,color:T.textSec,cursor:"text"}}>{company.ticker}</span>}</div>}
-    {show("Country")&&<div style={td} onClick={function(e){e.stopPropagation();setEditCountry(true);}}>{editCountry?<select autoFocus value={company.country||""} onChange={function(e){onUpdate(company.id,{country:e.target.value});setEditCountry(false);}} onBlur={function(){setEditCountry(false);}} onClick={function(e){e.stopPropagation();}} style={{...rinp,fontSize:11}}><option value="">--</option>{COUNTRY_ORDER.map(function(c){return <option key={c}>{c}</option>;})}</select>:(cs?<span style={{fontSize:11,padding:"2px 7px",borderRadius:99,background:cs.bg,color:cs.color,fontWeight:500}}>{company.country}</span>:<span style={{fontSize:11,color:T.textDanger}}>--</span>)}</div>}
-    {show("Sector")&&<div style={td} onClick={function(e){e.stopPropagation();setEditSector(true);}}>{editSector?<select autoFocus value={company.sector||""} onChange={function(e){onUpdate(company.id,{sector:e.target.value});setEditSector(false);}} onBlur={function(){setEditSector(false);}} onClick={function(e){e.stopPropagation();}} style={{...rinp,fontSize:11}}><option value="">--</option>{SECTOR_ORDER.map(function(s){return <option key={s}>{s}</option>;})}</select>:(ss?<span style={{fontSize:11,padding:"2px 7px",borderRadius:99,background:ss.bg,color:ss.color,fontWeight:500}}>{shortSector(company.sector)}</span>:<span style={{fontSize:11,color:T.textDanger}}>--</span>)}</div>}
-    {show("Portfolio")&&<div style={{...td,whiteSpace:"nowrap"}}><div style={{display:"flex",gap:3,alignItems:"center",flexWrap:"nowrap"}}><PortPicker active={portfolios} onChange={function(v){onUpdate(company.id,{portfolios:v});}} pillBg="#166534" pillColor="#fff" plusColor="#4ade80"/><PortPicker active={portNote} onChange={function(v){onUpdate(company.id,{portNote:v.join(", ")});}} plusColor={T.dark?"#93c5fd":"#1a3a6b"} opts={availPortNote} dashedPills pillStyleFn={function(){return{bg:"transparent",color:T.dark?"#93c5fd":"#1a3a6b"};}}/></div></div>}
-    {show("Action")&&<div style={td} onClick={function(e){e.stopPropagation();}}><ActionCell value={company.action||""} onUpdate={function(v){onUpdate(company.id,{action:v});}} T={T}/></div>}
-    {show("Notes")&&<div style={{...td,maxWidth:170}}><NotesCell company={company} onUpdate={onUpdate} T={T}/></div>}
-    {show("Reviewed")&&<div style={td} onClick={function(e){e.stopPropagation();}}><DatePicker value={company.lastReviewed||""} onChange={function(v){onUpdate(company.id,{lastReviewed:v});}} T={T}/></div>}
-    {show("Updated")&&<div style={td}><span style={{fontSize:10,color:company.lastUpdated?T.textSuccess:T.border}}>{company.lastUpdated||"--"}</span></div>}
-    {show("Status")&&<div style={td} onClick={function(e){e.stopPropagation();}}>
-      {missing.length>0&&<span title={"Missing: "+missing.join(", ")} style={{fontSize:10,marginRight:4,color:T.textWarn}}>⚠</span>}
-      <select value={company.status||""} onChange={function(e){onUpdate(company.id,{status:e.target.value});}} style={{fontSize:11,padding:"2px 5px",borderRadius:99,border:"none",background:sCfg.bg,color:sCfg.color,cursor:"pointer",fontWeight:500,appearance:"none",WebkitAppearance:"none"}}><option value="">--</option><option>Own</option><option>Focus</option><option>Watch</option><option>Sold</option></select>
-    </div>}
-    {show("Flag")&&<div style={{...td}} onClick={function(e){e.stopPropagation();}}><FlagCell value={company.flag||""} onUpdate={function(v){onUpdate(company.id,{flag:v});}} T={T}/></div>} {show("Del")&&<div style={{...td,paddingRight:0}}><span onClick={function(e){e.stopPropagation();onDelete(company.id);}} style={{fontSize:11,color:T.textDanger,cursor:"pointer"}}>Del</span></div>}
-  </div>);
+function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, selected, onToggleSelect, onQuickUpload }) {
+  var [editName, setEditName] = useState(false);
+  var [nameVal, setNameVal] = useState(company.name);
+  var [editTicker, setEditTicker] = useState(false);
+  var [tickerVal, setTickerVal] = useState(company.ticker);
+  var [editCountry, setEditCountry] = useState(false);
+  var [editSector, setEditSector] = useState(false);
+  var [hovered, setHovered] = useState(false);
+  var [showMenu, setShowMenu] = useState(false);
+  var menuRef = useRef();
+
+  useEffect(function () {
+    if (!showMenu) return;
+    function h(e) { if (menuRef.current && !menuRef.current.contains(e.target)) setShowMenu(false); }
+    document.addEventListener("mousedown", h);
+    return function () { document.removeEventListener("mousedown", h); };
+  }, [showMenu]);
+
+  var missing = [];
+  if (!company.country) missing.push("country");
+  if (!company.sector) missing.push("sector");
+  if (!company.tier) missing.push("tier");
+
+  var tiers = getTiers(company.tier);
+
+  /* Data-driven row background kept as inline style */
+  var rowBg = selected
+    ? "#1e3a5f"
+    : hovered
+      ? undefined   /* handled via className */
+      : tierBg(company.tier);
+
+  var portfolios = company.portfolios || [];
+  var portNote = (company.portNote || "").split(/[,\s]+/).filter(Boolean);
+  var cs = company.country ? countryStyle(company.country) : null;
+  var ss = company.sector ? sectorStyle(company.sector) : null;
+  var availPortNote = PORTFOLIOS.filter(function (p) { return portfolios.indexOf(p) < 0; });
+  var show = function (col) { return visibleCols.has(col); };
+  var hasTemplate = Object.keys(company.sections || {}).length > 0;
+  var rColor = reviewedColor(company.lastReviewed);
+  var rBold = daysSince(company.lastReviewed) > 60;
+
+  var sCfg = {
+    "Own":   { bg: "#dcfce7", color: "#166534" },
+    "Focus": { bg: "#dbeafe", color: "#1e40af" },
+    "Watch": { bg: "#fef9c3", color: "#854d0e" },
+    "Sold":  { bg: "#fee2e2", color: "#991b1b" }
+  }[company.status] || { bg: undefined, color: undefined };
+
+  var val = company.valuation || {};
+  var normEPS = calcNormEPS(val) || parseFloat(val.eps);
+  var tp = calcTP(val.pe, normEPS);
+  var mos = calcMOS(tp, val.price);
+  var mosStyle = mosBg(mos);
+
+  var tdBase = compact
+    ? "table-cell align-middle pr-1.5 py-0.5 whitespace-nowrap cursor-pointer transition-colors text-xs"
+    : "table-cell align-middle pr-2.5 py-1.5 whitespace-nowrap cursor-pointer transition-colors text-sm";
+
+  var inputCls = "text-xs px-1 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 outline-none";
+
+  return (
+    <div
+      onClick={function () { onSelect(company); }}
+      onMouseEnter={function () { setHovered(true); }}
+      onMouseLeave={function () { setHovered(false); }}
+      className="table-row group"
+      style={rowBg ? { background: rowBg } : undefined}
+    >
+      {/* Checkbox */}
+      <div
+        className={tdBase + " !pr-1.5 !cursor-default"}
+        style={rowBg ? { background: rowBg } : undefined}
+        onClick={function (e) { e.stopPropagation(); onToggleSelect(company.id); }}
+      >
+        <input type="checkbox" checked={selected} onChange={function () {}} className="cursor-pointer accent-blue-600" />
+      </div>
+
+      {/* Tier(s) */}
+      {show("Tier(s)") && (
+        <div className={tdBase + " !whitespace-normal"} style={rowBg ? { background: rowBg } : undefined}>
+          <PortPicker active={tiers} onChange={function (v) { onUpdate(company.id, { tier: v.join(", ") }); }} plusColor="#334155" opts={TIER_ORDER} pillStyleFn={tierPillStyle} />
+        </div>
+      )}
+
+      {/* Name */}
+      {show("Name") && (
+        <div className={tdBase} style={rowBg ? { background: rowBg } : undefined}>
+          <div className="flex items-center gap-1">
+            <span
+              onClick={function (e) { e.stopPropagation(); onSelect(company); }}
+              title="Open"
+              className="text-xs text-blue-600 dark:text-blue-400 cursor-pointer px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 shrink-0 transition-colors hover:bg-slate-100 dark:hover:bg-slate-700"
+            >
+              &#x2197;
+            </span>
+
+            {editName ? (
+              <input
+                value={nameVal}
+                autoFocus
+                onChange={function (e) { setNameVal(e.target.value); }}
+                onBlur={function () { if (nameVal.trim()) onUpdate(company.id, { name: nameVal.trim() }); setEditName(false); }}
+                onKeyDown={function (e) {
+                  if (e.key === "Enter") { if (nameVal.trim()) onUpdate(company.id, { name: nameVal.trim() }); setEditName(false); }
+                  if (e.key === "Escape") setEditName(false);
+                }}
+                onClick={function (e) { e.stopPropagation(); }}
+                className={inputCls + " font-medium min-w-[100px]" + (compact ? " text-xs" : " text-sm")}
+              />
+            ) : (
+              <span
+                onClick={function (e) { e.stopPropagation(); setEditName(true); setNameVal(company.name); }}
+                title="Click to rename"
+                className={"font-medium text-gray-900 dark:text-slate-100 border-b border-dashed border-slate-300 dark:border-slate-600 cursor-text" + (compact ? " text-xs" : " text-sm")}
+              >
+                {company.name}
+              </span>
+            )}
+
+            {hasTemplate && (
+              <span title="Template loaded" className="text-[8px] text-emerald-500 dark:text-emerald-400 shrink-0">&#x25CF;</span>
+            )}
+
+            {mosStyle && (
+              <span
+                title="Margin of Safety"
+                className="text-[10px] px-1.5 rounded-full font-bold shrink-0 whitespace-nowrap"
+                style={{ background: mosStyle.bg, color: mosStyle.color }}
+              >
+                MOS {fmtMOS(mos)}
+              </span>
+            )}
+
+            {hovered && (
+              <div className="relative inline-block" onClick={function (e) { e.stopPropagation(); }} ref={menuRef}>
+                <span
+                  onClick={function () { setShowMenu(function (s) { return !s; }); }}
+                  className="text-[10px] text-gray-500 dark:text-slate-400 cursor-pointer px-1 py-0.5 rounded border border-slate-200 dark:border-slate-700 ml-0.5 transition-colors hover:bg-slate-100 dark:hover:bg-slate-700"
+                >
+                  &#x22EF;
+                </span>
+                {showMenu && (
+                  <div className="absolute top-full left-0 mt-0.5 z-[200] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md p-1 shadow-lg min-w-[160px]">
+                    <div
+                      onClick={function () { setShowMenu(false); onQuickUpload(company); }}
+                      className="text-xs px-2.5 py-1.5 cursor-pointer rounded text-gray-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                    >
+                      &#x2191; Upload research
+                    </div>
+                    <div
+                      onClick={function () { var today = todayStr(); onUpdate(company.id, { lastReviewed: today }); setShowMenu(false); }}
+                      className="text-xs px-2.5 py-1.5 cursor-pointer rounded text-emerald-600 dark:text-emerald-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                    >
+                      &#x2713; Mark reviewed today
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Ticker */}
+      {show("Ticker") && (
+        <div className={tdBase} style={rowBg ? { background: rowBg } : undefined}>
+          {editTicker ? (
+            <input
+              value={tickerVal}
+              autoFocus
+              onChange={function (e) { setTickerVal(e.target.value.toUpperCase()); }}
+              onBlur={function () { if (tickerVal.trim()) onUpdate(company.id, { ticker: tickerVal.trim() }); setEditTicker(false); }}
+              onKeyDown={function (e) {
+                if (e.key === "Enter") { if (tickerVal.trim()) onUpdate(company.id, { ticker: tickerVal.trim() }); setEditTicker(false); }
+                if (e.key === "Escape") setEditTicker(false);
+              }}
+              onClick={function (e) { e.stopPropagation(); }}
+              className={inputCls + " w-[60px]"}
+            />
+          ) : (
+            <span
+              onClick={function (e) { e.stopPropagation(); setEditTicker(true); setTickerVal(company.ticker); }}
+              className="text-xs px-1.5 py-0.5 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-gray-500 dark:text-slate-400 cursor-text"
+            >
+              {company.ticker}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Country */}
+      {show("Country") && (
+        <div
+          className={tdBase}
+          style={rowBg ? { background: rowBg } : undefined}
+          onClick={function (e) { e.stopPropagation(); setEditCountry(true); }}
+        >
+          {editCountry ? (
+            <select
+              autoFocus
+              value={company.country || ""}
+              onChange={function (e) { onUpdate(company.id, { country: e.target.value }); setEditCountry(false); }}
+              onBlur={function () { setEditCountry(false); }}
+              onClick={function (e) { e.stopPropagation(); }}
+              className={inputCls + " text-xs"}
+            >
+              <option value="">--</option>
+              {COUNTRY_ORDER.map(function (c) { return <option key={c}>{c}</option>; })}
+            </select>
+          ) : cs ? (
+            <span
+              className="text-xs px-2 py-0.5 rounded-full font-medium"
+              style={{ background: cs.bg, color: cs.color }}
+            >
+              {company.country}
+            </span>
+          ) : (
+            <span className="text-xs text-red-500 dark:text-red-400">--</span>
+          )}
+        </div>
+      )}
+
+      {/* Sector */}
+      {show("Sector") && (
+        <div
+          className={tdBase}
+          style={rowBg ? { background: rowBg } : undefined}
+          onClick={function (e) { e.stopPropagation(); setEditSector(true); }}
+        >
+          {editSector ? (
+            <select
+              autoFocus
+              value={company.sector || ""}
+              onChange={function (e) { onUpdate(company.id, { sector: e.target.value }); setEditSector(false); }}
+              onBlur={function () { setEditSector(false); }}
+              onClick={function (e) { e.stopPropagation(); }}
+              className={inputCls + " text-xs"}
+            >
+              <option value="">--</option>
+              {SECTOR_ORDER.map(function (s) { return <option key={s}>{s}</option>; })}
+            </select>
+          ) : ss ? (
+            <span
+              className="text-xs px-2 py-0.5 rounded-full font-medium"
+              style={{ background: ss.bg, color: ss.color }}
+            >
+              {shortSector(company.sector)}
+            </span>
+          ) : (
+            <span className="text-xs text-red-500 dark:text-red-400">--</span>
+          )}
+        </div>
+      )}
+
+      {/* Portfolio */}
+      {show("Portfolio") && (
+        <div className={tdBase + " !whitespace-nowrap"} style={rowBg ? { background: rowBg } : undefined}>
+          <div className="flex gap-1 items-center flex-nowrap">
+            <PortPicker active={portfolios} onChange={function (v) { onUpdate(company.id, { portfolios: v }); }} pillBg="#166534" pillColor="#fff" plusColor="#4ade80" />
+            <PortPicker
+              active={portNote}
+              onChange={function (v) { onUpdate(company.id, { portNote: v.join(", ") }); }}
+              plusColor="#1a3a6b"
+              opts={availPortNote}
+              dashedPills
+              pillStyleFn={function () { return { bg: "transparent", color: "#1a3a6b" }; }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Action */}
+      {show("Action") && (
+        <div className={tdBase} style={rowBg ? { background: rowBg } : undefined} onClick={function (e) { e.stopPropagation(); }}>
+          <ActionCell value={company.action || ""} onUpdate={function (v) { onUpdate(company.id, { action: v }); }} />
+        </div>
+      )}
+
+      {/* Notes */}
+      {show("Notes") && (
+        <div className={tdBase + " max-w-[170px]"} style={rowBg ? { background: rowBg } : undefined}>
+          <NotesCell company={company} onUpdate={onUpdate} />
+        </div>
+      )}
+
+      {/* Reviewed */}
+      {show("Reviewed") && (
+        <div className={tdBase} style={rowBg ? { background: rowBg } : undefined} onClick={function (e) { e.stopPropagation(); }}>
+          <DatePicker value={company.lastReviewed || ""} onChange={function (v) { onUpdate(company.id, { lastReviewed: v }); }} />
+        </div>
+      )}
+
+      {/* Updated */}
+      {show("Updated") && (
+        <div className={tdBase} style={rowBg ? { background: rowBg } : undefined}>
+          <span className={"text-[10px] " + (company.lastUpdated ? "text-emerald-600 dark:text-emerald-400" : "text-slate-300 dark:text-slate-600")}>
+            {company.lastUpdated || "--"}
+          </span>
+        </div>
+      )}
+
+      {/* Status */}
+      {show("Status") && (
+        <div className={tdBase} style={rowBg ? { background: rowBg } : undefined} onClick={function (e) { e.stopPropagation(); }}>
+          {missing.length > 0 && (
+            <span title={"Missing: " + missing.join(", ")} className="text-[10px] mr-1 text-amber-500 dark:text-amber-400">&#x26A0;</span>
+          )}
+          <select
+            value={company.status || ""}
+            onChange={function (e) { onUpdate(company.id, { status: e.target.value }); }}
+            className="text-xs px-1.5 py-0.5 rounded-full border-none cursor-pointer font-medium appearance-none"
+            style={{ background: sCfg.bg, color: sCfg.color }}
+          >
+            <option value="">--</option>
+            <option>Own</option>
+            <option>Focus</option>
+            <option>Watch</option>
+            <option>Sold</option>
+          </select>
+        </div>
+      )}
+
+      {/* Flag */}
+      {show("Flag") && (
+        <div className={tdBase} style={rowBg ? { background: rowBg } : undefined} onClick={function (e) { e.stopPropagation(); }}>
+          <FlagCell value={company.flag || ""} onUpdate={function (v) { onUpdate(company.id, { flag: v }); }} />
+        </div>
+      )}
+
+      {/* Delete */}
+      {show("Del") && (
+        <div className={tdBase + " !pr-0"} style={rowBg ? { background: rowBg } : undefined}>
+          <span
+            onClick={function (e) { e.stopPropagation(); onDelete(company.id); }}
+            className="text-xs text-red-500 dark:text-red-400 cursor-pointer hover:text-red-700 dark:hover:text-red-300 transition-colors"
+          >
+            Del
+          </span>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default CoRow;

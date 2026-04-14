@@ -1,12 +1,62 @@
 import { useState, useRef, useEffect } from "react";
 import { toHTML } from '../../utils/index.js';
 
-function SectionBlock({title,content,highlight,flashKey,T}){
-  var [open,setOpen]=useState(true);var [flash,setFlash]=useState(false);var prevKey=useRef(null);
-  useEffect(function(){if(flashKey&&flashKey!==prevKey.current){prevKey.current=flashKey;setFlash(true);setTimeout(function(){setFlash(false);},2000);}},[flashKey]);
-  var html=toHTML(content||"--");
-  if(highlight){var esc=highlight.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");html=html.replace(new RegExp("("+esc+")","gi"),"<mark style='background:#fef08a;color:#111'>$1</mark>");}
-  return(<div style={{marginBottom:8,border:"1px solid "+(flash?"#f59e0b":T.border),borderRadius:6,overflow:"hidden",transition:"border-color 0.5s"}}><div onClick={function(){setOpen(function(o){return !o;});}} style={{padding:"7px 12px",background:flash?"#fef9c3":T.bgSec,cursor:"pointer",display:"flex",justifyContent:"space-between",transition:"background 0.5s"}}><span style={{fontSize:13,fontWeight:500,color:T.text}}>{title}</span><span style={{fontSize:12,color:T.textSec}}>{open?"▲":"▼"}</span></div>{open&&<div style={{padding:"10px 12px",fontSize:13,lineHeight:1.8,color:T.text,whiteSpace:"pre-wrap",background:T.bg}} dangerouslySetInnerHTML={{__html:html}}/>}</div>);
+function SectionBlock({ title, content, highlight, flashKey }) {
+  var [open, setOpen] = useState(true);
+  var [flash, setFlash] = useState(false);
+  var prevKey = useRef(null);
+
+  useEffect(function () {
+    if (flashKey && flashKey !== prevKey.current) {
+      prevKey.current = flashKey;
+      setFlash(true);
+      setTimeout(function () { setFlash(false); }, 2000);
+    }
+  }, [flashKey]);
+
+  var html = toHTML(content || "--");
+  if (highlight) {
+    var esc = highlight.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    html = html.replace(
+      new RegExp("(" + esc + ")", "gi"),
+      "<mark class='bg-yellow-200 dark:bg-yellow-900 text-gray-900 dark:text-slate-100'>$1</mark>"
+    );
+  }
+
+  return (
+    <div
+      className={
+        "mb-2 rounded-md overflow-hidden transition-colors duration-500 border " +
+        (flash
+          ? "border-amber-400 dark:border-amber-500"
+          : "border-slate-200 dark:border-slate-700")
+      }
+    >
+      <div
+        onClick={function () { setOpen(function (o) { return !o; }); }}
+        className={
+          "px-3 py-2 cursor-pointer flex justify-between items-center transition-colors duration-500 " +
+          (flash
+            ? "bg-yellow-100 dark:bg-yellow-900/40"
+            : "bg-slate-50 dark:bg-slate-800")
+        }
+      >
+        <span className="text-sm font-medium text-gray-900 dark:text-slate-100">
+          {title}
+        </span>
+        <span className="text-xs text-gray-500 dark:text-slate-400">
+          {open ? "\u25b2" : "\u25bc"}
+        </span>
+      </div>
+
+      {open && (
+        <div
+          className="px-3 py-2.5 text-sm leading-[1.8] text-gray-900 dark:text-slate-100 whitespace-pre-wrap bg-white dark:bg-slate-900"
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
+      )}
+    </div>
+  );
 }
 
 export default SectionBlock;

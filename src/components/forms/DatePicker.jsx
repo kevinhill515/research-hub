@@ -2,15 +2,162 @@ import { useState, useRef, useEffect } from "react";
 import { MONTHS } from '../../constants/index.js';
 import { parseDate, todayStr } from '../../utils/index.js';
 
-function DatePicker({value,onChange,T}){
-  var [open,setOpen]=useState(false);var [viewYear,setViewYear]=useState(function(){var d=value?new Date(value):new Date();return isNaN(d)?new Date().getFullYear():d.getFullYear();});var [viewMonth,setViewMonth]=useState(function(){var d=value?new Date(value):new Date();return isNaN(d)?new Date().getMonth():d.getMonth();});var ref=useRef();
-  useEffect(function(){if(!open)return;function h(e){if(ref.current&&!ref.current.contains(e.target))setOpen(false);}document.addEventListener("mousedown",h);return function(){document.removeEventListener("mousedown",h);};},[open]);
-  var parsed=value?parseDate(value):null;
-  function daysInMonth(y,m){return new Date(y,m+1,0).getDate();}function firstDayOfMonth(y,m){return new Date(y,m,1).getDay();}
-  function selectDate(d){var s=viewYear+"-"+String(viewMonth+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");onChange(s);setOpen(false);}
-  var days=daysInMonth(viewYear,viewMonth);var firstDay=firstDayOfMonth(viewYear,viewMonth);var cells=[];for(var i=0;i<firstDay;i++)cells.push(null);for(var j=1;j<=days;j++)cells.push(j);
-  var selectedDay=parsed&&parsed.getFullYear()===viewYear&&parsed.getMonth()===viewMonth?parsed.getDate():null;
-  return(<div style={{position:"relative",display:"inline-block"}} ref={ref} onClick={function(e){e.stopPropagation();}}><span onClick={function(){setOpen(function(o){return !o;});if(!open&&value){var d=parseDate(value);if(d&&!isNaN(d)){setViewYear(d.getFullYear());setViewMonth(d.getMonth());}}}} style={{fontSize:10,color:value?"#166534":"#dc2626",fontWeight:value?600:400,cursor:"pointer",borderBottom:"1px dashed #94a3b8",whiteSpace:"nowrap"}}>{value||"--"}</span>{open&&(<div style={{position:"absolute",top:"calc(100% + 4px)",left:0,zIndex:400,background:"#fff",border:"1px solid #e2e8f0",borderRadius:8,boxShadow:"0 8px 24px rgba(0,0,0,0.15)",padding:12,minWidth:220}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}><span onClick={function(){if(viewMonth===0){setViewMonth(11);setViewYear(function(y){return y-1;});}else setViewMonth(function(m){return m-1;});}} style={{cursor:"pointer",padding:"2px 8px",borderRadius:4,fontSize:14,fontWeight:600,color:"#334155"}}>‹</span><div style={{display:"flex",gap:6,alignItems:"center"}}><select value={viewMonth} onChange={function(e){setViewMonth(parseInt(e.target.value));}} style={{fontSize:12,border:"1px solid #e2e8f0",borderRadius:4,padding:"2px 4px",color:"#111"}}>{MONTHS.map(function(m,i){return <option key={i} value={i}>{m}</option>;})}</select><input type="number" value={viewYear} onChange={function(e){var y=parseInt(e.target.value);if(!isNaN(y)&&y>1900&&y<2100)setViewYear(y);}} style={{fontSize:12,border:"1px solid #e2e8f0",borderRadius:4,padding:"2px 4px",width:58,color:"#111"}}/></div><span onClick={function(){if(viewMonth===11){setViewMonth(0);setViewYear(function(y){return y+1;});}else setViewMonth(function(m){return m+1;});}} style={{cursor:"pointer",padding:"2px 8px",borderRadius:4,fontSize:14,fontWeight:600,color:"#334155"}}>›</span></div><div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4}}>{["Su","Mo","Tu","We","Th","Fr","Sa"].map(function(d){return <div key={d} style={{fontSize:10,textAlign:"center",color:"#94a3b8",fontWeight:600,padding:"2px 0"}}>{d}</div>;})}</div><div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>{cells.map(function(d,i){return(<div key={i} onClick={d?function(){selectDate(d);}:undefined} style={{fontSize:12,textAlign:"center",padding:"4px 2px",borderRadius:4,cursor:d?"pointer":"default",background:d&&d===selectedDay?"#1e40af":"transparent",color:d&&d===selectedDay?"#fff":d?"#111":"transparent",fontWeight:d&&d===selectedDay?600:400}} onMouseEnter={function(e){if(d&&d!==selectedDay)e.currentTarget.style.background="#f1f5f9";}} onMouseLeave={function(e){if(d&&d!==selectedDay)e.currentTarget.style.background="transparent";}}>{d||""}</div>);})}</div><div style={{marginTop:8,display:"flex",justifyContent:"space-between"}}><span onClick={function(){onChange(todayStr());setOpen(false);}} style={{fontSize:11,color:"#1e40af",cursor:"pointer"}}>Today</span>{value&&<span onClick={function(){onChange("");setOpen(false);}} style={{fontSize:11,color:"#dc2626",cursor:"pointer"}}>Clear</span>}</div></div>)}</div>);
+function DatePicker({ value, onChange }) {
+  var [open, setOpen] = useState(false);
+  var [viewYear, setViewYear] = useState(function () {
+    var d = value ? new Date(value) : new Date();
+    return isNaN(d) ? new Date().getFullYear() : d.getFullYear();
+  });
+  var [viewMonth, setViewMonth] = useState(function () {
+    var d = value ? new Date(value) : new Date();
+    return isNaN(d) ? new Date().getMonth() : d.getMonth();
+  });
+  var ref = useRef();
+
+  useEffect(function () {
+    if (!open) return;
+    function h(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener("mousedown", h);
+    return function () { document.removeEventListener("mousedown", h); };
+  }, [open]);
+
+  var parsed = value ? parseDate(value) : null;
+
+  function daysInMonth(y, m) { return new Date(y, m + 1, 0).getDate(); }
+  function firstDayOfMonth(y, m) { return new Date(y, m, 1).getDay(); }
+
+  function selectDate(d) {
+    var s = viewYear + "-" + String(viewMonth + 1).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+    onChange(s);
+    setOpen(false);
+  }
+
+  var days = daysInMonth(viewYear, viewMonth);
+  var firstDay = firstDayOfMonth(viewYear, viewMonth);
+  var cells = [];
+  for (var i = 0; i < firstDay; i++) cells.push(null);
+  for (var j = 1; j <= days; j++) cells.push(j);
+
+  var selectedDay = parsed && parsed.getFullYear() === viewYear && parsed.getMonth() === viewMonth
+    ? parsed.getDate() : null;
+
+  return (
+    <div className="relative inline-block" ref={ref} onClick={function (e) { e.stopPropagation(); }}>
+      <span
+        onClick={function () {
+          setOpen(function (o) { return !o; });
+          if (!open && value) {
+            var d = parseDate(value);
+            if (d && !isNaN(d)) { setViewYear(d.getFullYear()); setViewMonth(d.getMonth()); }
+          }
+        }}
+        className={
+          "text-[10px] font-semibold cursor-pointer border-b border-dashed border-slate-400 dark:border-slate-500 whitespace-nowrap " +
+          (value ? "text-green-800 dark:text-green-400" : "text-red-600 dark:text-red-400 font-normal")
+        }
+      >
+        {value || "--"}
+      </span>
+
+      {open && (
+        <div className="absolute top-[calc(100%+4px)] left-0 z-[400] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl p-3 min-w-[220px]">
+          {/* Nav header */}
+          <div className="flex items-center justify-between mb-2">
+            <span
+              onClick={function () {
+                if (viewMonth === 0) { setViewMonth(11); setViewYear(function (y) { return y - 1; }); }
+                else setViewMonth(function (m) { return m - 1; });
+              }}
+              className="cursor-pointer px-2 py-0.5 rounded text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            >
+              {"\u2039"}
+            </span>
+
+            <div className="flex gap-1.5 items-center">
+              <select
+                value={viewMonth}
+                onChange={function (e) { setViewMonth(parseInt(e.target.value)); }}
+                className="text-xs border border-slate-200 dark:border-slate-700 rounded px-1 py-0.5 text-gray-900 dark:text-slate-100 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              >
+                {MONTHS.map(function (m, i) { return <option key={i} value={i}>{m}</option>; })}
+              </select>
+              <input
+                type="number"
+                value={viewYear}
+                onChange={function (e) {
+                  var y = parseInt(e.target.value);
+                  if (!isNaN(y) && y > 1900 && y < 2100) setViewYear(y);
+                }}
+                className="text-xs border border-slate-200 dark:border-slate-700 rounded px-1 py-0.5 w-[58px] text-gray-900 dark:text-slate-100 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              />
+            </div>
+
+            <span
+              onClick={function () {
+                if (viewMonth === 11) { setViewMonth(0); setViewYear(function (y) { return y + 1; }); }
+                else setViewMonth(function (m) { return m + 1; });
+              }}
+              className="cursor-pointer px-2 py-0.5 rounded text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            >
+              {"\u203a"}
+            </span>
+          </div>
+
+          {/* Day-of-week headers */}
+          <div className="grid grid-cols-7 gap-0.5 mb-1">
+            {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map(function (d) {
+              return (
+                <div key={d} className="text-[10px] text-center text-slate-400 dark:text-slate-500 font-semibold py-0.5">
+                  {d}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Day cells */}
+          <div className="grid grid-cols-7 gap-0.5">
+            {cells.map(function (d, i) {
+              var isSelected = d && d === selectedDay;
+              return (
+                <div
+                  key={i}
+                  onClick={d ? function () { selectDate(d); } : undefined}
+                  className={
+                    "text-xs text-center py-1 px-0.5 rounded transition-colors " +
+                    (isSelected
+                      ? "bg-blue-700 text-white font-semibold"
+                      : d
+                        ? "cursor-pointer text-gray-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800"
+                        : "text-transparent")
+                  }
+                >
+                  {d || ""}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Footer */}
+          <div className="mt-2 flex justify-between">
+            <span
+              onClick={function () { onChange(todayStr()); setOpen(false); }}
+              className="text-xs text-blue-700 dark:text-blue-400 cursor-pointer hover:underline"
+            >
+              Today
+            </span>
+            {value && (
+              <span
+                onClick={function () { onChange(""); setOpen(false); }}
+                className="text-xs text-red-600 dark:text-red-400 cursor-pointer hover:underline"
+              >
+                Clear
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default DatePicker;
