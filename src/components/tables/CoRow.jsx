@@ -14,8 +14,6 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
   var { dark } = useCompanyContext();
   var [editName, setEditName] = useState(false);
   var [nameVal, setNameVal] = useState(company.name);
-  var [editTicker, setEditTicker] = useState(false);
-  var [tickerVal, setTickerVal] = useState(company.ticker);
   var [editCountry, setEditCountry] = useState(false);
   var [editSector, setEditSector] = useState(false);
   var [hovered, setHovered] = useState(false);
@@ -175,30 +173,18 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
         </div>
       )}
 
-      {/* Ticker */}
-      {show("Ticker") && (
+      {/* 5D% */}
+      {show("5D%") && (
         <div className={tdBase} style={rowBg ? { background: rowBg } : undefined}>
-          {editTicker ? (
-            <input
-              value={tickerVal}
-              autoFocus
-              onChange={function (e) { setTickerVal(e.target.value.toUpperCase()); }}
-              onBlur={function () { if (tickerVal.trim()) onUpdate(company.id, { ticker: tickerVal.trim() }); setEditTicker(false); }}
-              onKeyDown={function (e) {
-                if (e.key === "Enter") { if (tickerVal.trim()) onUpdate(company.id, { ticker: tickerVal.trim() }); setEditTicker(false); }
-                if (e.key === "Escape") setEditTicker(false);
-              }}
-              onClick={function (e) { e.stopPropagation(); }}
-              className={inputCls + " w-[60px]"}
-            />
-          ) : (
-            <span
-              onClick={function (e) { e.stopPropagation(); setEditTicker(true); setTickerVal(company.ticker); }}
-              className="text-xs px-1.5 py-0.5 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-gray-500 dark:text-slate-400 cursor-text"
-            >
-              {company.ticker}
-            </span>
-          )}
+          {(function () {
+            var ord = (company.tickers || []).find(function (t) { return t.isOrdinary; });
+            var raw = ord && ord.perf5d;
+            if (!raw || raw === "#N/A") return <span className="text-xs text-gray-400 dark:text-slate-500">--</span>;
+            var n = parseFloat(raw);
+            if (isNaN(n)) return <span className="text-xs text-gray-400 dark:text-slate-500">--</span>;
+            var cls = n >= 0 ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400";
+            return <span className={"text-xs font-semibold " + cls}>{n >= 0 ? "+" : ""}{n.toFixed(1)}%</span>;
+          })()}
         </div>
       )}
 
