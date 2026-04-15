@@ -45,6 +45,8 @@ export function sortCos(list,by,dir){
     if(by==="Tier"){var ta=getTierIndex(a),tb=getTierIndex(b);if(ta===999&&tb!==999)return 1;if(tb===999&&ta!==999)return -1;p=(ta-tb)*m;if(p!==0)return p;if(isWF(a)&&isWF(b)){var cp=(a.country||"").localeCompare(b.country||"");if(cp!==0)return cp;}var sd=getStatusRank(a.status)-getStatusRank(b.status);if(sd!==0)return sd;return al(a,b);}
     if(by==="Last Reviewed"){var hA=!!a.lastReviewed,hB=!!b.lastReviewed;if(!hA&&!hB)return al(a,b);if(!hA)return 1;if(!hB)return -1;var da=parseDate(a.lastReviewed),db=parseDate(b.lastReviewed);if(!da)return 1;if(!db)return -1;p=(db.getTime()-da.getTime())*m;if(p!==0)return p;return al(a,b);}
     if(by==="MOS"){var ma=getCompanyMOS(a),mb=getCompanyMOS(b);if(ma===null&&mb===null)return al(a,b);if(ma===null)return 1;if(mb===null)return -1;p=(ma-mb)*m;if(p!==0)return p;return al(a,b);}
+    if(by==="5D%"){function getPerf(x){var ord=(x.tickers||[]).find(function(t){return t.isOrdinary;});if(!ord||!ord.perf5d||ord.perf5d==="#N/A")return null;var n=parseFloat(ord.perf5d);return isNaN(n)?null:n;}var pa=getPerf(a),pb=getPerf(b);if(pa===null&&pb===null)return al(a,b);if(pa===null)return 1;if(pb===null)return -1;p=(pa-pb)*m;if(p!==0)return p;return al(a,b);}
+    if(by==="Last Updated"){var hUa=!!a.lastUpdated,hUb=!!b.lastUpdated;if(!hUa&&!hUb)return al(a,b);if(!hUa)return 1;if(!hUb)return -1;var dua=parseDate(a.lastUpdated),dub=parseDate(b.lastUpdated);if(!dua)return 1;if(!dub)return -1;p=(dub.getTime()-dua.getTime())*m;if(p!==0)return p;return al(a,b);}
     if(by==="Name")p=a.name.localeCompare(b.name)*m;
     else if(by==="Country")p=(a.country||"").localeCompare(b.country||"")*m;
     else if(by==="Sector")p=(a.sector||"").localeCompare(b.sector||"")*m;
