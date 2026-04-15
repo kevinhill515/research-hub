@@ -195,7 +195,19 @@ export function useCompanies(){
     if(!priceImportText.trim())return;var lines=priceImportText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});var ordMap={};var adrMap={};
   var priceData=[];lines.forEach(function(line){var delim=line.indexOf("\t")>=0?"\t":",";var parts=line.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});if(parts.length>=3){var name=parts[0];var ordTicker=parts[1].toUpperCase();var ordPrice=parseFloat(parts[2]);var rawPerf=parts.length>=4&&parts[3]?parts[3]:"";var ordPerf5d=rawPerf==="#N/A"||rawPerf===""?"":rawPerf.replace(/[()%\s]/g,"").replace(/^\((.+)\)$/,"-$1");var adrTicker=parts.length>=6&&parts[4]?parts[4].toUpperCase():"";var adrPrice=parts.length>=6&&parts[5]?parseFloat(parts[5].replace(/,/g,"")):NaN;var rawAdrPerf=parts.length>=7&&parts[6]?parts[6]:"";var adrPerf5d=rawAdrPerf==="#N/A"||rawAdrPerf===""?"":rawAdrPerf.replace(/[()%\s]/g,"").replace(/^\((.+)\)$/,"-$1");priceData.push({name:name,ordTicker:ordTicker,ordPrice:ordPrice,ordPerf5d:ordPerf5d,adrTicker:adrTicker,adrPrice:isNaN(adrPrice)?null:adrPrice,adrPerf5d:adrPerf5d});}});
     var count=0;
-    setCompanies(function(prev){return prev.map(function(c){var cname=(c.name||"").toLowerCase().trim();var match=priceData.find(function(d){return d.name.toLowerCase().trim()===cname;});if(!match)return c;var updates={};if(!isNaN(match.ordPrice)){updates.valuation=Object.assign({},c.valuation||{},{price:match.ordPrice});count++;}var newTickers=[{ticker:match.ordTicker,price:match.ordPrice,perf5d:match.ordPerf5d||"",currency:(c.valuation&&c.valuation.currency)||getCurrency(c.country),isOrdinary:true}];if(match.adrTicker&&match.adrPrice!==null)newTickers.push({ticker:match.adrTicker,price:match.adrPrice,perf5d:match.adrPerf5d||"",currency:"USD",isOrdinary:false});updates.tickers=newTickers;return Object.assign({},c,updates);});});
+    setCompanies(function(prev){return prev.map(function(c){var cname=(c.name||"").toLowerCase().trim();var match=priceData.find(function(d){return d.name.toLowerCase().trim()===cname;});if(!match)return c;var updates={};
+    // Preserve user's existing ordinary designation if it matches one of the new tickers
+    var existingOrdinaryTicker=((c.tickers||[]).find(function(t){return t.isOrdinary;})||{}).ticker;
+    var ordIsExistingOrdinary=existingOrdinaryTicker===match.ordTicker;
+    var adrIsExistingOrdinary=existingOrdinaryTicker===match.adrTicker;
+    var hasExistingOrdinaryMatch=ordIsExistingOrdinary||adrIsExistingOrdinary;
+    var newTickers=[{ticker:match.ordTicker,price:match.ordPrice,perf5d:match.ordPerf5d||"",currency:getCurrency(c.country),isOrdinary:hasExistingOrdinaryMatch?ordIsExistingOrdinary:true}];
+    if(match.adrTicker&&match.adrPrice!==null)newTickers.push({ticker:match.adrTicker,price:match.adrPrice,perf5d:match.adrPerf5d||"",currency:"USD",isOrdinary:hasExistingOrdinaryMatch?adrIsExistingOrdinary:false});
+    // Set valuation.price and currency from whichever ticker is now the ordinary
+    var nowOrdinary=newTickers.find(function(t){return t.isOrdinary;})||newTickers[0];
+    if(!isNaN(nowOrdinary.price)){updates.valuation=Object.assign({},c.valuation||{},{price:nowOrdinary.price,currency:nowOrdinary.currency});count++;}
+    updates.tickers=newTickers;
+    return Object.assign({},c,updates);});});
     setPriceImportText("");setShowPriceImport(false);var priceUpdateStr=todayStr()+" "+new Date().toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"});setLastPriceUpdate(priceUpdateStr);supaUpsert("meta",{key:"lastPriceUpdate",value:priceUpdateStr});setTimeout(function(){alert("Updated prices for "+count+" companies.");},100);
   }
   function handleSortClick(colSort){     if(coSort===colSort){setCoSortDir(function(d){return d==="asc"?"desc":"asc";});}     else{setCoSort(colSort);var descByDefault=colSort==="Last Reviewed"||colSort==="Last Updated"||colSort==="5D%"||colSort==="MOS";setCoSortDir(descByDefault?"desc":"asc");}   }
