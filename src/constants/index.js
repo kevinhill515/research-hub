@@ -37,6 +37,7 @@ export const CONF_BG={"High":"#dcfce7","Medium":"#fef9c3","Low":"#fee2e2"};
 export const CONF_COLOR={"High":"#166534","Medium":"#854d0e","Low":"#991b1b"};
 export const ACTIONS=["Increase TP","No Action","Decrease TP"];
 export const TEAM_MEMBERS=["Chris","Al","Bob","Kevin","Ron","Emily"];
+export const TEAM_COLORS={"Chris":"#7c3aed","Al":"#dc2626","Bob":"#16a34a","Kevin":"#2563eb","Ron":"#ea580c","Emily":"#ca8a04"};
 export const REP_ACCOUNTS={"LWGA0013":"GL","LWFOCGL1":"FGL","LWIV0004":"IV","LWIF0001":"FIV","LWEA0001":"EM","LWSC0003":"SC"};
 export const PORT_NAMES={"GL":"Global Value","FGL":"Focused Global Value","IV":"International Value","FIV":"Focused International Value","EM":"Emerging Markets Value","SC":"International Small Cap Value"};
 export const FLAG_STYLES={"Needs Review":{bg:"#fef9c3",color:"#854d0e",icon:"⚑"},"Urgent":{bg:"#fee2e2",color:"#991b1b",icon:"🔴"}};
