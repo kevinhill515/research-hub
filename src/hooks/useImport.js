@@ -19,6 +19,7 @@ export function useImport(){
   const [fxText,setFxText]=useState("");
   const [portTab,setPortTab]=useState("GL");
   const [portSort,setPortSort]=useState("rep");
+  const [portSortDir,setPortSortDir]=useState("desc");
 
   function applyFxImport(){if(!fxText.trim())return;var lines=fxText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});var rates={};lines.forEach(function(line){var delim=line.indexOf("\t")>=0?"\t":",";var parts=line.split(delim).map(function(s){return s.trim();});if(parts.length>=2){var pair=parts[0].toUpperCase();var rate=parseFloat(parts[1]);if(!isNaN(rate))rates[pair]=rate;}});var extracted={};Object.entries(rates).forEach(function(e){var pair=e[0];var rate=e[1];if(pair.startsWith("USD")){var ccy=pair.slice(3);extracted[ccy]=rate;}else if(pair.endsWith("USD")){var ccy=pair.slice(0,3);if(rate!==0)extracted[ccy]=1/rate;}else{extracted[pair]=rate;}});setFxRates(extracted);setFxLastUpdated(currentUser+" "+todayStr());setFxText("");supaUpsert("meta",{key:"fxRates",value:JSON.stringify(extracted)});}
   function applyRepImport(){if(!repText.trim())return;var lines=repText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});var data={};lines.forEach(function(line){var delim=line.indexOf("\t")>=0?"\t":",";var parts=line.split(delim).map(function(s){return s.trim();});if(parts.length>=3){var acct=parts[0].toUpperCase();var ticker=parts[1].toUpperCase();var shares=parseFloat(parts[2]);if(!isNaN(shares)){var port=REP_ACCOUNTS[acct];if(port){if(!data[port])data[port]={};data[port][ticker]=(data[port][ticker]||0)+shares;}}}});setRepData(data);setRepLastUpdated(currentUser+" "+todayStr());setRepText("");supaUpsert("meta",{key:"repData",value:JSON.stringify(data)});}
@@ -37,7 +38,7 @@ export function useImport(){
     showDataPanel,setShowDataPanel,importText,setImportText,importError,setImportError,
     dataHubTab,setDataHubTab,valImportText,setValImportText,estImportText,setEstImportText,
     weightsImportText,setWeightsImportText,calImportText,setCalImportText,
-    repText,setRepText,fxText,setFxText,portTab,setPortTab,portSort,setPortSort,
+    repText,setRepText,fxText,setFxText,portTab,setPortTab,portSort,setPortSort,portSortDir,setPortSortDir,
     applyFxImport,applyRepImport,applyCalImport,applyWeightsImport,applyValImport,applyEstImport,
     importAll,exportAll
   };
