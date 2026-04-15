@@ -202,7 +202,7 @@ export function useCompanies(){
     var adrIsExistingOrdinary=existingOrdinaryTicker===match.adrTicker;
     var hasExistingOrdinaryMatch=ordIsExistingOrdinary||adrIsExistingOrdinary;
     var newTickers=[{ticker:match.ordTicker,price:match.ordPrice,perf5d:match.ordPerf5d||"",currency:getCurrency(c.country),isOrdinary:hasExistingOrdinaryMatch?ordIsExistingOrdinary:true}];
-    if(match.adrTicker&&match.adrPrice!==null)newTickers.push({ticker:match.adrTicker,price:match.adrPrice,perf5d:match.adrPerf5d||"",currency:"USD",isOrdinary:hasExistingOrdinaryMatch?adrIsExistingOrdinary:false});
+    if(match.adrTicker&&match.adrPrice!==null&&match.adrTicker!==match.ordTicker)newTickers.push({ticker:match.adrTicker,price:match.adrPrice,perf5d:match.adrPerf5d||"",currency:"USD",isOrdinary:hasExistingOrdinaryMatch?adrIsExistingOrdinary:false});
     // Set valuation.price and currency from whichever ticker is now the ordinary
     var nowOrdinary=newTickers.find(function(t){return t.isOrdinary;})||newTickers[0];
     if(!isNaN(nowOrdinary.price)){updates.valuation=Object.assign({},c.valuation||{},{price:nowOrdinary.price,currency:nowOrdinary.currency});count++;}
