@@ -17,7 +17,7 @@ export function useImport(){
   const [calImportText,setCalImportText]=useState("");
   const [repText,setRepText]=useState("");
   const [fxText,setFxText]=useState("");
-  const [portTab,setPortTab]=useState("GL");
+  const [portTab,setPortTab]=useState("overlap");
   const [portSort,setPortSort]=useState("rep");
   const [portSortDir,setPortSortDir]=useState("desc");
 
