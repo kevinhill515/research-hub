@@ -29,7 +29,77 @@ export function CompanyProvider({children}){
   const [copied,setCopied]=useState(null);
   const [annotations,setAnnotations]=useState([]);
 
-  async function loadFromStorage(){     setLoadStatus({companies:null,library:null});var coOk=false,libOk=false;     try{var r=await supaGet("library","id","shared");if(r){var d=JSON.parse(r.data);if(Array.isArray(d)&&d.length){setSaved(d);libOk=d.length;}}}catch(e){}     try{var r2=await supaGet("companies","id","shared");if(r2){var d2=JSON.parse(r2.data);if(Array.isArray(d2)&&d2.length){setCompanies(d2);coOk=d2.length;}}}catch(e){}     try{var r3=await supaGet("meta","key","lastPriceUpdate");if(r3)setLastPriceUpdate(r3.value);}catch(e){}     try{var r4=await supaGet("meta","key","entryComments");if(r4)setEntryComments(JSON.parse(r4.value));}catch(e){} try{var r5=await supaGet("meta","key","calLastUpdated");if(r5&&r5.value){var parts=r5.value.split(" at ");setCalLastUpdatedBy(parts[0]||"");setCalLastUpdated(parts[1]||"");}}catch(e){} try{var r6=await supaGet("meta","key","repData");if(r6&&r6.value)setRepData(JSON.parse(r6.value));}catch(e){} try{var r7=await supaGet("meta","key","fxRates");if(r7&&r7.value)setFxRates(JSON.parse(r7.value));}catch(e){} try{var r8=await supaGet("meta","key","specialWeights");if(r8&&r8.value)setSpecialWeights(JSON.parse(r8.value));}catch(e){} try{var r9=await supaGet("meta","key","annotations");if(r9&&r9.value){var ann=JSON.parse(r9.value);if(Array.isArray(ann))setAnnotations(ann);}}catch(e){}     setLoadStatus({companies:coOk,library:libOk});setReady(true);return coOk||libOk;}
+  function migratePortfolioKeys(cos){
+    var RENAMES={"FIV":"FIN","IV":"IN","FOC1":"FIN1","FOC2":"FIN2","FOC3":"FIN3","MC1":"FIN1","MC2":"FIN2","MC3":"FIN3","MC4":"INGL1","MC5":"INGL2","INTL":"IN1"};
+    var changed=false;
+    var migrated=cos.map(function(c){
+      var upd=Object.assign({},c);
+      // Migrate portfolios array
+      if(Array.isArray(upd.portfolios)){
+        var newP=upd.portfolios.map(function(p){return RENAMES[p]||p;});
+        if(newP.join(",")!==upd.portfolios.join(",")){upd.portfolios=newP;changed=true;}
+      }
+      // Migrate portWeights keys
+      if(upd.portWeights){
+        var newW={};var wChanged=false;
+        Object.keys(upd.portWeights).forEach(function(k){
+          var nk=RENAMES[k]||k;
+          if(nk!==k)wChanged=true;
+          newW[nk]=upd.portWeights[k];
+        });
+        if(wChanged){upd.portWeights=newW;changed=true;}
+      }
+      // Migrate portNote
+      if(upd.portNote){
+        var parts=upd.portNote.split(/[,\s]+/).filter(Boolean);
+        var newParts=parts.map(function(p){return RENAMES[p]||p;});
+        if(newParts.join(", ")!==parts.join(", ")){upd.portNote=newParts.join(", ");changed=true;}
+      }
+      // Migrate tier
+      if(upd.tier){
+        var tiers=String(upd.tier).split(",").map(function(t){var tr=t.trim();return RENAMES[tr]||tr;});
+        var newTier=tiers.join(", ");
+        if(newTier!==upd.tier){upd.tier=newTier;changed=true;}
+      }
+      return upd;
+    });
+    return{data:migrated,changed:changed};
+  }
+  function migrateSpecialWeights(sw){
+    var RENAMES={"FIV":"FIN","IV":"IN"};
+    var changed=false;var newSW={};
+    Object.keys(sw).forEach(function(label){
+      var row=sw[label];var newRow={};
+      Object.keys(row).forEach(function(k){
+        var nk=RENAMES[k]||k;if(nk!==k)changed=true;
+        newRow[nk]=row[k];
+      });
+      newSW[label]=newRow;
+    });
+    return{data:newSW,changed:changed};
+  }
+  function migrateRepData(rd){
+    var RENAMES={"FIV":"FIN","IV":"IN"};
+    var changed=false;var newRD={};
+    Object.keys(rd).forEach(function(k){
+      var nk=RENAMES[k]||k;if(nk!==k)changed=true;
+      newRD[nk]=rd[k];
+    });
+    return{data:newRD,changed:changed};
+  }
+  function migrateTags(entries){
+    var RENAMES={"FIV":"FIN","IV":"IN"};
+    var changed=false;
+    var migrated=entries.map(function(e){
+      if(!e.tags||!Array.isArray(e.tags))return e;
+      var newTags=e.tags.map(function(t){return RENAMES[t]||t;});
+      if(newTags.join(",")!==e.tags.join(",")){changed=true;return Object.assign({},e,{tags:newTags});}
+      return e;
+    });
+    return{data:migrated,changed:changed};
+  }
+
+  async function loadFromStorage(){     setLoadStatus({companies:null,library:null});var coOk=false,libOk=false;     try{var r=await supaGet("library","id","shared");if(r){var d=JSON.parse(r.data);if(Array.isArray(d)&&d.length){var libMig=migrateTags(d);setSaved(libMig.data);libOk=libMig.data.length;if(libMig.changed)supaUpsert("library",{id:"shared",data:JSON.stringify(libMig.data)});}}}catch(e){}     try{var r2=await supaGet("companies","id","shared");if(r2){var d2=JSON.parse(r2.data);if(Array.isArray(d2)&&d2.length){var coMig=migratePortfolioKeys(d2);setCompanies(coMig.data);coOk=coMig.data.length;if(coMig.changed)supaUpsert("companies",{id:"shared",data:JSON.stringify(coMig.data)});}}}catch(e){}     try{var r3=await supaGet("meta","key","lastPriceUpdate");if(r3)setLastPriceUpdate(r3.value);}catch(e){}     try{var r4=await supaGet("meta","key","entryComments");if(r4)setEntryComments(JSON.parse(r4.value));}catch(e){} try{var r5=await supaGet("meta","key","calLastUpdated");if(r5&&r5.value){var parts=r5.value.split(" at ");setCalLastUpdatedBy(parts[0]||"");setCalLastUpdated(parts[1]||"");}}catch(e){} try{var r6=await supaGet("meta","key","repData");if(r6&&r6.value){var rdRaw=JSON.parse(r6.value);var rdMig=migrateRepData(rdRaw);setRepData(rdMig.data);if(rdMig.changed)supaUpsert("meta",{key:"repData",value:JSON.stringify(rdMig.data)});}}catch(e){} try{var r7=await supaGet("meta","key","fxRates");if(r7&&r7.value)setFxRates(JSON.parse(r7.value));}catch(e){} try{var r8=await supaGet("meta","key","specialWeights");if(r8&&r8.value){var swRaw=JSON.parse(r8.value);var swMig=migrateSpecialWeights(swRaw);setSpecialWeights(swMig.data);if(swMig.changed)supaUpsert("meta",{key:"specialWeights",value:JSON.stringify(swMig.data)});}}catch(e){} try{var r9=await supaGet("meta","key","annotations");if(r9&&r9.value){var ann=JSON.parse(r9.value);if(Array.isArray(ann))setAnnotations(ann);}}catch(e){}     setLoadStatus({companies:coOk,library:libOk});setReady(true);return coOk||libOk;}
 
   useEffect(function(){
     var done=false,attempts=0;
