@@ -35,6 +35,17 @@ export function getTierIndex(x){var ts=getTiers(x.tier),best=999;for(var j=0;j<t
 export function getCompanyMOS(c){var val=c.valuation||{};var eps=calcNormEPS(val)||parseFloat(val.eps);var tp=calcTP(val.pe,eps);return calcMOS(tp,val.price);}
 export function blankEarnings(){return{id:Date.now()+Math.random(),quarter:"",reportDate:"",eps:"",tpChange:"Unchanged",newTP:"",tpRationale:"",bullets:["","","","",""],shortTakeaway:"",extendedTakeaway:"",thesisStatus:"On track",thesisNote:"",open:true};}
 
+export function tierToStatus(tier){
+  var tiers=(tier||"").split(",").map(function(t){return t.trim();}).filter(Boolean);
+  for(var i=0;i<tiers.length;i++){
+    var t=tiers[i];
+    if(t==="F MC"||t==="F SC")return"Focus";
+    if(t==="W MC"||t==="W SC")return"Watch";
+    if(t==="Hit TP"||t==="Gave Up")return"Sold";
+  }
+  return null;
+}
+
 export function sortCos(list,by,dir){
   var c=list.slice();var WF=new Set(["F MC","W MC","F SC","W SC"]);
   function al(a,b){return a.name.localeCompare(b.name);}

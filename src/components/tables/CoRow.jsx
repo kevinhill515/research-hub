@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { PORTFOLIOS, TIER_ORDER, COUNTRY_ORDER, SECTOR_ORDER } from '../../constants/index.js';
-import { shortSector, sectorStyle, countryStyle, getTiers, tierPillStyle, tierBg, reviewedColor, daysSince, todayStr, calcNormEPS, calcTP, calcMOS, fmtMOS, mosBg } from '../../utils/index.js';
+import { shortSector, sectorStyle, countryStyle, getTiers, tierPillStyle, tierBg, reviewedColor, daysSince, todayStr, calcNormEPS, calcTP, calcMOS, fmtMOS, mosBg, tierToStatus } from '../../utils/index.js';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import StatusPill from '../ui/StatusPill.jsx';
 import NotesCell from '../forms/NotesCell.jsx';
@@ -90,7 +90,7 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
       {/* Tier(s) */}
       {show("Tier(s)") && (
         <div className={tdBase + " !whitespace-normal"} style={rowBg ? { background: rowBg } : undefined}>
-          <PortPicker active={tiers} onChange={function (v) { onUpdate(company.id, { tier: v.join(", ") }); }} plusColor="#334155" opts={TIER_ORDER} pillStyleFn={tierPillStyle} />
+          <PortPicker active={tiers} onChange={function (v) { var nt=v.join(", "); var ch={tier:nt}; var s=tierToStatus(nt); if(s)ch.status=s; onUpdate(company.id, ch); }} plusColor="#334155" opts={TIER_ORDER} pillStyleFn={tierPillStyle} />
         </div>
       )}
 
