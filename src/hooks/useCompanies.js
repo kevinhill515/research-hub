@@ -62,9 +62,10 @@ export function useCompanies(){
     var ordT=newTicker.trim().toUpperCase();
     var usT=newTickerUS.trim().toUpperCase();
     var country=newFields.country||"";
-    var defaultCcy=country?(country==="United States"?"USD":undefined):undefined;
+    var ordHasSuffix=/-[A-Z]{2}$/.test(ordT);
+    var defaultCcy=ordT?(ordHasSuffix?getCurrency(country):"USD"):"";
     var tickers=[];
-    if(ordT)tickers.push({ticker:ordT,price:"",perf5d:"",currency:defaultCcy||"",isOrdinary:true});
+    if(ordT)tickers.push({ticker:ordT,price:"",perf5d:"",currency:defaultCcy,isOrdinary:true});
     if(usT&&usT!==ordT)tickers.push({ticker:usT,price:"",perf5d:"",currency:"USD",isOrdinary:tickers.length===0});
     setCompanies(function(p){return [{id:Date.now(),name:newName.trim(),ticker:ordT,portfolios:newFields.portfolios||[],tier:newFields.tier||"",sector:newFields.sector||"",country:country,action:"",takeaway:"",takeawayLong:"",lastReviewed:"",portNote:newFields.portNote||"",status:newFields.status||"Watch",sections:{},updateLog:[],valuation:{},tpHistory:[],earningsEntries:[],lastUpdated:null,portWeights:{},tickers:tickers}].concat(p);});
     setNewName("");setNewTicker("");setNewTickerUS("");setNewFields({portfolios:[],tier:"",sector:"",country:"",portNote:"",status:"Watch"});setShowNew(false);
@@ -107,10 +108,13 @@ export function useCompanies(){
     function buildTickers(row,country,existingTickers){
       var ordT=(row.ordTicker||row.ticker||"").toUpperCase();
       var usT=(row.usTicker||"").toUpperCase();
-      var defaultCcy=country==="United States"?"USD":"";
+      /* If ord ticker has no country suffix like "-SE", it's US-listed → USD.
+         Only use the country's currency when there IS a suffix. */
+      var ordHasSuffix=/-[A-Z]{2}$/.test(ordT);
+      var defaultOrdCcy=ordHasSuffix?getCurrency(country):"USD";
       function findExisting(tk){return(existingTickers||[]).find(function(t){return(t.ticker||"").toUpperCase()===tk;});}
       var nt=[];
-      if(ordT){var e1=findExisting(ordT);nt.push(Object.assign({ticker:ordT,price:"",perf5d:"",currency:defaultCcy,isOrdinary:true},e1||{},{ticker:ordT,isOrdinary:true}));}
+      if(ordT){var e1=findExisting(ordT);nt.push(Object.assign({ticker:ordT,price:"",perf5d:"",currency:defaultOrdCcy,isOrdinary:true},e1||{},{ticker:ordT,isOrdinary:true}));}
       if(usT&&usT!==ordT){var e2=findExisting(usT);nt.push(Object.assign({ticker:usT,price:"",perf5d:"",currency:"USD",isOrdinary:nt.length===0},e2||{},{ticker:usT,isOrdinary:e2?!!e2.isOrdinary:nt.length===0,currency:e2&&e2.currency?e2.currency:"USD"}));}
       return nt;
     }
@@ -241,7 +245,9 @@ export function useCompanies(){
     var ordIsExistingOrdinary=existingOrdinaryTicker===match.ordTicker;
     var adrIsExistingOrdinary=existingOrdinaryTicker===match.adrTicker;
     var hasExistingOrdinaryMatch=ordIsExistingOrdinary||adrIsExistingOrdinary;
-    var newTickers=[{ticker:match.ordTicker,price:match.ordPrice,perf5d:match.ordPerf5d||"",currency:getCurrency(c.country),isOrdinary:hasExistingOrdinaryMatch?ordIsExistingOrdinary:true}];
+    var ordHasSuffixPI=/-[A-Z]{2}$/.test(match.ordTicker);
+    var ordCcyPI=ordHasSuffixPI?getCurrency(c.country):"USD";
+    var newTickers=[{ticker:match.ordTicker,price:match.ordPrice,perf5d:match.ordPerf5d||"",currency:ordCcyPI,isOrdinary:hasExistingOrdinaryMatch?ordIsExistingOrdinary:true}];
     if(match.adrTicker&&match.adrPrice!==null&&match.adrTicker!==match.ordTicker)newTickers.push({ticker:match.adrTicker,price:match.adrPrice,perf5d:match.adrPerf5d||"",currency:"USD",isOrdinary:hasExistingOrdinaryMatch?adrIsExistingOrdinary:false});
     // Set valuation.price and currency from whichever ticker is now the ordinary
     var nowOrdinary=newTickers.find(function(t){return t.isOrdinary;})||newTickers[0];
