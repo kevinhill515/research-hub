@@ -4,8 +4,14 @@ import PillEl from './PillEl.jsx';
 
 function PortPicker({ active, onChange, pillBg, pillColor, plusColor, opts, pillStyleFn, dashedPills }) {
   var [open, setOpen] = useState(false);
-  var al = active || [];
   var allOpts = opts || PORTFOLIOS;
+  // Display pills in canonical opts order, not insertion order
+  var al = (active || []).slice().sort(function(a, b) {
+    var ai = allOpts.indexOf(a); var bi = allOpts.indexOf(b);
+    if (ai < 0) ai = 9999;
+    if (bi < 0) bi = 9999;
+    return ai - bi;
+  });
   var avail = allOpts.filter(function (p) { return al.indexOf(p) < 0; });
 
   function gs(p) {

@@ -1,4 +1,4 @@
-export const PORTFOLIOS=["GL","FGL","IN","FIN","EM","SC"];
+export const PORTFOLIOS=["FIN","IN","FGL","GL","EM","SC"];
 export const TIER_ORDER=["FIN1","FIN2","FIN3","INGL1","INGL2","IN1","IN2","US1","US2","EM1","EM2","EM3","EM4","EM5","SC1","SC2","SC3","SC4","SC5","F MC","W MC","F SC","W SC","Hit TP","Gave Up","Remove"];
 export const SECTOR_ORDER=["Industrials","Information Technology","Energy","Consumer Discretionary","Materials","Consumer Staples","Financials","Health Care","Communication Services","Utilities","Real Estate"];
 export const COUNTRY_ORDER=["United States","Britain","Japan","Netherlands","France","Canada","Taiwan","Germany","Mexico","Singapore","China","Italy","Norway","Luxembourg","Ireland","Australia","Austria","Spain","Sweden","Switzerland","South Korea","Brazil","Indonesia","Chile","South Africa","India","Greece","Panama","Jordan","Denmark","Israel","Belgium","Egypt","Hungary","Russia"];
