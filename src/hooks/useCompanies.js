@@ -239,7 +239,15 @@ export function useCompanies(){
     if(!priceImportText.trim())return;var lines=priceImportText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});var ordMap={};var adrMap={};
   var priceData=[];lines.forEach(function(line){var delim=line.indexOf("\t")>=0?"\t":",";var parts=line.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});if(parts.length>=3){var name=parts[0];var ordTicker=parts[1].toUpperCase();var ordPrice=parseFloat(parts[2]);var rawPerf=parts.length>=4&&parts[3]?parts[3]:"";var ordPerf5d=rawPerf==="#N/A"||rawPerf===""?"":rawPerf.replace(/[()%\s]/g,"").replace(/^\((.+)\)$/,"-$1");var adrTicker=parts.length>=6&&parts[4]?parts[4].toUpperCase():"";var adrPrice=parts.length>=6&&parts[5]?parseFloat(parts[5].replace(/,/g,"")):NaN;var rawAdrPerf=parts.length>=7&&parts[6]?parts[6]:"";var adrPerf5d=rawAdrPerf==="#N/A"||rawAdrPerf===""?"":rawAdrPerf.replace(/[()%\s]/g,"").replace(/^\((.+)\)$/,"-$1");priceData.push({name:name,ordTicker:ordTicker,ordPrice:ordPrice,ordPerf5d:ordPerf5d,adrTicker:adrTicker,adrPrice:isNaN(adrPrice)?null:adrPrice,adrPerf5d:adrPerf5d});}});
     var count=0;
-    setCompanies(function(prev){return prev.map(function(c){var cname=(c.name||"").toLowerCase().trim();var match=priceData.find(function(d){return d.name.toLowerCase().trim()===cname;});if(!match)return c;var updates={};
+    setCompanies(function(prev){return prev.map(function(c){
+    var cname=(c.name||"").toLowerCase().trim();
+    var cTickerSet={};
+    (c.tickers||[]).forEach(function(t){if(t.ticker)cTickerSet[t.ticker.toUpperCase()]=true;});
+    if(c.ticker)cTickerSet[c.ticker.toUpperCase()]=true;
+    /* Match price rows by ticker first (authoritative), then by name (fallback) */
+    var match=priceData.find(function(d){return(d.ordTicker&&cTickerSet[d.ordTicker])||(d.adrTicker&&cTickerSet[d.adrTicker]);});
+    if(!match)match=priceData.find(function(d){return d.name.toLowerCase().trim()===cname;});
+    if(!match)return c;var updates={};
     // Preserve user's existing ordinary designation if it matches one of the new tickers
     var existingOrdinaryTicker=((c.tickers||[]).find(function(t){return t.isOrdinary;})||{}).ticker;
     var ordIsExistingOrdinary=existingOrdinaryTicker===match.ordTicker;
