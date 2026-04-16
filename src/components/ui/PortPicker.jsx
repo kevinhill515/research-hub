@@ -12,6 +12,17 @@ function PortPicker({ active, onChange, pillBg, pillColor, plusColor, opts, pill
     return pillStyleFn ? pillStyleFn(p) : { bg: pillBg, color: pillColor };
   }
 
+  function sortedOnChange(newArr) {
+    var sorted = newArr.slice().sort(function(a, b) {
+      var ai = allOpts.indexOf(a);
+      var bi = allOpts.indexOf(b);
+      if (ai < 0) ai = 9999;
+      if (bi < 0) bi = 9999;
+      return ai - bi;
+    });
+    onChange(sorted);
+  }
+
   return (
     <div
       onClick={function (e) { e.stopPropagation(); }}
@@ -27,7 +38,7 @@ function PortPicker({ active, onChange, pillBg, pillColor, plusColor, opts, pill
           >
             {p}
             <span
-              onClick={function () { onChange(al.filter(function (x) { return x !== p; })); }}
+              onClick={function () { sortedOnChange(al.filter(function (x) { return x !== p; })); }}
               className="cursor-pointer opacity-70 hover:opacity-100 text-[10px] transition-opacity"
             >
               x
@@ -40,7 +51,7 @@ function PortPicker({ active, onChange, pillBg, pillColor, plusColor, opts, pill
             bg={s.bg}
             color={s.color}
             border="none"
-            onRemove={function () { onChange(al.filter(function (x) { return x !== p; })); }}
+            onRemove={function () { sortedOnChange(al.filter(function (x) { return x !== p; })); }}
           />
         );
       })}
@@ -64,7 +75,7 @@ function PortPicker({ active, onChange, pillBg, pillColor, plusColor, opts, pill
                 return (
                   <span
                     key={p}
-                    onClick={function () { onChange(al.concat([p])); setOpen(false); }}
+                    onClick={function () { sortedOnChange(al.concat([p])); setOpen(false); }}
                     className="text-xs px-3 py-1.5 cursor-pointer rounded text-gray-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                   >
                     {p}
