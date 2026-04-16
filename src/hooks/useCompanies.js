@@ -94,6 +94,16 @@ export function useCompanies(){
   }
   function confirmBulk(mode){
     if(!bulkPreview)return;
+    function normalizeName(n){
+      if(!n)return"";
+      var s=String(n).toLowerCase();
+      // Strip common corporate suffixes (longer ones first to avoid partial matches)
+      s=s.replace(/\b(corporation|incorporated|international|holdings|holding|company|limited|group)\b/g,"");
+      s=s.replace(/\b(co\.|inc\.|ltd\.|llc|plc|s\.a\.s\.|s\.a\.|k\.k\.|nv\/sa|sa|ag|nv|se|co|inc|ltd|corp|gmbh|kgaa|ab|asa|oyj|spa|srl|bv)\b/g,"");
+      // Strip all punctuation and collapse whitespace
+      s=s.replace(/[.,&'()\-\/]/g," ").replace(/\s+/g," ").trim();
+      return s;
+    }
     function buildTickers(row,country,existingTickers){
       var ordT=(row.ordTicker||row.ticker||"").toUpperCase();
       var usT=(row.usTicker||"").toUpperCase();
@@ -107,7 +117,18 @@ export function useCompanies(){
     if(mode==="replace"){setCompanies(bulkPreview.map(function(row){var ct=row.country||"";var tickers=buildTickers(row,ct,[]);return Object.assign({id:Date.now()+Math.random(),sections:{},updateLog:[],valuation:{},tpHistory:[],earningsEntries:[],lastUpdated:null,takeawayLong:"",portWeights:{},tickers:tickers},row,{ticker:(row.ordTicker||row.ticker||"").toUpperCase()});}));}
     else{setCompanies(function(prev){
       var seen=new Set();var deduped=prev.filter(function(c){var t=(c.ticker||"").toUpperCase();if(seen.has(t)&&t)return false;seen.add(t);return true;});var upd=deduped.slice();
-      bulkPreview.forEach(function(row){var rt=((row.ordTicker||row.ticker)||"").toUpperCase();var ix=-1;if(rt)ix=upd.findIndex(function(c){return(c.ticker||"").toUpperCase()===rt;});if(ix<0)ix=upd.findIndex(function(c){return c.name.toLowerCase()===(row.name||"").toLowerCase();});var existing=ix>-1?upd[ix]:null;var ct=row.country||(existing&&existing.country)||"";var tickers=buildTickers(row,ct,existing?existing.tickers:[]);var entry={portfolios:row.portfolios||[],portNote:row.portNote||"",country:ct,sector:row.sector||"",lastReviewed:row.lastReviewed||"",action:row.action||"",takeaway:row.takeaway||"",status:row.status||"",tier:row.tier||"",ticker:rt,tickers:tickers};if(ix>-1){upd[ix]=Object.assign({},upd[ix],entry);}else{upd.unshift(Object.assign({id:Date.now()+Math.random(),name:row.name||"Unnamed",sections:{},updateLog:[],valuation:{},tpHistory:[],earningsEntries:[],lastUpdated:null,takeawayLong:"",portWeights:{}},entry));}});return upd;
+      bulkPreview.forEach(function(row){var rt=((row.ordTicker||row.ticker)||"").toUpperCase();var ut=(row.usTicker||"").toUpperCase();var ix=-1;
+        // 1. Match by ord ticker on primary ticker field
+        if(rt)ix=upd.findIndex(function(c){return(c.ticker||"").toUpperCase()===rt;});
+        // 2. Match by ord ticker on any ticker in the tickers array
+        if(ix<0&&rt)ix=upd.findIndex(function(c){return(c.tickers||[]).some(function(t){return(t.ticker||"").toUpperCase()===rt;});});
+        // 3. Match by US ticker on any ticker in the tickers array
+        if(ix<0&&ut)ix=upd.findIndex(function(c){return(c.tickers||[]).some(function(t){return(t.ticker||"").toUpperCase()===ut;});});
+        // 4. Exact name match (case-insensitive)
+        if(ix<0)ix=upd.findIndex(function(c){return(c.name||"").toLowerCase()===(row.name||"").toLowerCase();});
+        // 5. Normalized name match (strips Inc/Corp/Ltd/SA/AG/PLC, punctuation, etc.)
+        if(ix<0){var rn=normalizeName(row.name);if(rn)ix=upd.findIndex(function(c){return normalizeName(c.name)===rn;});}
+        var existing=ix>-1?upd[ix]:null;var ct=row.country||(existing&&existing.country)||"";var tickers=buildTickers(row,ct,existing?existing.tickers:[]);var entry={portfolios:row.portfolios||[],portNote:row.portNote||"",country:ct,sector:row.sector||"",lastReviewed:row.lastReviewed||"",action:row.action||"",takeaway:row.takeaway||"",status:row.status||"",tier:row.tier||"",ticker:rt,tickers:tickers};if(ix>-1){upd[ix]=Object.assign({},upd[ix],entry);}else{upd.unshift(Object.assign({id:Date.now()+Math.random(),name:row.name||"Unnamed",sections:{},updateLog:[],valuation:{},tpHistory:[],earningsEntries:[],lastUpdated:null,takeawayLong:"",portWeights:{}},entry));}});return upd;
     });}
     setBulkPreview(null);setBulkText("");setShowBulk(false);
   }
