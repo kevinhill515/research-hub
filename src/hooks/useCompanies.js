@@ -30,6 +30,7 @@ export function useCompanies(){
   const [restoreText,setRestoreText]=useState("");
   const [newName,setNewName]=useState("");
   const [newTicker,setNewTicker]=useState("");
+  const [newTickerUS,setNewTickerUS]=useState("");
   const [newFields,setNewFields]=useState({portfolios:[],tier:"",sector:"",country:"",action:""});
   const [bulkText,setBulkText]=useState("");
   const [bulkLoading,setBulkLoading]=useState(false);
@@ -58,8 +59,15 @@ export function useCompanies(){
 
   function addCompany(){
     if(!newName.trim())return;
-    setCompanies(function(p){return [{id:Date.now(),name:newName.trim(),ticker:newTicker.trim().toUpperCase(),portfolios:newFields.portfolios||[],tier:newFields.tier||"",sector:newFields.sector||"",country:newFields.country||"",action:newFields.action||"",takeaway:"",takeawayLong:"",lastReviewed:"",portNote:"",status:"",sections:{},updateLog:[],valuation:{},tpHistory:[],earningsEntries:[],lastUpdated:null,portWeights:{}}].concat(p);});
-    setNewName("");setNewTicker("");setNewFields({portfolios:[],tier:"",sector:"",country:"",action:""});setShowNew(false);
+    var ordT=newTicker.trim().toUpperCase();
+    var usT=newTickerUS.trim().toUpperCase();
+    var country=newFields.country||"";
+    var defaultCcy=country?(country==="United States"?"USD":undefined):undefined;
+    var tickers=[];
+    if(ordT)tickers.push({ticker:ordT,price:"",perf5d:"",currency:defaultCcy||"",isOrdinary:true});
+    if(usT&&usT!==ordT)tickers.push({ticker:usT,price:"",perf5d:"",currency:"USD",isOrdinary:tickers.length===0});
+    setCompanies(function(p){return [{id:Date.now(),name:newName.trim(),ticker:ordT,portfolios:newFields.portfolios||[],tier:newFields.tier||"",sector:newFields.sector||"",country:country,action:"",takeaway:"",takeawayLong:"",lastReviewed:"",portNote:newFields.portNote||"",status:newFields.status||"Watch",sections:{},updateLog:[],valuation:{},tpHistory:[],earningsEntries:[],lastUpdated:null,portWeights:{},tickers:tickers}].concat(p);});
+    setNewName("");setNewTicker("");setNewTickerUS("");setNewFields({portfolios:[],tier:"",sector:"",country:"",portNote:"",status:"Watch"});setShowNew(false);
   }
   function parseBulk(){
     if(!bulkText.trim())return;setBulkLoading(true);
@@ -240,7 +248,7 @@ export function useCompanies(){
     showColPicker,setShowColPicker,confirmClear,setConfirmClear,showNew,setShowNew,
     showBulk,setShowBulk,showPriceImport,setShowPriceImport,priceImportText,setPriceImportText,
     showRestore,setShowRestore,restoreText,setRestoreText,newName,setNewName,
-    newTicker,setNewTicker,newFields,setNewFields,bulkText,setBulkText,
+    newTicker,setNewTicker,newTickerUS,setNewTickerUS,newFields,setNewFields,bulkText,setBulkText,
     bulkLoading,setBulkLoading,bulkPreview,setBulkPreview,tmplRaw,setTmplRaw,
     tmplLoading,setTmplLoading,tmplSearch,setTmplSearch,tmplHighlight,setTmplHighlight,
     flashSections,setFlashSections,upText,setUpText,upType,setUpType,
