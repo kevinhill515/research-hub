@@ -83,7 +83,14 @@ export function CompanyProvider({children}){
     var changed=false;var newRD={};
     Object.keys(rd).forEach(function(k){
       var nk=RENAMES[k]||k;if(nk!==k)changed=true;
-      newRD[nk]=rd[k];
+      var port=rd[k];var newPort={};
+      Object.keys(port||{}).forEach(function(tk){
+        var v=port[tk];
+        if(typeof v==="number"){newPort[tk]={shares:v,avgCost:0};changed=true;}
+        else if(v&&typeof v==="object"){newPort[tk]={shares:Number(v.shares)||0,avgCost:Number(v.avgCost)||0};}
+        else{newPort[tk]={shares:0,avgCost:0};changed=true;}
+      });
+      newRD[nk]=newPort;
     });
     return{data:newRD,changed:changed};
   }

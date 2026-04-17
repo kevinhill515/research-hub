@@ -35,6 +35,10 @@ export function getTierIndex(x){var ts=getTiers(x.tier),best=999;for(var j=0;j<t
 export function getCompanyMOS(c){var val=c.valuation||{};var eps=calcNormEPS(val)||parseFloat(val.eps);var tp=calcTP(val.pe,eps);return calcMOS(tp,val.price);}
 export function blankEarnings(){return{id:(typeof crypto!=="undefined"&&crypto.randomUUID)?crypto.randomUUID():(Date.now()+"-"+Math.random().toString(36).slice(2)),quarter:"",reportDate:"",eps:"",tpChange:"Unchanged",newTP:"",tpRationale:"",bullets:["","","","",""],shortTakeaway:"",extendedTakeaway:"",thesisStatus:"On track",thesisNote:"",open:true};}
 
+/* Rep-data entries are normalized to {shares, avgCost} via migrateRepData, but old numeric values may appear briefly during load. These helpers read either safely. */
+export function repShares(entry){if(entry==null)return 0;if(typeof entry==="number")return entry;return Number(entry.shares)||0;}
+export function repAvgCost(entry){if(entry==null||typeof entry==="number")return 0;return Number(entry.avgCost)||0;}
+
 export function tierToStatus(tier){
   var tiers=(tier||"").split(",").map(function(t){return t.trim();}).filter(Boolean);
   for(var i=0;i<tiers.length;i++){
