@@ -39,19 +39,26 @@ export function blankEarnings(){return{id:(typeof crypto!=="undefined"&&crypto.r
 export function repShares(entry){if(entry==null)return 0;if(typeof entry==="number")return entry;return Number(entry.shares)||0;}
 export function repAvgCost(entry){if(entry==null||typeof entry==="number")return 0;return Number(entry.avgCost)||0;}
 
-/* Effective initiated date for a company in a given portfolio:
-   manual override (c.initiatedDates[portfolio]) takes precedence;
-   otherwise the LATEST initiation — walks transactions chronologically
-   and finds the most recent point where running position transitioned
-   from <=0 to >0. This handles buy/sell-out/rebuy patterns. */
+/* Effective initiated date for a company in a given portfolio.
+   Precedence:
+     1. Manual override on the company (c.initiatedDates[portfolio])
+     2. Most recent transaction with initOverride===true
+     3. Most recent auto-detected 0→positive transition, excluding
+        any transaction with initOverride===false
+   Returns "YYYY-MM-DD" or null. */
 export function getInitiatedDate(c,portfolio){
   var manual=((c&&c.initiatedDates)||{})[portfolio];
   if(manual)return manual;
   var txs=((c&&c.transactions)||[]).filter(function(t){return t.portfolio===portfolio&&t.date;});
   if(txs.length===0)return null;
-  var sorted=txs.slice().sort(function(a,b){return(a.date||"").localeCompare(b.date||"");});
+  var sorted=txs.slice().sort(function(a,b){var d=(a.date||"").localeCompare(b.date||"");return d!==0?d:((a.id||"").localeCompare(b.id||""));});
   var running=0;var lastInit=null;
-  sorted.forEach(function(t){var prev=running;running+=parseFloat(t.shares)||0;if(prev<=0&&running>0)lastInit=t.date;});
+  sorted.forEach(function(t){
+    var prev=running;running+=parseFloat(t.shares)||0;
+    if(t.initOverride===true){lastInit=t.date;return;}
+    if(t.initOverride===false)return;
+    if(prev<=0&&running>0)lastInit=t.date;
+  });
   return lastInit;
 }
 /* Returns true if this specific transaction is an initiation event.
