@@ -134,6 +134,40 @@ export function CompanyProvider({children}){
 
   function updateCo(id,ch){setCompanies(function(cs){return cs.map(function(c){return c.id===id?Object.assign({},c,ch):c;});});}
 
+  function newId(){return(typeof crypto!=="undefined"&&crypto.randomUUID)?crypto.randomUUID():(Date.now()+"-"+Math.random().toString(36).slice(2));}
+  /* Target-weight edits: log every meaningful change (|delta|>=0.01%) to portWeightHistory and save the new weight. */
+  function updateTargetWeight(companyId,portfolio,rawNewValue){
+    setCompanies(function(cs){return cs.map(function(c){
+      if(c.id!==companyId)return c;
+      var oldRaw=(c.portWeights||{})[portfolio];
+      var oldNum=parseFloat(oldRaw);if(isNaN(oldNum))oldNum=0;
+      var newNum=parseFloat(rawNewValue);if(isNaN(newNum))newNum=0;
+      var nw=Object.assign({},c.portWeights||{});
+      nw[portfolio]=rawNewValue===""||rawNewValue===null||rawNewValue===undefined?"":rawNewValue;
+      /* Only log if the numeric value actually changed */
+      if(Math.abs(oldNum-newNum)<0.01)return Object.assign({},c,{portWeights:nw});
+      var entry={id:newId(),date:todayStr(),portfolio:portfolio,oldWeight:oldNum,newWeight:newNum,author:currentUser||"Unknown"};
+      var hist=[entry].concat(c.portWeightHistory||[]);
+      return Object.assign({},c,{portWeights:nw,portWeightHistory:hist});
+    });});
+  }
+  /* Manual backfill: add a historical entry without changing current portWeights. */
+  function addTargetHistoryEntry(companyId,entry){
+    setCompanies(function(cs){return cs.map(function(c){
+      if(c.id!==companyId)return c;
+      var e=Object.assign({id:newId(),author:currentUser||"Unknown",date:todayStr()},entry);
+      var hist=(c.portWeightHistory||[]).concat([e]);
+      hist.sort(function(a,b){return(b.date||"").localeCompare(a.date||"");});
+      return Object.assign({},c,{portWeightHistory:hist});
+    });});
+  }
+  function deleteTargetHistoryEntry(companyId,entryId){
+    setCompanies(function(cs){return cs.map(function(c){
+      if(c.id!==companyId)return c;
+      return Object.assign({},c,{portWeightHistory:(c.portWeightHistory||[]).filter(function(e){return e.id!==entryId;})});
+    });});
+  }
+
   function cp(text,key){try{var el=document.createElement("textarea");el.value=text;el.style.position="fixed";el.style.opacity="0";document.body.appendChild(el);el.focus();el.select();document.execCommand("copy");document.body.removeChild(el);setCopied(key);setTimeout(function(){setCopied(null);},1500);}catch(e){}}
 
   var value={
@@ -162,7 +196,8 @@ export function CompanyProvider({children}){
     updateCo,
     cp,
     annotations,setAnnotations,
-    addAnnotation,updateAnnotation,deleteAnnotation,resolveAnnotation,unresolveAnnotation,addReply,markAnnotationRead,parseMentions
+    addAnnotation,updateAnnotation,deleteAnnotation,resolveAnnotation,unresolveAnnotation,addReply,markAnnotationRead,parseMentions,
+    updateTargetWeight,addTargetHistoryEntry,deleteTargetHistoryEntry
   };
 
   return <CompanyContext.Provider value={value}>{children}</CompanyContext.Provider>;
