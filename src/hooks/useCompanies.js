@@ -118,7 +118,7 @@ export function useCompanies(){
       if(usT&&usT!==ordT){var e2=findExisting(usT);nt.push(Object.assign({ticker:usT,price:"",perf5d:"",currency:"USD",isOrdinary:nt.length===0},e2||{},{ticker:usT,isOrdinary:e2?!!e2.isOrdinary:nt.length===0,currency:e2&&e2.currency?e2.currency:"USD"}));}
       return nt;
     }
-    if(mode==="replace"){setCompanies(bulkPreview.map(function(row){var ct=row.country||"";var tickers=buildTickers(row,ct,[]);return Object.assign({id:Date.now()+Math.random(),sections:{},updateLog:[],valuation:{},tpHistory:[],earningsEntries:[],lastUpdated:null,takeawayLong:"",portWeights:{},tickers:tickers},row,{ticker:(row.ordTicker||row.ticker||"").toUpperCase()});}));}
+    if(mode==="replace"){setCompanies(bulkPreview.map(function(row){var ct=row.country||"";var tickers=buildTickers(row,ct,[]);return Object.assign({id:(typeof crypto!=="undefined"&&crypto.randomUUID)?crypto.randomUUID():(Date.now()+"-"+Math.random().toString(36).slice(2)),sections:{},updateLog:[],valuation:{},tpHistory:[],earningsEntries:[],lastUpdated:null,takeawayLong:"",portWeights:{},tickers:tickers},row,{ticker:(row.ordTicker||row.ticker||"").toUpperCase()});}));}
     else{setCompanies(function(prev){
       var seen=new Set();var deduped=prev.filter(function(c){var t=(c.ticker||"").toUpperCase();if(seen.has(t)&&t)return false;seen.add(t);return true;});var upd=deduped.slice();
       bulkPreview.forEach(function(row){var rt=((row.ordTicker||row.ticker)||"").toUpperCase();var ut=(row.usTicker||"").toUpperCase();var ix=-1;
@@ -132,7 +132,7 @@ export function useCompanies(){
         if(ix<0)ix=upd.findIndex(function(c){return(c.name||"").toLowerCase()===(row.name||"").toLowerCase();});
         // 5. Normalized name match (strips Inc/Corp/Ltd/SA/AG/PLC, punctuation, etc.)
         if(ix<0){var rn=normalizeName(row.name);if(rn)ix=upd.findIndex(function(c){return normalizeName(c.name)===rn;});}
-        var existing=ix>-1?upd[ix]:null;var ct=row.country||(existing&&existing.country)||"";var tickers=buildTickers(row,ct,existing?existing.tickers:[]);var entry={portfolios:row.portfolios||[],portNote:row.portNote||"",country:ct,sector:row.sector||"",lastReviewed:row.lastReviewed||"",action:row.action||"",takeaway:row.takeaway||"",status:row.status||"",tier:row.tier||"",ticker:rt,tickers:tickers};if(ix>-1){upd[ix]=Object.assign({},upd[ix],entry);}else{upd.unshift(Object.assign({id:Date.now()+Math.random(),name:row.name||"Unnamed",sections:{},updateLog:[],valuation:{},tpHistory:[],earningsEntries:[],lastUpdated:null,takeawayLong:"",portWeights:{}},entry));}});return upd;
+        var existing=ix>-1?upd[ix]:null;var ct=row.country||(existing&&existing.country)||"";var tickers=buildTickers(row,ct,existing?existing.tickers:[]);var entry={portfolios:row.portfolios||[],portNote:row.portNote||"",country:ct,sector:row.sector||"",lastReviewed:row.lastReviewed||"",action:row.action||"",takeaway:row.takeaway||"",status:row.status||"",tier:row.tier||"",ticker:rt,tickers:tickers};if(ix>-1){upd[ix]=Object.assign({},upd[ix],entry);}else{upd.unshift(Object.assign({id:(typeof crypto!=="undefined"&&crypto.randomUUID)?crypto.randomUUID():(Date.now()+"-"+Math.random().toString(36).slice(2)),name:row.name||"Unnamed",sections:{},updateLog:[],valuation:{},tpHistory:[],earningsEntries:[],lastUpdated:null,takeawayLong:"",portWeights:{}},entry));}});return upd;
     });}
     setBulkPreview(null);setBulkText("");setShowBulk(false);
   }

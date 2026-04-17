@@ -33,7 +33,7 @@ export function mkTheme(dark){return{dark,bg:dark?"#0f172a":"#ffffff",bgSec:dark
 export function getStatusRank(status){var r=STATUS_RANK[status||""];return(r!==undefined&&r!==null)?r:4;}
 export function getTierIndex(x){var ts=getTiers(x.tier),best=999;for(var j=0;j<ts.length;j++){var t=ts[j].trim();var idx=TIER_ORDER.indexOf(t);if(idx<0){for(var k=0;k<TIER_ORDER.length;k++){if(TIER_ORDER[k].toUpperCase()===t.toUpperCase()){idx=k;break;}}}if(idx>=0&&idx<best){best=idx;}}return best;}
 export function getCompanyMOS(c){var val=c.valuation||{};var eps=calcNormEPS(val)||parseFloat(val.eps);var tp=calcTP(val.pe,eps);return calcMOS(tp,val.price);}
-export function blankEarnings(){return{id:Date.now()+Math.random(),quarter:"",reportDate:"",eps:"",tpChange:"Unchanged",newTP:"",tpRationale:"",bullets:["","","","",""],shortTakeaway:"",extendedTakeaway:"",thesisStatus:"On track",thesisNote:"",open:true};}
+export function blankEarnings(){return{id:(typeof crypto!=="undefined"&&crypto.randomUUID)?crypto.randomUUID():(Date.now()+"-"+Math.random().toString(36).slice(2)),quarter:"",reportDate:"",eps:"",tpChange:"Unchanged",newTP:"",tpRationale:"",bullets:["","","","",""],shortTakeaway:"",extendedTakeaway:"",thesisStatus:"On track",thesisNote:"",open:true};}
 
 export function tierToStatus(tier){
   var tiers=(tier||"").split(",").map(function(t){return t.trim();}).filter(Boolean);
