@@ -167,6 +167,22 @@ export function CompanyProvider({children}){
       return Object.assign({},c,{portWeightHistory:(c.portWeightHistory||[]).filter(function(e){return e.id!==entryId;})});
     });});
   }
+  function addTransaction(companyId,tx){
+    setCompanies(function(cs){return cs.map(function(c){
+      if(c.id!==companyId)return c;
+      var shares=parseFloat(tx.shares)||0;
+      var e=Object.assign({id:newId(),type:shares>=0?"BUY":"SELL"},tx,{shares:shares});
+      var txs=(c.transactions||[]).concat([e]);
+      txs.sort(function(a,b){return(b.date||"").localeCompare(a.date||"");});
+      return Object.assign({},c,{transactions:txs});
+    });});
+  }
+  function deleteTransaction(companyId,txId){
+    setCompanies(function(cs){return cs.map(function(c){
+      if(c.id!==companyId)return c;
+      return Object.assign({},c,{transactions:(c.transactions||[]).filter(function(t){return t.id!==txId;})});
+    });});
+  }
 
   function cp(text,key){try{var el=document.createElement("textarea");el.value=text;el.style.position="fixed";el.style.opacity="0";document.body.appendChild(el);el.focus();el.select();document.execCommand("copy");document.body.removeChild(el);setCopied(key);setTimeout(function(){setCopied(null);},1500);}catch(e){}}
 
@@ -197,7 +213,8 @@ export function CompanyProvider({children}){
     cp,
     annotations,setAnnotations,
     addAnnotation,updateAnnotation,deleteAnnotation,resolveAnnotation,unresolveAnnotation,addReply,markAnnotationRead,parseMentions,
-    updateTargetWeight,addTargetHistoryEntry,deleteTargetHistoryEntry
+    updateTargetWeight,addTargetHistoryEntry,deleteTargetHistoryEntry,
+    addTransaction,deleteTransaction
   };
 
   return <CompanyContext.Provider value={value}>{children}</CompanyContext.Provider>;
