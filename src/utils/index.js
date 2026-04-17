@@ -41,14 +41,32 @@ export function repAvgCost(entry){if(entry==null||typeof entry==="number")return
 
 /* Effective initiated date for a company in a given portfolio:
    manual override (c.initiatedDates[portfolio]) takes precedence;
-   otherwise earliest BUY transaction in that portfolio. Returns "YYYY-MM-DD" or null. */
+   otherwise the LATEST initiation — walks transactions chronologically
+   and finds the most recent point where running position transitioned
+   from <=0 to >0. This handles buy/sell-out/rebuy patterns. */
 export function getInitiatedDate(c,portfolio){
   var manual=((c&&c.initiatedDates)||{})[portfolio];
   if(manual)return manual;
-  var txs=((c&&c.transactions)||[]).filter(function(t){return t.portfolio===portfolio&&(parseFloat(t.shares)||0)>0&&t.date;});
+  var txs=((c&&c.transactions)||[]).filter(function(t){return t.portfolio===portfolio&&t.date;});
   if(txs.length===0)return null;
-  var earliest=txs.reduce(function(a,b){return(a.date||"")<(b.date||"")?a:b;});
-  return earliest.date||null;
+  var sorted=txs.slice().sort(function(a,b){return(a.date||"").localeCompare(b.date||"");});
+  var running=0;var lastInit=null;
+  sorted.forEach(function(t){var prev=running;running+=parseFloat(t.shares)||0;if(prev<=0&&running>0)lastInit=t.date;});
+  return lastInit;
+}
+/* Returns true if this specific transaction caused a 0→positive transition
+   (i.e., it's an initiation event — either the very first buy or a rebuy
+   after a full exit) in its portfolio. */
+export function isInitiationTx(c,tx){
+  if(!tx||!tx.date)return false;
+  var txs=((c&&c.transactions)||[]).filter(function(t){return t.portfolio===tx.portfolio&&t.date;});
+  var sorted=txs.slice().sort(function(a,b){var d=(a.date||"").localeCompare(b.date||"");return d!==0?d:((a.id||"").localeCompare(b.id||""));});
+  var running=0;
+  for(var i=0;i<sorted.length;i++){
+    var t=sorted[i];var prev=running;running+=parseFloat(t.shares)||0;
+    if(prev<=0&&running>0&&t.id===tx.id)return true;
+  }
+  return false;
 }
 export function monthsSince(dateStr){
   if(!dateStr)return null;
