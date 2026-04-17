@@ -191,6 +191,17 @@ export function CompanyProvider({children}){
       return Object.assign({},c,{transactions:(c.transactions||[]).filter(function(t){return t.id!==txId;})});
     });});
   }
+  function setTxInitOverride(companyId,txId,override){
+    setCompanies(function(cs){return cs.map(function(c){
+      if(c.id!==companyId)return c;
+      return Object.assign({},c,{transactions:(c.transactions||[]).map(function(t){
+        if(t.id!==txId)return t;
+        var n=Object.assign({},t);
+        if(override===undefined||override===null)delete n.initOverride;else n.initOverride=!!override;
+        return n;
+      })});
+    });});
+  }
 
   function cp(text,key){try{var el=document.createElement("textarea");el.value=text;el.style.position="fixed";el.style.opacity="0";document.body.appendChild(el);el.focus();el.select();document.execCommand("copy");document.body.removeChild(el);setCopied(key);setTimeout(function(){setCopied(null);},1500);}catch(e){}}
 
@@ -222,7 +233,7 @@ export function CompanyProvider({children}){
     annotations,setAnnotations,
     addAnnotation,updateAnnotation,deleteAnnotation,resolveAnnotation,unresolveAnnotation,addReply,markAnnotationRead,parseMentions,
     updateTargetWeight,addTargetHistoryEntry,deleteTargetHistoryEntry,
-    addTransaction,deleteTransaction,updateInitiatedDate
+    addTransaction,deleteTransaction,setTxInitOverride,updateInitiatedDate
   };
 
   return <CompanyContext.Provider value={value}>{children}</CompanyContext.Provider>;

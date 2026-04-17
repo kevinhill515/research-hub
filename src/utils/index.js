@@ -54,11 +54,14 @@ export function getInitiatedDate(c,portfolio){
   sorted.forEach(function(t){var prev=running;running+=parseFloat(t.shares)||0;if(prev<=0&&running>0)lastInit=t.date;});
   return lastInit;
 }
-/* Returns true if this specific transaction caused a 0→positive transition
-   (i.e., it's an initiation event — either the very first buy or a rebuy
-   after a full exit) in its portfolio. */
+/* Returns true if this specific transaction is an initiation event.
+   Explicit initOverride (true/false) wins. Otherwise auto-detects by
+   walking transactions chronologically and flagging trades where the
+   running position transitioned from <=0 to >0. */
 export function isInitiationTx(c,tx){
   if(!tx||!tx.date)return false;
+  if(tx.initOverride===true)return true;
+  if(tx.initOverride===false)return false;
   var txs=((c&&c.transactions)||[]).filter(function(t){return t.portfolio===tx.portfolio&&t.date;});
   var sorted=txs.slice().sort(function(a,b){var d=(a.date||"").localeCompare(b.date||"");return d!==0?d:((a.id||"").localeCompare(b.id||""));});
   var running=0;
