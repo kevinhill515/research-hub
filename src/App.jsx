@@ -41,6 +41,8 @@ export default function App(){
   const [showAddTx,setShowAddTx]=useState(false);
   const [newTx,setNewTx]=useState({date:"",portfolio:"",shares:"",price:"",amount:""});
   const [editingTarget,setEditingTarget]=useState(null);
+  const [weightsFilter,setWeightsFilter]=useState("All");
+  const [txFilter,setTxFilter]=useState("All");
   const [overlapMode,setOverlapMode]=useState("target");
   const [overlapFilter,setOverlapFilter]=useState("All");
   const [showShortcuts,setShowShortcuts]=useState(false);
@@ -92,6 +94,8 @@ export default function App(){
   var dashCountryMax=1;dashCountryEntries.forEach(function(e){var t=e[1].own+e[1].focus+e[1].watch;if(t>dashCountryMax)dashCountryMax=t;});
   var HEADER_COLS=[{label:"Tier(s)",sort:"Tier"},{label:"Name",sort:"Name"},{label:"5D%",sort:"5D%"},{label:"Country",sort:"Country"},{label:"Sector",sort:"Sector"},{label:"Portfolio",sort:null},{label:"Action",sort:null},{label:"Notes",sort:null},{label:"Reviewed",sort:"Last Reviewed"},{label:"Updated",sort:"Last Updated"},{label:"Status",sort:null},{label:"Flag",sort:null},{label:"Del",sort:null}];
   var coTabs=[...TEMPLATE_SECTIONS.map(function(s){return{id:"section:"+s,label:s};}),{id:"earnings",label:"Earnings & Thesis Check"},{id:"template",label:"Template"},
+    {id:"weights",label:"Weights"+((selCo&&selCo.portWeightHistory&&selCo.portWeightHistory.length>0)?" ("+selCo.portWeightHistory.length+")":"")},
+    {id:"transactions",label:"Transactions"+((selCo&&selCo.transactions&&selCo.transactions.length>0)?" ("+selCo.transactions.length+")":"")},
     {id:"linked",label:"Linked"+(linkedEntries.length>0?" ("+linkedEntries.length+")":"")},{id:"upload",label:"Upload"},{id:"history",label:"Log"+((selCo&&selCo.updateLog&&selCo.updateLog.length>0)?" ("+selCo.updateLog.length+")":"")}];
 
   return(
@@ -264,14 +268,19 @@ if(totalMV>0&&Math.abs(totalRep-100)>0.05){var dbg={portTab:portTab,totalMV:tota
 
           {/* TEMPLATE TAB */}
           {/* Portfolio weights / History / Transactions — visible on every tab */}
-            {/* Portfolio weights card at top */}
+                      {coView==="weights"&&(<div>
+{/* Portfolio weights card at top */}
             {portfolios.length>0&&(<div className={CARD + " mb-3"}>
               <div className={SECTION_LABEL}>Target Weights</div>
               <div className="flex gap-3 flex-wrap">
                 {portfolios.map(function(p){return(<div key={p} className="flex items-center gap-1.5"><span className="text-xs font-medium text-gray-900 dark:text-slate-100 min-w-[28px]">{p}</span><input type="number" step="0.1" min="0" max="100" defaultValue={portWeights[p]||""} key={selCo.id+"-"+p+"-"+(portWeights[p]||"")} onBlur={function(e){updateTargetWeight(selCo.id,p,e.target.value);setSelCo(function(prev){if(!prev||prev.id!==selCo.id)return prev;var nw=Object.assign({},prev.portWeights||{});nw[p]=e.target.value;return Object.assign({},prev,{portWeights:nw});});}} onKeyDown={function(e){if(e.key==="Enter")e.target.blur();}} placeholder="0.0" className={INP + " w-[65px] !text-xs"}/><span className="text-[11px] text-gray-500 dark:text-slate-400">%</span></div>);})}
               </div>
             </div>)}
-            {/* Target Weight History */}
+                          <div className="flex items-center gap-2 mb-3">
+                <span className="text-[11px] text-gray-500 dark:text-slate-400 uppercase tracking-wide">Filter:</span>
+                {["All"].concat(portfolios).map(function(p){var active=weightsFilter===p;return <span key={p} onClick={function(){setWeightsFilter(p);}} className={"text-[11px] px-2 py-0.5 rounded-full cursor-pointer transition-colors " + (active ? "bg-slate-100 dark:bg-slate-800 border border-slate-400 dark:border-slate-500 text-gray-900 dark:text-slate-100 font-semibold" : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-gray-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800")}>{p}</span>;})}
+              </div>
+{/* Target Weight History */}
             {portfolios.length>0&&(<div className={CARD + " mb-3"}>
               <div className="flex items-center justify-between mb-2">
                 <div className={SECTION_LABEL + " mb-0"}>Target Weight History</div>
@@ -285,13 +294,19 @@ if(totalMV>0&&Math.abs(totalRep-100)>0.05){var dbg={portTab:portTab,totalMV:tota
                 <button onClick={function(){if(!newTargetHist.date||!newTargetHist.portfolio)return;addTargetHistoryEntry(selCo.id,{date:newTargetHist.date,portfolio:newTargetHist.portfolio,oldWeight:parseFloat(newTargetHist.oldWeight)||0,newWeight:parseFloat(newTargetHist.newWeight)||0});setNewTargetHist({date:"",portfolio:"",oldWeight:"",newWeight:""});setShowAddTargetHist(false);}} disabled={!newTargetHist.date||!newTargetHist.portfolio} className={BTN_SM}>Add</button>
               </div>)}
               {selCo.portWeightHistory&&selCo.portWeightHistory.length>0&&(<div className="space-y-1">
-                {selCo.portWeightHistory.slice().sort(function(a,b){return(b.date||"").localeCompare(a.date||"");}).map(function(h){var delta=(parseFloat(h.newWeight)||0)-(parseFloat(h.oldWeight)||0);var color=delta>0?"#166534":delta<0?"#dc2626":"#6b7280";return(<div key={h.id} className="flex items-center gap-2 text-xs py-0.5"><span className="text-gray-500 dark:text-slate-400 font-mono">{h.date}</span><span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-gray-900 dark:text-slate-100 font-medium">{h.portfolio}</span><span className="text-gray-700 dark:text-slate-300">{(parseFloat(h.oldWeight)||0).toFixed(1)}% → <span style={{color:color,fontWeight:600}}>{(parseFloat(h.newWeight)||0).toFixed(1)}%</span></span>{h.author&&<span className="text-[10px] text-gray-400 dark:text-slate-500">({h.author})</span>}<span onClick={function(){deleteTargetHistoryEntry(selCo.id,h.id);}} className="ml-auto text-[11px] text-red-500 dark:text-red-400 cursor-pointer hover:text-red-700">{"\u00D7"}</span></div>);})}
+                {selCo.portWeightHistory.slice().filter(function(h){return weightsFilter==="All"||h.portfolio===weightsFilter;}).sort(function(a,b){return(b.date||"").localeCompare(a.date||"");}).map(function(h){var delta=(parseFloat(h.newWeight)||0)-(parseFloat(h.oldWeight)||0);var color=delta>0?"#166534":delta<0?"#dc2626":"#6b7280";return(<div key={h.id} className="flex items-center gap-2 text-xs py-0.5"><span className="text-gray-500 dark:text-slate-400 font-mono">{h.date}</span><span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-gray-900 dark:text-slate-100 font-medium">{h.portfolio}</span><span className="text-gray-700 dark:text-slate-300">{(parseFloat(h.oldWeight)||0).toFixed(1)}% → <span style={{color:color,fontWeight:600}}>{(parseFloat(h.newWeight)||0).toFixed(1)}%</span></span>{h.author&&<span className="text-[10px] text-gray-400 dark:text-slate-500">({h.author})</span>}<span onClick={function(){deleteTargetHistoryEntry(selCo.id,h.id);}} className="ml-auto text-[11px] text-red-500 dark:text-red-400 cursor-pointer hover:text-red-700">{"\u00D7"}</span></div>);})}
               </div>)}
             </div>)}
-            {/* Transactions */}
+                      </div>)}
+          {coView==="transactions"&&(<div>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-[11px] text-gray-500 dark:text-slate-400 uppercase tracking-wide">Filter:</span>
+                {["All"].concat(portfolios).map(function(p){var active=txFilter===p;return <span key={p} onClick={function(){setTxFilter(p);}} className={"text-[11px] px-2 py-0.5 rounded-full cursor-pointer transition-colors " + (active ? "bg-slate-100 dark:bg-slate-800 border border-slate-400 dark:border-slate-500 text-gray-900 dark:text-slate-100 font-semibold" : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-gray-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800")}>{p}</span>;})}
+              </div>
+{/* Transactions */}
             {portfolios.length>0&&(<div className={CARD + " mb-3"}>
               <div className="flex items-center justify-between mb-2">
-                <div className={SECTION_LABEL + " mb-0"}>Transactions{selCo.transactions&&selCo.transactions.length>0?" ("+selCo.transactions.length+")":""}</div>
+                <div className={SECTION_LABEL + " mb-0"}>Transactions{(function(){var n=(selCo.transactions||[]).filter(function(t){return txFilter==="All"||t.portfolio===txFilter;}).length;return n>0?" ("+n+")":"";})()}</div>
                 <button onClick={function(){setShowAddTx(function(v){return !v;});}} className={BTN_SM}>{showAddTx?"Cancel":"+ Add transaction"}</button>
               </div>
               {showAddTx&&(<div className="mb-3 p-2 bg-white dark:bg-slate-900 rounded-md border border-slate-200 dark:border-slate-700 flex gap-2 flex-wrap items-end">
@@ -306,7 +321,7 @@ if(totalMV>0&&Math.abs(totalRep-100)>0.05){var dbg={portTab:portTab,totalMV:tota
                 <div style={{display:"table-row"}}>
                   {[["Date"],["Portfolio"],["Type"],["Shares"],["Unit Price"],["Amount"],[""]].map(function(h,i){return <div key={i} className="text-[10px] uppercase tracking-wide pb-1.5 pr-2 text-gray-500 dark:text-slate-400 font-semibold" style={{display:"table-cell"}}>{h[0]}</div>;})}
                 </div>
-                {selCo.transactions.slice().sort(function(a,b){return(b.date||"").localeCompare(a.date||"");}).map(function(t){var isBuy=(parseFloat(t.shares)||0)>=0;return(<div key={t.id} style={{display:"table-row"}}>
+                {selCo.transactions.slice().filter(function(t){return txFilter==="All"||t.portfolio===txFilter;}).sort(function(a,b){return(b.date||"").localeCompare(a.date||"");}).map(function(t){var isBuy=(parseFloat(t.shares)||0)>=0;return(<div key={t.id} style={{display:"table-row"}}>
                   <div className="align-middle pr-2 py-1 text-xs text-gray-700 dark:text-slate-300 font-mono" style={{display:"table-cell"}}>{t.date||"--"}</div>
                   <div className="align-middle pr-2 py-1" style={{display:"table-cell"}}>{t.portfolio?<span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-gray-900 dark:text-slate-100 font-medium">{t.portfolio}</span>:<span className="text-xs text-gray-400 dark:text-slate-500">--</span>}</div>
                   <div className="align-middle pr-2 py-1" style={{display:"table-cell"}}><span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold" style={{background:isBuy?"rgba(22,101,52,0.15)":"rgba(220,38,38,0.15)",color:isBuy?"#166534":"#991b1b"}}>{isBuy?"BUY":"SELL"}</span></div>
@@ -317,6 +332,7 @@ if(totalMV>0&&Math.abs(totalRep-100)>0.05){var dbg={portTab:portTab,totalMV:tota
                 </div>);})}
               </div>):(<div className="text-xs text-gray-400 dark:text-slate-500 italic">No transactions logged.</div>)}
             </div>)}
+          </div>)}
           {coView==="template"&&(<div>
             {Object.keys(selCo.sections||{}).length===0?(
               <div className={CARD} style={{borderStyle:"dashed"}}>
