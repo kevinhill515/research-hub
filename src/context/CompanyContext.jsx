@@ -167,6 +167,14 @@ export function CompanyProvider({children}){
       return Object.assign({},c,{portWeightHistory:(c.portWeightHistory||[]).filter(function(e){return e.id!==entryId;})});
     });});
   }
+  function updateInitiatedDate(companyId,portfolio,date){
+    setCompanies(function(cs){return cs.map(function(c){
+      if(c.id!==companyId)return c;
+      var d=Object.assign({},c.initiatedDates||{});
+      if(date)d[portfolio]=date;else delete d[portfolio];
+      return Object.assign({},c,{initiatedDates:d});
+    });});
+  }
   function addTransaction(companyId,tx){
     setCompanies(function(cs){return cs.map(function(c){
       if(c.id!==companyId)return c;
@@ -214,7 +222,7 @@ export function CompanyProvider({children}){
     annotations,setAnnotations,
     addAnnotation,updateAnnotation,deleteAnnotation,resolveAnnotation,unresolveAnnotation,addReply,markAnnotationRead,parseMentions,
     updateTargetWeight,addTargetHistoryEntry,deleteTargetHistoryEntry,
-    addTransaction,deleteTransaction
+    addTransaction,deleteTransaction,updateInitiatedDate
   };
 
   return <CompanyContext.Provider value={value}>{children}</CompanyContext.Provider>;

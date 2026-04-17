@@ -39,6 +39,26 @@ export function blankEarnings(){return{id:(typeof crypto!=="undefined"&&crypto.r
 export function repShares(entry){if(entry==null)return 0;if(typeof entry==="number")return entry;return Number(entry.shares)||0;}
 export function repAvgCost(entry){if(entry==null||typeof entry==="number")return 0;return Number(entry.avgCost)||0;}
 
+/* Effective initiated date for a company in a given portfolio:
+   manual override (c.initiatedDates[portfolio]) takes precedence;
+   otherwise earliest BUY transaction in that portfolio. Returns "YYYY-MM-DD" or null. */
+export function getInitiatedDate(c,portfolio){
+  var manual=((c&&c.initiatedDates)||{})[portfolio];
+  if(manual)return manual;
+  var txs=((c&&c.transactions)||[]).filter(function(t){return t.portfolio===portfolio&&(parseFloat(t.shares)||0)>0&&t.date;});
+  if(txs.length===0)return null;
+  var earliest=txs.reduce(function(a,b){return(a.date||"")<(b.date||"")?a:b;});
+  return earliest.date||null;
+}
+export function monthsSince(dateStr){
+  if(!dateStr)return null;
+  var d=new Date(dateStr);
+  if(isNaN(d.getTime()))return null;
+  var ms=Date.now()-d.getTime();
+  if(ms<0)return null;
+  return ms/(1000*60*60*24*30.4375);
+}
+
 export function tierToStatus(tier){
   var tiers=(tier||"").split(",").map(function(t){return t.trim();}).filter(Boolean);
   for(var i=0;i<tiers.length;i++){
