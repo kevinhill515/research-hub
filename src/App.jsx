@@ -263,7 +263,7 @@ if(totalMV>0&&Math.abs(totalRep-100)>0.05){var dbg={portTab:portTab,totalMV:tota
           </div>
 
           {/* TEMPLATE TAB */}
-          {coView==="template"&&(<div>
+          {/* Portfolio weights / History / Transactions — visible on every tab */}
             {/* Portfolio weights card at top */}
             {portfolios.length>0&&(<div className={CARD + " mb-3"}>
               <div className={SECTION_LABEL}>Target Weights</div>
@@ -317,6 +317,7 @@ if(totalMV>0&&Math.abs(totalRep-100)>0.05){var dbg={portTab:portTab,totalMV:tota
                 </div>);})}
               </div>):(<div className="text-xs text-gray-400 dark:text-slate-500 italic">No transactions logged.</div>)}
             </div>)}
+          {coView==="template"&&(<div>
             {Object.keys(selCo.sections||{}).length===0?(
               <div className={CARD} style={{borderStyle:"dashed"}}>
                 <div className="text-sm text-gray-500 dark:text-slate-400 mb-2">No template yet.</div>
