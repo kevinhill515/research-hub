@@ -78,7 +78,7 @@ export function useCompanies(){
       function parseRow(line){var cols=[],cur="",inQ=false;for(var i=0;i<line.length;i++){var ch=line[i];if(ch==='"'){inQ=!inQ;}else if(ch===delim&&!inQ){cols.push(cur.trim());cur="";}else{cur+=ch;}}cols.push(cur.trim());return cols.map(function(c){return c.replace(/^"|"$/g,"").trim();});}
       var headers=parseRow(lines[0]).map(function(h){return h.toLowerCase().replace(/[^a-z0-9?]/g," ").trim();});
       function find(){var keys=Array.from(arguments);for(var i=0;i<keys.length;i++){var ix=headers.findIndex(function(h){return h.indexOf(keys[i])>=0;});if(ix>-1)return ix;}return -1;}
-      var idx={name:find("company","name"),ordTicker:find("ord ticker","ord t"),usTicker:find("us ticker","us t","adr ticker"),ticker:find("ticker","symbol"),portfolio:find("portfolio"),port:find("port?","port "),country:find("country"),sector:find("sector"),lastReviewed:find("last reviewed","reviewed"),action:find("action"),takeaway:find("notes","takeaway","summary"),status:find("status"),tier:find("tier")};
+      var idx={name:find("company","name"),ordTicker:find("ord ticker","ord t"),usTicker:find("us ticker","us t","adr ticker"),usTickerName:find("us ticker name","us name","adr name","us security","adr security"),ticker:find("ticker","symbol"),portfolio:find("portfolio"),port:find("port?","port "),country:find("country"),sector:find("sector"),lastReviewed:find("last reviewed","reviewed"),action:find("action"),takeaway:find("notes","takeaway","summary"),status:find("status"),tier:find("tier")};
       var rows=lines.slice(1).map(function(line){
         var cols=parseRow(line);function get(i){return i>-1?(cols[i]||""):""}
         var portRaw=get(idx.portfolio).toUpperCase();var portTokens=portRaw.split(/[\s,]+/).filter(Boolean);
@@ -87,7 +87,7 @@ export function useCompanies(){
         var action=get(idx.action);action=/increase|up|raise/i.test(action)?"Increase TP":/decrease|down|cut|lower/i.test(action)?"Decrease TP":/no action|hold|maintain/i.test(action)?"No Action":action||"";
         var ordT=(get(idx.ordTicker)||get(idx.ticker)).toUpperCase();
         var usT=get(idx.usTicker).toUpperCase();
-        return{name:get(idx.name),ticker:ordT,ordTicker:ordT,usTicker:usT,portfolios,portNote:get(idx.port),country:get(idx.country),sector:get(idx.sector),lastReviewed:get(idx.lastReviewed),action,takeaway:get(idx.takeaway),status,tier:get(idx.tier)};
+        return{name:get(idx.name),ticker:ordT,ordTicker:ordT,usTicker:usT,usTickerName:get(idx.usTickerName),portfolios,portNote:get(idx.port),country:get(idx.country),sector:get(idx.sector),lastReviewed:get(idx.lastReviewed),action,takeaway:get(idx.takeaway),status,tier:get(idx.tier)};
       }).filter(function(r){return r.name||r.ticker;});
       setBulkPreview(rows);
     }catch(e){alert("Parse error: "+e.message);}
@@ -132,7 +132,7 @@ export function useCompanies(){
         if(ix<0)ix=upd.findIndex(function(c){return(c.name||"").toLowerCase()===(row.name||"").toLowerCase();});
         // 5. Normalized name match (strips Inc/Corp/Ltd/SA/AG/PLC, punctuation, etc.)
         if(ix<0){var rn=normalizeName(row.name);if(rn)ix=upd.findIndex(function(c){return normalizeName(c.name)===rn;});}
-        var existing=ix>-1?upd[ix]:null;var ct=row.country||(existing&&existing.country)||"";var tickers=buildTickers(row,ct,existing?existing.tickers:[]);var entry={portfolios:row.portfolios||[],portNote:row.portNote||"",country:ct,sector:row.sector||"",lastReviewed:row.lastReviewed||"",action:row.action||"",takeaway:row.takeaway||"",status:row.status||"",tier:row.tier||"",ticker:rt,tickers:tickers};if(ix>-1){upd[ix]=Object.assign({},upd[ix],entry);}else{upd.unshift(Object.assign({id:(typeof crypto!=="undefined"&&crypto.randomUUID)?crypto.randomUUID():(Date.now()+"-"+Math.random().toString(36).slice(2)),name:row.name||"Unnamed",sections:{},updateLog:[],valuation:{},tpHistory:[],earningsEntries:[],lastUpdated:null,takeawayLong:"",portWeights:{}},entry));}});return upd;
+        var existing=ix>-1?upd[ix]:null;var ct=row.country||(existing&&existing.country)||"";var tickers=buildTickers(row,ct,existing?existing.tickers:[]);var entry={portfolios:row.portfolios||[],portNote:row.portNote||"",country:ct,sector:row.sector||"",lastReviewed:row.lastReviewed||"",action:row.action||"",takeaway:row.takeaway||"",status:row.status||"",tier:row.tier||"",ticker:rt,tickers:tickers,usTickerName:row.usTickerName||""};if(ix>-1){upd[ix]=Object.assign({},upd[ix],entry);}else{upd.unshift(Object.assign({id:(typeof crypto!=="undefined"&&crypto.randomUUID)?crypto.randomUUID():(Date.now()+"-"+Math.random().toString(36).slice(2)),name:row.name||"Unnamed",sections:{},updateLog:[],valuation:{},tpHistory:[],earningsEntries:[],lastUpdated:null,takeawayLong:"",portWeights:{}},entry));}});return upd;
     });}
     setBulkPreview(null);setBulkText("");setShowBulk(false);
   }
@@ -268,12 +268,12 @@ export function useCompanies(){
   function exportToPDF(title,htmlContent){   var win=window.open("","_blank");   if(!win){alert("Please allow popups to export PDF.");return;}   win.document.write("<!DOCTYPE html><html><head><title>"+title+"</title><style>body{font-family:Georgia,serif;max-width:800px;margin:40px auto;padding:0 40px;color:#111;line-height:1.7;}h1{font-size:22px;border-bottom:2px solid #334155;padding-bottom:10px;margin-bottom:20px;}h2{font-size:16px;color:#1e40af;margin-top:28px;margin-bottom:8px;}p{font-size:14px;}.meta{font-size:12px;color:#6b7280;margin-bottom:20px;}</style></head><body>"+htmlContent+"</body></html>");   win.document.close();   setTimeout(function(){win.print();},500); }
   function exportCompanyPDF(co){   var html="<h1>"+co.name+(co.ticker?" ("+co.ticker+")":"")+"</h1><div class='meta'>";   if(co.sector)html+="Sector: "+co.sector+" | ";   if(co.country)html+="Country: "+co.country+" | ";   if(co.status)html+="Status: "+co.status;   html+="</div>";   var v=co.valuation||{};var ne=calcNormEPS(v)||parseFloat(v.eps);var tp=calcTP(v.pe,ne);var mos=calcMOS(tp,v.price);var cur=(v.currency)||getCurrency(co.country);   if(tp!==null||v.price){html+="<h2>Valuation</h2><p>";if(v.price)html+="Price: "+cur+" "+fmtPrice(v.price)+" &nbsp;";if(tp!==null)html+="TP: "+fmtTP(tp,cur)+" &nbsp;";if(mos!==null)html+="MOS: "+fmtMOS(mos);html+="</p>";}   TEMPLATE_SECTIONS.forEach(function(s){var c=co.sections&&co.sections[s];if(c&&c.trim()){html+="<h2>"+s+"</h2><p>"+c.replace(/\n/g,"<br/>")+"</p>";}});   if(co.earningsEntries&&co.earningsEntries.length){html+="<h2>Earnings History</h2>";co.earningsEntries.forEach(function(e){html+="<p><strong>"+e.quarter+"</strong> "+e.reportDate+"<br/>"+(e.shortTakeaway||"")+"</p>";});}   exportToPDF(co.name,html); }
   function exportCSV(){
-    var rows=[["Tier","Name","Country","Sector","Portfolio","Action","Notes","Last Reviewed","Status","Ord Ticker","US Ticker","Port?"]];
+    var rows=[["Tier","Name","Country","Sector","Portfolio","Action","Notes","Last Reviewed","Status","Ord Ticker","US Ticker","Port?","US Ticker Name"]];
     displayedCos.forEach(function(c){
       var tks=c.tickers||[];
       var ordT=(tks.find(function(t){return t.isOrdinary;})||{}).ticker||c.ticker||"";
       var usT=(tks.find(function(t){return !t.isOrdinary&&(t.currency||"").toUpperCase()==="USD";})||{}).ticker||"";
-      rows.push([getTiers(c.tier).join(", "),c.name,c.country||"",c.sector||"",(c.portfolios||[]).join(", "),c.action||"",c.takeaway||"",c.lastReviewed||"",c.status||"",ordT,usT,c.portNote||""]);
+      rows.push([getTiers(c.tier).join(", "),c.name,c.country||"",c.sector||"",(c.portfolios||[]).join(", "),c.action||"",c.takeaway||"",c.lastReviewed||"",c.status||"",ordT,usT,c.portNote||"",c.usTickerName||""]);
     });
     var csv=rows.map(function(r){return r.map(function(v){return'"'+String(v).replace(/"/g,'""')+'"';}).join(",");}).join("\n");
     var blob=new Blob([csv],{type:"text/csv"});var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="companies_export.csv";a.click();

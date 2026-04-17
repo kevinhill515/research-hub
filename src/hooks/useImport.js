@@ -48,7 +48,8 @@ export function useImport(){
     var txCount=0;
     setCompanies(function(prev){return prev.map(function(c){
       var cname=(c.name||"").toLowerCase().trim();
-      var matches=byName[cname]||byNorm[normalize(c.name)];
+      var cUsName=(c.usTickerName||"").toLowerCase().trim();
+      var matches=byName[cname]||(cUsName&&byName[cUsName])||byNorm[normalize(c.name)]||(cUsName&&byNorm[normalize(c.usTickerName)]);
       if(!matches||matches.length===0)return c;
       matches.forEach(function(r){matchedNames[r.name]=true;unmatched.delete(r.name);});
       var existing=c.transactions||[];
