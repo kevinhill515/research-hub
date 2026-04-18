@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import { TEAM_MEMBERS, TEAM_COLORS } from '../../constants/index.js';
-import { getTiers } from '../../utils/index.js';
+import { getTiers, truncName } from '../../utils/index.js';
 
 /* Category config. Each category pulls watchlist names filtered by tier
    (F MC / W MC for GL+IN, F EM / W EM for EM, F SC / W SC for SC). */
@@ -32,7 +32,7 @@ function Slot({ companyId, eligible, onChange, onOpenCompany }){
   if(co){
     return (
       <div className="inline-flex items-center gap-1 text-xs">
-        <span onClick={function(){onOpenCompany(co);}} className="cursor-pointer hover:underline text-gray-900 dark:text-slate-100 font-medium" title="Open company">{co.name||"(unknown)"}</span>
+        <span onClick={function(){onOpenCompany(co);}} className="cursor-pointer hover:underline text-gray-900 dark:text-slate-100 font-medium" title={co.name||"(unknown)"}>{truncName(co.name||"(unknown)",15)}</span>
         <span onClick={function(){onChange(null);}} className="cursor-pointer text-red-500 dark:text-red-400 hover:text-red-700" title="Clear">×</span>
       </div>
     );

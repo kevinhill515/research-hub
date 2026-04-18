@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { PORTFOLIOS, TIER_ORDER, COUNTRY_ORDER, SECTOR_ORDER } from '../../constants/index.js';
-import { shortSector, sectorStyle, countryStyle, getTiers, tierPillStyle, tierBg, reviewedColor, daysSince, todayStr, calcNormEPS, calcTP, calcMOS, fmtMOS, mosBg, tierToStatus } from '../../utils/index.js';
+import { shortSector, sectorStyle, countryStyle, getTiers, tierPillStyle, tierBg, reviewedColor, daysSince, todayStr, calcNormEPS, calcTP, calcMOS, fmtMOS, mosBg, tierToStatus, truncName } from '../../utils/index.js';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import StatusPill from '../ui/StatusPill.jsx';
 import NotesCell from '../forms/NotesCell.jsx';
@@ -122,10 +122,10 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
             ) : (
               <span
                 onClick={function (e) { e.stopPropagation(); setEditName(true); setNameVal(company.name); }}
-                title="Click to rename"
+                title={company.name}
                 className={"font-medium text-gray-900 dark:text-slate-100 border-b border-dashed border-slate-300 dark:border-slate-600 cursor-text" + (compact ? " text-xs" : " text-sm")}
               >
-                {company.name}
+                {truncName(company.name, 15)}
               </span>
             )}
 

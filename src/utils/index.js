@@ -69,6 +69,9 @@ export function printPage(){
   /* Safety cleanup in case afterprint doesn't fire */
   setTimeout(cleanup,10000);
 }
+/* Truncate company name for list views. Pair with title={fullName} so the
+   full name is still available on hover. */
+export function truncName(n,max){if(!n)return"";var m=max||15;return n.length>m?n.slice(0,m)+"\u2026":n;}
 export function repShares(entry){if(entry==null)return 0;if(typeof entry==="number")return entry;return Number(entry.shares)||0;}
 export function repAvgCost(entry){if(entry==null||typeof entry==="number")return 0;return Number(entry.avgCost)||0;}
 
