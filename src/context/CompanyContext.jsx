@@ -28,6 +28,9 @@ export function CompanyProvider({children}){
   const [fxLastUpdated,setFxLastUpdated]=useState("");
   const [copied,setCopied]=useState(null);
   const [annotations,setAnnotations]=useState([]);
+  /* Research priority board: per-member slot assignments + shared reorgs list.
+     Shape: { byMember: { [name]: { gbl: {primary:[], secondary:[]}, intl:{...}, intSmall:{...}, em:{...}, existingHlds:[] } }, reorgs:[] } */
+  const [researchAssignments,setResearchAssignments]=useState({byMember:{},reorgs:[]});
 
   function migratePortfolioKeys(cos){
     var RENAMES={"FIV":"FIN","IV":"IN","FOC1":"FIN1","FOC2":"FIN2","FOC3":"FIN3","MC1":"FIN1","MC2":"FIN2","MC3":"FIN3","MC4":"INGL1","MC5":"INGL2","INTL":"IN1"};
@@ -106,7 +109,7 @@ export function CompanyProvider({children}){
     return{data:migrated,changed:changed};
   }
 
-  async function loadFromStorage(){     setLoadStatus({companies:null,library:null});var coOk=false,libOk=false;     try{var r=await supaGet("library","id","shared");if(r){var d=JSON.parse(r.data);if(Array.isArray(d)&&d.length){var libMig=migrateTags(d);setSaved(libMig.data);libOk=libMig.data.length;if(libMig.changed)supaUpsert("library",{id:"shared",data:JSON.stringify(libMig.data)});}}}catch(e){}     try{var r2=await supaGet("companies","id","shared");if(r2){var d2=JSON.parse(r2.data);if(Array.isArray(d2)&&d2.length){var coMig=migratePortfolioKeys(d2);setCompanies(coMig.data);coOk=coMig.data.length;if(coMig.changed)supaUpsert("companies",{id:"shared",data:JSON.stringify(coMig.data)});}}}catch(e){}     try{var r3=await supaGet("meta","key","lastPriceUpdate");if(r3)setLastPriceUpdate(r3.value);}catch(e){}     try{var r4=await supaGet("meta","key","entryComments");if(r4)setEntryComments(JSON.parse(r4.value));}catch(e){} try{var r5=await supaGet("meta","key","calLastUpdated");if(r5&&r5.value){var parts=r5.value.split(" at ");setCalLastUpdatedBy(parts[0]||"");setCalLastUpdated(parts[1]||"");}}catch(e){} try{var r6=await supaGet("meta","key","repData");if(r6&&r6.value){var rdRaw=JSON.parse(r6.value);var rdMig=migrateRepData(rdRaw);setRepData(rdMig.data);if(rdMig.changed)supaUpsert("meta",{key:"repData",value:JSON.stringify(rdMig.data)});}}catch(e){} try{var r7=await supaGet("meta","key","fxRates");if(r7&&r7.value)setFxRates(JSON.parse(r7.value));}catch(e){} try{var r8=await supaGet("meta","key","specialWeights");if(r8&&r8.value){var swRaw=JSON.parse(r8.value);var swMig=migrateSpecialWeights(swRaw);setSpecialWeights(swMig.data);if(swMig.changed)supaUpsert("meta",{key:"specialWeights",value:JSON.stringify(swMig.data)});}}catch(e){} try{var r9=await supaGet("meta","key","annotations");if(r9&&r9.value){var ann=JSON.parse(r9.value);if(Array.isArray(ann))setAnnotations(ann);}}catch(e){}     setLoadStatus({companies:coOk,library:libOk});setReady(true);return coOk||libOk;}
+  async function loadFromStorage(){     setLoadStatus({companies:null,library:null});var coOk=false,libOk=false;     try{var r=await supaGet("library","id","shared");if(r){var d=JSON.parse(r.data);if(Array.isArray(d)&&d.length){var libMig=migrateTags(d);setSaved(libMig.data);libOk=libMig.data.length;if(libMig.changed)supaUpsert("library",{id:"shared",data:JSON.stringify(libMig.data)});}}}catch(e){}     try{var r2=await supaGet("companies","id","shared");if(r2){var d2=JSON.parse(r2.data);if(Array.isArray(d2)&&d2.length){var coMig=migratePortfolioKeys(d2);setCompanies(coMig.data);coOk=coMig.data.length;if(coMig.changed)supaUpsert("companies",{id:"shared",data:JSON.stringify(coMig.data)});}}}catch(e){}     try{var r3=await supaGet("meta","key","lastPriceUpdate");if(r3)setLastPriceUpdate(r3.value);}catch(e){}     try{var r4=await supaGet("meta","key","entryComments");if(r4)setEntryComments(JSON.parse(r4.value));}catch(e){} try{var r5=await supaGet("meta","key","calLastUpdated");if(r5&&r5.value){var parts=r5.value.split(" at ");setCalLastUpdatedBy(parts[0]||"");setCalLastUpdated(parts[1]||"");}}catch(e){} try{var r6=await supaGet("meta","key","repData");if(r6&&r6.value){var rdRaw=JSON.parse(r6.value);var rdMig=migrateRepData(rdRaw);setRepData(rdMig.data);if(rdMig.changed)supaUpsert("meta",{key:"repData",value:JSON.stringify(rdMig.data)});}}catch(e){} try{var r7=await supaGet("meta","key","fxRates");if(r7&&r7.value)setFxRates(JSON.parse(r7.value));}catch(e){} try{var r8=await supaGet("meta","key","specialWeights");if(r8&&r8.value){var swRaw=JSON.parse(r8.value);var swMig=migrateSpecialWeights(swRaw);setSpecialWeights(swMig.data);if(swMig.changed)supaUpsert("meta",{key:"specialWeights",value:JSON.stringify(swMig.data)});}}catch(e){} try{var r9=await supaGet("meta","key","annotations");if(r9&&r9.value){var ann=JSON.parse(r9.value);if(Array.isArray(ann))setAnnotations(ann);}}catch(e){} try{var r10=await supaGet("meta","key","researchAssignments");if(r10&&r10.value){var ra=JSON.parse(r10.value);if(ra&&typeof ra==="object"){if(!ra.byMember)ra.byMember={};if(!Array.isArray(ra.reorgs))ra.reorgs=[];setResearchAssignments(ra);}}}catch(e){}     setLoadStatus({companies:coOk,library:libOk});setReady(true);return coOk||libOk;}
 
   useEffect(function(){
     var done=false,attempts=0;
@@ -123,6 +126,7 @@ export function CompanyProvider({children}){
   useEffect(function(){if(!ready||!lastPriceUpdate)return;var t=setTimeout(function(){supaUpsert("meta",{key:"lastPriceUpdate",value:lastPriceUpdate});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[lastPriceUpdate,ready]);
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){supaUpsert("meta",{key:"entryComments",value:JSON.stringify(entryComments)});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[entryComments,ready]);
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){supaUpsert("meta",{key:"annotations",value:JSON.stringify(annotations)});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[annotations,ready]);
+  useEffect(function(){if(!ready)return;var t=setTimeout(function(){supaUpsert("meta",{key:"researchAssignments",value:JSON.stringify(researchAssignments)});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[researchAssignments,ready]);
 
   function addComment(entryId,text){   if(!text.trim())return;   var comment={id:Date.now(),text:text.trim(),author:currentUser||"Unknown",date:todayStr()};   setEntryComments(function(prev){return Object.assign({},prev,{[entryId]:([comment].concat(prev[entryId]||[]))});});   setNewCommentText(function(prev){return Object.assign({},prev,{[entryId]:""});}); }
   function deleteComment(entryId,commentId){   setEntryComments(function(prev){return Object.assign({},prev,{[entryId]:(prev[entryId]||[]).filter(function(c){return c.id!==commentId;})});}); }
@@ -137,6 +141,28 @@ export function CompanyProvider({children}){
   function markAnnotationRead(id){if(!currentUser)return;setAnnotations(function(prev){return prev.map(function(a){if(a.id!==id)return a;var rb=a.readBy||[];if(rb.indexOf(currentUser)>=0)return a;return Object.assign({},a,{readBy:rb.concat([currentUser])});});});}
 
   function updateCo(id,ch){setCompanies(function(cs){return cs.map(function(c){return c.id===id?Object.assign({},c,ch):c;});});}
+
+  /* Research-board helpers. Members get their own bucket; reorgs is shared. */
+  function setResearchSlot(member,category,type,position,companyId){
+    setResearchAssignments(function(prev){
+      var next=Object.assign({},prev,{byMember:Object.assign({},prev.byMember||{})});
+      var mb=Object.assign({},next.byMember[member]||{});
+      if(category==="existingHlds"){
+        var arr=(mb.existingHlds||[]).slice();while(arr.length<=position)arr.push(null);arr[position]=companyId||null;mb.existingHlds=arr;
+      }else{
+        var cat=Object.assign({},mb[category]||{primary:[],secondary:[]});
+        var list=(cat[type]||[]).slice();while(list.length<=position)list.push(null);list[position]=companyId||null;cat[type]=list;mb[category]=cat;
+      }
+      next.byMember[member]=mb;
+      return next;
+    });
+  }
+  function setReorgSlot(position,companyId){
+    setResearchAssignments(function(prev){
+      var arr=(prev.reorgs||[]).slice();while(arr.length<=position)arr.push(null);arr[position]=companyId||null;
+      return Object.assign({},prev,{reorgs:arr});
+    });
+  }
 
   function newId(){return(typeof crypto!=="undefined"&&crypto.randomUUID)?crypto.randomUUID():(Date.now()+"-"+Math.random().toString(36).slice(2));}
   /* Target-weight edits: log every meaningful change (|delta|>=0.01%) to portWeightHistory and save the new weight. */
@@ -237,7 +263,8 @@ export function CompanyProvider({children}){
     annotations,setAnnotations,
     addAnnotation,updateAnnotation,deleteAnnotation,resolveAnnotation,unresolveAnnotation,addReply,markAnnotationRead,parseMentions,
     updateTargetWeight,addTargetHistoryEntry,deleteTargetHistoryEntry,
-    addTransaction,deleteTransaction,setTxInitOverride,updateInitiatedDate
+    addTransaction,deleteTransaction,setTxInitOverride,updateInitiatedDate,
+    researchAssignments,setResearchAssignments,setResearchSlot,setReorgSlot
   };
 
   return <CompanyContext.Provider value={value}>{children}</CompanyContext.Provider>;
