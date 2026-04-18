@@ -9,7 +9,8 @@
     "check": "vite build",
     "preview": "vite preview",
     "deploy": "vite build && gh-pages -d dist",
-    "setup-hooks": "git config core.hooksPath .githooks"
+    "setup-hooks": "git config core.hooksPath .githooks",
+    "prepare": "git config core.hooksPath .githooks || echo skipped"
   },
   "dependencies": {
     "react": "^18.2.0",

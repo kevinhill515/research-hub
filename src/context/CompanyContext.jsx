@@ -114,11 +114,15 @@ export function CompanyProvider({children}){
     return function(){done=true;clearInterval(iv);};
   },[]);
 
-  useEffect(function(){if(ready)supaUpsert("library",{id:"shared",data:JSON.stringify(saved)});},[saved,ready]);
-  useEffect(function(){if(ready)supaUpsert("companies",{id:"shared",data:JSON.stringify(companies)});},[companies,ready]);
-  useEffect(function(){if(ready&&lastPriceUpdate)supaUpsert("meta",{key:"lastPriceUpdate",value:lastPriceUpdate});},[lastPriceUpdate,ready]);
-  useEffect(function(){if(ready)supaUpsert("meta",{key:"entryComments",value:JSON.stringify(entryComments)});},[entryComments,ready]);
-  useEffect(function(){if(ready)supaUpsert("meta",{key:"annotations",value:JSON.stringify(annotations)});},[annotations,ready]);
+  /* Debounce Supabase writes so rapid edits (typing in an input, ★ toggles, etc.)
+     collapse into a single upsert after 500ms of quiet. Each row type has its
+     own timer so unrelated writes don't block each other. */
+  var DEBOUNCE_MS=500;
+  useEffect(function(){if(!ready)return;var t=setTimeout(function(){supaUpsert("library",{id:"shared",data:JSON.stringify(saved)});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[saved,ready]);
+  useEffect(function(){if(!ready)return;var t=setTimeout(function(){supaUpsert("companies",{id:"shared",data:JSON.stringify(companies)});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[companies,ready]);
+  useEffect(function(){if(!ready||!lastPriceUpdate)return;var t=setTimeout(function(){supaUpsert("meta",{key:"lastPriceUpdate",value:lastPriceUpdate});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[lastPriceUpdate,ready]);
+  useEffect(function(){if(!ready)return;var t=setTimeout(function(){supaUpsert("meta",{key:"entryComments",value:JSON.stringify(entryComments)});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[entryComments,ready]);
+  useEffect(function(){if(!ready)return;var t=setTimeout(function(){supaUpsert("meta",{key:"annotations",value:JSON.stringify(annotations)});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[annotations,ready]);
 
   function addComment(entryId,text){   if(!text.trim())return;   var comment={id:Date.now(),text:text.trim(),author:currentUser||"Unknown",date:todayStr()};   setEntryComments(function(prev){return Object.assign({},prev,{[entryId]:([comment].concat(prev[entryId]||[]))});});   setNewCommentText(function(prev){return Object.assign({},prev,{[entryId]:""});}); }
   function deleteComment(entryId,commentId){   setEntryComments(function(prev){return Object.assign({},prev,{[entryId]:(prev[entryId]||[]).filter(function(c){return c.id!==commentId;})});}); }

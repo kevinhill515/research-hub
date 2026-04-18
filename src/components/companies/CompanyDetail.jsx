@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import { ANTHROPIC_KEY } from '../../api/index.js';
 import {
@@ -12,6 +13,7 @@ import {
   getTiers, tierToStatus, tierBg, tierPillStyle,
   isInitiationTx, getInitiatedDate, monthsSince, blankEarnings,
   escHTML, getCore, getConf, toHTML, toMD,
+  repShares, repAvgCost,
 } from '../../utils/index.js';
 import { StatusPill, PortPicker, SectionBlock, DiffView, BarRow, PillEl, PriceAgeIndicator } from '../ui/index.js';
 import { SectionEditTab, EarningsEntry, NotesCell, ActionCell, FlagCell, DatePicker } from '../forms/index.js';
@@ -58,6 +60,7 @@ export function CompanyDetail(props){
     updateTargetWeight, addTargetHistoryEntry, deleteTargetHistoryEntry, updateInitiatedDate,
     updateCo, cp, copied, setCopied,
   } = useCompanyContext();
+  const [showDiag,setShowDiag]=useState(false);
 
 
         var currency=getCurrency(selCo.country);var pv=pendingVal||selCo.valuation||{};var activeCurrency=pv.currency||currency;
@@ -78,7 +81,68 @@ export function CompanyDetail(props){
             {tp!==null&&<span className="text-xs px-2.5 py-0.5 rounded-full font-semibold" style={{background:"#dcfce7",color:"#166534"}}>TP: {fmtTP(tp,activeCurrency)}</span>}
             {mosStyle&&<span className="text-xs px-2.5 py-0.5 rounded-full font-semibold" style={{background:mosStyle.bg,color:mosStyle.color}}>MOS: {fmtMOS(mos)}</span>}
             {(function(){var coAnnotations=annotations.filter(function(a){return !a.resolved&&((a.scope==="company"&&a.companyId===selCo.id)||(a.scope==="row"&&a.companyId===selCo.id));});return <button onClick={function(){openDiscussions({scope:"company",companyId:selCo.id});}} className={BTN+" ml-auto"}>💬 Discuss{coAnnotations.length>0&&<span className="ml-1 text-[10px] px-1.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-semibold">{coAnnotations.length}</span>}</button>;})()}
+            <button onClick={function(){setShowDiag(function(v){return !v;});}} className={BTN} title="Toggle diagnostic panel — what the app thinks it knows about this company">🔍 Debug</button>
           </div>
+          {/* Diagnostic panel — read-only dump of what the app thinks it knows about this company */}
+          {showDiag&&(function(){
+            var tks=selCo.tickers||[];
+            var txs=(selCo.transactions||[]).slice().sort(function(a,b){return(a.date||"").localeCompare(b.date||"");});
+            /* Walk running position per portfolio */
+            var running={};var initRows=[];
+            txs.forEach(function(t){var p=t.portfolio||"?";var prev=running[p]||0;running[p]=prev+(parseFloat(t.shares)||0);var isInit=t.initOverride===true||(t.initOverride!==false&&prev<=0&&running[p]>0);initRows.push({tx:t,prev:prev,after:running[p],isInit:isInit});});
+            return(<div className={CARD + " mb-3 !border-blue-300 dark:!border-blue-700 bg-blue-50/40 dark:bg-blue-900/10"}>
+              <div className="flex justify-between items-center mb-2">
+                <div className={SECTION_LABEL + " mb-0"}>Diagnostics</div>
+                <button onClick={function(){setShowDiag(false);}} className={BTN_SM}>Close</button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
+                <div>
+                  <div className="font-semibold mb-1 text-gray-900 dark:text-slate-100 font-sans">Tickers ({tks.length})</div>
+                  {tks.length===0?<div className="text-gray-500 dark:text-slate-400">(none)</div>:tks.map(function(t){
+                    var tk=(t.ticker||"").toUpperCase();
+                    var repHits=Object.keys(repData||{}).map(function(port){var e=(repData[port]||{})[tk];if(!e)return null;return port+":"+repShares(e)+"sh@"+(repAvgCost(e)||"-");}).filter(Boolean);
+                    return(<div key={tk} className="mb-0.5">
+                      <span className="text-gray-900 dark:text-slate-100">{t.ticker}</span>
+                      {t.isOrdinary&&<span className="text-green-700 dark:text-green-400"> (ord)</span>}
+                      <span className="text-gray-500 dark:text-slate-400"> · {t.currency||"USD"} · {t.price||"(no price)"}</span>
+                      {repHits.length>0&&<span className="text-blue-700 dark:text-blue-300"> · rep: {repHits.join(", ")}</span>}
+                    </div>);
+                  })}
+                </div>
+                <div>
+                  <div className="font-semibold mb-1 text-gray-900 dark:text-slate-100 font-sans">Per-portfolio state</div>
+                  {(selCo.portfolios||[]).length===0?<div className="text-gray-500 dark:text-slate-400">(not in any portfolio)</div>:(selCo.portfolios||[]).map(function(p){
+                    var init=getInitiatedDate(selCo,p);
+                    var initManual=((selCo.initiatedDates||{})[p])||null;
+                    var tgt=(selCo.portWeights||{})[p]||"-";
+                    var histCount=((selCo.portWeightHistory||[]).filter(function(h){return h.portfolio===p;})).length;
+                    var txCount=txs.filter(function(t){return t.portfolio===p;}).length;
+                    return(<div key={p} className="mb-0.5">
+                      <span className="text-gray-900 dark:text-slate-100">{p}</span>
+                      <span className="text-gray-500 dark:text-slate-400"> · target {tgt}%</span>
+                      <span className="text-gray-500 dark:text-slate-400"> · init {init||"—"}{initManual?" (manual)":init?" (auto)":""}</span>
+                      <span className="text-gray-500 dark:text-slate-400"> · {txCount} tx · {histCount} hist</span>
+                    </div>);
+                  })}
+                </div>
+                <div className="md:col-span-2">
+                  <div className="font-semibold mb-1 text-gray-900 dark:text-slate-100 font-sans">Transactions + running position ({txs.length})</div>
+                  {txs.length===0?<div className="text-gray-500 dark:text-slate-400">(none)</div>:(<div className="max-h-60 overflow-y-auto">
+                    {initRows.map(function(r,i){return(<div key={r.tx.id||i} className="mb-0.5">
+                      <span className="text-gray-500 dark:text-slate-400">{r.tx.date}</span>
+                      <span className="text-gray-500 dark:text-slate-400"> · {r.tx.portfolio||"?"}</span>
+                      <span className={(parseFloat(r.tx.shares)||0)>=0?"text-green-700 dark:text-green-400":"text-red-700 dark:text-red-400"}> · {(parseFloat(r.tx.shares)||0)>=0?"+":""}{r.tx.shares}</span>
+                      <span className="text-gray-500 dark:text-slate-400"> @ {r.tx.price||"-"}</span>
+                      <span className="text-gray-700 dark:text-slate-300"> · running {r.prev} → {r.after}</span>
+                      {r.isInit&&<span className="text-blue-700 dark:text-blue-300"> ★ INIT</span>}
+                      {r.tx.initOverride===true&&<span className="text-blue-700 dark:text-blue-300"> (manual)</span>}
+                      {r.tx.initOverride===false&&<span className="text-red-700 dark:text-red-400"> (muted)</span>}
+                    </div>);})}
+                  </div>)}
+                </div>
+              </div>
+            </div>);
+          })()}
           {/* Tabs */}
           <div className="flex gap-1 mb-3.5 flex-wrap">
             {coTabs.map(function(t){return <button key={t.id} className={coView===t.id?TABSM_ACTIVE:TABSM_INACTIVE} onClick={function(){setCoView(t.id);}}>{t.label}</button>;})}
