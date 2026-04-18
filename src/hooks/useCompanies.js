@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useCompanyContext } from '../context/CompanyContext.jsx';
 import { PORTFOLIOS, TIER_ORDER, SECTOR_ORDER, COUNTRY_ORDER, ALL_COLS, COMPACT_COLS, TEMPLATE_SECTIONS, UPLOAD_TYPES, REP_ACCOUNTS } from '../constants/index.js';
 import { getCurrency, calcNormEPS, calcTP, calcMOS, fmtPrice, fmtTP, fmtMOS, impliedFYLabel, todayStr, parseDate, sortCos, blankEarnings, toHTML, downloadMD, getTiers } from '../utils/index.js';
@@ -7,7 +7,16 @@ import { ANTHROPIC_KEY, apiCall, supaUpsert } from '../api/index.js';
 export function useCompanies(){
   const { companies, setCompanies, saved, setSaved, lastPriceUpdate, setLastPriceUpdate, currentUser, setCopied, updateCo, cp, T, fxRates, setFxRates, fxLastUpdated, setFxLastUpdated, repData, setRepData, repLastUpdated, setRepLastUpdated, specialWeights, setSpecialWeights, calLastUpdated, setCalLastUpdated, calLastUpdatedBy, setCalLastUpdatedBy } = useCompanyContext();
 
-  const [selCo,setSelCo]=useState(null);
+  /* selCo is derived from companies[] + selCoId so it's always fresh. Previous
+     implementation was a raw snapshot that went stale on every mutation,
+     requiring every edit handler to manually mirror changes back into selCo. */
+  const [selCoId,setSelCoId]=useState(null);
+  const selCo=useMemo(function(){return selCoId?(companies.find(function(c){return c.id===selCoId;})||null):null;},[companies,selCoId]);
+  const setSelCo=useCallback(function(v){
+    if(v===null||v===undefined){setSelCoId(null);return;}
+    if(typeof v==="function")return; /* no-op: derived state auto-syncs with companies */
+    if(v&&typeof v==="object"&&v.id!==undefined){setSelCoId(v.id);return;}
+  },[]);
   const [coView,setCoView]=useState("template");
   const [coSort,setCoSort]=useState("Tier");
   const [coSortDir,setCoSortDir]=useState("asc");
