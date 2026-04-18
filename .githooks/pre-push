@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Runs `vite build` before every push. Blocks the push if the build fails.
+# Enable once per clone with:  npm run setup-hooks
+#
+# Skip in a pinch with:  git push --no-verify
+set -e
+
+# Resolve repo root robustly
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+cd "$REPO_ROOT"
+
+if [ ! -f "package.json" ]; then
+  echo "pre-push: package.json not found, skipping check."
+  exit 0
+fi
+
+if ! command -v npm >/dev/null 2>&1; then
+  echo "pre-push: npm not available on this machine — skipping build check."
+  echo "          (install node/npm or push with --no-verify)"
+  exit 0
+fi
+
+echo "pre-push: running npm run check (vite build)…"
+if ! npm run --silent check; then
+  echo ""
+  echo "pre-push: BUILD FAILED — fix errors above and retry, or push with --no-verify to bypass."
+  exit 1
+fi
+
+echo "pre-push: build OK."
+exit 0
