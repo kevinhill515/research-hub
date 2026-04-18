@@ -45,6 +45,20 @@
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
+  /* Repeat the column header on every printed page. The CSS table-header-group
+     display value is honored by Chromium/Firefox for CSS-tables, not just real
+     <thead>. Drop the sticky positioning that would otherwise conflict. */
+  body.printing .print-target .print-thead {
+    display: table-header-group !important;
+    position: static !important;
+    top: auto !important;
+    z-index: auto !important;
+  }
+  /* Avoid breaking a data row across two pages. */
+  body.printing .print-target [style*="table-row"] {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
 }
 
 @theme {
