@@ -1,10 +1,12 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Print mode — "Print" button sets body.printing and calls window.print().
-   Everything outside .print-target is hidden; the target flows normally. */
+/* Print mode — "Print" button sets body.printing (+ optional --print-zoom
+   CSS var) and calls window.print(). Everything outside .print-target is
+   hidden; the target is aggressively shrunk via tiny font + minimal
+   padding + a dynamic zoom factor computed from row count. */
 @media print {
-  @page { size: letter landscape; margin: 0.3in; }
+  @page { size: letter landscape; margin: 0.25in; }
   body.printing *:not(.print-target):not(.print-target *) {
     visibility: hidden !important;
   }
@@ -13,16 +15,36 @@
     position: absolute;
     left: 0; top: 0;
     width: 100%;
-    font-size: 8pt;
-    line-height: 1.15;
+    font-size: 5pt !important;
+    line-height: 1.0 !important;
+    zoom: var(--print-zoom, 1);
     color-adjust: exact;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
   body.printing .print-target .no-print,
+  body.printing .no-print,
   body.printing .print-target button { display: none !important; }
-  /* Keep inline-style backgrounds (sector/country/MOS pills, diff cells, etc.). */
-  body.printing .print-target * { color-adjust: exact; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  /* Collapse padding on table rows for density. */
+  body.printing .print-target [style*="table-cell"] {
+    padding-top: 0.5px !important;
+    padding-bottom: 0.5px !important;
+    padding-right: 3px !important;
+  }
+  /* Shrink pills (country/sector/MOS/etc.) so they don't force taller rows. */
+  body.printing .print-target .rounded-full,
+  body.printing .print-target [class*="px-1.5"],
+  body.printing .print-target [class*="py-0.5"] {
+    padding: 0 2px !important;
+    font-size: 4.5pt !important;
+    line-height: 1.0 !important;
+  }
+  /* Preserve meaningful inline backgrounds. */
+  body.printing .print-target * {
+    color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
 }
 
 @theme {

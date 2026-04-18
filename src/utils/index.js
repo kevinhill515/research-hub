@@ -37,11 +37,33 @@ export function blankEarnings(){return{id:(typeof crypto!=="undefined"&&crypto.r
 
 /* Rep-data entries are normalized to {shares, avgCost} via migrateRepData, but old numeric values may appear briefly during load. These helpers read either safely. */
 /* Trigger browser print with body.printing class so the @media print rules
-   in index.css hide everything except .print-target. Restores on afterprint. */
+   in index.css hide everything except .print-target. Before printing we
+   measure the target's natural size and compute a zoom factor so the
+   content fits landscape letter in one page. Restores on afterprint. */
 export function printPage(){
   if(typeof document==="undefined")return;
+  var target=document.querySelector(".print-target");
+  var zoom=1;
+  if(target){
+    /* Landscape letter minus 0.25in margins = 10.5in x 8in of usable space.
+       At 96 CSS px/in the screen equivalent is ~1008 x 768 px. The native
+       .print-target is already styled smaller in print-mode CSS (5pt font)
+       but we can't measure that here; instead we approximate using the
+       current on-screen scrollHeight and target a scale that would fit in
+       one page once the screen size is reduced ~0.55x by the font swap. */
+    var natH=target.scrollHeight;
+    var natW=target.scrollWidth;
+    var availW=1008;var availH=768;
+    /* Empirical: 5pt font is ~0.55 of 9pt on-screen; combined padding reduction gives ~0.45. */
+    var shrink=0.45;
+    var pageH=availH/shrink;  /* how tall the natural content can be and still fit after the CSS shrink */
+    var pageW=availW/shrink;
+    zoom=Math.min(pageH/natH,pageW/natW,1);
+    if(!isFinite(zoom)||zoom<=0)zoom=1;
+  }
+  document.documentElement.style.setProperty("--print-zoom",String(zoom));
   document.body.classList.add("printing");
-  var cleanup=function(){document.body.classList.remove("printing");window.removeEventListener("afterprint",cleanup);};
+  var cleanup=function(){document.body.classList.remove("printing");document.documentElement.style.removeProperty("--print-zoom");window.removeEventListener("afterprint",cleanup);};
   window.addEventListener("afterprint",cleanup);
   setTimeout(function(){try{window.print();}catch(e){cleanup();}},50);
   /* Safety cleanup in case afterprint doesn't fire */
