@@ -49,10 +49,10 @@ export function CompanyDetail(props){
     showAddTx, setShowAddTx, newTx, setNewTx,
     weightsFilter, setWeightsFilter, txFilter, setTxFilter,
     openDiscussions, saved,
-    linkedEntries, setExpanded, setSaved,
+    linkedEntries, setExpanded, setSaved, updEntry,
   } = props;
   const {
-    companies, repData, fxRates, specialWeights, annotations, dark, currentUser,
+    companies, setCompanies, repData, fxRates, specialWeights, annotations, dark, currentUser,
     addComment, deleteComment, entryComments, newCommentText, setNewCommentText,
     addTransaction, deleteTransaction, setTxInitOverride,
     updateTargetWeight, addTargetHistoryEntry, deleteTargetHistoryEntry, updateInitiatedDate,
