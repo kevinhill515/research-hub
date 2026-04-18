@@ -22,6 +22,7 @@ export function useCompanies(){
   const [coSortDir,setCoSortDir]=useState("asc");
   const [coFilter,setCoFilter]=useState("All");
   const [coStatusFilter,setCoStatusFilter]=useState("All");
+  const [coStatusSubFilter,setCoStatusSubFilter]=useState("All");
   const [coFilterCountry,setCoFilterCountry]=useState("All");
   const [coFilterSector,setCoFilterSector]=useState("All");
   const [coSearch,setCoSearch]=useState("");
@@ -38,6 +39,7 @@ export function useCompanies(){
   const [showRestore,setShowRestore]=useState(false);
   const [restoreText,setRestoreText]=useState("");
   const [newName,setNewName]=useState("");
+  const [newNameUS,setNewNameUS]=useState("");
   const [newTicker,setNewTicker]=useState("");
   const [newTickerUS,setNewTickerUS]=useState("");
   const [newFields,setNewFields]=useState({portfolios:[],tier:"",sector:"",country:"",action:""});
@@ -76,8 +78,8 @@ export function useCompanies(){
     var tickers=[];
     if(ordT)tickers.push({ticker:ordT,price:"",perf5d:"",currency:defaultCcy,isOrdinary:true});
     if(usT&&usT!==ordT)tickers.push({ticker:usT,price:"",perf5d:"",currency:"USD",isOrdinary:tickers.length===0});
-    setCompanies(function(p){return [{id:Date.now(),name:newName.trim(),ticker:ordT,portfolios:newFields.portfolios||[],tier:newFields.tier||"",sector:newFields.sector||"",country:country,action:"",takeaway:"",takeawayLong:"",lastReviewed:"",portNote:newFields.portNote||"",status:newFields.status||"Watch",sections:{},updateLog:[],valuation:{},tpHistory:[],earningsEntries:[],lastUpdated:null,portWeights:{},tickers:tickers}].concat(p);});
-    setNewName("");setNewTicker("");setNewTickerUS("");setNewFields({portfolios:[],tier:"",sector:"",country:"",portNote:"",status:"Watch"});setShowNew(false);
+    setCompanies(function(p){return [{id:(typeof crypto!=="undefined"&&crypto.randomUUID)?crypto.randomUUID():(Date.now()+"-"+Math.random().toString(36).slice(2)),name:newName.trim(),usTickerName:newNameUS.trim(),ticker:ordT,portfolios:newFields.portfolios||[],tier:newFields.tier||"",sector:newFields.sector||"",country:country,action:"",takeaway:"",takeawayLong:"",lastReviewed:"",portNote:newFields.portNote||"",status:newFields.status||"Watch",sections:{},updateLog:[],valuation:{},tpHistory:[],earningsEntries:[],lastUpdated:null,portWeights:{},tickers:tickers}].concat(p);});
+    setNewName("");setNewNameUS("");setNewTicker("");setNewTickerUS("");setNewFields({portfolios:[],tier:"",sector:"",country:"",portNote:"",status:"Watch"});setShowNew(false);
   }
   function parseBulk(){
     if(!bulkText.trim())return;setBulkLoading(true);
@@ -294,6 +296,18 @@ export function useCompanies(){
   var displayedCos=sortCos(companies.filter(function(c){
     if(coFilter!=="All"&&(c.portfolios||[]).indexOf(coFilter)<0)return false;
     if(coStatusFilter!=="All"&&c.status!==coStatusFilter)return false;
+    /* Sub-filter contextual to selected status:
+         Own   → portfolio membership (FIN/IN/FGL/GL/EM/SC)
+         Focus → tier contains "F "+sub  (MC, EM, SC)
+         Watch → tier contains "W "+sub  (MC, EM, SC)
+         Sold  → tier contains sub       (Hit TP, Gave Up) */
+    if(coStatusSubFilter!=="All"&&coStatusFilter!=="All"){
+      var ts=getTiers(c.tier);
+      if(coStatusFilter==="Own"){if((c.portfolios||[]).indexOf(coStatusSubFilter)<0)return false;}
+      else if(coStatusFilter==="Focus"){if(ts.indexOf("F "+coStatusSubFilter)<0)return false;}
+      else if(coStatusFilter==="Watch"){if(ts.indexOf("W "+coStatusSubFilter)<0)return false;}
+      else if(coStatusFilter==="Sold"){if(ts.indexOf(coStatusSubFilter)<0)return false;}
+    }
     if(coFilterCountry!=="All"&&c.country!==coFilterCountry)return false;
     if(coFilterSector!=="All"&&c.sector!==coFilterSector)return false;
     if(coSearch){var s=coSearch.toLowerCase();if(c.name.toLowerCase().indexOf(s)<0&&(c.ticker||"").toLowerCase().indexOf(s)<0)return false;}
@@ -302,12 +316,12 @@ export function useCompanies(){
 
   return {
     selCo,setSelCo,coView,setCoView,coSort,setCoSort,coSortDir,setCoSortDir,
-    coFilter,setCoFilter,coStatusFilter,setCoStatusFilter,coFilterCountry,setCoFilterCountry,
+    coFilter,setCoFilter,coStatusFilter,setCoStatusFilter,coStatusSubFilter,setCoStatusSubFilter,coFilterCountry,setCoFilterCountry,
     coFilterSector,setCoFilterSector,coSearch,setCoSearch,selectedIds,setSelectedIds,
     bulkStatus,setBulkStatus,bulkTier,setBulkTier,visibleCols,setVisibleCols,
     showColPicker,setShowColPicker,confirmClear,setConfirmClear,showNew,setShowNew,
     showBulk,setShowBulk,showPriceImport,setShowPriceImport,priceImportText,setPriceImportText,
-    showRestore,setShowRestore,restoreText,setRestoreText,newName,setNewName,
+    showRestore,setShowRestore,restoreText,setRestoreText,newName,setNewName,newNameUS,setNewNameUS,
     newTicker,setNewTicker,newTickerUS,setNewTickerUS,newFields,setNewFields,bulkText,setBulkText,
     bulkLoading,setBulkLoading,bulkPreview,setBulkPreview,tmplRaw,setTmplRaw,
     tmplLoading,setTmplLoading,tmplSearch,setTmplSearch,tmplHighlight,setTmplHighlight,
