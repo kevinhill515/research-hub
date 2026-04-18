@@ -1,14 +1,15 @@
 import { useState, useMemo } from 'react';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import { TEAM_MEMBERS, TEAM_COLORS } from '../../constants/index.js';
+import { getTiers } from '../../utils/index.js';
 
-/* Category config. Mapping confirmed by user:
-   Gbl = GL/FGL, Int'l = IN/FIN, Int Small = SC, EM = EM. */
+/* Category config. Each category pulls watchlist names filtered by tier
+   (F MC / W MC for GL+IN, F EM / W EM for EM, F SC / W SC for SC). */
 const CATEGORIES = [
-  { key:"gbl",       label:"Gbl",       portfolios:["GL","FGL"] },
-  { key:"intl",      label:"Int'l",     portfolios:["IN","FIN"] },
-  { key:"intSmall",  label:"Int Small", portfolios:["SC"] },
-  { key:"em",        label:"EM",        portfolios:["EM"] },
+  { key:"gl", label:"GL", tiers:["F MC","W MC"] },
+  { key:"in", label:"IN", tiers:["F MC","W MC"] },
+  { key:"em", label:"EM", tiers:["F EM","W EM"] },
+  { key:"sc", label:"SC", tiers:["F SC","W SC"] },
 ];
 const SLOTS_PER_SECTION = 3;
 const EXISTING_SLOTS = 5;
@@ -65,13 +66,16 @@ export function ResearchBoard(props){
     setSelCo(c); setTab("companies"); setCoView("section:Valuation");
   }
 
-  /* Eligibility filters for each row type */
+  /* Eligibility filters for each row type.
+       Category rows → watchlist names whose tier set intersects the category's tiers.
+       Existing Hlds → status === "Own".
+       Reorgs → any company. */
   function eligibleFor(categoryKey){
     if(categoryKey==="reorgs") return companies;
     if(categoryKey==="existingHlds") return companies.filter(function(c){return c.status==="Own";});
     const cat = CATEGORIES.find(c=>c.key===categoryKey);
     if(!cat) return companies;
-    return companies.filter(function(c){return (c.portfolios||[]).some(function(p){return cat.portfolios.indexOf(p)>=0;});});
+    return companies.filter(function(c){var ts=getTiers(c.tier);return ts.some(function(t){return cat.tiers.indexOf(t)>=0;});});
   }
 
   function getMemberSlot(member, categoryKey, type, pos){
@@ -90,10 +94,7 @@ export function ResearchBoard(props){
   return (
     <div>
       <div className="mb-3 flex items-center justify-between flex-wrap gap-2">
-        <div>
-          <div className="text-base font-semibold text-gray-900 dark:text-slate-100">Research Priority List</div>
-          <div className="text-xs text-gray-500 dark:text-slate-400 italic">The process of structuring information to turn chaotic ideas into coherent, actionable knowledge.</div>
-        </div>
+        <div className="text-base font-semibold text-gray-900 dark:text-slate-100">Research Priority List</div>
       </div>
 
       <div className="overflow-x-auto">
