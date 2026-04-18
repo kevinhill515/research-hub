@@ -1,6 +1,30 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Print mode — "Print" button sets body.printing and calls window.print().
+   Everything outside .print-target is hidden; the target flows normally. */
+@media print {
+  @page { size: letter landscape; margin: 0.3in; }
+  body.printing *:not(.print-target):not(.print-target *) {
+    visibility: hidden !important;
+  }
+  body.printing .print-target {
+    visibility: visible !important;
+    position: absolute;
+    left: 0; top: 0;
+    width: 100%;
+    font-size: 8pt;
+    line-height: 1.15;
+    color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  body.printing .print-target .no-print,
+  body.printing .print-target button { display: none !important; }
+  /* Keep inline-style backgrounds (sector/country/MOS pills, diff cells, etc.). */
+  body.printing .print-target * { color-adjust: exact; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+
 @theme {
   --color-surface: #ffffff;
   --color-surface-sec: #f8fafc;

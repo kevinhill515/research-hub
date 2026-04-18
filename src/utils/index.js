@@ -36,6 +36,17 @@ export function getCompanyMOS(c){var val=c.valuation||{};var eps=calcNormEPS(val
 export function blankEarnings(){return{id:(typeof crypto!=="undefined"&&crypto.randomUUID)?crypto.randomUUID():(Date.now()+"-"+Math.random().toString(36).slice(2)),quarter:"",reportDate:"",eps:"",tpChange:"Unchanged",newTP:"",tpRationale:"",bullets:["","","","",""],shortTakeaway:"",extendedTakeaway:"",thesisStatus:"On track",thesisNote:"",open:true};}
 
 /* Rep-data entries are normalized to {shares, avgCost} via migrateRepData, but old numeric values may appear briefly during load. These helpers read either safely. */
+/* Trigger browser print with body.printing class so the @media print rules
+   in index.css hide everything except .print-target. Restores on afterprint. */
+export function printPage(){
+  if(typeof document==="undefined")return;
+  document.body.classList.add("printing");
+  var cleanup=function(){document.body.classList.remove("printing");window.removeEventListener("afterprint",cleanup);};
+  window.addEventListener("afterprint",cleanup);
+  setTimeout(function(){try{window.print();}catch(e){cleanup();}},50);
+  /* Safety cleanup in case afterprint doesn't fire */
+  setTimeout(cleanup,10000);
+}
 export function repShares(entry){if(entry==null)return 0;if(typeof entry==="number")return entry;return Number(entry.shares)||0;}
 export function repAvgCost(entry){if(entry==null||typeof entry==="number")return 0;return Number(entry.avgCost)||0;}
 
