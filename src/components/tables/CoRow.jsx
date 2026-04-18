@@ -133,16 +133,6 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
               <span title="Template loaded" className="text-[8px] text-emerald-500 dark:text-emerald-400 shrink-0">&#x25CF;</span>
             )}
 
-            {mosStyle && (
-              <span
-                title="Margin of Safety"
-                className="text-[10px] px-1.5 rounded-full font-bold shrink-0 whitespace-nowrap"
-                style={{ background: mosStyle.bg, color: mosStyle.color }}
-              >
-                MOS {fmtMOS(mos)}
-              </span>
-            )}
-
             {hovered && (
               <div className="relative inline-block" onClick={function (e) { e.stopPropagation(); }} ref={menuRef}>
                 <span
@@ -185,6 +175,19 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
             var cls = n >= 0 ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400";
             return <span className={"text-xs font-semibold " + cls}>{n >= 0 ? "+" : ""}{n.toFixed(1)}%</span>;
           })()}
+        </div>
+      )}
+
+      {/* MOS */}
+      {show("MOS") && (
+        <div className={tdBase} style={rowBg ? { background: rowBg } : undefined}>
+          {mosStyle ? (
+            <span title="Margin of Safety" className="text-[10px] px-1.5 rounded-full font-bold whitespace-nowrap" style={{ background: mosStyle.bg, color: mosStyle.color }}>
+              {fmtMOS(mos)}
+            </span>
+          ) : (
+            <span className="text-xs text-gray-400 dark:text-slate-500">--</span>
+          )}
         </div>
       )}
 
