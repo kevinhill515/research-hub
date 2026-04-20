@@ -18,7 +18,7 @@ export function useImport(){
   const [repText,setRepText]=useState("");
   const [fxText,setFxText]=useState("");
   const [txText,setTxText]=useState("");
-  const [perfPortTarget,setPerfPortTarget]=useState("FIN");
+  const [perfPortTargets,setPerfPortTargets]=useState(["FIN"]);
   const [perfText,setPerfText]=useState("");
   const [portTab,setPortTab]=useState("overlap");
   const [portSort,setPortSort]=useState("rep");
@@ -107,8 +107,26 @@ export function useImport(){
       rows.push({month:month,values:vals});
     }
     if(rows.length===0){alert("No valid data rows parsed (bad date formats).");return;}
-    applyPerfBulk(perfPortTarget,{seriesNames:seriesNames,rows:rows});
-    setTimeout(function(){alert("Imported "+rows.length+" months × "+seriesNames.length+" series into "+perfPortTarget+"."+(badRows?" Skipped "+badRows+" unparseable rows.":""));setPerfText("");},100);
+    if(!perfPortTargets||perfPortTargets.length===0){alert("Select at least one target portfolio.");return;}
+    /* Per-target filter: drop columns that match SIBLING portfolio codes
+       (case-insensitive). e.g. uploading a combined FGL/GL CSV to both
+       FGL and GL — the FGL target keeps the FGL column + benchmarks/comps,
+       skips the GL column; GL target does the reverse. */
+    var ALL_CODES=["FIN","IN","FGL","GL","EM","SC"];
+    perfPortTargets.forEach(function(target){
+      var others={};ALL_CODES.forEach(function(c){if(c!==target)others[c]=true;});
+      var keepMask=seriesNames.map(function(n){return !others[n.toUpperCase().trim()];});
+      var filteredNames=seriesNames.filter(function(_,i){return keepMask[i];});
+      var filteredRows=rows.map(function(row){return {month:row.month,values:row.values.filter(function(_,i){return keepMask[i];})};});
+      applyPerfBulk(target,{seriesNames:filteredNames,rows:filteredRows});
+    });
+    setTimeout(function(){
+      var msg="Imported "+rows.length+" months × "+seriesNames.length+" series into "+perfPortTargets.join(", ")+".";
+      if(perfPortTargets.length>1)msg+=" Each target kept its own portfolio column + all shared series; sibling portfolio columns were skipped per target.";
+      if(badRows)msg+=" Skipped "+badRows+" unparseable rows.";
+      alert(msg);
+      setPerfText("");
+    },100);
   }
   function applyRepImport(){if(!repText.trim())return;var lines=repText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});var data={};lines.forEach(function(line){var delim=line.indexOf("\t")>=0?"\t":",";var parts=line.split(delim).map(function(s){return s.trim();});if(parts.length>=3){var acct=parts[0].toUpperCase();var ticker=parts[1].toUpperCase();var shares=parseFloat(parts[2]);var avgCost=parts.length>=4?parseFloat(parts[3]):0;if(isNaN(avgCost))avgCost=0;if(!isNaN(shares)){var port=REP_ACCOUNTS[acct];if(port){if(!data[port])data[port]={};var prev=data[port][ticker];var prevShares=(prev&&typeof prev==="object")?(prev.shares||0):(prev||0);var prevCost=(prev&&typeof prev==="object")?(prev.avgCost||0):0;var newShares=prevShares+shares;/* Weighted average when the same ticker appears twice in one import */var newAvgCost=newShares>0?((prevShares*prevCost)+(shares*avgCost))/newShares:avgCost;data[port][ticker]={shares:newShares,avgCost:newAvgCost};}}}});setRepData(data);setRepLastUpdated(currentUser+" "+todayStr());setRepText("");supaUpsert("meta",{key:"repData",value:JSON.stringify(data)});}
   function applyCalImport(){if(!calImportText||!calImportText.trim())return;var lines=calImportText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});var count=0;setCompanies(function(prev){return prev.map(function(c){var match=lines.find(function(l){var delim=l.indexOf("\t")>=0?"\t":",";var parts=l.split(delim).map(function(s){return s.trim();});var allTickers2=[(c.ticker||"")].concat((c.tickers||[]).map(function(t){return t.ticker||"";})).map(function(t){return t.toUpperCase();}).filter(Boolean);return allTickers2.indexOf(parts[0].toUpperCase())>=0;});if(!match)return c;var delim=match.indexOf("\t")>=0?"\t":",";var parts=match.split(delim).map(function(s){return s.trim();});var date=parts[1];if(!date)return c;var entries=(c.earningsEntries||[]).slice();var existing=entries.find(function(e){return e.reportDate===date;});if(!existing){entries.unshift(Object.assign(blankEarnings(),{reportDate:date,open:false}));}count++;return Object.assign({},c,{earningsEntries:entries});});});setTimeout(function(){alert("Updated earnings dates for "+count+" companies.");setCalImportText("");},100);supaUpsert("meta",{key:"calLastUpdated",value:currentUser+" at "+todayStr()});setCalLastUpdatedBy(currentUser);setCalLastUpdated(todayStr());}
@@ -126,7 +144,7 @@ export function useImport(){
     showDataPanel,setShowDataPanel,importText,setImportText,importError,setImportError,
     dataHubTab,setDataHubTab,valImportText,setValImportText,estImportText,setEstImportText,
     weightsImportText,setWeightsImportText,calImportText,setCalImportText,
-    repText,setRepText,fxText,setFxText,txText,setTxText,perfPortTarget,setPerfPortTarget,perfText,setPerfText,portTab,setPortTab,portSort,setPortSort,portSortDir,setPortSortDir,
+    repText,setRepText,fxText,setFxText,txText,setTxText,perfPortTargets,setPerfPortTargets,perfText,setPerfText,portTab,setPortTab,portSort,setPortSort,portSortDir,setPortSortDir,
     applyFxImport,applyRepImport,applyTxImport,applyPerfImport,applyCalImport,applyWeightsImport,applyValImport,applyEstImport,
     importAll,exportAll
   };
