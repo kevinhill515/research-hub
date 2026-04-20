@@ -46,10 +46,19 @@ function EarningsCalendar({ companies }) {
         var labelColorDark = isToday ? "#f87171" : isTomorrow ? "#fbbf24" : "#4ade80";
         var ss = c.sector ? sectorStyle(c.sector) : null;
 
+        /* Urgency accent: colored left border + very pale tint. Subtle
+           enough to stay readable, strong enough to scan-spot. */
+        var accent = isToday
+          ? { borderLeft: "4px solid #dc2626", background: "#fef2f2" }
+          : isTomorrow
+          ? { borderLeft: "4px solid #d97706", background: "#fffbeb" }
+          : { borderLeft: "4px solid transparent" };
+
         return (
           <div
             key={i}
             className="flex gap-3 items-center px-3.5 py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 mb-1.5 transition-colors bg-slate-50 dark:bg-slate-800"
+            style={accent}
           >
             {/* Date badge */}
             <div className="min-w-[60px] text-center">
