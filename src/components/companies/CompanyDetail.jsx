@@ -285,7 +285,60 @@ export function CompanyDetail(props){
                     {mos!==null&&pv.price&&<div className="text-[11px] mt-0.5" style={{color:mosStyle?mosStyle.color:undefined}}>Price: {activeCurrency} {fmtPrice(pv.price)}</div>}
                   </div>
                 </div>
- {(pv.peLow5||pv.peHigh5||pv.peAvg5||pv.peMed5||true)&&<div className="flex gap-2 mb-4 flex-wrap">{[["5Yr Low",pv.peLow5],["5Yr High",pv.peHigh5],["5Yr Avg",pv.peAvg5],["5Yr Median",pv.peMed5]].map(function(item){return item[1]?(<div key={item[0]} className="px-3.5 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 min-w-[80px]"><div className="text-[10px] text-gray-500 dark:text-slate-400 mb-0.5">{item[0]} P/E</div><div className="text-base font-semibold text-gray-900 dark:text-slate-100">{item[1]}x</div></div>):null;})}</div>}
+ {/* 5-year P/E range visual — shows low/median/avg/high endpoints with a
+                    marker at the current FPE. Rendered only when we have enough to place it. */}
+                 {(function(){
+                    var lo=parseFloat(pv.peLow5),hi=parseFloat(pv.peHigh5);
+                    var med=parseFloat(pv.peMed5),avg=parseFloat(pv.peAvg5);
+                    var cur=parseFloat(pv.peCurrent);
+                    if(isNaN(lo)||isNaN(hi)||hi<=lo)return null;
+                    /* extend range a touch if current sits outside low-high */
+                    var lowB=lo, highB=hi;
+                    if(!isNaN(cur)){if(cur<lowB)lowB=cur;if(cur>highB)highB=cur;}
+                    var pad=(highB-lowB)*0.08;
+                    var xMin=lowB-pad, xMax=highB+pad;
+                    function pct(v){return ((v-xMin)/(xMax-xMin))*100;}
+                    var curOutside=!isNaN(cur)&&(cur<lo||cur>hi);
+                    return (
+                      <div className="mb-3 px-2 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                        <div className="text-[10px] text-gray-500 dark:text-slate-400 mb-2 uppercase tracking-wide">5-Year P/E Range</div>
+                        <div className="relative h-10">
+                          {/* bar */}
+                          <div className="absolute top-4 h-2 rounded-full bg-gradient-to-r from-green-300 via-yellow-300 to-red-300 dark:from-green-800 dark:via-yellow-700 dark:to-red-800" style={{left:pct(lo)+"%", width:(pct(hi)-pct(lo))+"%"}}/>
+                          {/* low label */}
+                          <div className="absolute top-[26px] text-[10px] text-gray-600 dark:text-slate-300 font-medium -translate-x-1/2 whitespace-nowrap" style={{left:pct(lo)+"%"}}>{lo.toFixed(1)}×</div>
+                          <div className="absolute top-0 text-[9px] text-gray-500 dark:text-slate-400 -translate-x-1/2" style={{left:pct(lo)+"%"}}>Low</div>
+                          {/* high label */}
+                          <div className="absolute top-[26px] text-[10px] text-gray-600 dark:text-slate-300 font-medium -translate-x-1/2 whitespace-nowrap" style={{left:pct(hi)+"%"}}>{hi.toFixed(1)}×</div>
+                          <div className="absolute top-0 text-[9px] text-gray-500 dark:text-slate-400 -translate-x-1/2" style={{left:pct(hi)+"%"}}>High</div>
+                          {/* median tick */}
+                          {!isNaN(med)&&(
+                            <>
+                              <div className="absolute top-3 w-[2px] h-4 bg-slate-600 dark:bg-slate-300" style={{left:"calc("+pct(med)+"% - 1px)"}}/>
+                              <div className="absolute top-[26px] text-[10px] text-gray-600 dark:text-slate-300 -translate-x-1/2 whitespace-nowrap" style={{left:pct(med)+"%"}}>{med.toFixed(1)}×</div>
+                              <div className="absolute top-0 text-[9px] text-gray-500 dark:text-slate-400 -translate-x-1/2" style={{left:pct(med)+"%"}}>Med</div>
+                            </>
+                          )}
+                          {/* avg tick (only if different from median) */}
+                          {!isNaN(avg)&&(isNaN(med)||Math.abs(avg-med)>0.05)&&(
+                            <>
+                              <div className="absolute top-3 w-[2px] h-4 bg-slate-400 dark:bg-slate-500" style={{left:"calc("+pct(avg)+"% - 1px)"}}/>
+                              <div className="absolute top-[26px] text-[10px] text-gray-500 dark:text-slate-400 -translate-x-1/2 whitespace-nowrap" style={{left:pct(avg)+"%"}}>{avg.toFixed(1)}×</div>
+                              <div className="absolute top-0 text-[9px] text-gray-400 dark:text-slate-500 -translate-x-1/2" style={{left:pct(avg)+"%"}}>Avg</div>
+                            </>
+                          )}
+                          {/* current marker */}
+                          {!isNaN(cur)&&(
+                            <>
+                              <div className="absolute top-[10px] w-3 h-3 rounded-full border-2 border-white dark:border-slate-900" style={{left:"calc("+pct(cur)+"% - 6px)", background:curOutside?"#dc2626":"#1e40af"}} title={"Current FPE "+cur.toFixed(2)+"x"}/>
+                              <div className="absolute -top-0.5 text-[10px] font-semibold -translate-x-1/2 whitespace-nowrap" style={{left:pct(cur)+"%", color:curOutside?"#dc2626":"#1e40af"}}>Current {cur.toFixed(1)}×</div>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                 {(pv.peCurrent||pv.peLow5||pv.peHigh5||pv.peAvg5||pv.peMed5||true)&&<div className="flex gap-2 mb-4 flex-wrap">{[["Current",pv.peCurrent],["5Yr Low",pv.peLow5],["5Yr High",pv.peHigh5],["5Yr Avg",pv.peAvg5],["5Yr Median",pv.peMed5]].map(function(item){return item[1]?(<div key={item[0]} className="px-3.5 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 min-w-[80px]"><div className="text-[10px] text-gray-500 dark:text-slate-400 mb-0.5">{item[0]} {item[0]==="Current"?"FPE":"P/E"}</div><div className="text-base font-semibold text-gray-900 dark:text-slate-100">{item[1]}x</div></div>):null;})}</div>}
                 {/* 2. Price, P/E, currency, FY month */}
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-3 mb-4">
                   <div><label className={LABEL}>Current Price ({activeCurrency})</label><input type="number" step="0.01" value={pv.price||""} onChange={function(e){setPendingVal(function(p){return Object.assign({},p,{price:e.target.value});});}} placeholder="e.g. 45.20" className={INP + " w-full box-border"}/></div>
