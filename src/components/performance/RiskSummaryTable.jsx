@@ -38,6 +38,14 @@ export function RiskSummaryTable({ mergedSeries, currentMonth, includeMtd }){
   },[mergedSeries]);
 
   const [benchName, setBenchName] = useState(null);
+  /* Sort state: cycles off → desc (↓) → asc (↑) → off per header click. */
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState(null);
+  function cycleSort(k){
+    if(sortKey!==k){setSortKey(k);setSortDir("desc");return;}
+    if(sortDir==="desc"){setSortDir("asc");return;}
+    if(sortDir==="asc"){setSortKey(null);setSortDir(null);return;}
+  }
   const activeBench = benchmarks.find(function(b){return b.name===benchName;}) || benchmarks[0] || null;
 
   /* Month window: 60 months ending at currentMonth (include-MTD) or previous
@@ -78,6 +86,21 @@ export function RiskSummaryTable({ mergedSeries, currentMonth, includeMtd }){
       });
   },[mergedSeries, activeBench, windowMonths]);
 
+  /* Sorted rows: nulls always sink regardless of direction. */
+  const sortedRows = useMemo(function(){
+    if(!sortKey||!sortDir)return rows;
+    var sign=sortDir==="desc"?-1:1;
+    return rows.slice().sort(function(a,b){
+      var av=a.stats?a.stats[sortKey]:null, bv=b.stats?b.stats[sortKey]:null;
+      var aNull=(av===null||av===undefined||isNaN(av));
+      var bNull=(bv===null||bv===undefined||isNaN(bv));
+      if(aNull&&bNull)return 0;
+      if(aNull)return 1;
+      if(bNull)return -1;
+      return sign*(av-bv);
+    });
+  },[rows, sortKey, sortDir]);
+
   if(benchmarks.length===0){
     return (
       <div className="bg-white dark:bg-slate-950 rounded-lg border border-slate-200 dark:border-slate-700 p-3 mt-4">
@@ -109,15 +132,17 @@ export function RiskSummaryTable({ mergedSeries, currentMonth, includeMtd }){
               <th className="text-left pr-3 pb-1.5 font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide text-[10px]">Series</th>
               <th className="text-right px-2 pb-1.5 font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide text-[10px]">Role</th>
               {COLS.map(function(c){
-                return <th key={c.key} className="text-right px-2 pb-1.5 font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide text-[10px] whitespace-nowrap">{c.label}</th>;
+                var active=sortKey===c.key;
+                var arrow=active?(sortDir==="desc"?" \u2193":sortDir==="asc"?" \u2191":""):"";
+                return <th key={c.key} onClick={function(){cycleSort(c.key);}} title="Click to sort (high→low, low→high, off)" className={"text-right px-2 pb-1.5 font-semibold uppercase tracking-wide text-[10px] whitespace-nowrap cursor-pointer hover:text-gray-700 dark:hover:text-slate-300 select-none "+(active?"text-gray-900 dark:text-slate-100":"text-gray-500 dark:text-slate-400")}>{c.label}{arrow}</th>;
               })}
             </tr>
           </thead>
           <tbody>
-            {rows.length===0 && (
+            {sortedRows.length===0 && (
               <tr><td colSpan={2+COLS.length} className="text-xs text-gray-500 dark:text-slate-400 italic py-3 text-center">No portfolio or competitor series in this view.</td></tr>
             )}
-            {rows.map(function(r,i){
+            {sortedRows.map(function(r,i){
               var s=r.series;
               return (
                 <tr key={s.name+i} className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50">
