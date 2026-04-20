@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import { PORTFOLIOS, PORT_NAMES } from '../../constants/index.js';
 import { repShares } from '../../utils/index.js';
-import { currentMonthKey, portfolioMtd } from '../../utils/performance.js';
+import { currentMonthKey, portfolioMtd, rolling3Y, allMonths } from '../../utils/performance.js';
 import { PerformanceChart, seriesColor } from './PerformanceChart.jsx';
 import { PerformanceTable } from './PerformanceTable.jsx';
 
@@ -111,6 +111,18 @@ export function PerformanceTab(){
     return m;
   },[mergedSeries]);
 
+  /* Current (latest) rolling 3Y annualized per series — shown next to each
+     series name on the legend. */
+  const latest3Y = useMemo(function(){
+    var months = allMonths(mergedSeries);
+    var out = {};
+    mergedSeries.forEach(function(s){
+      var pts = rolling3Y(s, months);
+      out[s.name] = pts.length ? pts[pts.length-1].value : null;
+    });
+    return out;
+  },[mergedSeries]);
+
   const hidden = hiddenSeries[groupKey] || new Set();
   const visibleSet = useMemo(function(){
     var v=new Set();mergedSeries.forEach(function(s){if(!hidden.has(s.name))v.add(s.name);});
@@ -147,13 +159,17 @@ export function PerformanceTab(){
         <button onClick={function(){setShowEditor(function(v){return !v;});}} className={BTN_SM + " ml-auto"}>{showEditor?"Hide series editor":"Edit series"}</button>
       </div>
 
-      {/* Series legend / toggles */}
+      {/* Series legend / toggles — each chip shows the current (latest)
+          rolling 3Y annualized return next to the name. */}
       {mergedSeries.length>0 && (
         <div className="flex gap-1.5 flex-wrap mb-3">
           {mergedSeries.map(function(s){
             var on=visibleSet.has(s.name);
+            var v=latest3Y[s.name];
+            var pct=(v===null||v===undefined||isNaN(v))?null:v*100;
             return <span key={s.name} onClick={function(){toggleSeries(s.name);}} className={"text-[11px] px-2 py-0.5 rounded-full cursor-pointer border transition-colors " + (on?"font-semibold":"font-normal opacity-50")} style={on?{borderColor:colorMap[s.name],background:colorMap[s.name]+"22",color:colorMap[s.name]}:{borderColor:"#cbd5e1"}}>
               <span className="inline-block w-1.5 h-1.5 rounded-full mr-1 align-middle" style={{background:colorMap[s.name]}}/>{s.name}
+              {pct!==null && <span className="ml-1.5 font-mono">{(pct>=0?"+":"")+pct.toFixed(1)+"%"}</span>}
             </span>;
           })}
         </div>
