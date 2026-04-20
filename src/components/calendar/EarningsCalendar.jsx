@@ -46,19 +46,24 @@ function EarningsCalendar({ companies }) {
         var labelColorDark = isToday ? "#f87171" : isTomorrow ? "#fbbf24" : "#4ade80";
         var ss = c.sector ? sectorStyle(c.sector) : null;
 
-        /* Urgency accent: colored left border + very pale tint. Subtle
-           enough to stay readable, strong enough to scan-spot. */
-        var accent = isToday
-          ? { borderLeft: "4px solid #dc2626", background: "#fef2f2" }
+        /* Urgency accent: colored left-border stripe (same in both themes)
+           plus a mode-aware tint via Tailwind so dark mode stays readable. */
+        var borderStyle = isToday
+          ? "4px solid #dc2626"
           : isTomorrow
-          ? { borderLeft: "4px solid #d97706", background: "#fffbeb" }
-          : { borderLeft: "4px solid transparent" };
+          ? "4px solid #d97706"
+          : "4px solid transparent";
+        var tintClass = isToday
+          ? "!bg-red-50 dark:!bg-red-950/30"
+          : isTomorrow
+          ? "!bg-amber-50 dark:!bg-amber-950/30"
+          : "bg-slate-50 dark:bg-slate-800";
 
         return (
           <div
             key={i}
-            className="flex gap-3 items-center px-3.5 py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 mb-1.5 transition-colors bg-slate-50 dark:bg-slate-800"
-            style={accent}
+            className={"flex gap-3 items-center px-3.5 py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 mb-1.5 transition-colors " + tintClass}
+            style={{ borderLeft: borderStyle }}
           >
             {/* Date badge */}
             <div className="min-w-[60px] text-center">
