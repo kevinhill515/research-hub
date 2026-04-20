@@ -5,7 +5,7 @@ import { supaUpsert } from '../api/index.js';
 import { REP_ACCOUNTS } from '../constants/index.js';
 
 export function useImport(){
-  const { companies, setCompanies, saved, setSaved, setCopied, currentUser, repData, setRepData, fxRates, setFxRates, specialWeights, setSpecialWeights, calLastUpdated, setCalLastUpdated, calLastUpdatedBy, setCalLastUpdatedBy, repLastUpdated, setRepLastUpdated, fxLastUpdated, setFxLastUpdated } = useCompanyContext();
+  const { companies, setCompanies, saved, setSaved, setCopied, currentUser, repData, setRepData, fxRates, setFxRates, specialWeights, setSpecialWeights, calLastUpdated, setCalLastUpdated, calLastUpdatedBy, setCalLastUpdatedBy, repLastUpdated, setRepLastUpdated, fxLastUpdated, setFxLastUpdated, applyPerfBulk } = useCompanyContext();
 
   const [showDataPanel,setShowDataPanel]=useState(false);
   const [importText,setImportText]=useState("");
@@ -18,6 +18,8 @@ export function useImport(){
   const [repText,setRepText]=useState("");
   const [fxText,setFxText]=useState("");
   const [txText,setTxText]=useState("");
+  const [perfPortTarget,setPerfPortTarget]=useState("FIN");
+  const [perfText,setPerfText]=useState("");
   const [portTab,setPortTab]=useState("overlap");
   const [portSort,setPortSort]=useState("rep");
   const [portSortDir,setPortSortDir]=useState("desc");
@@ -66,6 +68,48 @@ export function useImport(){
     });});
     setTimeout(function(){var msg="Imported "+txCount+" transactions across "+Object.keys(matchedNames).length+" companies.";if(unmatched.size>0){var list=Array.from(unmatched);msg+="\n\nUnmatched names ("+unmatched.size+"):\n"+list.slice(0,30).join(", ")+(list.length>30?" \u2026 (see console for full list)":"");console.warn("[Tx import] Unmatched security names:",list);}alert(msg);setTxText("");},100);
   }
+  /* Parse CSV/TSV performance paste. First column = YYYY-MM (or Date header).
+     Remaining columns = series (header = series name). Values may have % signs
+     which are stripped; numeric values with no % sign are assumed already-decimal. */
+  function applyPerfImport(){
+    if(!perfText.trim())return;
+    var lines=perfText.trim().split(/\r?\n/).filter(function(l){return l.trim();});
+    if(lines.length<2){alert("Need a header row and at least one data row.");return;}
+    var delim=lines[0].indexOf("\t")>=0?"\t":",";
+    function parseRow(line){var cols=[];var cur="";var inQ=false;for(var i=0;i<line.length;i++){var ch=line[i];if(ch==='"'){inQ=!inQ;}else if(ch===delim&&!inQ){cols.push(cur);cur="";}else{cur+=ch;}}cols.push(cur);return cols.map(function(c){return c.replace(/^"|"$/g,"").trim();});}
+    var headers=parseRow(lines[0]);
+    var seriesNames=headers.slice(1).filter(function(h){return h;});
+    if(seriesNames.length===0){alert("No series columns found in header.");return;}
+    function normMonth(s){
+      if(!s)return null;
+      /* Accept YYYY-MM, YYYY/MM, M/D/YYYY (uses month+year), MMM YYYY */
+      var m=s.match(/^(\d{4})[-\/](\d{1,2})/);if(m){return m[1]+"-"+(m[2].length<2?"0":"")+m[2];}
+      m=s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})/);if(m){var y=m[3];if(y.length===2)y="20"+y;return y+"-"+(m[1].length<2?"0":"")+m[1];}
+      var MM={jan:"01",feb:"02",mar:"03",apr:"04",may:"05",jun:"06",jul:"07",aug:"08",sep:"09",oct:"10",nov:"11",dec:"12"};
+      m=s.match(/^([A-Za-z]{3})\D+(\d{4})/);if(m){var mn=MM[m[1].toLowerCase()];if(mn)return m[2]+"-"+mn;}
+      return null;
+    }
+    function normVal(s){
+      if(s===null||s===undefined)return null;
+      var t=String(s).trim();if(!t)return null;
+      var hasPct=t.indexOf("%")>=0;
+      t=t.replace(/[%,]/g,"").replace(/\((.+)\)/,"-$1").trim();
+      if(!t||t==="-"||t==="—"||t==="--")return null;
+      var n=parseFloat(t);if(isNaN(n))return null;
+      return hasPct?n/100:n;
+    }
+    var rows=[];var badRows=0;
+    for(var i=1;i<lines.length;i++){
+      var cols=parseRow(lines[i]);
+      var month=normMonth(cols[0]);
+      if(!month){badRows++;continue;}
+      var vals=seriesNames.map(function(_,j){return normVal(cols[j+1]);});
+      rows.push({month:month,values:vals});
+    }
+    if(rows.length===0){alert("No valid data rows parsed (bad date formats).");return;}
+    applyPerfBulk(perfPortTarget,{seriesNames:seriesNames,rows:rows});
+    setTimeout(function(){alert("Imported "+rows.length+" months × "+seriesNames.length+" series into "+perfPortTarget+"."+(badRows?" Skipped "+badRows+" unparseable rows.":""));setPerfText("");},100);
+  }
   function applyRepImport(){if(!repText.trim())return;var lines=repText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});var data={};lines.forEach(function(line){var delim=line.indexOf("\t")>=0?"\t":",";var parts=line.split(delim).map(function(s){return s.trim();});if(parts.length>=3){var acct=parts[0].toUpperCase();var ticker=parts[1].toUpperCase();var shares=parseFloat(parts[2]);var avgCost=parts.length>=4?parseFloat(parts[3]):0;if(isNaN(avgCost))avgCost=0;if(!isNaN(shares)){var port=REP_ACCOUNTS[acct];if(port){if(!data[port])data[port]={};var prev=data[port][ticker];var prevShares=(prev&&typeof prev==="object")?(prev.shares||0):(prev||0);var prevCost=(prev&&typeof prev==="object")?(prev.avgCost||0):0;var newShares=prevShares+shares;/* Weighted average when the same ticker appears twice in one import */var newAvgCost=newShares>0?((prevShares*prevCost)+(shares*avgCost))/newShares:avgCost;data[port][ticker]={shares:newShares,avgCost:newAvgCost};}}}});setRepData(data);setRepLastUpdated(currentUser+" "+todayStr());setRepText("");supaUpsert("meta",{key:"repData",value:JSON.stringify(data)});}
   function applyCalImport(){if(!calImportText||!calImportText.trim())return;var lines=calImportText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});var count=0;setCompanies(function(prev){return prev.map(function(c){var match=lines.find(function(l){var delim=l.indexOf("\t")>=0?"\t":",";var parts=l.split(delim).map(function(s){return s.trim();});var allTickers2=[(c.ticker||"")].concat((c.tickers||[]).map(function(t){return t.ticker||"";})).map(function(t){return t.toUpperCase();}).filter(Boolean);return allTickers2.indexOf(parts[0].toUpperCase())>=0;});if(!match)return c;var delim=match.indexOf("\t")>=0?"\t":",";var parts=match.split(delim).map(function(s){return s.trim();});var date=parts[1];if(!date)return c;var entries=(c.earningsEntries||[]).slice();var existing=entries.find(function(e){return e.reportDate===date;});if(!existing){entries.unshift(Object.assign(blankEarnings(),{reportDate:date,open:false}));}count++;return Object.assign({},c,{earningsEntries:entries});});});setTimeout(function(){alert("Updated earnings dates for "+count+" companies.");setCalImportText("");},100);supaUpsert("meta",{key:"calLastUpdated",value:currentUser+" at "+todayStr()});setCalLastUpdatedBy(currentUser);setCalLastUpdated(todayStr());}
   function applyWeightsImport(){if(!weightsImportText.trim())return;var lines=weightsImportText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});var count=0;var newSpecial={};lines.forEach(function(l){var delim=l.indexOf("\t")>=0?"\t":",";var p=l.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});var nm=p[0].toUpperCase();if(nm==="CASH"||nm==="DIVACC"){newSpecial[nm]={GL:p[1]||"",FGL:p[2]||"",IV:p[3]||"",FIV:p[4]||"",EM:p[5]||"",SC:p[6]||""};}});if(Object.keys(newSpecial).length>0){setSpecialWeights(function(prev){var updated=Object.assign({},prev,newSpecial);supaUpsert("meta",{key:"specialWeights",value:JSON.stringify(updated)});return updated;});}setCompanies(function(prev){return prev.map(function(c){var cname=(c.name||"").toLowerCase().trim();var match=lines.find(function(l){var delim=l.indexOf("\t")>=0?"\t":",";var parts=l.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});return parts[0].toLowerCase().trim()===cname;});if(!match)return c;var delim=match.indexOf("\t")>=0?"\t":",";var p=match.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});var newWeights=Object.assign({},c.portWeights||{},{GL:p[1]||"",FGL:p[2]||"",IV:p[3]||"",FIV:p[4]||"",EM:p[5]||"",SC:p[6]||""});count++;return Object.assign({},c,{portWeights:newWeights});});});setTimeout(function(){alert("Updated weights for "+count+" companies.");setWeightsImportText("");},100);}
@@ -82,8 +126,8 @@ export function useImport(){
     showDataPanel,setShowDataPanel,importText,setImportText,importError,setImportError,
     dataHubTab,setDataHubTab,valImportText,setValImportText,estImportText,setEstImportText,
     weightsImportText,setWeightsImportText,calImportText,setCalImportText,
-    repText,setRepText,fxText,setFxText,txText,setTxText,portTab,setPortTab,portSort,setPortSort,portSortDir,setPortSortDir,
-    applyFxImport,applyRepImport,applyTxImport,applyCalImport,applyWeightsImport,applyValImport,applyEstImport,
+    repText,setRepText,fxText,setFxText,txText,setTxText,perfPortTarget,setPerfPortTarget,perfText,setPerfText,portTab,setPortTab,portSort,setPortSort,portSortDir,setPortSortDir,
+    applyFxImport,applyRepImport,applyTxImport,applyPerfImport,applyCalImport,applyWeightsImport,applyValImport,applyEstImport,
     importAll,exportAll
   };
 }

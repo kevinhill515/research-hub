@@ -31,6 +31,12 @@ export function CompanyProvider({children}){
   /* Research priority board: per-member slot assignments + shared reorgs list.
      Shape: { byMember: { [name]: { gbl: {primary:[], secondary:[]}, intl:{...}, intSmall:{...}, em:{...}, existingHlds:[] } }, reorgs:[] } */
   const [researchAssignments,setResearchAssignments]=useState({byMember:{},reorgs:[]});
+  /* Performance board: monthly returns per portfolio + series metadata.
+     Shape: { [portfolio]: {
+                lastMonthEMV: Number,
+                series: [{ name, role, ticker, returns: {"YYYY-MM": Number, ...} }, ...]
+              } } */
+  const [perfData,setPerfData]=useState({});
 
   function migratePortfolioKeys(cos){
     var RENAMES={"FIV":"FIN","IV":"IN","FOC1":"FIN1","FOC2":"FIN2","FOC3":"FIN3","MC1":"FIN1","MC2":"FIN2","MC3":"FIN3","MC4":"INGL1","MC5":"INGL2","INTL":"IN1"};
@@ -109,7 +115,7 @@ export function CompanyProvider({children}){
     return{data:migrated,changed:changed};
   }
 
-  async function loadFromStorage(){     setLoadStatus({companies:null,library:null});var coOk=false,libOk=false;     try{var r=await supaGet("library","id","shared");if(r){var d=JSON.parse(r.data);if(Array.isArray(d)&&d.length){var libMig=migrateTags(d);setSaved(libMig.data);libOk=libMig.data.length;if(libMig.changed)supaUpsert("library",{id:"shared",data:JSON.stringify(libMig.data)});}}}catch(e){}     try{var r2=await supaGet("companies","id","shared");if(r2){var d2=JSON.parse(r2.data);if(Array.isArray(d2)&&d2.length){var coMig=migratePortfolioKeys(d2);setCompanies(coMig.data);coOk=coMig.data.length;if(coMig.changed)supaUpsert("companies",{id:"shared",data:JSON.stringify(coMig.data)});}}}catch(e){}     try{var r3=await supaGet("meta","key","lastPriceUpdate");if(r3)setLastPriceUpdate(r3.value);}catch(e){}     try{var r4=await supaGet("meta","key","entryComments");if(r4)setEntryComments(JSON.parse(r4.value));}catch(e){} try{var r5=await supaGet("meta","key","calLastUpdated");if(r5&&r5.value){var parts=r5.value.split(" at ");setCalLastUpdatedBy(parts[0]||"");setCalLastUpdated(parts[1]||"");}}catch(e){} try{var r6=await supaGet("meta","key","repData");if(r6&&r6.value){var rdRaw=JSON.parse(r6.value);var rdMig=migrateRepData(rdRaw);setRepData(rdMig.data);if(rdMig.changed)supaUpsert("meta",{key:"repData",value:JSON.stringify(rdMig.data)});}}catch(e){} try{var r7=await supaGet("meta","key","fxRates");if(r7&&r7.value)setFxRates(JSON.parse(r7.value));}catch(e){} try{var r8=await supaGet("meta","key","specialWeights");if(r8&&r8.value){var swRaw=JSON.parse(r8.value);var swMig=migrateSpecialWeights(swRaw);setSpecialWeights(swMig.data);if(swMig.changed)supaUpsert("meta",{key:"specialWeights",value:JSON.stringify(swMig.data)});}}catch(e){} try{var r9=await supaGet("meta","key","annotations");if(r9&&r9.value){var ann=JSON.parse(r9.value);if(Array.isArray(ann))setAnnotations(ann);}}catch(e){} try{var r10=await supaGet("meta","key","researchAssignments");if(r10&&r10.value){var ra=JSON.parse(r10.value);if(ra&&typeof ra==="object"){if(!ra.byMember)ra.byMember={};if(!Array.isArray(ra.reorgs))ra.reorgs=[];/* Migrate legacy category keys: gbl→gl, intl→in, intSmall→sc */var RA_RENAMES={gbl:"gl",intl:"in",intSmall:"sc"};var raChanged=false;Object.keys(ra.byMember).forEach(function(m){var mb=ra.byMember[m]||{};Object.keys(RA_RENAMES).forEach(function(oldK){if(mb[oldK]!==undefined){mb[RA_RENAMES[oldK]]=mb[oldK];delete mb[oldK];raChanged=true;}});ra.byMember[m]=mb;});setResearchAssignments(ra);if(raChanged)supaUpsert("meta",{key:"researchAssignments",value:JSON.stringify(ra)});}}}catch(e){}     setLoadStatus({companies:coOk,library:libOk});setReady(true);return coOk||libOk;}
+  async function loadFromStorage(){     setLoadStatus({companies:null,library:null});var coOk=false,libOk=false;     try{var r=await supaGet("library","id","shared");if(r){var d=JSON.parse(r.data);if(Array.isArray(d)&&d.length){var libMig=migrateTags(d);setSaved(libMig.data);libOk=libMig.data.length;if(libMig.changed)supaUpsert("library",{id:"shared",data:JSON.stringify(libMig.data)});}}}catch(e){}     try{var r2=await supaGet("companies","id","shared");if(r2){var d2=JSON.parse(r2.data);if(Array.isArray(d2)&&d2.length){var coMig=migratePortfolioKeys(d2);setCompanies(coMig.data);coOk=coMig.data.length;if(coMig.changed)supaUpsert("companies",{id:"shared",data:JSON.stringify(coMig.data)});}}}catch(e){}     try{var r3=await supaGet("meta","key","lastPriceUpdate");if(r3)setLastPriceUpdate(r3.value);}catch(e){}     try{var r4=await supaGet("meta","key","entryComments");if(r4)setEntryComments(JSON.parse(r4.value));}catch(e){} try{var r5=await supaGet("meta","key","calLastUpdated");if(r5&&r5.value){var parts=r5.value.split(" at ");setCalLastUpdatedBy(parts[0]||"");setCalLastUpdated(parts[1]||"");}}catch(e){} try{var r6=await supaGet("meta","key","repData");if(r6&&r6.value){var rdRaw=JSON.parse(r6.value);var rdMig=migrateRepData(rdRaw);setRepData(rdMig.data);if(rdMig.changed)supaUpsert("meta",{key:"repData",value:JSON.stringify(rdMig.data)});}}catch(e){} try{var r7=await supaGet("meta","key","fxRates");if(r7&&r7.value)setFxRates(JSON.parse(r7.value));}catch(e){} try{var r8=await supaGet("meta","key","specialWeights");if(r8&&r8.value){var swRaw=JSON.parse(r8.value);var swMig=migrateSpecialWeights(swRaw);setSpecialWeights(swMig.data);if(swMig.changed)supaUpsert("meta",{key:"specialWeights",value:JSON.stringify(swMig.data)});}}catch(e){} try{var r9=await supaGet("meta","key","annotations");if(r9&&r9.value){var ann=JSON.parse(r9.value);if(Array.isArray(ann))setAnnotations(ann);}}catch(e){} try{var r10=await supaGet("meta","key","researchAssignments");if(r10&&r10.value){var ra=JSON.parse(r10.value);if(ra&&typeof ra==="object"){if(!ra.byMember)ra.byMember={};if(!Array.isArray(ra.reorgs))ra.reorgs=[];/* Migrate legacy category keys: gbl→gl, intl→in, intSmall→sc */var RA_RENAMES={gbl:"gl",intl:"in",intSmall:"sc"};var raChanged=false;Object.keys(ra.byMember).forEach(function(m){var mb=ra.byMember[m]||{};Object.keys(RA_RENAMES).forEach(function(oldK){if(mb[oldK]!==undefined){mb[RA_RENAMES[oldK]]=mb[oldK];delete mb[oldK];raChanged=true;}});ra.byMember[m]=mb;});setResearchAssignments(ra);if(raChanged)supaUpsert("meta",{key:"researchAssignments",value:JSON.stringify(ra)});}}}catch(e){} try{var r11=await supaGet("meta","key","perfData");if(r11&&r11.value){var pd=JSON.parse(r11.value);if(pd&&typeof pd==="object")setPerfData(pd);}}catch(e){}     setLoadStatus({companies:coOk,library:libOk});setReady(true);return coOk||libOk;}
 
   useEffect(function(){
     var done=false,attempts=0;
@@ -127,6 +133,7 @@ export function CompanyProvider({children}){
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){supaUpsert("meta",{key:"entryComments",value:JSON.stringify(entryComments)});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[entryComments,ready]);
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){supaUpsert("meta",{key:"annotations",value:JSON.stringify(annotations)});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[annotations,ready]);
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){supaUpsert("meta",{key:"researchAssignments",value:JSON.stringify(researchAssignments)});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[researchAssignments,ready]);
+  useEffect(function(){if(!ready)return;var t=setTimeout(function(){supaUpsert("meta",{key:"perfData",value:JSON.stringify(perfData)});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[perfData,ready]);
 
   function addComment(entryId,text){   if(!text.trim())return;   var comment={id:Date.now(),text:text.trim(),author:currentUser||"Unknown",date:todayStr()};   setEntryComments(function(prev){return Object.assign({},prev,{[entryId]:([comment].concat(prev[entryId]||[]))});});   setNewCommentText(function(prev){return Object.assign({},prev,{[entryId]:""});}); }
   function deleteComment(entryId,commentId){   setEntryComments(function(prev){return Object.assign({},prev,{[entryId]:(prev[entryId]||[]).filter(function(c){return c.id!==commentId;})});}); }
@@ -155,6 +162,79 @@ export function CompanyProvider({children}){
       }
       next.byMember[member]=mb;
       return next;
+    });
+  }
+  /* Performance data mutations. All operate on perfData[portfolio]. */
+  function setPerfSeries(portfolio,seriesIndex,patch){
+    setPerfData(function(prev){
+      var port=Object.assign({series:[],lastMonthEMV:0},prev[portfolio]||{});
+      port.series=(port.series||[]).slice();
+      port.series[seriesIndex]=Object.assign({returns:{}},port.series[seriesIndex]||{},patch);
+      return Object.assign({},prev,{[portfolio]:port});
+    });
+  }
+  function addPerfSeries(portfolio,series){
+    setPerfData(function(prev){
+      var port=Object.assign({series:[],lastMonthEMV:0},prev[portfolio]||{});
+      port.series=(port.series||[]).concat([Object.assign({name:"New series",role:"competitor",ticker:"",returns:{}},series||{})]);
+      return Object.assign({},prev,{[portfolio]:port});
+    });
+  }
+  function removePerfSeries(portfolio,seriesIndex){
+    setPerfData(function(prev){
+      var port=Object.assign({series:[],lastMonthEMV:0},prev[portfolio]||{});
+      port.series=(port.series||[]).filter(function(_,i){return i!==seriesIndex;});
+      return Object.assign({},prev,{[portfolio]:port});
+    });
+  }
+  function setPerfReturn(portfolio,seriesIndex,monthKey,value){
+    setPerfData(function(prev){
+      var port=Object.assign({series:[],lastMonthEMV:0},prev[portfolio]||{});
+      port.series=(port.series||[]).slice();
+      var s=Object.assign({returns:{}},port.series[seriesIndex]||{});
+      s.returns=Object.assign({},s.returns||{});
+      if(value===null||value===undefined||value==="")delete s.returns[monthKey];
+      else s.returns[monthKey]=Number(value);
+      port.series[seriesIndex]=s;
+      return Object.assign({},prev,{[portfolio]:port});
+    });
+  }
+  function setPerfLastMonthEMV(portfolio,value){
+    setPerfData(function(prev){
+      var port=Object.assign({series:[],lastMonthEMV:0},prev[portfolio]||{});
+      port.lastMonthEMV=Number(value)||0;
+      return Object.assign({},prev,{[portfolio]:port});
+    });
+  }
+  /* Bulk paste from CSV: given a portfolio + parsed {seriesNames, rows: [{month, values:[]}] },
+     merge into existing series (match by name), create any missing. Preserves roles/tickers. */
+  function applyPerfBulk(portfolio,parsed){
+    setPerfData(function(prev){
+      var port=Object.assign({series:[],lastMonthEMV:0},prev[portfolio]||{});
+      var existingByName={};(port.series||[]).forEach(function(s,i){existingByName[s.name]=i;});
+      var newSeries=(port.series||[]).slice();
+      /* Ensure a slot for each column */
+      parsed.seriesNames.forEach(function(n){
+        if(existingByName[n]===undefined){
+          existingByName[n]=newSeries.length;
+          newSeries.push({name:n,role:newSeries.length===0?"portfolio":"competitor",ticker:"",returns:{}});
+        }else{
+          /* clone existing so we can mutate returns */
+          var idx=existingByName[n];
+          newSeries[idx]=Object.assign({},newSeries[idx],{returns:Object.assign({},newSeries[idx].returns||{})});
+        }
+      });
+      parsed.rows.forEach(function(row){
+        parsed.seriesNames.forEach(function(n,i){
+          var v=row.values[i];
+          if(v===null||v===undefined||v==="")return;
+          var num=Number(v);
+          if(isNaN(num))return;
+          newSeries[existingByName[n]].returns[row.month]=num;
+        });
+      });
+      port.series=newSeries;
+      return Object.assign({},prev,{[portfolio]:port});
     });
   }
   function setReorgSlot(position,companyId){
@@ -264,7 +344,8 @@ export function CompanyProvider({children}){
     addAnnotation,updateAnnotation,deleteAnnotation,resolveAnnotation,unresolveAnnotation,addReply,markAnnotationRead,parseMentions,
     updateTargetWeight,addTargetHistoryEntry,deleteTargetHistoryEntry,
     addTransaction,deleteTransaction,setTxInitOverride,updateInitiatedDate,
-    researchAssignments,setResearchAssignments,setResearchSlot,setReorgSlot
+    researchAssignments,setResearchAssignments,setResearchSlot,setReorgSlot,
+    perfData,setPerfData,setPerfSeries,addPerfSeries,removePerfSeries,setPerfReturn,setPerfLastMonthEMV,applyPerfBulk
   };
 
   return <CompanyContext.Provider value={value}>{children}</CompanyContext.Provider>;
