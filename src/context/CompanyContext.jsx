@@ -202,6 +202,16 @@ export function CompanyProvider({children}){
       return Object.assign({},prev,{[portfolio]:port});
     });
   }
+  /* Group-level display order. Stored on the *primary* portfolio of a group
+     (e.g. FIN for Int'l, FGL for Global). The merged view in PerformanceTab
+     sorts by this array first, then appends any un-ordered series. */
+  function setPerfSeriesOrder(portfolio,orderArr){
+    setPerfData(function(prev){
+      var port=Object.assign({series:[],lastMonthEMV:0},prev[portfolio]||{});
+      port.seriesOrder=(orderArr||[]).slice();
+      return Object.assign({},prev,{[portfolio]:port});
+    });
+  }
   function removePerfSeries(portfolio,seriesIndex){
     setPerfData(function(prev){
       var port=Object.assign({series:[],lastMonthEMV:0},prev[portfolio]||{});
@@ -374,7 +384,7 @@ export function CompanyProvider({children}){
     updateTargetWeight,addTargetHistoryEntry,deleteTargetHistoryEntry,
     addTransaction,deleteTransaction,setTxInitOverride,updateInitiatedDate,
     researchAssignments,setResearchAssignments,setResearchSlot,setReorgSlot,
-    perfData,setPerfData,setPerfSeries,addPerfSeries,removePerfSeries,movePerfSeries,setPerfReturn,setPerfLastMonthEMV,applyPerfBulk
+    perfData,setPerfData,setPerfSeries,addPerfSeries,removePerfSeries,movePerfSeries,setPerfSeriesOrder,setPerfReturn,setPerfLastMonthEMV,applyPerfBulk
   };
 
   return <CompanyContext.Provider value={value}>{children}</CompanyContext.Provider>;

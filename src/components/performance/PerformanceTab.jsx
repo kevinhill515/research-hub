@@ -23,7 +23,7 @@ const GROUPS = [
 ];
 
 export function PerformanceTab(){
-  const { companies, repData, fxRates, perfData, setPerfSeries, addPerfSeries, removePerfSeries, movePerfSeries, setPerfReturn, setPerfLastMonthEMV, dark } = useCompanyContext();
+  const { companies, repData, fxRates, perfData, setPerfSeries, addPerfSeries, removePerfSeries, movePerfSeries, setPerfSeriesOrder, setPerfReturn, setPerfLastMonthEMV, dark } = useCompanyContext();
   const [groupKey, setGroupKey] = useState("intl");
   const [hiddenSeries, setHiddenSeries] = useState({}); /* {groupKey: Set(name)} */
   const [includeMtd, setIncludeMtd] = useState(true);
@@ -61,26 +61,46 @@ export function PerformanceTab(){
   }, [companies,repData,fxRates,group.key]);
 
   /* Merge series across the group's portfolios. Dedupe by name: first-seen wins.
-     Portfolio-role series get their auto-MTD injected for current month. */
+     Portfolio-role series get their auto-MTD injected for current month.
+     Display order follows the PRIMARY portfolio's seriesOrder override when
+     present, with any extras appended in insertion order. */
   const { mergedSeries, portfolioEmvs } = useMemo(function(){
     var byName = {};
     var portEmvs = {};
+    var insertionOrder = [];
     group.portfolios.forEach(function(p){
       var port = perfData[p];
       if(!port)return;
       portEmvs[p] = port.lastMonthEMV || 0;
       var autoMtd = portfolioMtd(currentMVs[p], port.lastMonthEMV);
       (port.series||[]).forEach(function(s){
-        if(byName[s.name])return; /* dedupe */
+        if(byName[s.name])return;
         var copy = Object.assign({}, s, { returns: Object.assign({}, s.returns||{}), _sourcePortfolio: p });
         if(s.role==="portfolio" && autoMtd!==null && (copy.returns[curMonth]===undefined||copy.returns[curMonth]===null)){
           copy.returns[curMonth] = autoMtd;
         }
         byName[s.name] = copy;
+        insertionOrder.push(s.name);
       });
     });
-    return { mergedSeries: Object.keys(byName).map(function(n){return byName[n];}), portfolioEmvs: portEmvs };
+    var primary = perfData[group.portfolios[0]];
+    var savedOrder = (primary && primary.seriesOrder) || [];
+    var finalOrder = [];
+    savedOrder.forEach(function(n){if(byName[n]&&finalOrder.indexOf(n)<0)finalOrder.push(n);});
+    insertionOrder.forEach(function(n){if(finalOrder.indexOf(n)<0)finalOrder.push(n);});
+    return { mergedSeries: finalOrder.map(function(n){return byName[n];}), portfolioEmvs: portEmvs };
   },[perfData, group.key, currentMVs, curMonth]);
+
+  /* Swap positions in the group's displayed order (writes to primary's seriesOrder). */
+  function moveInGroup(fromIdx, toIdx){
+    if(fromIdx===toIdx)return;
+    if(fromIdx<0||fromIdx>=mergedSeries.length)return;
+    if(toIdx<0||toIdx>=mergedSeries.length)return;
+    var names = mergedSeries.map(function(s){return s.name;});
+    var moved = names.splice(fromIdx,1)[0];
+    names.splice(toIdx,0,moved);
+    setPerfSeriesOrder(group.portfolios[0], names);
+  }
 
   const colorMap = useMemo(function(){
     var m={};var b=0,c=0;
@@ -176,8 +196,8 @@ export function PerformanceTab(){
               return (
                 <div key={s.name+"-"+i} className="flex gap-2 items-center flex-wrap text-xs">
                   <span className="inline-flex flex-col leading-none text-[10px] text-gray-400 dark:text-slate-500 select-none">
-                    <button type="button" disabled={i===0} onClick={function(){movePerfSeries(p,idx,Math.max(0,idx-1));}} className={"px-1 py-0 cursor-pointer hover:text-gray-700 dark:hover:text-slate-300 "+(i===0?"opacity-30 cursor-not-allowed":"")} title="Move up">{"\u25B2"}</button>
-                    <button type="button" disabled={i===arr.length-1} onClick={function(){movePerfSeries(p,idx,idx+1);}} className={"px-1 py-0 cursor-pointer hover:text-gray-700 dark:hover:text-slate-300 "+(i===arr.length-1?"opacity-30 cursor-not-allowed":"")} title="Move down">{"\u25BC"}</button>
+                    <button type="button" disabled={i===0} onClick={function(){moveInGroup(i,i-1);}} className={"px-1 py-0 cursor-pointer hover:text-gray-700 dark:hover:text-slate-300 "+(i===0?"opacity-30 cursor-not-allowed":"")} title="Move up">{"\u25B2"}</button>
+                    <button type="button" disabled={i===arr.length-1} onClick={function(){moveInGroup(i,i+1);}} className={"px-1 py-0 cursor-pointer hover:text-gray-700 dark:hover:text-slate-300 "+(i===arr.length-1?"opacity-30 cursor-not-allowed":"")} title="Move down">{"\u25BC"}</button>
                   </span>
                   <input defaultValue={stored.name} key={p+"-sn-"+idx+"-"+stored.name} onBlur={function(e){setPerfSeries(p,idx,{name:e.target.value.trim()||stored.name});}} className={INP+" !text-xs w-48"} placeholder="Series name"/>
                   <select value={stored.role||"competitor"} onChange={function(e){setPerfSeries(p,idx,{role:e.target.value});}} className={INP+" !text-xs"}>
