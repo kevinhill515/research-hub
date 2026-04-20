@@ -1,33 +1,369 @@
-import { useMemo } from 'react';
-import { useCompanyContext } from '../../context/CompanyContext.jsx';
-import { PORT_NAMES } from '../../constants/index.js';
-import { calcNormEPS, calcTP, calcMOS, mosBg, fmtPrice, fmtMOS, shortSector, sectorStyle, countryStyle, repShares, repAvgCost, getInitiatedDate, monthsSince, printPage, truncName } from '../../utils/index.js';
-import FpeRangeMini from '../ui/FpeRangeMini.jsx';
+/* Per-portfolio table (FIN / IN / FGL / GL / EM / SC).
+ *
+ * Pipeline:
+ *   1. Build a ticker-ownership map so each ticker contributes MV to at
+ *      most one company (companies in this portfolio claim first).
+ *   2. Compute per-company Rep MV (USD), then totalMV including CASH/DIVACC.
+ *   3. Derive rep weight and diff for each company.
+ *   4. Sort companies per portSort/portSortDir.
+ *   5. Render header row, company rows, CASH/DIVACC special rows, TOTAL row.
+ *
+ * Pure math lives in ../../utils/portfolioMath.js so it can be unit-tested
+ * in isolation. This file is responsible only for wiring and rendering.
+ */
+
+import { useMemo, useEffect } from "react";
+import { useCompanyContext } from "../../context/CompanyContext.jsx";
+import { PORT_NAMES } from "../../constants/index.js";
+import {
+  calcNormEPS, calcTP, calcMOS, repShares, printPage,
+} from "../../utils/index.js";
+import {
+  buildTickerOwners, calcCompanyRepMV, calcTotalMV,
+  calcRepWeight, calcDiff, getNextReport, getPerf5d,
+} from "../../utils/portfolioMath.js";
+import { PORTFOLIO_COLUMNS, ASC_SORTS } from "./portfolioColumns.js";
+import PortfolioRow from "./PortfolioRow.jsx";
+import PortfolioSpecialRow from "./PortfolioSpecialRow.jsx";
+import PortfolioTotalRow from "./PortfolioTotalRow.jsx";
 
 const BTN_SM = "text-xs px-2.5 py-1.5 font-medium rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors";
 
-/* Per-portfolio table (FIN / IN / FGL / GL / EM / SC).
-   Extracted from App.jsx verbatim; original inline IIFE referenced parent-scope
-   variables via closure, now explicit props + context. */
-export function PortfoliosTable(props){
-  const { portTab, portSort, portSortDir, setPortSort, setPortSortDir,
-          editingTarget, setEditingTarget, setTxFilter, setSelCoOrigin,
-          setSelCo, setTab, setCoView, openDiscussions } = props;
-  const { companies, repData, fxRates, specialWeights, annotations, dark, updateTargetWeight } = useCompanyContext();
+/* Sort chips shown above the table (curated subset of columns). */
+const SORT_CHIPS = [
+  ["rep",     "Rep %"],
+  ["target",  "Target %"],
+  ["name",    "Name"],
+  ["mos",     "MOS"],
+  ["sector",  "Sector"],
+  ["country", "Country"],
+];
 
-  const { portCos, portRep, tickerOwners, totalMV } = useMemo(function(){
-    var sortMult=portSortDir==="asc"?1:-1;
+function getMosForCompany(c) {
+  const v = c.valuation || {};
+  const eps = calcNormEPS(v) || parseFloat(v.eps);
+  const tp = calcTP(v.pe, eps);
+  const ord = (c.tickers || []).find(function (t) { return t.isOrdinary; });
+  const price = (ord && parseFloat(ord.price)) || parseFloat(v.price);
+  return calcMOS(tp, price);
+}
 
-var getRepMV=function(c){var mv=0;var seen={};(c.tickers||[]).forEach(function(t){var tk=(t.ticker||"").toUpperCase();if(!tk||seen[tk])return;seen[tk]=true;var shares=repShares((repData[portTab]||{})[tk]);if(shares&&t.price){var ccy=(t.currency||"USD").toUpperCase();var fx=ccy==="USD"?1:(fxRates[ccy]||0);if(fx>0)mv+=shares*parseFloat(t.price)/fx;}});return mv;};var getPerf=function(c){var ord=(c.tickers||[]).find(function(t){return t.isOrdinary;});var p=ord&&ord.perf5d;if(!p||p==="#N/A")return null;var n=parseFloat(p);return isNaN(n)?null:n;};var getMos=function(c){return calcMOS(calcTP((c.valuation||{}).pe,calcNormEPS(c.valuation||{})||parseFloat((c.valuation||{}).eps)),((c.tickers||[]).find(function(t){return t.isOrdinary;})||{}).price||(c.valuation||{}).price);};var getNextReport=function(c){var today=new Date();today.setHours(0,0,0,0);var nr=null;(c.earningsEntries||[]).forEach(function(e){if(!e.reportDate)return;var d=new Date(e.reportDate);if(d>=today&&(!nr||d<nr))nr=d;});return nr?nr.getTime():null;};var portCos=companies.filter(function(c){return(c.portfolios||[]).indexOf(portTab)>=0;}).slice().sort(function(a,b){if(portSort==="name")return sortMult*(a.name||"").localeCompare(b.name||"");if(portSort==="target"){var ta=parseFloat((a.portWeights||{})[portTab])||0;var tb=parseFloat((b.portWeights||{})[portTab])||0;return sortMult*(ta-tb);}if(portSort==="mos"){var ma=getMos(a),mb=getMos(b);if(ma===null&&mb===null)return 0;if(ma===null)return 1;if(mb===null)return -1;return sortMult*(ma-mb);}if(portSort==="sector")return sortMult*(a.sector||"").localeCompare(b.sector||"");if(portSort==="country")return sortMult*(a.country||"").localeCompare(b.country||"");if(portSort==="perf"){var pa=getPerf(a),pb=getPerf(b);if(pa===null&&pb===null)return 0;if(pa===null)return 1;if(pb===null)return -1;return sortMult*(pa-pb);}if(portSort==="nextReport"){var na=getNextReport(a),nb=getNextReport(b);if(na===null&&nb===null)return 0;if(na===null)return 1;if(nb===null)return -1;return sortMult*(na-nb);}if(portSort==="diff"){var getDiff=function(c){var t=parseFloat((c.portWeights||{})[portTab])||0;var mv=getRepMV(c);var total=0;companies.filter(function(x){return(x.portfolios||[]).indexOf(portTab)>=0;}).forEach(function(x){total+=getRepMV(x);});var rw=total>0&&mv>0?Math.round(mv/total*1000)/10:null;return rw!==null&&t>0?rw-t:null;};var da=getDiff(a),db=getDiff(b);if(da===null&&db===null)return 0;if(da===null)return 1;if(db===null)return -1;return sortMult*(da-db);}return sortMult*(getRepMV(a)-getRepMV(b));});     var portRep=repData[portTab]||{};
-     /* Build ticker-owner map: each ticker can only attribute to ONE company.
-        Companies in the portfolio claim first, then any other company. */
-     var tickerOwners={};
-     portCos.forEach(function(c){(c.tickers||[]).forEach(function(t){var tk=(t.ticker||"").toUpperCase();if(tk&&!tickerOwners[tk])tickerOwners[tk]=c.id;});});
-     companies.filter(function(c){return(c.portfolios||[]).indexOf(portTab)<0;}).forEach(function(c){(c.tickers||[]).forEach(function(t){var tk=(t.ticker||"").toUpperCase();if(tk&&!tickerOwners[tk])tickerOwners[tk]=c.id;});});
-     var totalMV=0;     portCos.forEach(function(c){       var allTickers=c.tickers||[];       var seenMV={};allTickers.forEach(function(t){         var tk=(t.ticker||"").toUpperCase();if(!tk||seenMV[tk]||tickerOwners[tk]!==c.id)return;seenMV[tk]=true;         var shares=repShares(portRep[tk]);         if(shares&&t.price){var ccy=(t.currency||"USD").toUpperCase();var fx=ccy==="USD"?1:(fxRates[ccy]||0);if(fx>0)totalMV+=shares*parseFloat(t.price)/fx;}       });     });     totalMV+=repShares(portRep["CASH"])+repShares(portRep["DIVACC"]);     
-    return { portCos: portCos, portRep: portRep, tickerOwners: tickerOwners, totalMV: totalMV };
-  },[companies,repData,fxRates,portTab,portSort,portSortDir]);
-  return(<div className="print-target">       <div className="flex gap-2 mb-2 items-center flex-wrap">         <span className="text-sm font-medium text-gray-900 dark:text-slate-100">{PORT_NAMES[portTab]} — {portCos.length} companies</span>         {totalMV>0&&<span className="text-xs text-gray-500 dark:text-slate-400">Rep AUM: ${totalMV.toLocaleString(undefined,{maximumFractionDigits:0})}</span>}         {(function(){var portAnnotations=annotations.filter(function(a){return !a.resolved&&a.scope==="portfolio"&&a.portfolio===portTab;});return <button onClick={function(){openDiscussions({scope:"portfolio",portfolio:portTab});}} className={BTN_SM+" ml-auto no-print"}>💬 Discuss{portAnnotations.length>0&&<span className="ml-1 text-[10px] px-1.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-semibold">{portAnnotations.length}</span>}</button>;})()}         <button onClick={printPage} className={BTN_SM+" no-print"} title="Print this view (landscape)">🖨 Print</button>         </div><div className="flex gap-1.5 mb-2 flex-wrap">           <span className="text-[11px] text-gray-500 dark:text-slate-400">Sort:</span>           {[["rep","Rep %"],["target","Target %"],["name","Name"],["mos","MOS"],["sector","Sector"],["country","Country"]].map(function(s){var active=portSort===s[0];var arrow=active?(portSortDir==="asc"?" \u2191":" \u2193"):"";var textSorts=["name","sector","country"];return <span key={s[0]} onClick={function(){if(active){setPortSortDir(function(d){return d==="asc"?"desc":"asc";});}else{setPortSort(s[0]);setPortSortDir(textSorts.indexOf(s[0])>=0?"asc":"desc");}}} className={"text-[11px] px-2 py-0.5 rounded-full cursor-pointer transition-colors " + (active ? "bg-slate-100 dark:bg-slate-800 border border-slate-400 dark:border-slate-500 text-gray-900 dark:text-slate-100" : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-gray-500 dark:text-slate-400")}>{s[1]}{arrow}</span>;})}         </div>       <div style={{display:"table",width:"100%",borderCollapse:"separate",borderSpacing:"0 2px"}}>         <div style={{display:"table-row",position:"sticky",top:0,zIndex:10}} className="bg-white dark:bg-slate-950 print-thead">           {[["Company","name"],["Next Report","nextReport"],["Country","country"],["Sector","sector"],["Portfolios",null],["Held (mo)","held"],["Last Trade","lastTrade"],["Price",null],["Avg Cost",null],["Unreal","unreal"],["5D%","perf"],["MOS","mos"],["FPE Range",null],["Target %","target"],["Rep %","rep"],["Diff","diff"]].map(function(h){var label=h[0];var sortKey=h[1];var active=sortKey&&portSort===sortKey;var arrow=active?(portSortDir==="asc"?" \u2191":" \u2193"):"";return <div key={label} onClick={sortKey?function(){if(active)setPortSortDir(function(d){return d==="asc"?"desc":"asc";});else{setPortSort(sortKey);setPortSortDir(sortKey==="name"||sortKey==="country"||sortKey==="sector"||sortKey==="nextReport"?"asc":"desc");}}:undefined} className={"text-[10px] uppercase tracking-wide pb-1.5 pr-3 sticky top-0 bg-white dark:bg-slate-950 select-none "+(sortKey?"cursor-pointer hover:text-gray-700 dark:hover:text-slate-300 ":"")+(active?"text-gray-900 dark:text-slate-100 font-semibold":"text-gray-500 dark:text-slate-400")} style={{display:"table-cell"}}>{label}{arrow}</div>;})}         </div>         {portCos.map(function(c,rowIdx){           var val=c.valuation||{};var ne=calcNormEPS(val)||parseFloat(val.eps);var tp=calcTP(val.pe,ne);var ordTicker=(c.tickers||[]).find(function(t){return t.isOrdinary;});var ordPrice=ordTicker?parseFloat(ordTicker.price):parseFloat(val.price);var mos=calcMOS(tp,ordPrice);var mosStyle=mosBg(mos);           var repTicker=(c.tickers||[]).find(function(t){return repShares(portRep[(t.ticker||"").toUpperCase()])>0;});var priceTicker=repTicker||ordTicker;var priceVal=priceTicker?parseFloat(priceTicker.price):NaN;var avgCostVal=repTicker?repAvgCost(portRep[(repTicker.ticker||"").toUpperCase()]):0;var unrealVal=(avgCostVal>0&&!isNaN(priceVal))?(priceVal-avgCostVal)/avgCostVal*100:null;           var target=parseFloat((c.portWeights||{})[portTab])||0;           var allTickers=c.tickers||[];           var repMV=0;           var seenRow={};allTickers.forEach(function(t){             var tk=(t.ticker||"").toUpperCase();if(!tk||seenRow[tk]||tickerOwners[tk]!==c.id)return;seenRow[tk]=true;             var shares=repShares(portRep[tk]);             if(shares&&t.price){var ccy=(t.currency||"USD").toUpperCase();var fx=ccy==="USD"?1:(fxRates[ccy]||0);if(fx>0)repMV+=shares*parseFloat(t.price)/fx;}           });           var repWeight=totalMV>0&&repMV>0?Math.round(repMV/totalMV*1000)/10:null;           var diff=repWeight!==null&&target>0?Math.round((repWeight-target)*10)/10:null;           var nextReport=null;           var today=new Date();today.setHours(0,0,0,0);           (c.earningsEntries||[]).forEach(function(e){if(!e.reportDate)return;var d=new Date(e.reportDate);if(d>=today){if(!nextReport||d<nextReport)nextReport=d;}});           var rowBg=diff!==null?(diff<=-0.3?(dark?"rgba(220,38,38,0.25)":"rgba(220,38,38,0.15)"):diff>=0.5?(dark?"rgba(22,101,52,0.30)":"rgba(22,101,52,0.15)"):undefined):undefined;           var zebraBg=rowBg?rowBg:(rowIdx%2===0?(dark?"rgba(255,255,255,0.03)":"rgba(0,0,0,0.025)"):undefined);           var rowAnnotations=annotations.filter(function(a){return !a.resolved&&((a.scope==="row"&&a.portfolio===portTab&&a.companyId===c.id)||(a.scope==="company"&&a.companyId===c.id));});return(<div key={c.id} onClick={function(){setSelCoOrigin("portfolios");setSelCo(c);setTab("companies");setCoView("section:Valuation");}} className="hover:brightness-110 transition-all" style={{display:"table-row",cursor:"pointer"}}>             <div className="align-middle pr-3 py-1.5 text-sm font-medium text-gray-900 dark:text-slate-100" style={{display:"table-cell",background:zebraBg}}><span className="inline-flex items-center gap-1.5" title={c.name}>{truncName(c.name,15)}{rowAnnotations.length>0&&<span onClick={function(e){e.stopPropagation();openDiscussions({scope:"row",portfolio:portTab,companyId:c.id});}} className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-semibold ml-0.5 cursor-pointer hover:bg-blue-200 dark:hover:bg-blue-900/60" title="View discussions">💬 {rowAnnotations.length}</span>}</span></div>             <div className="align-middle pr-3 py-1.5 text-xs" style={{display:"table-cell",background:zebraBg,color:nextReport?(Math.round((nextReport-today)/(1000*60*60*24))<=7?"#dc2626":Math.round((nextReport-today)/(1000*60*60*24))<=14?"#d97706":undefined):undefined}}>{nextReport?nextReport.toISOString().slice(0,10):"--"}</div>             <div className="align-middle pr-3 py-1.5" style={{display:"table-cell",background:zebraBg}}>{c.country?(function(){var cs=countryStyle(c.country);return <span className="text-[11px] px-1.5 py-0.5 rounded-full font-medium" style={{background:cs.bg,color:cs.color}}>{c.country}</span>;})():<span className="text-xs text-gray-400 dark:text-slate-500">--</span>}</div>             <div className="align-middle pr-3 py-1.5" style={{display:"table-cell",background:zebraBg}}>{c.sector?(function(){var ss=sectorStyle(c.sector);return <span className="text-[11px] px-1.5 py-0.5 rounded-full font-medium" style={{background:ss.bg,color:ss.color}}>{shortSector(c.sector)}</span>;})():<span className="text-xs text-gray-400 dark:text-slate-500">--</span>}</div>             <div className="align-middle pr-3 py-1.5" style={{display:"table-cell",background:zebraBg}}><div className="flex gap-1 flex-wrap">{(c.portfolios||[]).map(function(p){var isCurrent=p===portTab;return <span key={p} className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{background:isCurrent?"#1e40af":"#1a5c2a",color:"#fff"}}>{p}</span>;})}</div></div>             <div className="align-middle pr-3 py-1.5 text-xs text-gray-700 dark:text-slate-300 font-mono" style={{display:"table-cell",background:zebraBg}} onClick={function(e){if((c.transactions||[]).length>0){e.stopPropagation();setSelCoOrigin("portfolios");setSelCo(c);setTab("companies");setCoView("transactions");setTxFilter(portTab);}}}>{(function(){var d=getInitiatedDate(c,portTab);var m=monthsSince(d);return m===null?<span className="text-gray-400 dark:text-slate-500">--</span>:<span className="cursor-pointer hover:underline">{m.toFixed(1)}</span>;})()}</div>             <div className="align-middle pr-3 py-1.5 text-xs" style={{display:"table-cell",background:zebraBg}} onClick={function(e){if((c.transactions||[]).length>0){e.stopPropagation();setSelCoOrigin("portfolios");setSelCo(c);setTab("companies");setCoView("transactions");setTxFilter(portTab);}}}>{(function(){var pt=(c.transactions||[]).filter(function(t){return t.portfolio===portTab;});if(pt.length===0)return <span className="text-gray-400 dark:text-slate-500">--</span>;var latest=pt.slice().sort(function(a,b){return(b.date||"").localeCompare(a.date||"");})[0];var isBuy=(parseFloat(latest.shares)||0)>=0;return <span className="inline-flex items-center gap-1 font-mono cursor-pointer hover:underline"><span style={{color:isBuy?"#166534":"#dc2626",fontWeight:700}}>{isBuy?"▲":"▼"}</span><span className="text-gray-700 dark:text-slate-300">{latest.date}</span></span>;})()}</div>             <div className="align-middle pr-3 py-1.5 text-sm text-gray-900 dark:text-slate-100" style={{display:"table-cell",background:zebraBg}}>{!isNaN(priceVal)?fmtPrice(priceVal):"--"}</div>             <div className="align-middle pr-3 py-1.5 text-sm text-gray-900 dark:text-slate-100" style={{display:"table-cell",background:zebraBg}}>{avgCostVal>0?fmtPrice(avgCostVal):"--"}</div>             <div className="align-middle pr-3 py-1.5 text-sm font-medium" style={{display:"table-cell",background:zebraBg}}>{unrealVal===null?<span className="text-gray-400 dark:text-slate-500">--</span>:<span style={{color:unrealVal>=0?"#166534":"#dc2626"}}>{unrealVal>=0?"+":""}{unrealVal.toFixed(1)}%</span>}</div>             <div className="align-middle pr-3 py-1.5 text-sm text-gray-900 dark:text-slate-100" style={{display:"table-cell",background:zebraBg}}>{(function(){var ord=(c.tickers||[]).find(function(t){return t.isOrdinary;});var perf=ord&&ord.perf5d;if(!perf||perf==="#N/A")return"--";var n=parseFloat(perf);if(isNaN(n))return"--";return <span style={{color:n>=0?"#166534":"#dc2626"}} className="font-medium">{n>=0?"+":""}{n.toFixed(1)}%</span>;})()}</div>             <div className="align-middle pr-3 py-1.5 text-sm text-gray-900 dark:text-slate-100" style={{display:"table-cell",background:zebraBg}}>{mosStyle?<span className="text-[11px] px-1.5 py-0.5 rounded-full font-semibold" style={{background:mosStyle.bg,color:mosStyle.color}}>{fmtMOS(mos)}</span>:"--"}</div>             <div className="align-middle pr-3 py-1.5" style={{display:"table-cell",background:zebraBg}}>{(function(){var el=<FpeRangeMini valuation={val} width={100}/>;return el||<span className="text-xs text-gray-400 dark:text-slate-500">--</span>;})()}</div>             <div className="align-middle pr-3 py-1.5 text-sm text-gray-900 dark:text-slate-100" style={{display:"table-cell",background:zebraBg}} onClick={function(e){e.stopPropagation();setEditingTarget(c.id+"-"+portTab);}}>{editingTarget===c.id+"-"+portTab?(<input type="number" step="0.1" min="0" max="100" defaultValue={target>0?target:""} autoFocus onBlur={function(e){updateTargetWeight(c.id,portTab,e.target.value);setEditingTarget(null);}} onKeyDown={function(e){if(e.key==="Enter")e.target.blur();if(e.key==="Escape")setEditingTarget(null);}} placeholder="0.0" className="w-14 px-1 py-0 text-sm rounded border border-blue-400 dark:border-blue-500 bg-white dark:bg-slate-900 focus:outline-none"/>):(<span className="cursor-text hover:bg-slate-100 dark:hover:bg-slate-800 px-1 rounded">{target>0?parseFloat(target).toFixed(1)+"%":"--"}</span>)}</div>             <div className="align-middle pr-3 py-1.5 text-sm text-gray-900 dark:text-slate-100" style={{display:"table-cell",background:zebraBg}}>{repWeight!==null?repWeight.toFixed(1)+"%":"--"}</div>             <div className="align-middle pr-3 py-1.5 text-sm font-semibold" style={{display:"table-cell",background:zebraBg,color:diff===null?undefined:diff<=-0.3?"#dc2626":diff>=0.5?"#166534":undefined}}>{diff!==null?(diff>0?"+":"")+diff+"%":"--"}</div></div>);         })} {(function(){   var cashShares=Object.entries(portRep).filter(function(e){return e[0]==="CASH";}).reduce(function(s,e){return s+repShares(e[1]);},0);   var divShares=Object.entries(portRep).filter(function(e){return e[0]==="DIVACC";}).reduce(function(s,e){return s+repShares(e[1]);},0);   var cashTgt=parseFloat((specialWeights["CASH"]||{})[portTab])||0;   var divTgt=parseFloat((specialWeights["DIVACC"]||{})[portTab])||0;   var specialRows=[];   if(cashShares>0||cashTgt>0)specialRows.push({label:"CASH",mv:cashShares,target:cashTgt});   if(divShares>0||divTgt>0)specialRows.push({label:"DIVACC",mv:divShares,target:divTgt});   return specialRows.map(function(r){     var repWeight=totalMV>0?Math.round(r.mv/totalMV*1000)/10:null;     return(<div key={r.label} style={{display:"table-row"}}>       <div className="align-middle pr-3 py-1.5 text-sm font-medium text-gray-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-800" style={{display:"table-cell"}}>{r.label}</div>       <div className="align-middle pr-3 py-1.5 text-sm text-gray-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-800" style={{display:"table-cell"}}>--</div>       <div className="align-middle pr-3 py-1.5 text-sm text-gray-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-800" style={{display:"table-cell"}}>--</div>       <div className="align-middle pr-3 py-1.5 text-sm text-gray-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-800" style={{display:"table-cell"}}>--</div>       <div className="align-middle pr-3 py-1.5 text-sm text-gray-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-800" style={{display:"table-cell"}}>--</div>       <div className="align-middle pr-3 py-1.5 text-sm text-gray-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-800" style={{display:"table-cell"}}>--</div>       <div className="align-middle pr-3 py-1.5 text-sm text-gray-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-800" style={{display:"table-cell"}}>--</div>       <div className="align-middle pr-3 py-1.5 text-sm text-gray-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-800" style={{display:"table-cell"}}>--</div>       <div className="align-middle pr-3 py-1.5 text-sm text-gray-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-800" style={{display:"table-cell"}}>--</div>       <div className="align-middle pr-3 py-1.5 text-sm text-gray-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-800" style={{display:"table-cell"}}>--</div>       <div className="align-middle pr-3 py-1.5 text-sm text-gray-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-800" style={{display:"table-cell"}}>--</div>       <div className="align-middle pr-3 py-1.5 text-sm text-gray-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-800" style={{display:"table-cell"}}>--</div>       <div className="align-middle pr-3 py-1.5 text-sm text-gray-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-800" style={{display:"table-cell"}}>--</div>       <div className="align-middle pr-3 py-1.5 text-sm text-gray-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-800" style={{display:"table-cell"}}>{r.target>0?parseFloat(r.target).toFixed(1)+"%":"--"}</div>       <div className="align-middle pr-3 py-1.5 text-sm text-gray-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-800" style={{display:"table-cell"}}>{repWeight!==null?repWeight.toFixed(1)+"%":"--"}</div>       <div className="align-middle pr-3 py-1.5 text-sm font-semibold bg-slate-50 dark:bg-slate-800" style={{display:"table-cell",color:repWeight!==null&&r.target>0?(repWeight-r.target<=-0.3?"#dc2626":repWeight-r.target>=0.5?"#166534":undefined):undefined}}>{repWeight!==null&&r.target>0?(repWeight-r.target>0?"+":"")+Math.round((repWeight-r.target)*10)/10+"%":"--"}</div></div>);   }); })()} {totalMV>0&&(function(){var totalTarget=0;var totalRepRaw=0;portCos.forEach(function(c){var t=parseFloat((c.portWeights||{})[portTab])||0;totalTarget+=t;var repMV=0;var seenT={};(c.tickers||[]).forEach(function(t2){var tk=(t2.ticker||"").toUpperCase();if(!tk||seenT[tk]||tickerOwners[tk]!==c.id)return;seenT[tk]=true;var shares=repShares((repData[portTab]||{})[tk]);if(shares&&t2.price){var ccy=(t2.currency||"USD").toUpperCase();var fx=ccy==="USD"?1:(fxRates[ccy]||0);if(fx>0)repMV+=shares*parseFloat(t2.price)/fx;}});totalRepRaw+=repMV;});var cashShares=Object.entries(repData[portTab]||{}).filter(function(e){return e[0]==="CASH";}).reduce(function(s,e){return s+repShares(e[1]);},0);var divShares=Object.entries(repData[portTab]||{}).filter(function(e){return e[0]==="DIVACC";}).reduce(function(s,e){return s+repShares(e[1]);},0);var cashTarget=parseFloat((specialWeights["CASH"]||{})[portTab])||0;var divTarget=parseFloat((specialWeights["DIVACC"]||{})[portTab])||0;totalTarget+=cashTarget+divTarget;totalRepRaw+=cashShares+divShares;var totalRep=totalMV>0?Math.round(totalRepRaw/totalMV*1000)/10:0;
-/* Diagnostic: if totalRep isn't 100%, log details to console */
-if(totalMV>0&&Math.abs(totalRep-100)>0.05){var dbg={portTab:portTab,totalMV:totalMV,totalRepRaw:totalRepRaw,diff:totalRepRaw-totalMV,diffPct:(totalRepRaw/totalMV-1)*100,cashShares:cashShares,divShares:divShares};var companyMVs=[];portCos.forEach(function(c){var cMV=0;var seen={};(c.tickers||[]).forEach(function(t){var tk=(t.ticker||"").toUpperCase();if(!tk||seen[tk]||tickerOwners[tk]!==c.id)return;seen[tk]=true;var shares=repShares(portRep[tk]);if(shares&&t.price){var ccy=(t.currency||"USD").toUpperCase();var fx=ccy==="USD"?1:(fxRates[ccy]||0);if(fx>0)cMV+=shares*parseFloat(t.price)/fx;}});if(cMV>0)companyMVs.push({name:c.name,mv:cMV,tickers:(c.tickers||[]).filter(function(t){return tickerOwners[(t.ticker||"").toUpperCase()]===c.id;}).map(function(t){return t.ticker+"("+(t.currency||"USD")+")";}).join(",")});});dbg.companyMVs=companyMVs;console.warn("[Portfolio Total mismatch "+portTab+"]",dbg);}return(<div style={{display:"table-row"}}><div className="align-middle pr-3 pt-2 pb-2 text-sm font-semibold text-gray-900 dark:text-slate-100 bg-white dark:bg-slate-950 border-t-2 border-slate-200 dark:border-slate-700" style={{display:"table-cell"}}>TOTAL</div><div className="align-middle pr-3 pt-2 pb-2 text-sm font-semibold text-gray-900 dark:text-slate-100 bg-white dark:bg-slate-950 border-t-2 border-slate-200 dark:border-slate-700" style={{display:"table-cell"}}>--</div><div className="align-middle pr-3 pt-2 pb-2 text-sm font-semibold text-gray-900 dark:text-slate-100 bg-white dark:bg-slate-950 border-t-2 border-slate-200 dark:border-slate-700" style={{display:"table-cell"}}>--</div><div className="align-middle pr-3 pt-2 pb-2 text-sm font-semibold text-gray-900 dark:text-slate-100 bg-white dark:bg-slate-950 border-t-2 border-slate-200 dark:border-slate-700" style={{display:"table-cell"}}>--</div><div className="align-middle pr-3 pt-2 pb-2 text-sm font-semibold text-gray-900 dark:text-slate-100 bg-white dark:bg-slate-950 border-t-2 border-slate-200 dark:border-slate-700" style={{display:"table-cell"}}>--</div><div className="align-middle pr-3 pt-2 pb-2 text-sm font-semibold text-gray-900 dark:text-slate-100 bg-white dark:bg-slate-950 border-t-2 border-slate-200 dark:border-slate-700" style={{display:"table-cell"}}>--</div><div className="align-middle pr-3 pt-2 pb-2 text-sm font-semibold text-gray-900 dark:text-slate-100 bg-white dark:bg-slate-950 border-t-2 border-slate-200 dark:border-slate-700" style={{display:"table-cell"}}>--</div><div className="align-middle pr-3 pt-2 pb-2 text-sm font-semibold text-gray-900 dark:text-slate-100 bg-white dark:bg-slate-950 border-t-2 border-slate-200 dark:border-slate-700" style={{display:"table-cell"}}>--</div><div className="align-middle pr-3 pt-2 pb-2 text-sm font-semibold text-gray-900 dark:text-slate-100 bg-white dark:bg-slate-950 border-t-2 border-slate-200 dark:border-slate-700" style={{display:"table-cell"}}>--</div><div className="align-middle pr-3 pt-2 pb-2 text-sm font-semibold text-gray-900 dark:text-slate-100 bg-white dark:bg-slate-950 border-t-2 border-slate-200 dark:border-slate-700" style={{display:"table-cell"}}>--</div><div className="align-middle pr-3 pt-2 pb-2 text-sm font-semibold text-gray-900 dark:text-slate-100 bg-white dark:bg-slate-950 border-t-2 border-slate-200 dark:border-slate-700" style={{display:"table-cell"}}>--</div><div className="align-middle pr-3 pt-2 pb-2 text-sm font-semibold text-gray-900 dark:text-slate-100 bg-white dark:bg-slate-950 border-t-2 border-slate-200 dark:border-slate-700" style={{display:"table-cell"}}>--</div><div className="align-middle pr-3 pt-2 pb-2 text-sm font-semibold text-gray-900 dark:text-slate-100 bg-white dark:bg-slate-950 border-t-2 border-slate-200 dark:border-slate-700" style={{display:"table-cell"}}>--</div><div className="align-middle pr-3 pt-2 pb-2 text-sm font-semibold text-gray-900 dark:text-slate-100 bg-white dark:bg-slate-950 border-t-2 border-slate-200 dark:border-slate-700" style={{display:"table-cell"}}>{totalTarget>0?totalTarget.toFixed(1)+"%":"--"}</div><div className="align-middle pr-3 pt-2 pb-2 text-sm font-semibold text-gray-900 dark:text-slate-100 bg-white dark:bg-slate-950 border-t-2 border-slate-200 dark:border-slate-700" style={{display:"table-cell"}}>{totalRep>0?totalRep.toFixed(1)+"%":"--"}</div><div className="align-middle pr-3 pt-2 pb-2 text-sm font-semibold bg-white dark:bg-slate-950 border-t-2 border-slate-200 dark:border-slate-700" style={{display:"table-cell",color:Math.abs(totalRep-totalTarget)>1?"#dc2626":undefined}}>{totalTarget>0?(totalRep-totalTarget>0?"+":"")+Math.round((totalRep-totalTarget)*10)/10+"%":"--"}</div></div>);})()} </div>     </div>);
+/* Build a sort comparator for a given (key, direction). Keeps nulls at
+ * the bottom regardless of direction — matches existing behavior. */
+function makeComparator(sortKey, sortDir, ctx) {
+  const mult = sortDir === "asc" ? 1 : -1;
+  const { portTab, repData, fxRates, tickerOwners, companies } = ctx;
+
+  function nullCmp(a, b) {
+    if (a === null && b === null) return 0;
+    if (a === null) return 1;
+    if (b === null) return -1;
+    return mult * (a - b);
+  }
+
+  const getters = {
+    name:       function (c) { return c.name || ""; },
+    sector:     function (c) { return c.sector || ""; },
+    country:    function (c) { return c.country || ""; },
+    target:     function (c) { return parseFloat((c.portWeights || {})[portTab]) || 0; },
+    mos:        getMosForCompany,
+    perf:       getPerf5d,
+    nextReport: function (c) {
+                  const today = new Date(); today.setHours(0, 0, 0, 0);
+                  const d = getNextReport(c, today);
+                  return d ? d.getTime() : null;
+                },
+    diff:       function (c) {
+                  const t = parseFloat((c.portWeights || {})[portTab]) || 0;
+                  const mv = calcCompanyRepMV(c, repData[portTab] || {}, fxRates, tickerOwners);
+                  let total = 0;
+                  companies.filter(function (x) { return (x.portfolios || []).indexOf(portTab) >= 0; })
+                           .forEach(function (x) {
+                             total += calcCompanyRepMV(x, repData[portTab] || {}, fxRates, tickerOwners);
+                           });
+                  const rw = calcRepWeight(mv, total);
+                  return (rw !== null && t > 0) ? rw - t : null;
+                },
+    rep:        function (c) { return calcCompanyRepMV(c, repData[portTab] || {}, fxRates, tickerOwners); },
+  };
+
+  return function (a, b) {
+    /* Unknown sort keys fall back to rep MV desc — matches legacy behavior
+       where headers like "Held" / "Last Trade" / "Unreal" had no dedicated
+       comparator and the default tiebreaker was rep MV. */
+    const key = getters[sortKey] ? sortKey : "rep";
+    if (key === "name" || key === "sector" || key === "country") {
+      return mult * getters[key](a).localeCompare(getters[key](b));
+    }
+    return nullCmp(getters[key](a), getters[key](b));
+  };
+}
+
+export function PortfoliosTable(props) {
+  const {
+    portTab, portSort, portSortDir, setPortSort, setPortSortDir,
+    editingTarget, setEditingTarget,
+    setTxFilter, setSelCoOrigin, setSelCo, setTab, setCoView,
+    openDiscussions,
+  } = props;
+  const {
+    companies, repData, fxRates, specialWeights, annotations, dark,
+    updateTargetWeight,
+  } = useCompanyContext();
+
+  /* ---- Derive portfolio data ---- */
+  const { portCos, portRep, tickerOwners, totalMV, perRowData } = useMemo(function () {
+    const pRep = repData[portTab] || {};
+    const inPort = companies.filter(function (c) { return (c.portfolios || []).indexOf(portTab) >= 0; });
+    const others = companies.filter(function (c) { return (c.portfolios || []).indexOf(portTab)  < 0; });
+    const owners = buildTickerOwners(inPort, others);
+    const total = calcTotalMV(inPort, pRep, fxRates, owners);
+
+    /* Sort the companies */
+    const cmp = makeComparator(portSort, portSortDir, {
+      portTab, repData, fxRates, tickerOwners: owners, companies,
+    });
+    const sorted = inPort.slice().sort(cmp);
+
+    /* Precompute per-row derived values (keeps render pure). */
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const rowData = {};
+    sorted.forEach(function (c) {
+      const mv = calcCompanyRepMV(c, pRep, fxRates, owners);
+      const rw = calcRepWeight(mv, total);
+      const tgt = parseFloat((c.portWeights || {})[portTab]) || 0;
+      rowData[c.id] = {
+        repMV: mv,
+        repWeight: rw,
+        diff: calcDiff(rw, tgt),
+        nextReport: getNextReport(c, today),
+        today,
+      };
+    });
+
+    return {
+      portCos: sorted,
+      portRep: pRep,
+      tickerOwners: owners,
+      totalMV: total,
+      perRowData: rowData,
+    };
+  }, [companies, repData, fxRates, portTab, portSort, portSortDir]);
+
+  /* ---- Totals for the TOTAL row ---- */
+  const { totalTarget, totalRep } = useMemo(function () {
+    let tgt = 0;
+    let rawRep = 0;
+    portCos.forEach(function (c) {
+      tgt += parseFloat((c.portWeights || {})[portTab]) || 0;
+      rawRep += perRowData[c.id].repMV;
+    });
+    const cashShares = repShares(portRep.CASH);
+    const divShares  = repShares(portRep.DIVACC);
+    const cashTgt = parseFloat((specialWeights.CASH   || {})[portTab]) || 0;
+    const divTgt  = parseFloat((specialWeights.DIVACC || {})[portTab]) || 0;
+    tgt += cashTgt + divTgt;
+    rawRep += cashShares + divShares;
+    const rep = totalMV > 0 ? Math.round(rawRep / totalMV * 1000) / 10 : 0;
+    return { totalTarget: tgt, totalRep: rep };
+  }, [portCos, perRowData, portRep, specialWeights, portTab, totalMV]);
+
+  /* ---- Diagnostic: warn if computed total doesn't match AUM ---- */
+  useEffect(function () {
+    if (totalMV > 0 && Math.abs(totalRep - 100) > 0.05) {
+      const companyMVs = portCos
+        .filter(function (c) { return perRowData[c.id].repMV > 0; })
+        .map(function (c) {
+          return {
+            name: c.name,
+            mv: perRowData[c.id].repMV,
+            tickers: (c.tickers || [])
+              .filter(function (t) { return tickerOwners[(t.ticker || "").toUpperCase()] === c.id; })
+              .map(function (t) { return t.ticker + "(" + (t.currency || "USD") + ")"; })
+              .join(","),
+          };
+        });
+      /* eslint-disable no-console */
+      console.warn("[Portfolio Total mismatch " + portTab + "]", {
+        portTab, totalMV, totalRep, diffPct: totalRep - 100, companyMVs,
+      });
+      /* eslint-enable no-console */
+    }
+  }, [portTab, totalMV, totalRep, portCos, perRowData, tickerOwners]);
+
+  /* ---- Portfolio-level discussions button ---- */
+  const portAnnotations = annotations.filter(function (a) {
+    return !a.resolved && a.scope === "portfolio" && a.portfolio === portTab;
+  });
+
+  /* ---- CASH / DIVACC special rows (only render when there's data) ---- */
+  const cashShares = repShares(portRep.CASH);
+  const divShares  = repShares(portRep.DIVACC);
+  const cashTgt = parseFloat((specialWeights.CASH   || {})[portTab]) || 0;
+  const divTgt  = parseFloat((specialWeights.DIVACC || {})[portTab]) || 0;
+  const specialRows = [];
+  if (cashShares > 0 || cashTgt > 0) specialRows.push({ label: "CASH",   shares: cashShares, target: cashTgt });
+  if (divShares  > 0 || divTgt  > 0) specialRows.push({ label: "DIVACC", shares: divShares,  target: divTgt  });
+
+  /* ---- Header click handler: toggle direction or switch sort ---- */
+  function handleHeaderClick(sortKey) {
+    if (!sortKey) return;
+    if (portSort === sortKey) {
+      setPortSortDir(function (d) { return d === "asc" ? "desc" : "asc"; });
+    } else {
+      setPortSort(sortKey);
+      setPortSortDir(ASC_SORTS.has(sortKey) ? "asc" : "desc");
+    }
+  }
+
+  /* ---- Row-click handlers passed to PortfolioRow ---- */
+  function onOpenCompany(c) {
+    setSelCoOrigin("portfolios");
+    setSelCo(c);
+    setTab("companies");
+    setCoView("section:Valuation");
+  }
+  function onOpenTransactions(c) {
+    setSelCoOrigin("portfolios");
+    setSelCo(c);
+    setTab("companies");
+    setCoView("transactions");
+    setTxFilter(portTab);
+  }
+
+  return (
+    <div className="print-target">
+      <div className="flex gap-2 mb-2 items-center flex-wrap">
+        <span className="text-sm font-medium text-gray-900 dark:text-slate-100">
+          {PORT_NAMES[portTab]} — {portCos.length} companies
+        </span>
+        {totalMV > 0 && (
+          <span className="text-xs text-gray-500 dark:text-slate-400">
+            Rep AUM: ${totalMV.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+          </span>
+        )}
+        <button
+          onClick={function () { openDiscussions({ scope: "portfolio", portfolio: portTab }); }}
+          className={BTN_SM + " ml-auto no-print"}
+        >
+          💬 Discuss
+          {portAnnotations.length > 0 && (
+            <span className="ml-1 text-[10px] px-1.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-semibold">
+              {portAnnotations.length}
+            </span>
+          )}
+        </button>
+        <button onClick={printPage} className={BTN_SM + " no-print"} title="Print this view (landscape)">
+          🖨 Print
+        </button>
+      </div>
+
+      {/* Sort chips */}
+      <div className="flex gap-1.5 mb-2 flex-wrap">
+        <span className="text-[11px] text-gray-500 dark:text-slate-400">Sort:</span>
+        {SORT_CHIPS.map(function (s) {
+          const active = portSort === s[0];
+          const arrow = active ? (portSortDir === "asc" ? " ↑" : " ↓") : "";
+          return (
+            <span
+              key={s[0]}
+              onClick={function () {
+                if (active) {
+                  setPortSortDir(function (d) { return d === "asc" ? "desc" : "asc"; });
+                } else {
+                  setPortSort(s[0]);
+                  setPortSortDir(ASC_SORTS.has(s[0]) ? "asc" : "desc");
+                }
+              }}
+              className={"text-[11px] px-2 py-0.5 rounded-full cursor-pointer transition-colors " +
+                (active
+                  ? "bg-slate-100 dark:bg-slate-800 border border-slate-400 dark:border-slate-500 text-gray-900 dark:text-slate-100"
+                  : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-gray-500 dark:text-slate-400")}
+            >
+              {s[1]}{arrow}
+            </span>
+          );
+        })}
+      </div>
+
+      {/* Table */}
+      <div style={{ display: "table", width: "100%", borderCollapse: "separate", borderSpacing: "0 2px" }}>
+        {/* Header row */}
+        <div
+          style={{ display: "table-row", position: "sticky", top: 0, zIndex: 10 }}
+          className="bg-white dark:bg-slate-950 print-thead"
+        >
+          {PORTFOLIO_COLUMNS.map(function (col) {
+            const active = col.sort && portSort === col.sort;
+            const arrow = active ? (portSortDir === "asc" ? " ↑" : " ↓") : "";
+            const clickable = !!col.sort;
+            return (
+              <div
+                key={col.id}
+                onClick={clickable ? function () { handleHeaderClick(col.sort); } : undefined}
+                className={
+                  "text-[10px] uppercase tracking-wide pb-1.5 pr-3 sticky top-0 bg-white dark:bg-slate-950 select-none " +
+                  (clickable ? "cursor-pointer hover:text-gray-700 dark:hover:text-slate-300 " : "") +
+                  (active
+                    ? "text-gray-900 dark:text-slate-100 font-semibold"
+                    : "text-gray-500 dark:text-slate-400")
+                }
+                style={{ display: "table-cell" }}
+              >
+                {col.label}{arrow}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Company rows */}
+        {portCos.map(function (c, rowIdx) {
+          const rd = perRowData[c.id];
+          return (
+            <PortfolioRow
+              key={c.id}
+              company={c}
+              portTab={portTab}
+              portRep={portRep}
+              fxRates={fxRates}
+              tickerOwners={tickerOwners}
+              totalMV={totalMV}
+              annotations={annotations}
+              dark={dark}
+              rowIdx={rowIdx}
+              repMV={rd.repMV}
+              repWeight={rd.repWeight}
+              diff={rd.diff}
+              nextReport={rd.nextReport}
+              today={rd.today}
+              editingTarget={editingTarget}
+              setEditingTarget={setEditingTarget}
+              updateTargetWeight={updateTargetWeight}
+              openDiscussions={openDiscussions}
+              onOpenCompany={onOpenCompany}
+              onOpenTransactions={onOpenTransactions}
+            />
+          );
+        })}
+
+        {/* CASH / DIVACC */}
+        {specialRows.map(function (r) {
+          return (
+            <PortfolioSpecialRow
+              key={r.label}
+              label={r.label}
+              repShares={r.shares}
+              totalMV={totalMV}
+              target={r.target}
+            />
+          );
+        })}
+
+        {/* TOTAL */}
+        {totalMV > 0 && (
+          <PortfolioTotalRow totalTarget={totalTarget} totalRep={totalRep} />
+        )}
+      </div>
+    </div>
+  );
 }

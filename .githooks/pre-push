@@ -20,6 +20,13 @@ if ! command -v npm >/dev/null 2>&1; then
   exit 0
 fi
 
+echo "pre-push: running npm test…"
+if ! npm test --silent; then
+  echo ""
+  echo "pre-push: TESTS FAILED — fix failures above and retry, or push with --no-verify to bypass."
+  exit 1
+fi
+
 echo "pre-push: running npm run check (vite build)…"
 if ! npm run --silent check; then
   echo ""
@@ -27,5 +34,5 @@ if ! npm run --silent check; then
   exit 1
 fi
 
-echo "pre-push: build OK."
+echo "pre-push: tests + build OK."
 exit 0
