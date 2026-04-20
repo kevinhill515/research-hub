@@ -2,6 +2,7 @@ import { useState } from "react";
 import { TEMPLATE_SECTIONS, UPLOAD_TYPES } from '../../constants/index.js';
 import { apiCall } from '../../api/index.js';
 import DiffView from '../ui/DiffView.jsx';
+import { useAlert } from '../ui/DialogProvider.jsx';
 
 function QuickUploadModal({ company, onClose, onAccept }) {
   var [txt, setTxt] = useState("");
@@ -9,6 +10,7 @@ function QuickUploadModal({ company, onClose, onAccept }) {
   var [loading, setLoading] = useState(false);
   var [diff, setDiff] = useState(null);
   var [meta, setMeta] = useState(null);
+  var alertFn = useAlert();
 
   async function run() {
     if (!txt.trim()) return;
@@ -29,7 +31,7 @@ function QuickUploadModal({ company, onClose, onAccept }) {
       setDiff(parsed.changes || []);
       setMeta({ summary: parsed.summary, type: utype });
     } catch (e) {
-      alert("Could not process: " + e.message);
+      alertFn("Could not process: " + e.message);
     }
     setLoading(false);
   }

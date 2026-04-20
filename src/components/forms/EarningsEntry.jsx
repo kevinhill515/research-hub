@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { TP_CHANGES, THESIS_STATUSES } from '../../constants/index.js';
 import { apiCall } from '../../api/index.js';
+import { useAlert } from '../ui/DialogProvider.jsx';
 
 function EarningsEntry({ entry, onSave, onDelete, currency }) {
   var [e, setE] = useState(entry);
@@ -8,6 +9,7 @@ function EarningsEntry({ entry, onSave, onDelete, currency }) {
   var [aiOpen, setAiOpen] = useState(false);
   var [aiText, setAiText] = useState("");
   var [aiLoading, setAiLoading] = useState(false);
+  var alertFn = useAlert();
 
   async function runAIFill() {
     if (!aiText.trim()) return;
@@ -38,7 +40,7 @@ function EarningsEntry({ entry, onSave, onDelete, currency }) {
       setAiOpen(false);
       setAiText("");
     } catch (err) {
-      alert("Could not parse: " + err.message);
+      alertFn("Could not parse: " + err.message);
     }
     setAiLoading(false);
   }

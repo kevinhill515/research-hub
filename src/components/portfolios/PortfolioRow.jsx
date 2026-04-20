@@ -1,8 +1,11 @@
-/* Single-company row inside PortfoliosTable. */
+/* Single-company row inside PortfoliosTable.
+ *
+ * All per-row math is done in the parent's useMemo and handed in via the
+ * `rowData` prop. This component is a pure render: no computation, no
+ * hooks, no context reads — easy to reason about, cheap to re-render. */
+
 import {
-  calcNormEPS, calcTP, calcMOS, mosBg,
-  fmtPrice, fmtMOS, shortSector, sectorStyle, countryStyle,
-  repShares, repAvgCost, getInitiatedDate, monthsSince, truncName,
+  fmtPrice, fmtMOS, shortSector, sectorStyle, countryStyle, truncName,
 } from "../../utils/index.js";
 import FpeRangeMini from "../ui/FpeRangeMini.jsx";
 
@@ -26,41 +29,18 @@ function Dash() {
 
 export default function PortfolioRow(props) {
   const {
-    company, portTab, portRep, fxRates, tickerOwners, totalMV,
-    annotations, dark, rowIdx,
-    repMV, repWeight, diff, nextReport, today,
-    editingTarget, setEditingTarget,
-    updateTargetWeight,
-    openDiscussions,
-    onOpenCompany,
-    onOpenTransactions,
+    company, portTab, rowIdx, rowData, annotations, dark,
+    editingTarget, setEditingTarget, updateTargetWeight,
+    openDiscussions, onOpenCompany, onOpenTransactions,
   } = props;
 
   const c = company;
-  const val = c.valuation || {};
-  const normEps = calcNormEPS(val) || parseFloat(val.eps);
-  const tp = calcTP(val.pe, normEps);
-  const ordTicker = (c.tickers || []).find(function (t) { return t.isOrdinary; });
-  const ordPrice = ordTicker ? parseFloat(ordTicker.price) : parseFloat(val.price);
-  const mos = calcMOS(tp, ordPrice);
-  const mosStyle = mosBg(mos);
-
-  /* Price / avg cost / unrealized use the rep-held ticker if any, else
-     fall back to the ordinary. Keeps these cells meaningful for names we
-     trade via a listing that isn't the ordinary (ADR etc.). */
-  const repTicker = (c.tickers || []).find(function (t) {
-    return repShares(portRep[(t.ticker || "").toUpperCase()]) > 0;
-  });
-  const priceTicker = repTicker || ordTicker;
-  const priceVal = priceTicker ? parseFloat(priceTicker.price) : NaN;
-  const avgCostVal = repTicker
-    ? repAvgCost(portRep[(repTicker.ticker || "").toUpperCase()])
-    : 0;
-  const unrealVal = (avgCostVal > 0 && !isNaN(priceVal))
-    ? (priceVal - avgCostVal) / avgCostVal * 100
-    : null;
-
-  const target = parseFloat((c.portWeights || {})[portTab]) || 0;
+  const {
+    val, mos, mosStyle,
+    priceVal, avgCostVal, unrealVal,
+    target, repWeight, diff,
+    lastTx, monthsHeld, perf5d, nextReport, today,
+  } = rowData;
 
   /* Row background: red if significantly underweight, green if over. Zebra otherwise. */
   const rowTint = diff === null ? null
@@ -86,20 +66,6 @@ export default function PortfolioRow(props) {
     : daysToReport <= 7 ? "#dc2626"
     : daysToReport <= 14 ? "#d97706"
     : undefined;
-
-  const lastTx = (function () {
-    var pt = (c.transactions || []).filter(function (t) { return t.portfolio === portTab; });
-    if (pt.length === 0) return null;
-    return pt.slice().sort(function (a, b) { return (b.date || "").localeCompare(a.date || ""); })[0];
-  })();
-
-  const perf5d = (function () {
-    var ord = (c.tickers || []).find(function (t) { return t.isOrdinary; });
-    var p = ord && ord.perf5d;
-    if (!p || p === "#N/A") return null;
-    var n = parseFloat(p);
-    return isNaN(n) ? null : n;
-  })();
 
   const editingThis = editingTarget === c.id + "-" + portTab;
 
@@ -137,7 +103,7 @@ export default function PortfolioRow(props) {
       <Cell style={cellStyle}>
         {c.country
           ? (function () {
-              var cs = countryStyle(c.country);
+              const cs = countryStyle(c.country);
               return (
                 <span className="text-[11px] px-1.5 py-0.5 rounded-full font-medium"
                       style={{ background: cs.bg, color: cs.color }}>
@@ -152,7 +118,7 @@ export default function PortfolioRow(props) {
       <Cell style={cellStyle}>
         {c.sector
           ? (function () {
-              var ss = sectorStyle(c.sector);
+              const ss = sectorStyle(c.sector);
               return (
                 <span className="text-[11px] px-1.5 py-0.5 rounded-full font-medium"
                       style={{ background: ss.bg, color: ss.color }}>
@@ -167,7 +133,7 @@ export default function PortfolioRow(props) {
       <Cell style={cellStyle}>
         <div className="flex gap-1 flex-wrap">
           {(c.portfolios || []).map(function (p) {
-            var isCurrent = p === portTab;
+            const isCurrent = p === portTab;
             return (
               <span
                 key={p}
@@ -192,13 +158,9 @@ export default function PortfolioRow(props) {
           }
         }}
       >
-        {(function () {
-          var d = getInitiatedDate(c, portTab);
-          var m = monthsSince(d);
-          return m === null
-            ? <Dash />
-            : <span className="cursor-pointer hover:underline">{m.toFixed(1)}</span>;
-        })()}
+        {monthsHeld === null
+          ? <Dash />
+          : <span className="cursor-pointer hover:underline">{monthsHeld.toFixed(1)}</span>}
       </Cell>
 
       {/* Last Trade */}
@@ -215,7 +177,7 @@ export default function PortfolioRow(props) {
         {lastTx === null
           ? <Dash />
           : (function () {
-              var isBuy = (parseFloat(lastTx.shares) || 0) >= 0;
+              const isBuy = (parseFloat(lastTx.shares) || 0) >= 0;
               return (
                 <span className="inline-flex items-center gap-1 font-mono cursor-pointer hover:underline">
                   <span style={{ color: isBuy ? "#166534" : "#dc2626", fontWeight: 700 }}>
@@ -268,7 +230,7 @@ export default function PortfolioRow(props) {
       {/* FPE Range */}
       <Cell style={cellStyle}>
         {(function () {
-          var el = <FpeRangeMini valuation={val} width={100} />;
+          const el = <FpeRangeMini valuation={val} width={100} />;
           return el || <Dash />;
         })()}
       </Cell>
@@ -284,6 +246,7 @@ export default function PortfolioRow(props) {
             type="number" step="0.1" min="0" max="100"
             defaultValue={target > 0 ? target : ""}
             autoFocus
+            aria-label={"Target weight for " + c.name}
             onBlur={function (e) { updateTargetWeight(c.id, portTab, e.target.value); setEditingTarget(null); }}
             onKeyDown={function (e) {
               if (e.key === "Enter") e.target.blur();

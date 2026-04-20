@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { TEAM_MEMBERS, TEAM_COLORS, PORTFOLIOS, PORT_NAMES } from '../../constants/index.js';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
+import { useConfirm } from '../ui/DialogProvider.jsx';
 
 function MentionInput({ value, onChange, onSubmit, placeholder, autoFocus }){
   var [suggestions, setSuggestions] = useState([]);
@@ -83,6 +84,7 @@ function renderTextWithMentions(text){
 
 function AnnotationCard({ ann, onReply, onResolve, onUnresolve, onDelete, onUpdate }){
   var { currentUser, markAnnotationRead } = useCompanyContext();
+  var confirm = useConfirm();
   var [replyText, setReplyText] = useState("");
   var [showReply, setShowReply] = useState(false);
   var [editing, setEditing] = useState(false);
@@ -173,7 +175,13 @@ function AnnotationCard({ ann, onReply, onResolve, onUnresolve, onDelete, onUpda
         {ann.author === currentUser && !editing && (
           <>
             <span onClick={function(){setEditing(true);}} className="cursor-pointer hover:text-blue-600 dark:hover:text-blue-400">Edit</span>
-            <span onClick={function(){if(window.confirm("Delete this comment?"))onDelete(ann.id);}} className="cursor-pointer hover:text-red-600 dark:hover:text-red-400">Delete</span>
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={async function(){ if(await confirm("Delete this comment?",{danger:true,okLabel:"Delete"}))onDelete(ann.id); }}
+              onKeyDown={function(e){ if(e.key==="Enter"||e.key===" "){e.preventDefault();(async function(){if(await confirm("Delete this comment?",{danger:true,okLabel:"Delete"}))onDelete(ann.id);})();} }}
+              className="cursor-pointer hover:text-red-600 dark:hover:text-red-400 focus:outline-none focus:ring-2 focus:ring-red-400 rounded"
+            >Delete</span>
           </>
         )}
         {ann.resolved && (

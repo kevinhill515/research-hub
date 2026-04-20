@@ -16,7 +16,8 @@ import { useMemo, useEffect } from "react";
 import { useCompanyContext } from "../../context/CompanyContext.jsx";
 import { PORT_NAMES } from "../../constants/index.js";
 import {
-  calcNormEPS, calcTP, calcMOS, repShares, printPage,
+  calcNormEPS, calcTP, calcMOS, mosBg, repShares, repAvgCost,
+  getInitiatedDate, monthsSince, printPage,
 } from "../../utils/index.js";
 import {
   buildTickerOwners, calcCompanyRepMV, calcTotalMV,
@@ -125,19 +126,70 @@ export function PortfoliosTable(props) {
     });
     const sorted = inPort.slice().sort(cmp);
 
-    /* Precompute per-row derived values (keeps render pure). */
+    /* Precompute per-row derived values so the row renderer is a pure read. */
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const rowData = {};
     sorted.forEach(function (c) {
+      const val = c.valuation || {};
+      const normEps = calcNormEPS(val) || parseFloat(val.eps);
+      const tp = calcTP(val.pe, normEps);
+      const ordTicker = (c.tickers || []).find(function (t) { return t.isOrdinary; });
+      const ordPrice = ordTicker ? parseFloat(ordTicker.price) : parseFloat(val.price);
+      const mos = calcMOS(tp, ordPrice);
+
+      /* Price / avg cost / unrealized use the rep-held ticker if any,
+         else fall back to the ordinary. */
+      const repTicker = (c.tickers || []).find(function (t) {
+        return repShares(pRep[(t.ticker || "").toUpperCase()]) > 0;
+      });
+      const priceTicker = repTicker || ordTicker;
+      const priceVal = priceTicker ? parseFloat(priceTicker.price) : NaN;
+      const avgCostVal = repTicker
+        ? repAvgCost(pRep[(repTicker.ticker || "").toUpperCase()])
+        : 0;
+      const unrealVal = (avgCostVal > 0 && !isNaN(priceVal))
+        ? (priceVal - avgCostVal) / avgCostVal * 100
+        : null;
+
       const mv = calcCompanyRepMV(c, pRep, fxRates, owners);
       const rw = calcRepWeight(mv, total);
       const tgt = parseFloat((c.portWeights || {})[portTab]) || 0;
+
+      /* Latest transaction in this portfolio (for Last Trade cell). */
+      const txs = (c.transactions || []).filter(function (t) { return t.portfolio === portTab; });
+      const lastTx = txs.length === 0 ? null
+        : txs.slice().sort(function (a, b) { return (b.date || "").localeCompare(a.date || ""); })[0];
+
+      /* Initiated date / months held for this portfolio. */
+      const initDate = getInitiatedDate(c, portTab);
+      const monthsHeld = monthsSince(initDate);
+
+      /* 5D perf from ordinary ticker. */
+      const perfRaw = ordTicker && ordTicker.perf5d;
+      const perfNum = (!perfRaw || perfRaw === "#N/A") ? null
+        : (function () { const n = parseFloat(perfRaw); return isNaN(n) ? null : n; })();
+
       rowData[c.id] = {
+        /* Valuation */
+        val: val,
+        mos: mos,
+        mosStyle: mosBg(mos),
+        /* Rep holdings */
+        priceVal: priceVal,
+        avgCostVal: avgCostVal,
+        unrealVal: unrealVal,
+        /* Weights / diff */
+        target: tgt,
         repMV: mv,
         repWeight: rw,
         diff: calcDiff(rw, tgt),
+        /* Transactions */
+        lastTx: lastTx,
+        monthsHeld: monthsHeld,
+        /* Misc */
+        perf5d: perfNum,
         nextReport: getNextReport(c, today),
-        today,
+        today: today,
       };
     });
 
@@ -259,29 +311,25 @@ export function PortfoliosTable(props) {
       </div>
 
       {/* Sort chips */}
-      <div className="flex gap-1.5 mb-2 flex-wrap">
+      <div className="flex gap-1.5 mb-2 flex-wrap" role="toolbar" aria-label="Sort by">
         <span className="text-[11px] text-gray-500 dark:text-slate-400">Sort:</span>
         {SORT_CHIPS.map(function (s) {
           const active = portSort === s[0];
           const arrow = active ? (portSortDir === "asc" ? " ↑" : " ↓") : "";
           return (
-            <span
+            <button
               key={s[0]}
-              onClick={function () {
-                if (active) {
-                  setPortSortDir(function (d) { return d === "asc" ? "desc" : "asc"; });
-                } else {
-                  setPortSort(s[0]);
-                  setPortSortDir(ASC_SORTS.has(s[0]) ? "asc" : "desc");
-                }
-              }}
-              className={"text-[11px] px-2 py-0.5 rounded-full cursor-pointer transition-colors " +
+              type="button"
+              onClick={function () { handleHeaderClick(s[0]); }}
+              aria-pressed={active}
+              aria-label={"Sort by " + s[1] + (active ? " (" + (portSortDir === "asc" ? "ascending" : "descending") + ")" : "")}
+              className={"text-[11px] px-2 py-0.5 rounded-full cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 " +
                 (active
                   ? "bg-slate-100 dark:bg-slate-800 border border-slate-400 dark:border-slate-500 text-gray-900 dark:text-slate-100"
                   : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-gray-500 dark:text-slate-400")}
             >
               {s[1]}{arrow}
-            </span>
+            </button>
           );
         })}
       </div>
@@ -297,13 +345,20 @@ export function PortfoliosTable(props) {
             const active = col.sort && portSort === col.sort;
             const arrow = active ? (portSortDir === "asc" ? " ↑" : " ↓") : "";
             const clickable = !!col.sort;
+            const ariaSort = !active ? "none" : portSortDir === "asc" ? "ascending" : "descending";
             return (
               <div
                 key={col.id}
+                role={clickable ? "button" : undefined}
+                tabIndex={clickable ? 0 : undefined}
+                aria-sort={clickable ? ariaSort : undefined}
                 onClick={clickable ? function () { handleHeaderClick(col.sort); } : undefined}
+                onKeyDown={clickable ? function (e) {
+                  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleHeaderClick(col.sort); }
+                } : undefined}
                 className={
                   "text-[10px] uppercase tracking-wide pb-1.5 pr-3 sticky top-0 bg-white dark:bg-slate-950 select-none " +
-                  (clickable ? "cursor-pointer hover:text-gray-700 dark:hover:text-slate-300 " : "") +
+                  (clickable ? "cursor-pointer hover:text-gray-700 dark:hover:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded " : "") +
                   (active
                     ? "text-gray-900 dark:text-slate-100 font-semibold"
                     : "text-gray-500 dark:text-slate-400")
@@ -318,24 +373,15 @@ export function PortfoliosTable(props) {
 
         {/* Company rows */}
         {portCos.map(function (c, rowIdx) {
-          const rd = perRowData[c.id];
           return (
             <PortfolioRow
               key={c.id}
               company={c}
               portTab={portTab}
-              portRep={portRep}
-              fxRates={fxRates}
-              tickerOwners={tickerOwners}
-              totalMV={totalMV}
+              rowIdx={rowIdx}
+              rowData={perRowData[c.id]}
               annotations={annotations}
               dark={dark}
-              rowIdx={rowIdx}
-              repMV={rd.repMV}
-              repWeight={rd.repWeight}
-              diff={rd.diff}
-              nextReport={rd.nextReport}
-              today={rd.today}
               editingTarget={editingTarget}
               setEditingTarget={setEditingTarget}
               updateTargetWeight={updateTargetWeight}

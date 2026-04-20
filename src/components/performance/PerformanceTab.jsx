@@ -6,6 +6,7 @@ import { currentMonthKey, portfolioMtd, rollingAnnualized, allMonths } from '../
 import { PerformanceChart, seriesColor } from './PerformanceChart.jsx';
 import { PerformanceTable } from './PerformanceTable.jsx';
 import { RiskSummaryTable } from './RiskSummaryTable.jsx';
+import { useConfirm } from '../ui/DialogProvider.jsx';
 
 const TABST_ACTIVE = "text-[13px] px-3 py-1.5 border-b-2 border-blue-600 text-gray-900 dark:text-slate-100 font-semibold cursor-pointer bg-transparent";
 const TABST_INACTIVE = "text-[13px] px-3 py-1.5 border-b-2 border-transparent text-gray-500 dark:text-slate-400 cursor-pointer bg-transparent hover:text-gray-700 dark:hover:text-slate-300";
@@ -25,6 +26,7 @@ const GROUPS = [
 
 export function PerformanceTab(){
   const { companies, repData, fxRates, perfData, setPerfSeries, addPerfSeries, removePerfSeries, movePerfSeries, setPerfSeriesOrder, setPerfReturn, setPerfLastMonthEMV, dark } = useCompanyContext();
+  const confirm = useConfirm();
   const [groupKey, setGroupKey] = useState("intl");
   const [hiddenSeries, setHiddenSeries] = useState({}); /* {groupKey: Set(name)} */
   const [includeMtd, setIncludeMtd] = useState(true);
@@ -236,7 +238,20 @@ export function PerformanceTab(){
                     : <input type="number" step="0.0001" defaultValue={curMtdVal!==undefined&&curMtdVal!==null?curMtdVal:""} key={p+"-mtd-"+idx+"-"+curMtdVal} onBlur={function(e){setPerfReturn(p,idx,curMonth,e.target.value);}} placeholder="0.0123" className={INP+" !text-xs w-24"}/>
                   }
                   <span className="text-[10px] text-gray-500 dark:text-slate-400">({Object.keys(stored.returns||{}).length} months)</span>
-                  <button onClick={function(){if(confirm('Delete series "'+stored.name+'"? Removes its monthly returns from every portfolio in this group that has it.')){group.portfolios.forEach(function(gp){var gport=perfData[gp];if(!gport)return;var gi=(gport.series||[]).findIndex(function(x){return x.name===stored.name;});if(gi>=0)removePerfSeries(gp,gi);});}}} className="text-[11px] text-red-500 dark:text-red-400 cursor-pointer hover:text-red-700 ml-auto">×</button>
+                  <button
+                    onClick={async function(){
+                      if(await confirm('Delete series "'+stored.name+'"? Removes its monthly returns from every portfolio in this group that has it.',{danger:true,okLabel:"Delete"})){
+                        group.portfolios.forEach(function(gp){
+                          var gport=perfData[gp];
+                          if(!gport)return;
+                          var gi=(gport.series||[]).findIndex(function(x){return x.name===stored.name;});
+                          if(gi>=0)removePerfSeries(gp,gi);
+                        });
+                      }
+                    }}
+                    aria-label={'Delete series '+stored.name}
+                    className="text-[11px] text-red-500 dark:text-red-400 cursor-pointer hover:text-red-700 ml-auto focus:outline-none focus:ring-2 focus:ring-red-400 rounded"
+                  >×</button>
                 </div>
               );
             })}

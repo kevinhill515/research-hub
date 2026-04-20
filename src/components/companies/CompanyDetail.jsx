@@ -16,6 +16,7 @@ import {
   repShares, repAvgCost,
 } from '../../utils/index.js';
 import { StatusPill, PortPicker, SectionBlock, DiffView, BarRow, PillEl, PriceAgeIndicator } from '../ui/index.js';
+import { useConfirm, useAlert } from '../ui/DialogProvider.jsx';
 import { SectionEditTab, EarningsEntry, NotesCell, ActionCell, FlagCell, DatePicker } from '../forms/index.js';
 
 const INP = "text-sm px-2 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:outline-none";
@@ -61,6 +62,8 @@ export function CompanyDetail(props){
     updateCo, cp, copied, setCopied,
   } = useCompanyContext();
   const [showDiag,setShowDiag]=useState(false);
+  const confirm = useConfirm();
+  const alertFn = useAlert();
 
 
         var currency=getCurrency(selCo.country);var pv=pendingVal||selCo.valuation||{};var activeCurrency=pv.currency||currency;
@@ -237,15 +240,21 @@ export function CompanyDetail(props){
                   <input value={tmplSearch} onChange={function(e){setTmplSearch(e.target.value);setTmplHighlight(e.target.value);}} placeholder="Search within template..." className={INP + " flex-1 !text-xs !px-2 !py-1"}/>
                   {tmplSearch&&<span onClick={function(){setTmplSearch("");setTmplHighlight("");}} className={LNK}>Clear</span>}
                   <span className="text-xs text-gray-500 dark:text-slate-400">{selCo.lastUpdated?"Updated: "+selCo.lastUpdated:""}</span> <button onClick={function(){exportCompanyPDF(selCo);}} className={BTN}>{"\u2B07"} PDF</button>
-                  <span onClick={function(){
-                    if(window.confirm("Clear all sections and re-import?")){
-                      var u=Object.assign({},selCo,{sections:{},lastUpdated:null});
-                      setSelCo(u);
-                      setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});});
-                      setTmplRaw("");
-                      setCoView("section:Valuation");
-                    }
-                  }} className={LNK + " text-red-600 dark:text-red-400"}>{"\u21BA"} Clear &amp; re-import</span>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={async function(){
+                      if(await confirm("Clear all sections and re-import? This will remove all template content.",{danger:true,okLabel:"Clear"})){
+                        var u=Object.assign({},selCo,{sections:{},lastUpdated:null});
+                        setSelCo(u);
+                        setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});});
+                        setTmplRaw("");
+                        setCoView("section:Valuation");
+                      }
+                    }}
+                    onKeyDown={function(e){ if(e.key==="Enter"||e.key===" "){e.preventDefault();e.currentTarget.click();} }}
+                    className={LNK + " text-red-600 dark:text-red-400 focus:outline-none focus:ring-2 focus:ring-red-400 rounded"}
+                  >{"\u21BA"} Clear &amp; re-import</span>
                   <span onClick={function(){downloadMD(selCo.name,TEMPLATE_SECTIONS.map(function(s){return"## "+s+"\n"+((selCo.sections&&selCo.sections[s])||"");}).join("\n\n"));}} className={LNK}>{"\u2B07"} .md</span>
                 </div>
                 <details className="mb-3">
@@ -267,7 +276,7 @@ export function CompanyDetail(props){
                   <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">Target Price</div>
                   {selCo.sections&&selCo.sections["Valuation"]&&(!pv.pe||!pv.eps1)&&(
                     <button onClick={async function(){
-                      try{var res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":ANTHROPIC_KEY,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:400,system:"Extract valuation data. Return ONLY valid JSON with keys: pe (number), eps1 (number), eps2 (number), fy1 (string), fy2 (string), fyMonth (string like Dec). If not found use null. No markdown.",messages:[{role:"user",content:[{type:"text",text:selCo.sections["Valuation"]}]}]})});var data=await res.json();if(data.error){alert("Error");return;}var raw=(data.content||[]).map(function(b){return b.text||"";}).join("").replace(/```json|```/g,"").trim();var parsed=JSON.parse(raw);var patch={};if(parsed.pe!=null)patch.pe=String(parsed.pe);if(parsed.eps1!=null)patch.eps1=String(parsed.eps1);if(parsed.eps2!=null)patch.eps2=String(parsed.eps2);if(parsed.fy1)patch.fy1=parsed.fy1;if(parsed.fy2)patch.fy2=parsed.fy2;if(parsed.fyMonth)patch.fyMonth=parsed.fyMonth;if(!pv.w1)patch.w1="50";if(!pv.w2)patch.w2="50";setPendingVal(function(prev){return Object.assign({},prev,patch);});}catch(e){alert("Failed: "+e.message);}
+                      try{var res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":ANTHROPIC_KEY,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:400,system:"Extract valuation data. Return ONLY valid JSON with keys: pe (number), eps1 (number), eps2 (number), fy1 (string), fy2 (string), fyMonth (string like Dec). If not found use null. No markdown.",messages:[{role:"user",content:[{type:"text",text:selCo.sections["Valuation"]}]}]})});var data=await res.json();if(data.error){alertFn("API error: "+(data.error.message||"Unknown"));return;}var raw=(data.content||[]).map(function(b){return b.text||"";}).join("").replace(/```json|```/g,"").trim();var parsed=JSON.parse(raw);var patch={};if(parsed.pe!=null)patch.pe=String(parsed.pe);if(parsed.eps1!=null)patch.eps1=String(parsed.eps1);if(parsed.eps2!=null)patch.eps2=String(parsed.eps2);if(parsed.fy1)patch.fy1=parsed.fy1;if(parsed.fy2)patch.fy2=parsed.fy2;if(parsed.fyMonth)patch.fyMonth=parsed.fyMonth;if(!pv.w1)patch.w1="50";if(!pv.w2)patch.w2="50";setPendingVal(function(prev){return Object.assign({},prev,patch);});}catch(e){alertFn("Failed: "+e.message);}
                     }} className={BTN}>{"\u2728"} Auto-fill from text</button>
                   )}
                 </div>
