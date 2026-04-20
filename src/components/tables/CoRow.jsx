@@ -9,6 +9,7 @@ import FlagCell from '../forms/FlagCell.jsx';
 import DatePicker from '../forms/DatePicker.jsx';
 import PortPicker from '../ui/PortPicker.jsx';
 import PillEl from '../ui/PillEl.jsx';
+import FpeRangeMini from '../ui/FpeRangeMini.jsx';
 
 function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, selected, onToggleSelect, onQuickUpload }) {
   var { dark } = useCompanyContext();
@@ -188,6 +189,16 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
           ) : (
             <span className="text-xs text-gray-400 dark:text-slate-500">--</span>
           )}
+        </div>
+      )}
+
+      {/* FPE Range */}
+      {show("FPE Range") && (
+        <div className={tdBase} style={rowBg ? { background: rowBg } : undefined}>
+          {(function () {
+            var el = <FpeRangeMini valuation={val} width={compact ? 80 : 100} />;
+            return el || <span className="text-xs text-gray-400 dark:text-slate-500">--</span>;
+          })()}
         </div>
       )}
 
