@@ -28,7 +28,6 @@ export function PerformanceTab(){
   const [hiddenSeries, setHiddenSeries] = useState({}); /* {groupKey: Set(name)} */
   const [includeMtd, setIncludeMtd] = useState(true);
   const [showEditor, setShowEditor] = useState(false);
-  const [editingPort, setEditingPort] = useState(null); /* which portfolio's editor is open within a group */
 
   const group = GROUPS.find(function(g){return g.key===groupKey;}) || GROUPS[0];
   const curMonth = currentMonthKey();
@@ -106,14 +105,13 @@ export function PerformanceTab(){
   }
 
   const isMulti = group.portfolios.length>1;
-  const activeEditPort = editingPort || group.portfolios[0];
 
   return (
     <div>
       {/* Group subtabs */}
       <div className="flex gap-1.5 mb-4 flex-wrap border-b border-slate-200 dark:border-slate-700 pb-2.5">
         {GROUPS.map(function(g){
-          return <button key={g.key} className={groupKey===g.key?TABST_ACTIVE:TABST_INACTIVE} onClick={function(){setGroupKey(g.key);setEditingPort(null);}}>{g.label}</button>;
+          return <button key={g.key} className={groupKey===g.key?TABST_ACTIVE:TABST_INACTIVE} onClick={function(){setGroupKey(g.key);}}>{g.label}</button>;
         })}
       </div>
 
@@ -121,7 +119,6 @@ export function PerformanceTab(){
       <div className="flex gap-3 items-center flex-wrap mb-3">
         <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">
           {group.label} — Rolling 3-Year Annualized Return
-          {isMulti && <span className="ml-2 text-[11px] text-gray-500 dark:text-slate-400 font-normal">({group.portfolios.map(function(p){return PORT_NAMES[p]||p;}).join(" + ")})</span>}
         </div>
         <label className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 cursor-pointer">
           <input type="checkbox" checked={includeMtd} onChange={function(e){setIncludeMtd(e.target.checked);}} className="accent-blue-600"/>
@@ -142,67 +139,65 @@ export function PerformanceTab(){
         </div>
       )}
 
-      {/* Series editor */}
+      {/* Series editor — unified view. Each series row knows which underlying
+          portfolio stores it (from the merge step); edits route there. */}
       {showEditor && (
         <div className="bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 px-3.5 py-3 mb-3">
-          {isMulti && (
-            <div className="flex gap-2 items-center mb-3">
-              <label className="text-[11px] text-gray-500 dark:text-slate-400">Editing portfolio:</label>
-              {group.portfolios.map(function(p){
-                var active=(editingPort||group.portfolios[0])===p;
-                return <span key={p} onClick={function(){setEditingPort(p);}} className={"text-[11px] px-2 py-0.5 rounded-full cursor-pointer border transition-colors "+(active?"bg-blue-100 dark:bg-blue-900/40 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300 font-semibold":"border-slate-200 dark:border-slate-700 text-gray-500 dark:text-slate-400")}>{PORT_NAMES[p]||p}</span>;
-              })}
-              <span className="text-[10px] text-gray-400 dark:text-slate-500 italic">edits affect the selected portfolio's stored data</span>
-            </div>
-          )}
-          {(function(){
-            var p=activeEditPort;
-            var port=perfData[p]||{series:[],lastMonthEMV:0};
-            var autoMtdValue=portfolioMtd(currentMVs[p], port.lastMonthEMV);
-            return (
-              <>
-                <div className="flex gap-3 items-center flex-wrap mb-2">
+          {/* EMV row(s): one per underlying portfolio in the group. Each
+              portfolio maintains its own last-month EMV + current MV, and its
+              own auto-MTD. */}
+          <div className="flex gap-4 flex-wrap mb-3">
+            {group.portfolios.map(function(p){
+              var port=perfData[p]||{series:[],lastMonthEMV:0};
+              var autoMtdValue=portfolioMtd(currentMVs[p], port.lastMonthEMV);
+              return (
+                <div key={p} className="flex items-end gap-2">
                   <div>
-                    <label className={LABEL}>{PORT_NAMES[p]||p} last month EMV</label>
+                    <label className={LABEL}>{isMulti?PORT_NAMES[p]||p:""} Last month EMV</label>
                     <input type="number" step="0.01" defaultValue={port.lastMonthEMV||""} key={p+"-emv-"+port.lastMonthEMV} onBlur={function(e){setPerfLastMonthEMV(p,e.target.value);}} placeholder="e.g. 12500000" className={INP+" !text-xs w-40"}/>
                   </div>
-                  <div className="text-[11px] text-gray-500 dark:text-slate-400 pt-4">
-                    Current MV (from rep): <span className="font-mono text-gray-900 dark:text-slate-100">{(currentMVs[p]||0).toLocaleString(undefined,{maximumFractionDigits:0})}</span>
-                    {autoMtdValue!==null && <> &nbsp;→ auto MTD: <span className="font-mono font-semibold" style={{color:autoMtdValue>=0?"#166534":"#991b1b"}}>{(autoMtdValue>=0?"+":"")+(autoMtdValue*100).toFixed(2)+"%"}</span></>}
+                  <div className="text-[11px] text-gray-500 dark:text-slate-400 pb-1.5">
+                    MV {(currentMVs[p]||0).toLocaleString(undefined,{maximumFractionDigits:0})}
+                    {autoMtdValue!==null && <> · <span className="font-mono font-semibold" style={{color:autoMtdValue>=0?"#166534":"#991b1b"}}>{(autoMtdValue>=0?"+":"")+(autoMtdValue*100).toFixed(2)+"%"}</span> MTD</>}
                   </div>
                 </div>
-                <div className="text-[11px] text-gray-500 dark:text-slate-400 mb-2">Series (name / role / ticker). MTD for benchmarks & competitors is their entry in the current month ({curMonth}).</div>
-                <div className="space-y-1.5">
-                  {(port.series||[]).map(function(s,i,arr){
-                    var curMtdVal=(s.returns||{})[curMonth];
-                    return (
-                      <div key={i} className="flex gap-2 items-center flex-wrap text-xs">
-                        <span className="inline-flex flex-col leading-none text-[10px] text-gray-400 dark:text-slate-500 select-none">
-                          <button type="button" disabled={i===0} onClick={function(){movePerfSeries(p,i,i-1);}} className={"px-1 py-0 cursor-pointer hover:text-gray-700 dark:hover:text-slate-300 "+(i===0?"opacity-30 cursor-not-allowed":"")} title="Move up">{"\u25B2"}</button>
-                          <button type="button" disabled={i===arr.length-1} onClick={function(){movePerfSeries(p,i,i+1);}} className={"px-1 py-0 cursor-pointer hover:text-gray-700 dark:hover:text-slate-300 "+(i===arr.length-1?"opacity-30 cursor-not-allowed":"")} title="Move down">{"\u25BC"}</button>
-                        </span>
-                        <input defaultValue={s.name} key={p+"-sn-"+i+"-"+s.name} onBlur={function(e){setPerfSeries(p,i,{name:e.target.value.trim()||s.name});}} className={INP+" !text-xs w-48"} placeholder="Series name"/>
-                        <select value={s.role||"competitor"} onChange={function(e){setPerfSeries(p,i,{role:e.target.value});}} className={INP+" !text-xs"}>
-                          <option value="portfolio">Portfolio</option>
-                          <option value="benchmark">Benchmark</option>
-                          <option value="competitor">Competitor</option>
-                        </select>
-                        <input defaultValue={s.ticker||""} key={p+"-st-"+i+"-"+(s.ticker||"")} onBlur={function(e){setPerfSeries(p,i,{ticker:e.target.value.trim().toUpperCase()});}} className={INP+" !text-xs w-24"} placeholder="Ticker"/>
-                        <span className="text-[10px] text-gray-500 dark:text-slate-400">MTD ({curMonth}):</span>
-                        {s.role==="portfolio"
-                          ? <span className="text-[11px] text-gray-500 dark:text-slate-400 italic">auto</span>
-                          : <input type="number" step="0.0001" defaultValue={curMtdVal!==undefined&&curMtdVal!==null?curMtdVal:""} key={p+"-mtd-"+i+"-"+curMtdVal} onBlur={function(e){setPerfReturn(p,i,curMonth,e.target.value);}} placeholder="0.0123" className={INP+" !text-xs w-24"}/>
-                        }
-                        <span className="text-[10px] text-gray-500 dark:text-slate-400">({Object.keys(s.returns||{}).length} months)</span>
-                        <button onClick={function(){if(confirm('Delete series "'+s.name+'" from '+p+'? This removes all its monthly returns in that portfolio.')){removePerfSeries(p,i);}}} className="text-[11px] text-red-500 dark:text-red-400 cursor-pointer hover:text-red-700 ml-auto">×</button>
-                      </div>
-                    );
-                  })}
-                  <button onClick={function(){addPerfSeries(p);}} className={BTN_SM+" mt-2"}>+ Add series to {PORT_NAMES[p]||p}</button>
+              );
+            })}
+          </div>
+          <div className="text-[11px] text-gray-500 dark:text-slate-400 mb-2">Series (name / role / ticker). MTD for benchmarks &amp; competitors is their entry in the current month ({curMonth}). New series land in {PORT_NAMES[group.portfolios[0]]||group.portfolios[0]}; shared series (same name in both portfolios) edit-in-place there.</div>
+          <div className="space-y-1.5">
+            {mergedSeries.map(function(s,i,arr){
+              var p=s._sourcePortfolio;
+              var port=perfData[p]||{series:[]};
+              var idx=(port.series||[]).findIndex(function(x){return x.name===s.name;});
+              if(idx<0)return null; /* shouldn't happen */
+              var stored=port.series[idx];
+              var curMtdVal=(stored.returns||{})[curMonth];
+              return (
+                <div key={s.name+"-"+i} className="flex gap-2 items-center flex-wrap text-xs">
+                  <span className="inline-flex flex-col leading-none text-[10px] text-gray-400 dark:text-slate-500 select-none">
+                    <button type="button" disabled={i===0} onClick={function(){movePerfSeries(p,idx,Math.max(0,idx-1));}} className={"px-1 py-0 cursor-pointer hover:text-gray-700 dark:hover:text-slate-300 "+(i===0?"opacity-30 cursor-not-allowed":"")} title="Move up">{"\u25B2"}</button>
+                    <button type="button" disabled={i===arr.length-1} onClick={function(){movePerfSeries(p,idx,idx+1);}} className={"px-1 py-0 cursor-pointer hover:text-gray-700 dark:hover:text-slate-300 "+(i===arr.length-1?"opacity-30 cursor-not-allowed":"")} title="Move down">{"\u25BC"}</button>
+                  </span>
+                  <input defaultValue={stored.name} key={p+"-sn-"+idx+"-"+stored.name} onBlur={function(e){setPerfSeries(p,idx,{name:e.target.value.trim()||stored.name});}} className={INP+" !text-xs w-48"} placeholder="Series name"/>
+                  <select value={stored.role||"competitor"} onChange={function(e){setPerfSeries(p,idx,{role:e.target.value});}} className={INP+" !text-xs"}>
+                    <option value="portfolio">Portfolio</option>
+                    <option value="benchmark">Benchmark</option>
+                    <option value="competitor">Competitor</option>
+                  </select>
+                  <input defaultValue={stored.ticker||""} key={p+"-st-"+idx+"-"+(stored.ticker||"")} onBlur={function(e){setPerfSeries(p,idx,{ticker:e.target.value.trim().toUpperCase()});}} className={INP+" !text-xs w-24"} placeholder="Ticker"/>
+                  <span className="text-[10px] text-gray-500 dark:text-slate-400">MTD ({curMonth}):</span>
+                  {stored.role==="portfolio"
+                    ? <span className="text-[11px] text-gray-500 dark:text-slate-400 italic">auto</span>
+                    : <input type="number" step="0.0001" defaultValue={curMtdVal!==undefined&&curMtdVal!==null?curMtdVal:""} key={p+"-mtd-"+idx+"-"+curMtdVal} onBlur={function(e){setPerfReturn(p,idx,curMonth,e.target.value);}} placeholder="0.0123" className={INP+" !text-xs w-24"}/>
+                  }
+                  <span className="text-[10px] text-gray-500 dark:text-slate-400">({Object.keys(stored.returns||{}).length} months)</span>
+                  <button onClick={function(){if(confirm('Delete series "'+stored.name+'"? Removes its monthly returns from every portfolio in this group that has it.')){group.portfolios.forEach(function(gp){var gport=perfData[gp];if(!gport)return;var gi=(gport.series||[]).findIndex(function(x){return x.name===stored.name;});if(gi>=0)removePerfSeries(gp,gi);});}}} className="text-[11px] text-red-500 dark:text-red-400 cursor-pointer hover:text-red-700 ml-auto">×</button>
                 </div>
-              </>
-            );
-          })()}
+              );
+            })}
+            <button onClick={function(){addPerfSeries(group.portfolios[0]);}} className={BTN_SM+" mt-2"}>+ Add series</button>
+          </div>
         </div>
       )}
 
