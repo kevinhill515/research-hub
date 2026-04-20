@@ -164,12 +164,21 @@ export function CompanyProvider({children}){
       return next;
     });
   }
-  /* Performance data mutations. All operate on perfData[portfolio]. */
+  /* Performance data mutations. All operate on perfData[portfolio].
+     When a series is renamed, the old name is pushed onto its aliases array
+     so future bulk uploads that still use the old header still match. */
   function setPerfSeries(portfolio,seriesIndex,patch){
     setPerfData(function(prev){
       var port=Object.assign({series:[],lastMonthEMV:0},prev[portfolio]||{});
       port.series=(port.series||[]).slice();
-      port.series[seriesIndex]=Object.assign({returns:{}},port.series[seriesIndex]||{},patch);
+      var existing=port.series[seriesIndex]||{returns:{}};
+      var merged=Object.assign({returns:{}},existing,patch);
+      if(patch.name!==undefined&&patch.name!==existing.name&&existing.name){
+        var aliases=(existing.aliases||[]).slice();
+        if(aliases.indexOf(existing.name)<0)aliases.push(existing.name);
+        merged.aliases=aliases;
+      }
+      port.series[seriesIndex]=merged;
       return Object.assign({},prev,{[portfolio]:port});
     });
   }
@@ -224,17 +233,24 @@ export function CompanyProvider({children}){
   function applyPerfBulk(portfolio,parsed){
     setPerfData(function(prev){
       var port=Object.assign({series:[],lastMonthEMV:0},prev[portfolio]||{});
-      var existingByName={};(port.series||[]).forEach(function(s,i){existingByName[s.name]=i;});
+      /* Build lookup: exact name OR any alias → index. */
+      var lookup={};
+      (port.series||[]).forEach(function(s,i){
+        lookup[s.name]=i;
+        (s.aliases||[]).forEach(function(a){if(lookup[a]===undefined)lookup[a]=i;});
+      });
       var newSeries=(port.series||[]).slice();
-      /* Ensure a slot for each column */
+      /* Ensure a slot for each column; map each incoming header → target index. */
+      var headerIdx={};
       parsed.seriesNames.forEach(function(n){
-        if(existingByName[n]===undefined){
-          existingByName[n]=newSeries.length;
-          newSeries.push({name:n,role:newSeries.length===0?"portfolio":"competitor",ticker:"",returns:{}});
-        }else{
-          /* clone existing so we can mutate returns */
-          var idx=existingByName[n];
+        if(lookup[n]!==undefined){
+          var idx=lookup[n];
           newSeries[idx]=Object.assign({},newSeries[idx],{returns:Object.assign({},newSeries[idx].returns||{})});
+          headerIdx[n]=idx;
+        }else{
+          headerIdx[n]=newSeries.length;
+          lookup[n]=newSeries.length;
+          newSeries.push({name:n,role:newSeries.length===0?"portfolio":"competitor",ticker:"",returns:{}});
         }
       });
       parsed.rows.forEach(function(row){
@@ -243,7 +259,7 @@ export function CompanyProvider({children}){
           if(v===null||v===undefined||v==="")return;
           var num=Number(v);
           if(isNaN(num))return;
-          newSeries[existingByName[n]].returns[row.month]=num;
+          newSeries[headerIdx[n]].returns[row.month]=num;
         });
       });
       port.series=newSeries;
