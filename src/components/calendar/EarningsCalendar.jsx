@@ -40,27 +40,16 @@ function EarningsCalendar({ companies }) {
         var isTomorrow = u.daysAway <= 14 && u.daysAway > 7;
         var label = u.daysAway === 0 ? "Today" : u.daysAway + "d away";
 
-        /* Data-driven urgency colors kept as inline styles */
-        var labelColor = isToday ? "#dc2626" : isTomorrow ? "#d97706" : "#166534";
+        /* Muted urgency colors — readable against slate-50 background in light
+           mode. Brighter variants used in dark mode for contrast. */
+        var labelColor = isToday ? "#991b1b" : isTomorrow ? "#854d0e" : "#166534";
         var labelColorDark = isToday ? "#f87171" : isTomorrow ? "#fbbf24" : "#4ade80";
         var ss = c.sector ? sectorStyle(c.sector) : null;
-
-        /* Data-driven urgency background kept as inline style */
-        var urgencyBg = isToday ? "#fff5f5" : isTomorrow ? "#fffbeb" : undefined;
-        var urgencyBgDark = isToday ? "#450a0a" : isTomorrow ? "#422006" : undefined;
 
         return (
           <div
             key={i}
-            className={
-              "flex gap-3 items-center px-3.5 py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 mb-1.5 transition-colors"
-              + (!isToday && !isTomorrow ? " bg-slate-50 dark:bg-slate-800" : "")
-            }
-            style={
-              (isToday || isTomorrow)
-                ? { background: `var(--tw-dark, ${urgencyBgDark})` }
-                : undefined
-            }
+            className="flex gap-3 items-center px-3.5 py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 mb-1.5 transition-colors bg-slate-50 dark:bg-slate-800"
           >
             {/* Date badge */}
             <div className="min-w-[60px] text-center">
