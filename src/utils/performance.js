@@ -77,18 +77,22 @@ export function gather(series,monthKeys){
   return out;
 }
 
-/* Rolling 3-year annualized return, anchored at each month M with 36 prior months
-   including M. Returns array of { month, value } points, oldest first. */
-export function rolling3Y(series,monthsSorted){
+/* Rolling N-year annualized return, anchored at each month M with (years*12)
+   prior months including M. Returns array of { month, value } points, oldest
+   first. years=1 → trailing-12-month annualized; years=3 → trailing-36; etc. */
+export function rollingAnnualized(series,monthsSorted,years){
+  var n=Math.max(1,Math.round((years||3)*12));
   var pts=[];
-  for(var i=35;i<monthsSorted.length;i++){
-    var window=monthsSorted.slice(i-35,i+1);
+  for(var i=n-1;i<monthsSorted.length;i++){
+    var window=monthsSorted.slice(i-(n-1),i+1);
     var rs=gather(series,window);
     if(!rs)continue;
     pts.push({month:monthsSorted[i], value:annualized(rs)});
   }
   return pts;
 }
+/* Backward-compat alias. */
+export function rolling3Y(series,monthsSorted){return rollingAnnualized(series,monthsSorted,3);}
 
 /* Month list spanning the last N months ending at latestKey (inclusive). */
 export function monthsBack(latestKey,n){

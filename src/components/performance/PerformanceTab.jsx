@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import { PORTFOLIOS, PORT_NAMES } from '../../constants/index.js';
 import { repShares } from '../../utils/index.js';
-import { currentMonthKey, portfolioMtd, rolling3Y, allMonths } from '../../utils/performance.js';
+import { currentMonthKey, portfolioMtd, rollingAnnualized, allMonths } from '../../utils/performance.js';
 import { PerformanceChart, seriesColor } from './PerformanceChart.jsx';
 import { PerformanceTable } from './PerformanceTable.jsx';
 
@@ -28,6 +28,7 @@ export function PerformanceTab(){
   const [hiddenSeries, setHiddenSeries] = useState({}); /* {groupKey: Set(name)} */
   const [includeMtd, setIncludeMtd] = useState(true);
   const [showEditor, setShowEditor] = useState(false);
+  const [rollingYears, setRollingYears] = useState(3); /* 1, 3, or 5 */
 
   const group = GROUPS.find(function(g){return g.key===groupKey;}) || GROUPS[0];
   const curMonth = currentMonthKey();
@@ -111,17 +112,17 @@ export function PerformanceTab(){
     return m;
   },[mergedSeries]);
 
-  /* Current (latest) rolling 3Y annualized per series — shown next to each
-     series name on the legend. */
-  const latest3Y = useMemo(function(){
+  /* Current (latest) rolling-window annualized per series — shown next to each
+     series name on the legend. Tracks the rollingYears toggle. */
+  const latestRolling = useMemo(function(){
     var months = allMonths(mergedSeries);
     var out = {};
     mergedSeries.forEach(function(s){
-      var pts = rolling3Y(s, months);
+      var pts = rollingAnnualized(s, months, rollingYears);
       out[s.name] = pts.length ? pts[pts.length-1].value : null;
     });
     return out;
-  },[mergedSeries]);
+  },[mergedSeries, rollingYears]);
 
   const hidden = hiddenSeries[groupKey] || new Set();
   const visibleSet = useMemo(function(){
@@ -150,7 +151,13 @@ export function PerformanceTab(){
       {/* Header row: title + controls */}
       <div className="flex gap-3 items-center flex-wrap mb-3">
         <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">
-          {group.label} — Rolling 3-Year Annualized Return
+          {group.label} — Rolling {rollingYears}-Year Annualized Return
+        </div>
+        <div className="flex gap-1">
+          {[1,3,5].map(function(y){
+            var active=rollingYears===y;
+            return <button key={y} onClick={function(){setRollingYears(y);}} className={"text-[11px] px-2 py-0.5 rounded-full border cursor-pointer transition-colors "+(active?"bg-blue-100 dark:bg-blue-900/40 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300 font-semibold":"border-slate-200 dark:border-slate-700 text-gray-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800")}>{y}Y</button>;
+          })}
         </div>
         <label className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 cursor-pointer">
           <input type="checkbox" checked={includeMtd} onChange={function(e){setIncludeMtd(e.target.checked);}} className="accent-blue-600"/>
@@ -165,7 +172,7 @@ export function PerformanceTab(){
         <div className="flex gap-1.5 flex-wrap mb-3">
           {mergedSeries.map(function(s){
             var on=visibleSet.has(s.name);
-            var v=latest3Y[s.name];
+            var v=latestRolling[s.name];
             var pct=(v===null||v===undefined||isNaN(v))?null:v*100;
             return <span key={s.name} onClick={function(){toggleSeries(s.name);}} className={"text-[11px] px-2 py-0.5 rounded-full cursor-pointer border transition-colors " + (on?"font-semibold":"font-normal opacity-50")} style={on?{borderColor:colorMap[s.name],background:colorMap[s.name]+"22",color:colorMap[s.name]}:{borderColor:"#cbd5e1"}}>
               <span className="inline-block w-1.5 h-1.5 rounded-full mr-1 align-middle" style={{background:colorMap[s.name]}}/>{s.name}
@@ -239,7 +246,7 @@ export function PerformanceTab(){
 
       {/* Chart */}
       <div className="bg-white dark:bg-slate-950 rounded-lg border border-slate-200 dark:border-slate-700 p-3 mb-4">
-        <PerformanceChart series={mergedSeries} visibleSet={visibleSet} dark={dark}/>
+        <PerformanceChart series={mergedSeries} visibleSet={visibleSet} dark={dark} rollingYears={rollingYears}/>
       </div>
 
       {/* Trailing returns table */}

@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { allMonths, rolling3Y } from '../../utils/performance.js';
+import { allMonths, rollingAnnualized } from '../../utils/performance.js';
 
 /* Palette for series lines. Portfolio = heavy blue; benchmarks = grays;
    competitors cycle through purples/teals/oranges. */
@@ -14,9 +14,10 @@ function seriesColor(s, benchIdx, compIdx){
   return COMP_COLORS[compIdx%COMP_COLORS.length];
 }
 
-export function PerformanceChart({ series, visibleSet, dark }){
-  /* Pre-compute rolling-3Y points for each series, then merge into one array
-     of {month, [seriesName]: value, ...} rows for Recharts. */
+export function PerformanceChart({ series, visibleSet, dark, rollingYears }){
+  const years = rollingYears || 3;
+  /* Pre-compute rolling-window points for each series, then merge into one
+     {month, [seriesName]: value, ...} array for Recharts. */
   const { data, colorMap, names } = useMemo(function(){
     var sorted=allMonths(series);
     var pointsBySeries={};
@@ -30,7 +31,7 @@ export function PerformanceChart({ series, visibleSet, dark }){
       colorMap[s.name]=color;
       names.push(s.name);
       pointsBySeries[s.name]={};
-      rolling3Y(s,sorted).forEach(function(p){pointsBySeries[s.name][p.month]=p.value*100;});
+      rollingAnnualized(s,sorted,years).forEach(function(p){pointsBySeries[s.name][p.month]=p.value*100;});
     });
     var rowsByMonth={};
     Object.keys(pointsBySeries).forEach(function(n){
@@ -41,10 +42,11 @@ export function PerformanceChart({ series, visibleSet, dark }){
     });
     var data=Object.keys(rowsByMonth).sort().map(function(m){return rowsByMonth[m];});
     return {data:data, colorMap:colorMap, names:names};
-  },[series]);
+  },[series, years]);
 
   if(data.length===0){
-    return <div className="text-xs text-gray-500 dark:text-slate-400 italic py-8 text-center">Not enough data yet — need at least 36 months of returns in a series.</div>;
+    var needed = years*12;
+    return <div className="text-xs text-gray-500 dark:text-slate-400 italic py-8 text-center">Not enough data yet — need at least {needed} months of returns in a series.</div>;
   }
 
   const tickFmt = function(v){return v.toFixed(0)+"%";};
