@@ -18,9 +18,9 @@ import { repShares } from "./index.js";
 /* Convert a local-currency amount to USD using the fxRates table.
  * Returns 0 for missing/zero/invalid rates so callers don't propagate NaN. */
 export function toUSD(amountLocal, currency, fxRates) {
-  var ccy = (currency || "USD").toUpperCase();
+  const ccy = (currency || "USD").toUpperCase();
   if (ccy === "USD") return amountLocal;
-  var fx = fxRates ? parseFloat(fxRates[ccy]) : NaN;
+  const fx = fxRates ? parseFloat(fxRates[ccy]) : NaN;
   if (!isFinite(fx) || fx <= 0) return 0;
   return amountLocal / fx;
 }
@@ -30,11 +30,11 @@ export function toUSD(amountLocal, currency, fxRates) {
  * any tickers not yet claimed. Both arguments should be arrays of
  * company objects with a `tickers: [{ticker, ...}]` shape. */
 export function buildTickerOwners(portCos, otherCos) {
-  var owners = {};
+  const owners = {};
   function claim(list) {
     (list || []).forEach(function (c) {
       (c.tickers || []).forEach(function (t) {
-        var tk = (t.ticker || "").toUpperCase();
+        const tk = (t.ticker || "").toUpperCase();
         if (tk && !owners[tk]) owners[tk] = c.id;
       });
     });
@@ -55,15 +55,15 @@ export function buildTickerOwners(portCos, otherCos) {
  *     position to 0 (not NaN) so one bad rate can't poison the total. */
 export function calcCompanyRepMV(company, portRep, fxRates, tickerOwners) {
   if (!company || !portRep) return 0;
-  var mv = 0;
-  var seen = {};
+  let mv = 0;
+  const seen = {};
   (company.tickers || []).forEach(function (t) {
-    var tk = (t.ticker || "").toUpperCase();
+    const tk = (t.ticker || "").toUpperCase();
     if (!tk || seen[tk]) return;
     if (tickerOwners && tickerOwners[tk] !== company.id) return;
     seen[tk] = true;
-    var shares = repShares(portRep[tk]);
-    var price = parseFloat(t.price);
+    const shares = repShares(portRep[tk]);
+    const price = parseFloat(t.price);
     if (!shares || !isFinite(price)) return;
     mv += toUSD(shares * price, t.currency, fxRates);
   });
@@ -73,7 +73,7 @@ export function calcCompanyRepMV(company, portRep, fxRates, tickerOwners) {
 /* Total USD Rep MV for a portfolio: sum of per-company MVs plus CASH
  * and DIVACC lines (which are already USD, stored as share counts). */
 export function calcTotalMV(portCos, portRep, fxRates, tickerOwners) {
-  var total = 0;
+  let total = 0;
   (portCos || []).forEach(function (c) {
     total += calcCompanyRepMV(c, portRep, fxRates, tickerOwners);
   });
@@ -93,7 +93,7 @@ export function calcRepWeight(repMV, totalMV) {
  * side is missing — matches existing table convention. */
 export function calcDiff(repWeight, target) {
   if (repWeight === null || repWeight === undefined) return null;
-  var t = parseFloat(target);
+  const t = parseFloat(target);
   if (!(t > 0)) return null;
   return Math.round((repWeight - t) * 10) / 10;
 }
@@ -101,10 +101,10 @@ export function calcDiff(repWeight, target) {
 /* Earliest future earnings date from a company's earningsEntries.
  * `today` should be a Date at local midnight. Returns a Date or null. */
 export function getNextReport(company, today) {
-  var next = null;
+  let next = null;
   ((company && company.earningsEntries) || []).forEach(function (e) {
     if (!e.reportDate) return;
-    var d = new Date(e.reportDate);
+    const d = new Date(e.reportDate);
     if (isNaN(d.getTime())) return;
     if (d >= today && (!next || d < next)) next = d;
   });
@@ -113,9 +113,9 @@ export function getNextReport(company, today) {
 
 /* 5-day perf from the company's ordinary ticker, or null. */
 export function getPerf5d(company) {
-  var ord = ((company && company.tickers) || []).find(function (t) { return t.isOrdinary; });
-  var p = ord && ord.perf5d;
+  const ord = ((company && company.tickers) || []).find(function (t) { return t.isOrdinary; });
+  const p = ord && ord.perf5d;
   if (!p || p === "#N/A") return null;
-  var n = parseFloat(p);
+  const n = parseFloat(p);
   return isNaN(n) ? null : n;
 }
