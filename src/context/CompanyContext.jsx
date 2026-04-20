@@ -180,6 +180,19 @@ export function CompanyProvider({children}){
       return Object.assign({},prev,{[portfolio]:port});
     });
   }
+  function movePerfSeries(portfolio,from,to){
+    setPerfData(function(prev){
+      var port=Object.assign({series:[],lastMonthEMV:0},prev[portfolio]||{});
+      var arr=(port.series||[]).slice();
+      if(from<0||from>=arr.length)return prev;
+      if(to<0)to=0;if(to>arr.length-1)to=arr.length-1;
+      if(from===to)return prev;
+      var moved=arr.splice(from,1)[0];
+      arr.splice(to,0,moved);
+      port.series=arr;
+      return Object.assign({},prev,{[portfolio]:port});
+    });
+  }
   function removePerfSeries(portfolio,seriesIndex){
     setPerfData(function(prev){
       var port=Object.assign({series:[],lastMonthEMV:0},prev[portfolio]||{});
@@ -345,7 +358,7 @@ export function CompanyProvider({children}){
     updateTargetWeight,addTargetHistoryEntry,deleteTargetHistoryEntry,
     addTransaction,deleteTransaction,setTxInitOverride,updateInitiatedDate,
     researchAssignments,setResearchAssignments,setResearchSlot,setReorgSlot,
-    perfData,setPerfData,setPerfSeries,addPerfSeries,removePerfSeries,setPerfReturn,setPerfLastMonthEMV,applyPerfBulk
+    perfData,setPerfData,setPerfSeries,addPerfSeries,removePerfSeries,movePerfSeries,setPerfReturn,setPerfLastMonthEMV,applyPerfBulk
   };
 
   return <CompanyContext.Provider value={value}>{children}</CompanyContext.Provider>;

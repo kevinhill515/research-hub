@@ -23,7 +23,7 @@ const GROUPS = [
 ];
 
 export function PerformanceTab(){
-  const { companies, repData, fxRates, perfData, setPerfSeries, addPerfSeries, removePerfSeries, setPerfReturn, setPerfLastMonthEMV, dark } = useCompanyContext();
+  const { companies, repData, fxRates, perfData, setPerfSeries, addPerfSeries, removePerfSeries, movePerfSeries, setPerfReturn, setPerfLastMonthEMV, dark } = useCompanyContext();
   const [groupKey, setGroupKey] = useState("intl");
   const [hiddenSeries, setHiddenSeries] = useState({}); /* {groupKey: Set(name)} */
   const [includeMtd, setIncludeMtd] = useState(true);
@@ -173,10 +173,14 @@ export function PerformanceTab(){
                 </div>
                 <div className="text-[11px] text-gray-500 dark:text-slate-400 mb-2">Series (name / role / ticker). MTD for benchmarks & competitors is their entry in the current month ({curMonth}).</div>
                 <div className="space-y-1.5">
-                  {(port.series||[]).map(function(s,i){
+                  {(port.series||[]).map(function(s,i,arr){
                     var curMtdVal=(s.returns||{})[curMonth];
                     return (
                       <div key={i} className="flex gap-2 items-center flex-wrap text-xs">
+                        <span className="inline-flex flex-col leading-none text-[10px] text-gray-400 dark:text-slate-500 select-none">
+                          <button type="button" disabled={i===0} onClick={function(){movePerfSeries(p,i,i-1);}} className={"px-1 py-0 cursor-pointer hover:text-gray-700 dark:hover:text-slate-300 "+(i===0?"opacity-30 cursor-not-allowed":"")} title="Move up">{"\u25B2"}</button>
+                          <button type="button" disabled={i===arr.length-1} onClick={function(){movePerfSeries(p,i,i+1);}} className={"px-1 py-0 cursor-pointer hover:text-gray-700 dark:hover:text-slate-300 "+(i===arr.length-1?"opacity-30 cursor-not-allowed":"")} title="Move down">{"\u25BC"}</button>
+                        </span>
                         <input defaultValue={s.name} key={p+"-sn-"+i+"-"+s.name} onBlur={function(e){setPerfSeries(p,i,{name:e.target.value.trim()||s.name});}} className={INP+" !text-xs w-48"} placeholder="Series name"/>
                         <select value={s.role||"competitor"} onChange={function(e){setPerfSeries(p,i,{role:e.target.value});}} className={INP+" !text-xs"}>
                           <option value="portfolio">Portfolio</option>
