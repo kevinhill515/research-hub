@@ -5,6 +5,7 @@ import { repShares } from '../../utils/index.js';
 import { currentMonthKey, portfolioMtd, rollingAnnualized, allMonths } from '../../utils/performance.js';
 import { PerformanceChart, seriesColor } from './PerformanceChart.jsx';
 import { PerformanceTable } from './PerformanceTable.jsx';
+import { RiskSummaryTable } from './RiskSummaryTable.jsx';
 
 const TABST_ACTIVE = "text-[13px] px-3 py-1.5 border-b-2 border-blue-600 text-gray-900 dark:text-slate-100 font-semibold cursor-pointer bg-transparent";
 const TABST_INACTIVE = "text-[13px] px-3 py-1.5 border-b-2 border-transparent text-gray-500 dark:text-slate-400 cursor-pointer bg-transparent hover:text-gray-700 dark:hover:text-slate-300";
@@ -254,6 +255,9 @@ export function PerformanceTab(){
         <div className="text-xs text-gray-500 dark:text-slate-400 mb-2">Trailing period returns · {includeMtd?"including MTD (through "+curMonth+")":"excluding MTD (through last completed month)"}</div>
         <PerformanceTable series={mergedSeries.filter(function(s){return visibleSet.has(s.name);})} currentMonth={curMonth} includeMtd={includeMtd} colorMap={colorMap}/>
       </div>
+
+      {/* 5-Year Risk Summary */}
+      <RiskSummaryTable mergedSeries={mergedSeries} currentMonth={curMonth} includeMtd={includeMtd}/>
 
       {mergedSeries.length===0 && (
         <div className="text-xs text-gray-500 dark:text-slate-400 italic mt-3 text-center">

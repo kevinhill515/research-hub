@@ -167,3 +167,73 @@ export function portfolioMtd(currentMV,lastMonthEMV){
   if(!currentMV||!lastMonthEMV||lastMonthEMV===0)return null;
   return (currentMV/lastMonthEMV)-1;
 }
+
+/* ============================================================================
+   Risk statistics. All operate on paired monthly-return arrays. Caller is
+   responsible for aligning the portfolio and benchmark to the same N months
+   (typically the trailing 60 completed months for a 5Y risk summary).
+   ============================================================================ */
+function _mean(arr){var s=0;for(var i=0;i<arr.length;i++)s+=arr[i];return arr.length?s/arr.length:null;}
+function _sampleVar(arr){var n=arr.length;if(n<2)return null;var m=_mean(arr);var s=0;for(var i=0;i<n;i++){var d=arr[i]-m;s+=d*d;}return s/(n-1);}
+export function sampleStdev(arr){var v=_sampleVar(arr);return v===null?null:Math.sqrt(v);}
+/* Downside / upside semi-deviation, user's formula:
+   SQRT(AVERAGE(IF(r<0, r^2, 0)))  — divides by full N (not subset count). */
+export function downsideStdev(arr){if(!arr||arr.length===0)return null;var s=0;for(var i=0;i<arr.length;i++){if(arr[i]<0)s+=arr[i]*arr[i];}return Math.sqrt(s/arr.length);}
+export function upsideStdev(arr){if(!arr||arr.length===0)return null;var s=0;for(var i=0;i<arr.length;i++){if(arr[i]>0)s+=arr[i]*arr[i];}return Math.sqrt(s/arr.length);}
+/* Pearson correlation. */
+export function correlation(a,b){
+  if(!a||!b||a.length!==b.length||a.length<2)return null;
+  var n=a.length;var am=_mean(a),bm=_mean(b);
+  var num=0,ad=0,bd=0;
+  for(var i=0;i<n;i++){var dx=a[i]-am,dy=b[i]-bm;num+=dx*dy;ad+=dx*dx;bd+=dy*dy;}
+  var den=Math.sqrt(ad*bd);return den===0?null:num/den;
+}
+/* Beta = slope of portfolio on benchmark (linear regression). */
+export function betaSlope(port,bench){
+  if(!port||!bench||port.length!==bench.length||port.length<2)return null;
+  var n=port.length;var pm=_mean(port),bm=_mean(bench);
+  var num=0,den=0;
+  for(var i=0;i<n;i++){var db=bench[i]-bm;num+=(port[i]-pm)*db;den+=db*db;}
+  return den===0?null:num/den;
+}
+/* Tracking error: sample stdev of (port − bench) * sqrt(12) for monthly returns. */
+export function trackingError(port,bench){
+  if(!port||!bench||port.length!==bench.length||port.length<2)return null;
+  var diffs=[];for(var i=0;i<port.length;i++)diffs.push(port[i]-bench[i]);
+  var sd=sampleStdev(diffs);return sd===null?null:sd*Math.sqrt(12);
+}
+/* Upside capture ratio. For each month m:
+   pUp_m = (bench_m >= 0) ? 1 + port_m  : 1
+   bUp_m = (bench_m >= 0) ? 1 + bench_m : 1
+   result = (∏pUp)^(1/N) − 1 over (∏bUp)^(1/N) − 1
+   (per-month geometric mean in up markets; ratio divides out the time factor). */
+export function upsideCapture(port,bench){
+  if(!port||!bench||port.length!==bench.length||port.length===0)return null;
+  var n=port.length;var pUp=1,bUp=1;
+  for(var i=0;i<n;i++){if(bench[i]>=0){pUp*=(1+port[i]);bUp*=(1+bench[i]);}}
+  var pGeo=Math.pow(pUp,1/n)-1;var bGeo=Math.pow(bUp,1/n)-1;
+  return bGeo===0?null:pGeo/bGeo;
+}
+/* Downside capture ratio. Same shape but m where bench_m < 0. */
+export function downsideCapture(port,bench){
+  if(!port||!bench||port.length!==bench.length||port.length===0)return null;
+  var n=port.length;var pDn=1,bDn=1;
+  for(var i=0;i<n;i++){if(bench[i]<0){pDn*=(1+port[i]);bDn*=(1+bench[i]);}}
+  var pGeo=Math.pow(pDn,1/n)-1;var bGeo=Math.pow(bDn,1/n)-1;
+  return bGeo===0?null:pGeo/bGeo;
+}
+/* Collect paired monthly returns over the trailing `months` array, requiring
+   both series to have a value in every month. Returns {port:[], bench:[]} or
+   null if any month is missing on either side. */
+export function pairReturns(portSeries,benchSeries,months){
+  var pr=portSeries&&portSeries.returns||{};
+  var br=benchSeries&&benchSeries.returns||{};
+  var p=[],b=[];
+  for(var i=0;i<months.length;i++){
+    var pv=pr[months[i]],bv=br[months[i]];
+    if(pv===null||pv===undefined||isNaN(pv))return null;
+    if(bv===null||bv===undefined||isNaN(bv))return null;
+    p.push(Number(pv));b.push(Number(bv));
+  }
+  return {port:p,bench:b};
+}
