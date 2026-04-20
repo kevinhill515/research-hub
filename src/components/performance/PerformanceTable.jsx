@@ -14,7 +14,7 @@ function color(v){
   return undefined;
 }
 
-export function PerformanceTable({ series, currentMonth, includeMtdInYtdQtd, colorMap }){
+export function PerformanceTable({ series, currentMonth, includeMtd, colorMap }){
   if(!series||series.length===0){
     return <div className="text-xs text-gray-500 dark:text-slate-400 italic py-4">No series yet — upload data in the Data Hub → Performance tab.</div>;
   }
@@ -40,7 +40,7 @@ export function PerformanceTable({ series, currentMonth, includeMtdInYtdQtd, col
                 </td>
                 <td className="px-2 py-1 text-right text-gray-500 dark:text-slate-400 text-[10px] uppercase">{s.role||""}</td>
                 {PERIODS.map(function(p){
-                  var v=trailingReturn(s,p,{currentMonth:currentMonth,includeMtdInYtdQtd:includeMtdInYtdQtd});
+                  var v=trailingReturn(s,p,{currentMonth:currentMonth,includeMtd:includeMtd});
                   return <td key={p} className="px-2 py-1 text-right font-mono" style={{color:color(v)}}>{fmt(v)}</td>;
                 })}
               </tr>

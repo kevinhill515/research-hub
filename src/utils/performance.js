@@ -30,6 +30,12 @@ export function monthDate(k){
   if(isNaN(y)||isNaN(m)||m<1||m>12)return null;
   return new Date(y,m-1,1);
 }
+/* Previous-month key. prevMonthKey("2026-01") === "2025-12" */
+export function prevMonthKey(k){
+  var d=monthDate(k);if(!d)return null;
+  d.setMonth(d.getMonth()-1);
+  return monthKey(d);
+}
 /* Sorted list of YYYY-MM keys across all provided series. */
 export function allMonths(series){
   var set={};series.forEach(function(s){Object.keys(s.returns||{}).forEach(function(k){set[k]=true;});});
@@ -98,51 +104,54 @@ export function monthsBack(latestKey,n){
 /* Trailing period returns for a series.
    Args:
      series — { returns: {...} }
-     period — one of "MTD","QTD","YTD","1Y","3Y","5Y","7Y","10Y"
-     ctx    — {
-       currentMonth: "YYYY-MM"   // e.g. 2026-03; the in-progress MTD month
-       includeMtdInYtdQtd: bool  // user toggle
-     }
+     period — "MTD" | "QTD" | "YTD" | "1Y" | "3Y" | "5Y" | "7Y" | "10Y"
+     ctx    — { currentMonth, includeMtd }
+              currentMonth: "YYYY-MM" — the in-progress month for MTD
+              includeMtd: true → every non-MTD period includes currentMonth as its last data point
+                          false → every non-MTD period ends at the previous (completed) month
+                          (MTD itself always returns the currentMonth value.)
    Returns a number or null. Insufficient history → null. */
 export function trailingReturn(series,period,ctx){
   var r=series.returns||{};
   var cur=ctx.currentMonth;
   var curDate=monthDate(cur);if(!curDate)return null;
-  var curYear=curDate.getFullYear();
-  var curMonthIdx=curDate.getMonth(); /* 0-based */
-  var include=!!ctx.includeMtdInYtdQtd;
+  var include=!!ctx.includeMtd;
+  /* The "end" month for non-MTD periods. */
+  var endKey=include?cur:prevMonthKey(cur);
+  var endDate=monthDate(endKey);if(!endDate)return null;
+  var endYear=endDate.getFullYear();
+  var endMonthIdx=endDate.getMonth(); /* 0-based */
 
   if(period==="MTD"){
     var v=r[cur];return(v===null||v===undefined||isNaN(v))?null:v;
   }
   if(period==="QTD"){
-    var qStartMonth=Math.floor(curMonthIdx/3)*3; /* 0,3,6,9 */
+    var qStartMonth=Math.floor(endMonthIdx/3)*3;
     var keys=[];
-    for(var m=qStartMonth;m<=curMonthIdx;m++){
-      var k=curYear+"-"+((m+1)<10?"0":"")+(m+1);
-      if(k===cur&&!include)continue;
-      keys.push(k);
+    for(var m=qStartMonth;m<=endMonthIdx;m++){
+      keys.push(endYear+"-"+((m+1)<10?"0":"")+(m+1));
     }
     if(keys.length===0)return 0;
     var rs=gather(series,keys);if(!rs)return null;
     return compound(rs);
   }
   if(period==="YTD"){
+    /* YTD: Jan of endYear through endKey. If we're at Jan and toggle is OFF,
+       endKey is Dec of prior year → YTD spans Jan..Dec of prior year (a full year),
+       which is the only sensible read. We return null in that ambiguous corner. */
+    if(!include&&endDate.getFullYear()<curDate.getFullYear())return null;
     var keys=[];
-    for(var m=0;m<=curMonthIdx;m++){
-      var k=curYear+"-"+((m+1)<10?"0":"")+(m+1);
-      if(k===cur&&!include)continue;
-      keys.push(k);
+    for(var m=0;m<=endMonthIdx;m++){
+      keys.push(endYear+"-"+((m+1)<10?"0":"")+(m+1));
     }
     if(keys.length===0)return 0;
     var rs=gather(series,keys);if(!rs)return null;
     return compound(rs);
   }
-  /* 1Y/3Y/5Y/7Y/10Y — annualized. Window = 12*years months ending at currentMonth inclusive. */
+  /* 1Y/3Y/5Y/7Y/10Y — 12*years months ending at endKey (inclusive). */
   var years={"1Y":1,"3Y":3,"5Y":5,"7Y":7,"10Y":10}[period];
   if(!years)return null;
-  var window=monthsBack(cur,years*12);
-  /* Full-window requirement: every month must have a value; null if any missing. */
+  var window=monthsBack(endKey,years*12);
   var rs=gather(series,window);if(!rs)return null;
   return rs.length<12?compound(rs):annualized(rs);
 }
