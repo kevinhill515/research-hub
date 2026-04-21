@@ -22,11 +22,17 @@ const GROUPS = [
   { key: "bonds",       title: "Bonds & Treasuries" },
 ];
 
-/* Format a decimal return as +1.23% / -4.56%. Null/undefined -> em-dash. */
+/* Format a decimal return as +1.2% / -4.6%. Null/undefined -> em-dash. */
 function fmtPct(v) {
   if (v === null || v === undefined || isNaN(v)) return "--";
   const n = v * 100;
-  return (n >= 0 ? "+" : "") + n.toFixed(2) + "%";
+  return (n >= 0 ? "+" : "") + n.toFixed(1) + "%";
+}
+
+/* The workbook labels the first FX row "USD" but it's actually the DXY
+ * dollar-index (FactSet ticker DXY.Z). Remap for clarity. */
+function fxLabel(raw) {
+  return raw === "USD" ? "DXY" : raw;
 }
 
 /* Background color for a return cell. Saturation scales with magnitude
@@ -122,7 +128,7 @@ function FxBlock({ label, rows }) {
             const style = returnStyle(r.value);
             return (
               <tr key={i} className="border-t border-slate-100 dark:border-slate-800 first:border-t-0">
-                <td className="py-0.5 text-gray-900 dark:text-slate-100">{r.label}</td>
+                <td className="py-0.5 text-gray-900 dark:text-slate-100">{fxLabel(r.label)}</td>
                 <td className="py-0.5 text-right text-xs font-mono whitespace-nowrap" style={style || undefined}>
                   {fmtPct(r.value)}
                 </td>
