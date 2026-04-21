@@ -13,6 +13,7 @@ export function useImport(){
   const [dataHubTab,setDataHubTab]=useState("backup");
   const [valImportText,setValImportText]=useState("");
   const [estImportText,setEstImportText]=useState("");
+  const [metricsImportText,setMetricsImportText]=useState("");
   const [weightsImportText,setWeightsImportText]=useState("");
   const [calImportText,setCalImportText]=useState("");
   const [repText,setRepText]=useState("");
@@ -133,6 +134,75 @@ export function useImport(){
   function applyWeightsImport(){if(!weightsImportText.trim())return;var lines=weightsImportText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});var count=0;var newSpecial={};lines.forEach(function(l){var delim=l.indexOf("\t")>=0?"\t":",";var p=l.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});var nm=p[0].toUpperCase();if(nm==="CASH"||nm==="DIVACC"){newSpecial[nm]={GL:p[1]||"",FGL:p[2]||"",IV:p[3]||"",FIV:p[4]||"",EM:p[5]||"",SC:p[6]||""};}});if(Object.keys(newSpecial).length>0){setSpecialWeights(function(prev){var updated=Object.assign({},prev,newSpecial);supaUpsert("meta",{key:"specialWeights",value:JSON.stringify(updated)});return updated;});}setCompanies(function(prev){return prev.map(function(c){var cname=(c.name||"").toLowerCase().trim();var match=lines.find(function(l){var delim=l.indexOf("\t")>=0?"\t":",";var parts=l.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});return parts[0].toLowerCase().trim()===cname;});if(!match)return c;var delim=match.indexOf("\t")>=0?"\t":",";var p=match.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});var newWeights=Object.assign({},c.portWeights||{},{GL:p[1]||"",FGL:p[2]||"",IV:p[3]||"",FIV:p[4]||"",EM:p[5]||"",SC:p[6]||""});count++;return Object.assign({},c,{portWeights:newWeights});});});setTimeout(function(){alert("Updated weights for "+count+" companies.");setWeightsImportText("");},100);}
   function applyValImport(){if(!valImportText.trim())return;var lines=valImportText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});var count=0;setCompanies(function(prev){return prev.map(function(c){var cname=(c.name||"").toLowerCase().trim();var match=lines.find(function(l){var delim=l.indexOf("\t")>=0?"\t":",";var parts=l.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});return parts[0].toLowerCase().trim()===cname;});if(!match)return c;var delim=match.indexOf("\t")>=0?"\t":",";var p=match.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});var newVal=Object.assign({},c.valuation||{},{pe:p[1]||"",fyMonth:p[2]||"",currency:p[3]||"",fy1:p[4]||"",eps1:p[5]||"",w1:p[6]||"",fy2:p[7]||"",eps2:p[8]||"",w2:p[9]||""});count++;return Object.assign({},c,{valuation:newVal});});});setTimeout(function(){alert("Updated valuation for "+count+" companies.");setValImportText("");},100);}
   function applyEstImport(){if(!estImportText.trim())return;var lines=estImportText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});var count=0;setCompanies(function(prev){return prev.map(function(c){var cname=(c.name||"").toLowerCase().trim();var match=lines.find(function(l){var delim=l.indexOf("\t")>=0?"\t":",";var parts=l.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});return parts[0].toLowerCase().trim()===cname;});if(!match)return c;var delim=match.indexOf("\t")>=0?"\t":",";var p=match.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});var newVal=Object.assign({},c.valuation||{},{pe:p[1]||"",peCurrent:p[2]||"",peLow5:p[3]||"",peHigh5:p[4]||"",peAvg5:p[5]||"",peMed5:p[6]||"",fyMonth:p[7]||"",currency:p[8]||"",fy1:p[9]||"",eps1:p[10]||"",w1:p[11]||"",fy2:p[12]||"",eps2:p[13]||"",w2:p[14]||""});count++;return Object.assign({},c,{valuation:newVal});});});setTimeout(function(){alert("Updated estimates for "+count+" companies.");setEstImportText("");},100);}
+  /* Metrics upload — 31 columns matching the Excel Metrics tab exactly:
+     Company, Ord Ticker, MktCap, F P/E +1, F P/E +2,
+     FCF Yld +1, FCF Yld +2, Div Yld +1, Div Yld +2,
+     Payout +1, Payout +2, Net D/E +1, Net D/E +2, Int Cov, LT EPS,
+     Gr Mgn +1, Gr Mgn +2, Net Mgn +1, Net Mgn +2,
+     GP/Ass +1, GP/Ass +2, NP/Ass +1, NP/Ass +2, Op ROE +1, Op ROE +2,
+     MTD, QTD, 3M, 6M, YTD, 1 YR
+     Values are decimals (0.032 for 3.2%) to match the FactSet output.
+     If the user pastes with a header row, it's auto-detected and skipped. */
+  function applyMetricsImport(){
+    if(!metricsImportText.trim())return;
+    var lines = metricsImportText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});
+    /* Skip header row if present (first cell is not a numeric mktcap) */
+    if(lines.length>0){
+      var first=lines[0];
+      var delim0=first.indexOf("\t")>=0?"\t":",";
+      var firstParts=first.split(delim0);
+      /* Header always has something like "Company" in col 0 and "MktCap" / "F P/E" in later cols */
+      if(/company/i.test(firstParts[0]||"") || /mktcap/i.test(firstParts[2]||"")){
+        lines.shift();
+      }
+    }
+    var METRIC_KEYS = [
+      null, null,  // Company, Ticker — not stored on metrics
+      "mktCap","fpe1","fpe2",
+      "fcfYld1","fcfYld2","divYld1","divYld2",
+      "payout1","payout2","netDE1","netDE2","intCov","ltEPS",
+      "grMgn1","grMgn2","netMgn1","netMgn2",
+      "gpAss1","gpAss2","npAss1","npAss2","opROE1","opROE2",
+    ];
+    var PERF_KEYS = ["MTD","QTD","3M","6M","YTD","1Y"];
+    var count=0;
+    setCompanies(function(prev){
+      return prev.map(function(c){
+        var cname = (c.name||"").toLowerCase().trim();
+        var ordTicker = ((c.tickers||[]).find(function(t){return t.isOrdinary;})||{}).ticker || c.ticker || "";
+        var ordTickerLc = ordTicker.toLowerCase();
+        var match = lines.find(function(l){
+          var delim = l.indexOf("\t")>=0?"\t":",";
+          var p = l.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});
+          if((p[0]||"").toLowerCase().trim() === cname) return true;
+          if(ordTickerLc && (p[1]||"").toLowerCase().trim() === ordTickerLc) return true;
+          return false;
+        });
+        if(!match) return c;
+        var delim = match.indexOf("\t")>=0?"\t":",";
+        var parts = match.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});
+        function num(i){ var n = parseFloat(parts[i]); return isNaN(n) ? null : n; }
+        var m = {};
+        for(var i=2; i<METRIC_KEYS.length; i++){
+          var key = METRIC_KEYS[i];
+          if(!key) continue;
+          var v = num(i);
+          if(v !== null) m[key] = v;
+        }
+        var perf = {};
+        for(var j=0; j<PERF_KEYS.length; j++){
+          var v2 = num(25 + j);
+          if(v2 !== null) perf[PERF_KEYS[j]] = v2;
+        }
+        if(Object.keys(perf).length > 0) m.perf = perf;
+        if(Object.keys(m).length === 0) return c;
+        count++;
+        return Object.assign({},c,{metrics:m});
+      });
+    });
+    setTimeout(function(){alert("Updated metrics for "+count+" companies.");setMetricsImportText("");},100);
+  }
+
   function importAll(){
     setImportError("");
     try{var d=JSON.parse(importText);var cos=d.companies||(Array.isArray(d)?d:null),lib=d.library||null;if(!cos&&!lib){setImportError("No data found.");return;}if(cos&&Array.isArray(cos)){setCompanies(cos);supaUpsert("companies",{id:"shared",data:JSON.stringify(cos)});}if(lib&&Array.isArray(lib)){setSaved(lib);supaUpsert("library",{id:"shared",data:JSON.stringify(lib)});}setImportText("");setShowDataPanel(false);}
@@ -143,9 +213,10 @@ export function useImport(){
   return {
     showDataPanel,setShowDataPanel,importText,setImportText,importError,setImportError,
     dataHubTab,setDataHubTab,valImportText,setValImportText,estImportText,setEstImportText,
+    metricsImportText,setMetricsImportText,
     weightsImportText,setWeightsImportText,calImportText,setCalImportText,
     repText,setRepText,fxText,setFxText,txText,setTxText,perfPortTargets,setPerfPortTargets,perfText,setPerfText,portTab,setPortTab,portSort,setPortSort,portSortDir,setPortSortDir,
-    applyFxImport,applyRepImport,applyTxImport,applyPerfImport,applyCalImport,applyWeightsImport,applyValImport,applyEstImport,
+    applyFxImport,applyRepImport,applyTxImport,applyPerfImport,applyCalImport,applyWeightsImport,applyValImport,applyEstImport,applyMetricsImport,
     importAll,exportAll
   };
 }
