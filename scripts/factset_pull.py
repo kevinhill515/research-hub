@@ -282,6 +282,14 @@ class ExcelSession:
             log("  Rep Holdings recalc done")
         except Exception as e:
             log(f"  Rep Holdings recalc failed: {e}")
+        # Log the refresh timestamp on D1 so we can verify the macro actually
+        # fired. The workbook isn't saved, so user's local xlsx keeps the
+        # old timestamp — but the in-memory D1 shows what we just pulled.
+        try:
+            stamp = self.wb.Sheets("Rep Holdings").Cells(1, 4).Value
+            log(f"  Rep Holdings D1 (in-memory): {stamp}")
+        except Exception:
+            pass
 
     # -- Refresh: FactSet --
     def refresh_factset(self) -> None:
@@ -558,6 +566,66 @@ def read_rep_holdings(xl: ExcelSession) -> dict[str, dict[str, dict]]:
     return out
 
 
+# Metrics tab: 25 FactSet columns keyed by ord ticker. Columns A=Company,
+# B=Ord Ticker, C-Y = metrics, Z-AE = 6 performance periods.
+METRICS_COLS = [
+    # (key, excel_col, percent_flag)
+    # percent_flag: True means the raw value is a decimal that represents
+    # a percent — we multiply by 100 for display. False means it's already
+    # a ratio / count / multiple and should be shown as-is.
+    ("mktCap",  3,  False),  # C — $B already (formula divides by 1000)
+    ("fpe1",    4,  False),  # D
+    ("fpe2",    5,  False),  # E
+    ("fcfYld1", 6,  True),   # F — /100 in formula already — leave as decimal
+    ("fcfYld2", 7,  True),   # G
+    ("divYld1", 8,  True),   # H
+    ("divYld2", 9,  True),   # I
+    ("payout1", 10, False),  # J = H/F
+    ("payout2", 11, False),  # K = I/G
+    ("netDE1",  12, False),  # L
+    ("netDE2",  13, False),  # M
+    ("intCov",  14, False),  # N
+    ("ltEPS",   15, True),   # O — already /100
+    ("grMgn1",  16, True),   # P
+    ("grMgn2",  17, True),   # Q
+    ("netMgn1", 18, True),   # R
+    ("netMgn2", 19, True),   # S
+    ("gpAss1",  20, False),  # T — ratio
+    ("gpAss2",  21, False),  # U
+    ("npAss1",  22, False),  # V
+    ("npAss2",  23, False),  # W
+    ("opROE1",  24, False),  # X
+    ("opROE2",  25, False),  # Y
+]
+METRICS_PERF_COLS = [
+    # (period_key, col)
+    ("MTD", 26), ("QTD", 27), ("3M", 28), ("6M", 29), ("YTD", 30), ("1Y", 31),
+]
+
+
+def read_metrics(xl: ExcelSession) -> dict[str, dict]:
+    """Returns { upper_ticker: {metric_key: value, ..., perf: {period: value}} }"""
+    out: dict[str, dict] = {}
+    for r in range(2, MAX_COMPANY_ROW + 1):
+        tk = xl.cell("Metrics", r, 2)  # B = ord ticker
+        if not tk: continue
+        tk = str(tk).strip().upper()
+        m: dict = {}
+        for key, col, _pct in METRICS_COLS:
+            v = _num(xl.cell("Metrics", r, col))
+            if v is not None:
+                m[key] = v
+        perf: dict = {}
+        for period, col in METRICS_PERF_COLS:
+            v = _num(xl.cell("Metrics", r, col))
+            if v is not None:
+                perf[period] = v
+        if perf: m["perf"] = perf
+        if m: out[tk] = m
+    log(f"  Metrics: {len(out)} tickers")
+    return out
+
+
 # Markets dashboard ranges
 MARKETS_RANGES = [
     {"key": "indices",    "row_from": 2,   "row_to": 18,  "label_col": 2, "ticker_col": 1},
@@ -584,12 +652,13 @@ def read_markets(xl: ExcelSession) -> dict:
         snap[grp["key"]] = rows
         log(f"  Markets/{grp['key']}: {len(rows)} rows")
 
+    # FX table sits in cols K (label) & L (value), not L/M.
     fx_3m, fx_12m = [], []
     for r in range(4, 9):
-        ccy = xl.cell("Dashboard", r, 12); v = _num(xl.cell("Dashboard", r, 13))
+        ccy = xl.cell("Dashboard", r, 11); v = _num(xl.cell("Dashboard", r, 12))
         if ccy and v is not None: fx_3m.append({"label": str(ccy), "value": v})
     for r in range(12, 17):
-        ccy = xl.cell("Dashboard", r, 12); v = _num(xl.cell("Dashboard", r, 13))
+        ccy = xl.cell("Dashboard", r, 11); v = _num(xl.cell("Dashboard", r, 12))
         if ccy and v is not None: fx_12m.append({"label": str(ccy), "value": v})
     snap["fx3M"] = fx_3m
     snap["fx12M"] = fx_12m
@@ -600,6 +669,22 @@ def read_markets(xl: ExcelSession) -> dict:
 # ----------------------------------------------------------------------
 # Merge helpers
 # ----------------------------------------------------------------------
+def merge_metrics(companies: list[dict], metrics: dict[str, dict]) -> int:
+    """Attach metrics dict to each matching company under `.metrics`.
+    Matches by any ticker on the company."""
+    n = 0
+    for c in companies:
+        all_tks = [(t.get("ticker") or "").upper() for t in (c.get("tickers") or [])]
+        if not all_tks and c.get("ticker"):
+            all_tks.append(c["ticker"].upper())
+        for tk in all_tks:
+            if tk in metrics:
+                c["metrics"] = metrics[tk]
+                n += 1
+                break
+    return n
+
+
 def merge_companies(companies, prices, valuations, earnings):
     n_p = n_v = n_e = 0
     for c in companies:
@@ -756,6 +841,7 @@ def main() -> int:
             perf_mtd   = read_performance1(xl)
             rep_hold   = read_rep_holdings(xl)
             markets    = read_markets(xl)
+            metrics    = read_metrics(xl)
     except Exception as e:
         log(f"FATAL during Excel session: {e}\n{traceback.format_exc()}")
         return 2
@@ -779,8 +865,9 @@ def main() -> int:
         if n_cleaned_co or n_cleaned_fx:
             log(f"  Cleaned legacy error values: {n_cleaned_co} company fields, {n_cleaned_fx} fx rates")
         n_p, n_v, n_e = merge_companies(cos, prices, valuations, earnings)
+        n_m = merge_metrics(cos, metrics)
         supa_put_companies(cos)
-        log(f"  Companies: prices+={n_p}, valuations+={n_v}, earnings+={n_e}")
+        log(f"  Companies: prices+={n_p}, valuations+={n_v}, earnings+={n_e}, metrics+={n_m}")
 
         # fxRates: merge fresh good values over the already-cleaned existing map
         existing_fx.update(fx)

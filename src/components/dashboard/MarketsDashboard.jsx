@@ -29,17 +29,27 @@ function fmtPct(v) {
   return (n >= 0 ? "+" : "") + n.toFixed(2) + "%";
 }
 
-/* Background color for a return cell. Saturation scales with magnitude. */
+/* Background color for a return cell. Saturation scales with magnitude
+ * over a 0-15% range so 1Y/3Y columns (which can hit 20-30%) still show
+ * meaningful differentiation against short-period moves. Above 15% we
+ * clamp but the visible alpha (0.50) is strong enough that most users
+ * perceive the scale as reasonable throughout. */
 function returnStyle(v) {
   if (v === null || v === undefined || isNaN(v)) return null;
   const n = v * 100;
-  if (Math.abs(n) < 0.05) return null; // ~flat
-  const mag = Math.min(Math.abs(n) / 5, 1); // 5%+ = full saturation
-  const alpha = 0.08 + mag * 0.27;
+  if (Math.abs(n) < 0.05) return null; // ~flat, no tint
+  const mag = Math.min(Math.abs(n) / 15, 1);
+  const alpha = 0.06 + mag * 0.44;     // 0.06 (barely visible) .. 0.50 (strong)
   if (n >= 0) {
-    return { background: `rgba(22,101,52,${alpha})`, color: n > 1 ? "#14532d" : undefined };
+    return {
+      background: `rgba(22,101,52,${alpha})`,
+      color: mag > 0.5 ? "#14532d" : undefined,
+    };
   }
-  return { background: `rgba(220,38,38,${alpha})`, color: n < -1 ? "#7f1d1d" : undefined };
+  return {
+    background: `rgba(220,38,38,${alpha})`,
+    color: mag > 0.5 ? "#7f1d1d" : undefined,
+  };
 }
 
 function ReturnCell({ value }) {
