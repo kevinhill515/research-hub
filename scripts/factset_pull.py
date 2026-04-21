@@ -381,6 +381,19 @@ class ExcelSession:
                 log(f"    Run '{host}'!{name} failed: {e}")
                 return False
 
+        # LoadPositions is written against ActiveSheet (uses Range("DATA_START")
+        # and Range("A4:I...").ClearContents on whatever sheet is active). When
+        # the user clicks the button manually, ActiveSheet is Rep Holdings;
+        # when Python calls via COM, ActiveSheet is whatever was last shown —
+        # usually the wrong sheet, causing a 1004. Explicitly activate the
+        # Rep Holdings sheet first so the macro resolves correctly.
+        try:
+            self.wb.Activate()
+            self.wb.Sheets("Rep Holdings").Activate()
+            log("  Activated Rep Holdings sheet for macro context")
+        except Exception as e:
+            log(f"  Could not activate Rep Holdings sheet: {e}")
+
         log("Running OpenConnection macro...")
         opened = run_macro("OpenConnection")
         if opened:
