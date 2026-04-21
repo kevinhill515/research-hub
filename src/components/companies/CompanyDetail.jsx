@@ -69,12 +69,22 @@ export function CompanyDetail(props){
         var currency=getCurrency(selCo.country);var pv=pendingVal||selCo.valuation||{};var activeCurrency=pv.currency||currency;
         var normEPS=calcNormEPS(pv);var eps=normEPS!==null?normEPS:parseFloat(pv.eps);
         var tp=calcTP(pv.pe,eps);var mos=calcMOS(tp,pv.price);var mosStyle=mosBg(mos);
-        /* Fixed (snapshot) EPS — user freezes the normalized EPS at portfolio-
-           decision time so the fixed TP/MOS don't drift as FactSet updates
-           eps1/eps2. Null if never set. */
-        var normEPSFixedNum=parseFloat(pv.normEPSFixed);
-        var hasFixed=!isNaN(normEPSFixedNum);
-        var tpFixed=hasFixed?calcTP(pv.pe,normEPSFixedNum):null;
+        /* Fixed TP — user enters the target price directly (via the
+           Valuation upload's last column or the input below). Stays put
+           as FactSet updates eps1/eps2, so it reflects the last portfolio-
+           decision TP. NormEPS Fixed is implied = TP Fixed / Target PE,
+           displayed for context only.
+           Legacy fallback: if only normEPSFixed is present (older data),
+           derive tpFixed from it. */
+        var tpFixedNum=parseFloat(pv.tpFixed);
+        if(isNaN(tpFixedNum)&&pv.normEPSFixed){
+          var legacyEps=parseFloat(pv.normEPSFixed);
+          var legacyPe=parseFloat(pv.pe);
+          if(!isNaN(legacyEps)&&!isNaN(legacyPe))tpFixedNum=Math.round(legacyPe*legacyEps*100)/100;
+        }
+        var tpFixed=isNaN(tpFixedNum)?null:tpFixedNum;
+        var peNum=parseFloat(pv.pe);
+        var impliedNormEPSFixed=(tpFixed!==null&&!isNaN(peNum)&&peNum>0)?tpFixed/peNum:null;
         var mosFixed=calcMOS(tpFixed,pv.price);
         var mosFixedStyle=mosBg(mosFixed);
         var hist=selCo.tpHistory||[];var portfolios=selCo.portfolios||[];var portWeights=selCo.portWeights||{};
@@ -303,9 +313,9 @@ export function CompanyDetail(props){
                     {mos!==null&&pv.price&&<div className="text-[11px] mt-0.5" style={{color:mosStyle?mosStyle.color:undefined}}>Price: {activeCurrency} {fmtPrice(pv.price)}</div>}
                   </div>
                   <div className="px-4 py-3.5 rounded-lg" style={{background:tpFixed!==null?"#ecfdf5":undefined,border:"1px solid "+(tpFixed!==null?"#a7f3d0":"#e2e8f0")}}>
-                    <div className="text-[11px] text-gray-500 dark:text-slate-400 mb-0.5">TP Fixed {pv.normEPSFixedDate?"("+pv.normEPSFixedDate+")":""}</div>
+                    <div className="text-[11px] text-gray-500 dark:text-slate-400 mb-0.5">TP Fixed {pv.tpFixedDate?"("+pv.tpFixedDate+")":(pv.normEPSFixedDate?"("+pv.normEPSFixedDate+")":"")}</div>
                     <div className="text-[22px] font-bold" style={{color:tpFixed!==null?"#047857":undefined}}>{tpFixed!==null?fmtTP(tpFixed,activeCurrency):"--"}</div>
-                    {tpFixed!==null&&<div className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">{pv.pe}x {"\u00D7"} {activeCurrency} {normEPSFixedNum.toFixed(2)}</div>}
+                    {tpFixed!==null&&impliedNormEPSFixed!==null&&<div className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">implied EPS: {activeCurrency} {impliedNormEPSFixed.toFixed(2)}</div>}
                   </div>
                   <div className="px-4 py-3.5 rounded-lg" style={{background:mosFixedStyle?mosFixedStyle.bg:undefined,border:"1px solid "+(mosFixedStyle?"transparent":"#e2e8f0")}}>
                     <div className="text-[11px] mb-0.5" style={{color:mosFixedStyle?mosFixedStyle.color:undefined}}>MOS Fixed</div>
@@ -313,33 +323,37 @@ export function CompanyDetail(props){
                     {mosFixed!==null&&pv.price&&<div className="text-[11px] mt-0.5" style={{color:mosFixedStyle?mosFixedStyle.color:undefined}}>Price: {activeCurrency} {fmtPrice(pv.price)}</div>}
                   </div>
                 </div>
-                {/* Snapshot controls for the fixed EPS */}
+                {/* Snapshot controls for the fixed TP. User enters TP Fixed
+                    directly (or imports it via the Valuation upload); the
+                    implied NormEPS = TP Fixed / Target P/E is shown on the
+                    tile above for context. "Snapshot current" copies the
+                    current (live, FactSet-derived) TP into TP Fixed. */}
                 <div className="flex items-center gap-2 mb-4 flex-wrap text-xs">
-                  <label className="text-gray-500 dark:text-slate-400">Fixed NormEPS:</label>
+                  <label className="text-gray-500 dark:text-slate-400">TP Fixed ({activeCurrency}):</label>
                   <input
                     type="number"
                     step="0.01"
-                    value={pv.normEPSFixed||""}
-                    onChange={function(e){setPendingVal(function(p){return Object.assign({},p,{normEPSFixed:e.target.value,normEPSFixedDate:todayStr()});});}}
-                    placeholder="e.g. 12.34"
+                    value={pv.tpFixed||""}
+                    onChange={function(e){setPendingVal(function(p){return Object.assign({},p,{tpFixed:e.target.value,tpFixedDate:todayStr()});});}}
+                    placeholder="e.g. 250.00"
                     className={INP + " w-28 !text-xs !px-2 !py-1"}
                   />
                   <button
                     type="button"
                     onClick={function(){
-                      if(eps===null||isNaN(eps))return;
-                      setPendingVal(function(p){return Object.assign({},p,{normEPSFixed:String(Math.round(eps*10000)/10000),normEPSFixedDate:todayStr()});});
+                      if(tp===null||isNaN(tp))return;
+                      setPendingVal(function(p){return Object.assign({},p,{tpFixed:String(tp),tpFixedDate:todayStr()});});
                     }}
-                    disabled={eps===null||isNaN(eps)}
+                    disabled={tp===null||isNaN(tp)}
                     className={BTN_SM + " disabled:opacity-50"}
-                    title="Copy the current (FactSet-derived) NormEPS into the Fixed field, stamped with today"
+                    title="Copy the current (live, FactSet-derived) TP into the Fixed field, stamped with today"
                   >
-                    {"\u2193"} Snapshot current ({eps&&eps.toFixed?eps.toFixed(2):"--"})
+                    {"\u2193"} Snapshot current TP ({tp!==null?fmtTP(tp,activeCurrency):"--"})
                   </button>
-                  {pv.normEPSFixed&&(
+                  {(pv.tpFixed||pv.normEPSFixed)&&(
                     <button
                       type="button"
-                      onClick={function(){setPendingVal(function(p){var n=Object.assign({},p);delete n.normEPSFixed;delete n.normEPSFixedDate;return n;});}}
+                      onClick={function(){setPendingVal(function(p){var n=Object.assign({},p);delete n.tpFixed;delete n.tpFixedDate;delete n.normEPSFixed;delete n.normEPSFixedDate;return n;});}}
                       className={LNK}
                     >Clear</button>
                   )}
