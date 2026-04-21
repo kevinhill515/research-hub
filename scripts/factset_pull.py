@@ -326,19 +326,50 @@ def _excel_serial_to_date(serial: float):
 
 
 def read_earnings_dates(xl: ExcelSession) -> dict[str, str]:
+    """Returns { upper_ticker: 'YYYY-MM-DD' }. FactSet's JULIAN() return
+    lands in Excel as a formatted date, which pywin32 gives us as a
+    pywintypes.datetime (has .year/.month/.day). Older workbooks might
+    serve it as a YYYYMMDD int or an Excel serial day number — handle all."""
     out: dict[str, str] = {}
     for r in range(2, MAX_COMPANY_ROW + 1):
         tk = xl.cell("Earnings Dates", r, 4)
         if not tk: continue
         tk = str(tk).strip().upper()
         raw = xl.cell("Earnings Dates", r, 5)
-        if isinstance(raw, (int, float)) and raw > 19000000:
-            n = int(raw)
-            y, m, d = n // 10000, (n // 100) % 100, n % 100
-            try: out[tk] = f"{y:04d}-{m:02d}-{d:02d}"
-            except Exception: pass
+        iso = _any_date_to_iso(raw)
+        if iso: out[tk] = iso
     log(f"  Earnings dates: {len(out)} tickers")
     return out
+
+
+def _any_date_to_iso(raw) -> str | None:
+    """Coerce an Excel cell value to ISO YYYY-MM-DD, or None."""
+    if raw is None or raw == "": return None
+    try:
+        # pywintypes.datetime / datetime.datetime
+        if hasattr(raw, "year") and hasattr(raw, "month") and hasattr(raw, "day"):
+            return f"{raw.year:04d}-{raw.month:02d}-{raw.day:02d}"
+        if isinstance(raw, (int, float)):
+            n = int(raw)
+            # YYYYMMDD integer (e.g. 20260505)
+            if 19000000 <= n <= 21001231:
+                y, m, d = n // 10000, (n // 100) % 100, n % 100
+                return f"{y:04d}-{m:02d}-{d:02d}"
+            # Excel serial day number (e.g. 46147 for 2026-05-05)
+            if 0 < n < 100000:
+                d = _excel_serial_to_date(n)
+                return f"{d.year:04d}-{d.month:02d}-{d.day:02d}"
+        if isinstance(raw, str) and raw and not raw.startswith("#"):
+            # Try parse common date strings
+            for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%-m/%-d/%Y"):
+                try:
+                    dt = datetime.strptime(raw, fmt)
+                    return f"{dt.year:04d}-{dt.month:02d}-{dt.day:02d}"
+                except ValueError:
+                    continue
+    except Exception:
+        pass
+    return None
 
 
 def read_fx(xl: ExcelSession) -> dict[str, float]:
