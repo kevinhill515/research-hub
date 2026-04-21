@@ -116,6 +116,61 @@ def supa_put_meta(key: str, value: Any) -> None:
 CALC_MANUAL    = -4135
 CALC_AUTOMATIC = -4105
 
+# Excel cell-error COM values returned by .Value when a cell has an error.
+# These are integers around -2.1 billion — never legitimate finance data.
+EXCEL_ERROR_MIN = -2146826300
+EXCEL_ERROR_MAX = -2146826200
+
+
+def _is_excel_error(v) -> bool:
+    """True if an Excel cell's value is a COM error (like #NAME?, #N/A).
+    These come back as negative integers near -2.15e9."""
+    return isinstance(v, int) and EXCEL_ERROR_MIN <= v <= EXCEL_ERROR_MAX
+
+
+def _enable_factset_addins(xl) -> None:
+    """Force-load any FactSet-related add-in into the current Excel instance.
+    DispatchEx starts fresh with no add-ins; without this, _xll.FDS returns
+    #NAME? for every cell."""
+    # Regular XLA/XLL add-ins
+    try:
+        n_installed = 0
+        matches = []
+        for addin in xl.AddIns:
+            try:
+                name = addin.Name or ""
+                title = getattr(addin, "Title", "") or ""
+                combined = (name + " " + title).upper()
+                is_factset = ("FACTSET" in combined or "FDS" in combined or combined.startswith("FDS"))
+                if is_factset:
+                    matches.append(name)
+                    if not addin.Installed:
+                        addin.Installed = True
+                        n_installed += 1
+            except Exception:
+                continue
+        log(f"  AddIns matching FactSet: {matches} (enabled: {n_installed})")
+    except Exception as e:
+        log(f"  AddIns iteration failed: {e}")
+
+    # COM add-ins (FactSet often ships as both types)
+    try:
+        n_connected = 0
+        com_matches = []
+        for com_addin in xl.COMAddIns:
+            try:
+                desc = (com_addin.Description or "") + " " + (com_addin.ProgID or "")
+                if "FACTSET" in desc.upper() or "FDS" in desc.upper():
+                    com_matches.append(com_addin.ProgID)
+                    if not com_addin.Connect:
+                        com_addin.Connect = True
+                        n_connected += 1
+            except Exception:
+                continue
+        log(f"  COMAddIns matching FactSet: {com_matches} (connected: {n_connected})")
+    except Exception as e:
+        log(f"  COMAddIns iteration failed: {e}")
+
 
 class ExcelSession:
     """Open Excel in manual-calc mode, open Master List + main workbook,
@@ -135,6 +190,14 @@ class ExcelSession:
         self.xl = win32com.client.DispatchEx("Excel.Application")
         self.xl.Visible = False
         self.xl.DisplayAlerts = False
+
+        # Load FactSet add-in into this isolated Excel instance. DispatchEx
+        # launches a fresh Excel with NO add-ins loaded, so _xll.FDS etc.
+        # would return #NAME? (Excel error -2146826259) for every cell.
+        # Iterate all registered AddIns + COMAddIns and enable any whose
+        # name mentions FactSet/FDS.
+        _enable_factset_addins(self.xl)
+
         # Excel refuses to set Application.Calculation until at least one
         # workbook exists. Add a blank throwaway workbook first, THEN set
         # manual calc, THEN open the real files so _xll.FDSLIVE cells
@@ -236,6 +299,7 @@ class ExcelSession:
 def _num(v) -> float | None:
     if v is None or v == "": return None
     if isinstance(v, str) and v.startswith("#"): return None
+    if _is_excel_error(v): return None   # guards against #NAME?/#N/A etc.
     try: return float(v)
     except (TypeError, ValueError): return None
 
@@ -574,6 +638,41 @@ def _new_uuid():
     return str(uuid.uuid4())
 
 
+def _looks_like_error_number(v) -> bool:
+    """Heuristic for previously-written Excel error codes that got
+    serialized to Supabase. Legitimate finance data never falls in
+    this range."""
+    try:
+        n = float(v)
+    except (TypeError, ValueError):
+        return False
+    return n < -1_000_000_000 or n > 1e12
+
+
+def clean_legacy_errors(companies: list[dict], fx_rates: dict) -> tuple[int, int]:
+    """Strip previously-written Excel error codes (#NAME? etc. that got
+    JSON-serialized as large negatives) from companies and fxRates.
+    Runs before merging fresh data so any field that doesn't get a new
+    good value ends up cleared rather than keeping junk."""
+    n_co = 0
+    for c in companies:
+        for t in (c.get("tickers") or []):
+            if _looks_like_error_number(t.get("price")):
+                t["price"] = None; n_co += 1
+            if _looks_like_error_number(t.get("perf5d")):
+                t["perf5d"] = None; n_co += 1
+        val = c.get("valuation") or {}
+        for k in list(val.keys()):
+            if _looks_like_error_number(val[k]):
+                del val[k]; n_co += 1
+    n_fx = 0
+    for ccy in list((fx_rates or {}).keys()):
+        r = fx_rates[ccy]
+        if _looks_like_error_number(r) or (isinstance(r, (int, float)) and (r <= 0 or r > 100_000)):
+            del fx_rates[ccy]; n_fx += 1
+    return n_co, n_fx
+
+
 # ----------------------------------------------------------------------
 # Main
 # ----------------------------------------------------------------------
@@ -604,17 +703,32 @@ def main() -> int:
         log(f"FATAL during Excel session: {e}\n{traceback.format_exc()}")
         return 2
 
+    # Sanity check: if the FactSet add-in didn't load, most prices/values
+    # would be None (we filter error codes), but still a few rows might
+    # have legitimate cached values. Abort if we got fewer than 50 prices —
+    # the workbook normally has 300+ companies, so <50 means the add-in
+    # broke. Saves your Supabase data from partial corruption.
+    if len(prices) < 50:
+        log(f"ABORTING: only {len(prices)} prices read — FactSet add-in likely not loaded.")
+        log("  Open the workbook manually in Excel to verify _xll.FDS cells calculate.")
+        log("  If they do, the issue is the isolated Excel instance our script creates.")
+        return 4
+
     log("Pushing to Supabase...")
     try:
         cos = supa_get_companies()
+        existing_fx = supa_get_meta("fxRates") or {}
+        n_cleaned_co, n_cleaned_fx = clean_legacy_errors(cos, existing_fx)
+        if n_cleaned_co or n_cleaned_fx:
+            log(f"  Cleaned legacy error values: {n_cleaned_co} company fields, {n_cleaned_fx} fx rates")
         n_p, n_v, n_e = merge_companies(cos, prices, valuations, earnings)
         supa_put_companies(cos)
         log(f"  Companies: prices+={n_p}, valuations+={n_v}, earnings+={n_e}")
 
+        # fxRates: merge fresh good values over the already-cleaned existing map
+        existing_fx.update(fx)
+        supa_put_meta("fxRates", existing_fx)
         if fx:
-            existing = supa_get_meta("fxRates") or {}
-            existing.update(fx)
-            supa_put_meta("fxRates", existing)
             supa_put_meta("fxLastUpdated",
                           datetime.now().strftime("%Y-%m-%d %H:%M") + " (FactSet auto)")
 
