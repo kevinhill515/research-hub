@@ -258,12 +258,19 @@ class ExcelSession:
         except Exception as e:
             log(f"  Could not set Calculation=Manual: {e}")
 
-        # Find or open Master List
-        self.master_wb = self._find_or_open(self.master_path, "master")
+        # Find Master List. First look for any open workbook whose filename
+        # starts with "Master List" — that's what the user has open, even
+        # if its full path differs from our config. Only fall back to
+        # opening our configured copy if none is already open.
+        self.master_wb = self._find_open_by_name(["master list"])
         if self.master_wb is not None:
-            log(f"  Master List: {'found open' if not self._we_opened_master else 'opened'} — {self.master_wb.Name}")
+            log(f"  Master List: found open — {self.master_wb.Name}  ({self.master_wb.FullName})")
         else:
-            log(f"  Master List unavailable — rep-holdings refresh will be skipped")
+            self.master_wb = self._find_or_open(self.master_path, "master")
+            if self.master_wb is not None:
+                log(f"  Master List: opened COPY — {self.master_wb.Name}  (macros may fail; real one isn't open)")
+            else:
+                log(f"  Master List unavailable — rep-holdings refresh will be skipped")
 
         # Find or open the main workbook
         self.wb = self._find_or_open(self.main_path, "main")
@@ -271,6 +278,20 @@ class ExcelSession:
             raise RuntimeError(f"Could not open main workbook at {self.main_path}")
         log(f"  Main workbook: {'found open' if not self._we_opened_main else 'opened'} — {self.wb.Name}")
         return self
+
+    def _find_open_by_name(self, name_prefixes: list):
+        """Return the first open Workbook whose filename (lowercased) starts
+        with any of the given prefixes. Used to find workbooks that are
+        already open regardless of what path we have configured."""
+        for wb in self.xl.Workbooks:
+            try:
+                n = (wb.Name or "").lower()
+                for pref in name_prefixes:
+                    if n.startswith(pref.lower()):
+                        return wb
+            except Exception:
+                continue
+        return None
 
     def _find_or_open(self, path: Path, which: str):
         """Return the Workbook object for `path`. If it's already open in
@@ -323,18 +344,19 @@ class ExcelSession:
             pass
 
     def _try_macro_refresh(self) -> None:
-        """Run Master List's OpenConnection → LoadPositions → CloseConnection.
-        Requires an attached user Excel session (Dispatch, not DispatchEx)
-        because the macros rely on interactive-UI state + persistent
-        connection handles that a headless Excel doesn't have."""
+        """Run Master List's OpenConnection → LoadPositions → CloseConnection
+        on the actually-attached Master List workbook (whatever its exact
+        filename is — "Master List.xlsm" or "Master List COPY.xlsm")."""
+        # Build macro host-name from the actual Master List workbook we
+        # attached to, so macros resolve against the right VBA project.
+        host = self.master_wb.Name if self.master_wb is not None else "Master List.xlsm"
         def run_macro(name: str) -> bool:
-            for host in ("Master List COPY.xlsm", "Master List.xlsm"):
-                try:
-                    self.xl.Run(f"'{host}'!{name}")
-                    return True
-                except Exception:
-                    continue
-            return False
+            try:
+                self.xl.Run(f"'{host}'!{name}")
+                return True
+            except Exception as e:
+                log(f"    Run '{host}'!{name} failed: {e}")
+                return False
 
         log("Running OpenConnection macro...")
         opened = run_macro("OpenConnection")
