@@ -131,45 +131,85 @@ def _is_excel_error(v) -> bool:
 def _enable_factset_addins(xl) -> None:
     """Force-load any FactSet-related add-in into the current Excel instance.
     DispatchEx starts fresh with no add-ins; without this, _xll.FDS returns
-    #NAME? for every cell."""
+    #NAME? for every cell.
+
+    For .XLL add-ins we use Application.RegisterXLL(path) which is the
+    correct loader; just setting `Installed = True` doesn't work for
+    compiled XLLs. We also try the standard .Installed = True and the COM
+    add-in Connect = True paths as belt-and-suspenders. """
     # Regular XLA/XLL add-ins
     try:
-        n_installed = 0
-        matches = []
+        registered_xlls = []
+        installed = []
+        errors = []
         for addin in xl.AddIns:
             try:
-                name = addin.Name or ""
-                title = getattr(addin, "Title", "") or ""
-                combined = (name + " " + title).upper()
-                is_factset = ("FACTSET" in combined or "FDS" in combined or combined.startswith("FDS"))
-                if is_factset:
-                    matches.append(name)
-                    if not addin.Installed:
+                name = (addin.Name or "").upper()
+                path = getattr(addin, "FullName", "") or getattr(addin, "Path", "") or ""
+                is_factset = ("FACTSET" in name or "FDS" in name or name.startswith("FDSXL"))
+                if not is_factset: continue
+
+                # For XLL compiled add-ins, RegisterXLL is the correct loader.
+                if name.endswith(".XLL") and path:
+                    try:
+                        ok = xl.RegisterXLL(path)
+                        registered_xlls.append((addin.Name, path, ok))
+                        continue
+                    except Exception as e:
+                        errors.append(f"RegisterXLL({addin.Name}): {e}")
+
+                # For .xla add-ins, Installed = True works.
+                if not addin.Installed:
+                    try:
                         addin.Installed = True
-                        n_installed += 1
-            except Exception:
-                continue
-        log(f"  AddIns matching FactSet: {matches} (enabled: {n_installed})")
+                        installed.append(addin.Name)
+                    except Exception as e:
+                        errors.append(f"Installed=True on {addin.Name}: {e}")
+            except Exception as e:
+                errors.append(f"addin iter: {e}")
+        log(f"  XLL registered: {registered_xlls}")
+        if installed: log(f"  XLA enabled: {installed}")
+        if errors: log(f"  add-in errors: {errors}")
     except Exception as e:
         log(f"  AddIns iteration failed: {e}")
 
-    # COM add-ins (FactSet often ships as both types)
+    # COM add-ins (FactSet also ships one: FactSet.OfficeAddin.1)
     try:
-        n_connected = 0
-        com_matches = []
+        com_connected = []
+        com_errors = []
         for com_addin in xl.COMAddIns:
             try:
-                desc = (com_addin.Description or "") + " " + (com_addin.ProgID or "")
-                if "FACTSET" in desc.upper() or "FDS" in desc.upper():
-                    com_matches.append(com_addin.ProgID)
+                desc = ((com_addin.Description or "") + " " + (com_addin.ProgID or "")).upper()
+                if "FACTSET" in desc or "FDS" in desc:
                     if not com_addin.Connect:
-                        com_addin.Connect = True
-                        n_connected += 1
+                        try:
+                            com_addin.Connect = True
+                            com_connected.append(com_addin.ProgID)
+                        except Exception as e:
+                            com_errors.append(f"Connect on {com_addin.ProgID}: {e}")
             except Exception:
                 continue
-        log(f"  COMAddIns matching FactSet: {com_matches} (connected: {n_connected})")
+        log(f"  COM add-ins connected: {com_connected}")
+        if com_errors: log(f"  COM add-in errors: {com_errors}")
     except Exception as e:
         log(f"  COMAddIns iteration failed: {e}")
+
+    # Self-test: can we evaluate _xll.FDS now?
+    try:
+        tmp_wb = xl.Workbooks.Add()
+        tmp_ws = tmp_wb.Sheets(1)
+        tmp_ws.Cells(1, 1).Formula = '=_xll.FDS("IBM-US","P_PRICE")'
+        xl.Calculate()
+        v = tmp_ws.Cells(1, 1).Value
+        if _is_excel_error(v):
+            log(f"  SELF-TEST FAILED: _xll.FDS returned error code {v} (#NAME? means add-in not loaded)")
+        elif v is None:
+            log("  SELF-TEST: _xll.FDS returned None (add-in may still be connecting)")
+        else:
+            log(f"  SELF-TEST OK: _xll.FDS('IBM-US','P_PRICE') = {v}")
+        tmp_wb.Close(SaveChanges=False)
+    except Exception as e:
+        log(f"  Self-test failed with exception: {e}")
 
 
 class ExcelSession:
