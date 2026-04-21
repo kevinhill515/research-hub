@@ -240,13 +240,36 @@ class ExcelSession:
     def __enter__(self):
         import win32com.client
         log("Attaching to running Excel instance...")
+        self.xl = None
+        # Try GetActiveObject first — cleanest way to attach to a running
+        # Excel. If that fails or the attached object is broken (zombie
+        # process from an earlier failed run), fall back to Dispatch which
+        # will either find a working one or launch a new one.
+        for attempt in (("GetActiveObject", lambda: win32com.client.GetActiveObject("Excel.Application")),
+                        ("Dispatch",        lambda: win32com.client.Dispatch("Excel.Application"))):
+            label, getter = attempt
+            try:
+                candidate = getter()
+                # Health-check: try to read Workbooks. A zombie Excel will
+                # raise AttributeError here even though the object exists.
+                _ = candidate.Workbooks.Count
+                self.xl = candidate
+                log(f"  Attached via {label}")
+                break
+            except Exception as e:
+                log(f"  {label} attach failed: {e}")
+                continue
+        if self.xl is None:
+            raise RuntimeError("Could not attach to any working Excel instance — "
+                               "kill any zombie EXCEL.EXE processes and make sure "
+                               "your normal Excel with Master List is running.")
+        # Only manage DisplayAlerts if we're clearly running in attached mode
+        # with workbooks already open (i.e. user's session). Don't touch
+        # Visible since the user's Excel is intentionally visible.
         try:
-            self.xl = win32com.client.GetActiveObject("Excel.Application")
+            self.xl.DisplayAlerts = False
         except Exception:
-            log("  No running Excel found — falling back to DispatchEx (new instance)")
-            log("  NOTE: rep-holdings macro will likely fail without an existing session.")
-            self.xl = win32com.client.DispatchEx("Excel.Application")
-            self.xl.Visible = False
+            pass
 
         # Don't touch Visible or DisplayAlerts on an attached user session —
         # they may have dialogs open we shouldn't suppress. But DO save and
