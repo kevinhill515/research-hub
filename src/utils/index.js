@@ -33,6 +33,12 @@ export function mkTheme(dark){return{dark,bg:dark?"#0f172a":"#ffffff",bgSec:dark
 export function getStatusRank(status){var r=STATUS_RANK[status||""];return(r!==undefined&&r!==null)?r:4;}
 export function getTierIndex(x){var ts=getTiers(x.tier),best=999;for(var j=0;j<ts.length;j++){var t=ts[j].trim();var idx=TIER_ORDER.indexOf(t);if(idx<0){for(var k=0;k<TIER_ORDER.length;k++){if(TIER_ORDER[k].toUpperCase()===t.toUpperCase()){idx=k;break;}}}if(idx>=0&&idx<best){best=idx;}}return best;}
 export function getCompanyMOS(c){var val=c.valuation||{};var eps=calcNormEPS(val)||parseFloat(val.eps);var tp=calcTP(val.pe,eps);return calcMOS(tp,val.price);}
+/* Fixed (user-frozen) TP. Reads tpFixed first; falls back to the legacy
+   normEPSFixed × PE shape if tpFixed isn't set. */
+export function getTpFixed(val){if(!val)return null;var t=parseFloat(val.tpFixed);if(!isNaN(t))return t;var eps=parseFloat(val.normEPSFixed);var pe=parseFloat(val.pe);if(!isNaN(eps)&&!isNaN(pe))return Math.round(pe*eps*100)/100;return null;}
+export function getCompanyMOSFixed(c){var val=c.valuation||{};var tp=getTpFixed(val);if(tp===null)return null;var ord=((c.tickers||[]).find(function(t){return t.isOrdinary;})||{});var price=ord.price||val.price;return calcMOS(tp,price);}
+/* Same as fmtMOS but rounded to 0 decimals — used in dense table cells. */
+export function fmtMOS0(mos){if(mos===null||mos===undefined)return null;var n=Math.round(mos);return(n>0?"+":"")+n+"%";}
 export function blankEarnings(){return{id:(typeof crypto!=="undefined"&&crypto.randomUUID)?crypto.randomUUID():(Date.now()+"-"+Math.random().toString(36).slice(2)),quarter:"",reportDate:"",eps:"",tpChange:"Unchanged",newTP:"",tpRationale:"",bullets:["","","","",""],shortTakeaway:"",extendedTakeaway:"",thesisStatus:"On track",thesisNote:"",open:true};}
 
 /* Rep-data entries are normalized to {shares, avgCost} via migrateRepData, but old numeric values may appear briefly during load. These helpers read either safely. */
@@ -144,6 +150,7 @@ export function sortCos(list,by,dir){
     if(by==="Tier"){var ta=getTierIndex(a),tb=getTierIndex(b);if(ta===999&&tb!==999)return 1;if(tb===999&&ta!==999)return -1;p=(ta-tb)*m;if(p!==0)return p;if(isWF(a)&&isWF(b)){var cp=(a.country||"").localeCompare(b.country||"");if(cp!==0)return cp;}var sd=getStatusRank(a.status)-getStatusRank(b.status);if(sd!==0)return sd;return al(a,b);}
     if(by==="Last Reviewed"){var hA=!!a.lastReviewed,hB=!!b.lastReviewed;if(!hA&&!hB)return al(a,b);if(!hA)return 1;if(!hB)return -1;var da=parseDate(a.lastReviewed),db=parseDate(b.lastReviewed);if(!da)return 1;if(!db)return -1;p=(db.getTime()-da.getTime())*m;if(p!==0)return p;return al(a,b);}
     if(by==="MOS"){var ma=getCompanyMOS(a),mb=getCompanyMOS(b);if(ma===null&&mb===null)return al(a,b);if(ma===null)return 1;if(mb===null)return -1;p=(ma-mb)*m;if(p!==0)return p;return al(a,b);}
+    if(by==="MOS Fixed"){var mfa=getCompanyMOSFixed(a),mfb=getCompanyMOSFixed(b);if(mfa===null&&mfb===null)return al(a,b);if(mfa===null)return 1;if(mfb===null)return -1;p=(mfa-mfb)*m;if(p!==0)return p;return al(a,b);}
     if(by==="5D%"){function getPerf(x){var ord=(x.tickers||[]).find(function(t){return t.isOrdinary;});if(!ord||!ord.perf5d||ord.perf5d==="#N/A")return null;var n=parseFloat(ord.perf5d);return isNaN(n)?null:n;}var pa=getPerf(a),pb=getPerf(b);if(pa===null&&pb===null)return al(a,b);if(pa===null)return 1;if(pb===null)return -1;p=(pa-pb)*m;if(p!==0)return p;return al(a,b);}
     if(by==="Last Updated"){var hUa=!!a.lastUpdated,hUb=!!b.lastUpdated;if(!hUa&&!hUb)return al(a,b);if(!hUa)return 1;if(!hUb)return -1;var dua=parseDate(a.lastUpdated),dub=parseDate(b.lastUpdated);if(!dua)return 1;if(!dub)return -1;p=(dub.getTime()-dua.getTime())*m;if(p!==0)return p;return al(a,b);}
     if(by==="Name")p=a.name.localeCompare(b.name)*m;

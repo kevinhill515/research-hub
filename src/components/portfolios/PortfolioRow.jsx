@@ -5,7 +5,7 @@
  * hooks, no context reads — easy to reason about, cheap to re-render. */
 
 import {
-  fmtPrice, fmtMOS, shortSector, sectorStyle, countryStyle, truncName,
+  fmtPrice, fmtMOS, fmtMOS0, shortSector, sectorStyle, countryStyle, truncName,
 } from "../../utils/index.js";
 import FpeRangeMini from "../ui/FpeRangeMini.jsx";
 
@@ -36,7 +36,7 @@ export default function PortfolioRow(props) {
 
   const c = company;
   const {
-    val, mos, mosStyle,
+    val, mos, mosStyle, mosFixed, mosFixedStyle,
     priceVal, avgCostVal, unrealVal,
     target, repWeight, diff,
     lastTx, monthsHeld, perf5d, nextReport, today,
@@ -232,6 +232,16 @@ export default function PortfolioRow(props) {
           ? <span className="text-[11px] px-1.5 py-0.5 rounded-full font-semibold"
                   style={{ background: mosStyle.bg, color: mosStyle.color }}>
               {fmtMOS(mos)}
+            </span>
+          : "--"}
+      </Cell>
+
+      {/* MOS Fixed */}
+      <Cell className="text-sm text-gray-900 dark:text-slate-100" style={cellStyle}>
+        {mosFixedStyle
+          ? <span className="text-[11px] px-1.5 py-0.5 rounded-full font-semibold"
+                  style={{ background: mosFixedStyle.bg, color: mosFixedStyle.color }}>
+              {fmtMOS0(mosFixed)}
             </span>
           : "--"}
       </Cell>

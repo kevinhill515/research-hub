@@ -14,6 +14,7 @@ export const COMPANY_COLUMNS = [
   { id: "Name",      label: "Name",      sort: "Name",          compact: true  },
   { id: "5D%",       label: "5D%",       sort: "5D%",           compact: true  },
   { id: "MOS",       label: "MOS",       sort: "MOS",           compact: true  },
+  { id: "MOS Fixed", label: "MOS Fixed", sort: "MOS Fixed",     compact: true  },
   { id: "FPE Range", label: "FPE Range", sort: null,            compact: true  },
   { id: "Country",   label: "Country",   sort: "Country",       compact: false },
   { id: "Sector",    label: "Sector",    sort: "Sector",        compact: false },

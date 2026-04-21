@@ -17,7 +17,7 @@ import { useCompanyContext } from "../../context/CompanyContext.jsx";
 import { PORT_NAMES } from "../../constants/index.js";
 import {
   calcNormEPS, calcTP, calcMOS, mosBg, repShares, repAvgCost,
-  getInitiatedDate, monthsSince, printPage,
+  getInitiatedDate, monthsSince, printPage, getTpFixed,
 } from "../../utils/index.js";
 import {
   buildTickerOwners, calcCompanyRepMV, calcTotalMV,
@@ -49,6 +49,15 @@ function getMosForCompany(c) {
   return calcMOS(tp, price);
 }
 
+function getMosFixedForCompany(c) {
+  const v = c.valuation || {};
+  const tp = getTpFixed(v);
+  if (tp === null) return null;
+  const ord = (c.tickers || []).find(function (t) { return t.isOrdinary; });
+  const price = (ord && parseFloat(ord.price)) || parseFloat(v.price);
+  return calcMOS(tp, price);
+}
+
 /* Build a sort comparator for a given (key, direction). Keeps nulls at
  * the bottom regardless of direction — matches existing behavior. */
 function makeComparator(sortKey, sortDir, ctx) {
@@ -68,6 +77,7 @@ function makeComparator(sortKey, sortDir, ctx) {
     country:    function (c) { return c.country || ""; },
     target:     function (c) { return parseFloat((c.portWeights || {})[portTab]) || 0; },
     mos:        getMosForCompany,
+    mosFixed:   getMosFixedForCompany,
     perf:       getPerf5d,
     nextReport: function (c) {
                   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -136,6 +146,8 @@ export function PortfoliosTable(props) {
       const ordTicker = (c.tickers || []).find(function (t) { return t.isOrdinary; });
       const ordPrice = ordTicker ? parseFloat(ordTicker.price) : parseFloat(val.price);
       const mos = calcMOS(tp, ordPrice);
+      const tpFixed = getTpFixed(val);
+      const mosFixedVal = tpFixed !== null ? calcMOS(tpFixed, ordPrice) : null;
 
       /* Price / avg cost / unrealized use the rep-held ticker if any,
          else fall back to the ordinary. */
@@ -174,6 +186,8 @@ export function PortfoliosTable(props) {
         val: val,
         mos: mos,
         mosStyle: mosBg(mos),
+        mosFixed: mosFixedVal,
+        mosFixedStyle: mosBg(mosFixedVal),
         /* Rep holdings */
         priceVal: priceVal,
         avgCostVal: avgCostVal,

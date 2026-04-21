@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { PORTFOLIOS, TIER_ORDER, COUNTRY_ORDER, SECTOR_ORDER } from '../../constants/index.js';
-import { shortSector, sectorStyle, countryStyle, getTiers, tierPillStyle, tierBg, reviewedColor, daysSince, todayStr, calcNormEPS, calcTP, calcMOS, fmtMOS, mosBg, tierToStatus, truncName } from '../../utils/index.js';
+import { shortSector, sectorStyle, countryStyle, getTiers, tierPillStyle, tierBg, reviewedColor, daysSince, todayStr, calcNormEPS, calcTP, calcMOS, fmtMOS, fmtMOS0, mosBg, getTpFixed, tierToStatus, truncName } from '../../utils/index.js';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import StatusPill from '../ui/StatusPill.jsx';
 import NotesCell from '../forms/NotesCell.jsx';
@@ -64,6 +64,11 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
   var tp = calcTP(val.pe, normEPS);
   var mos = calcMOS(tp, val.price);
   var mosStyle = mosBg(mos);
+  /* Fixed (user-frozen) TP/MOS — uses val.tpFixed if set, or falls back
+     to legacy normEPSFixed × pe. Null when neither is set. */
+  var tpFixedVal = getTpFixed(val);
+  var mosFixed = tpFixedVal !== null ? calcMOS(tpFixedVal, val.price) : null;
+  var mosFixedStyle = mosBg(mosFixed);
 
   var tdBase = compact
     ? "table-cell align-middle pr-1.5 py-0.5 whitespace-nowrap cursor-pointer transition-colors text-xs"
@@ -185,6 +190,19 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
           {mosStyle ? (
             <span title="Margin of Safety" className="text-[10px] px-1.5 rounded-full font-bold whitespace-nowrap" style={{ background: mosStyle.bg, color: mosStyle.color }}>
               {fmtMOS(mos)}
+            </span>
+          ) : (
+            <span className="text-xs text-gray-400 dark:text-slate-500">--</span>
+          )}
+        </div>
+      )}
+
+      {/* MOS Fixed */}
+      {show("MOS Fixed") && (
+        <div className={tdBase} style={rowBg ? { background: rowBg } : undefined}>
+          {mosFixedStyle ? (
+            <span title="MOS using fixed TP" className="text-[10px] px-1.5 rounded-full font-bold whitespace-nowrap" style={{ background: mosFixedStyle.bg, color: mosFixedStyle.color }}>
+              {fmtMOS0(mosFixed)}
             </span>
           ) : (
             <span className="text-xs text-gray-400 dark:text-slate-500">--</span>
