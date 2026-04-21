@@ -12,11 +12,11 @@
  * Row background tints follow the Tier-based coloring used in the
  * Standard view (light mode only, matching CoRow behavior). */
 
-import { useMemo, useRef, useState, useEffect } from 'react';
+import { useMemo, useState } from 'react';
 import { truncName, getTiers, tierBg, tierPillStyle } from '../../utils/index.js';
 import FpeRangeMini from '../ui/FpeRangeMini.jsx';
 
-const COLS = [
+export const METRICS_COLS = [
   /* key, label, kind, width, default-visible */
   { key: "__tier",     label: "Tier",       kind: "tier",     w: 72,  vis: true  },
   { key: "__name",     label: "Name",       kind: "name",     w: 170, vis: true  },
@@ -53,7 +53,7 @@ const COLS = [
   { key: "perf.1Y",    label: "1Y",         kind: "perf",     w: 60,  vis: true  },
 ];
 
-const DEFAULT_VISIBLE = new Set(COLS.filter(function (c) { return c.vis; }).map(function (c) { return c.key; }));
+export const DEFAULT_METRICS_VISIBLE = new Set(METRICS_COLS.filter(function (c) { return c.vis; }).map(function (c) { return c.key; }));
 
 function getCellValue(company, key) {
   const m = company.metrics || {};
@@ -107,21 +107,13 @@ function TierCell({ tier }) {
   );
 }
 
-export default function MetricsTable({ companies, search, onSelectCompany, dark }) {
+export default function MetricsTable({ companies, search, onSelectCompany, dark, visible }) {
   /* null sortKey = use parent-supplied order (Standard sort). */
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState(null);
-  const [visible, setVisible] = useState(DEFAULT_VISIBLE);
-  const [showColPicker, setShowColPicker] = useState(false);
-  const pickerRef = useRef();
-
-  /* Close picker on outside-click */
-  useEffect(function () {
-    if (!showColPicker) return;
-    function h(e) { if (pickerRef.current && !pickerRef.current.contains(e.target)) setShowColPicker(false); }
-    document.addEventListener("mousedown", h);
-    return function () { document.removeEventListener("mousedown", h); };
-  }, [showColPicker]);
+  /* Visibility is controlled by the parent (unified Columns picker in
+     App.jsx). Fall back to the default set if not provided. */
+  const effectiveVisible = visible || DEFAULT_METRICS_VISIBLE;
 
   const filtered = useMemo(function () {
     if (!search) return companies;
@@ -153,7 +145,7 @@ export default function MetricsTable({ companies, search, onSelectCompany, dark 
   }, [filtered, sortKey, sortDir]);
 
   function handleHeaderClick(key) {
-    const col = COLS.find(function (c) { return c.key === key; });
+    const col = METRICS_COLS.find(function (c) { return c.key === key; });
     if (!col) return;
     if (col.kind === "fperange" || col.key === "__tier") return; /* not sortable */
     /* First click: default direction. Numeric cols -> desc, text -> asc. */
@@ -168,58 +160,13 @@ export default function MetricsTable({ companies, search, onSelectCompany, dark 
     }
   }
 
-  const visibleCols = COLS.filter(function (c) { return visible.has(c.key); });
+  const visibleCols = METRICS_COLS.filter(function (c) { return effectiveVisible.has(c.key); });
   const hasMetrics = rendered.filter(function (c) { return c.metrics; }).length;
 
   return (
     <div>
-      {/* Header controls */}
-      <div className="flex items-center gap-2 mb-2 flex-wrap">
-        <div className="text-xs text-gray-500 dark:text-slate-400">
-          {hasMetrics} of {rendered.length} companies have metrics data.
-        </div>
-        <div className="relative ml-auto" ref={pickerRef}>
-          <button
-            type="button"
-            onClick={function () { setShowColPicker(function (s) { return !s; }); }}
-            className="text-xs px-2.5 py-1 font-medium rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-          >
-            Columns ({visibleCols.length})
-          </button>
-          {showColPicker && (
-            <div className="absolute top-full right-0 mt-1 z-30 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md p-2 shadow-lg min-w-[220px] max-h-[60vh] overflow-y-auto">
-              <div className="flex justify-between mb-1.5 pb-1.5 border-b border-slate-200 dark:border-slate-700">
-                <button type="button" onClick={function () { setVisible(DEFAULT_VISIBLE); }}
-                        className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline">Defaults</button>
-                <button type="button" onClick={function () { setVisible(new Set(COLS.map(function (c) { return c.key; }))); }}
-                        className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline">All</button>
-              </div>
-              {COLS.map(function (c) {
-                const on = visible.has(c.key);
-                return (
-                  <div key={c.key}
-                       onClick={function () {
-                         setVisible(function (prev) {
-                           const n = new Set(prev);
-                           on ? n.delete(c.key) : n.add(c.key);
-                           return n;
-                         });
-                       }}
-                       className="flex items-center gap-2 py-1 cursor-pointer text-xs text-gray-900 dark:text-slate-100">
-                    <div className="w-3.5 h-3.5 rounded-[3px] shrink-0"
-                         style={{
-                           border: "1px solid " + (on ? "#3b82f6" : "#cbd5e1"),
-                           background: on ? "#3b82f6" : undefined,
-                         }}>
-                      {on && <svg viewBox="0 0 14 14" className="w-3.5 h-3.5 fill-white"><path d="M5.5 10L2 6.5l1-1L5.5 8l5.5-5.5 1 1z"/></svg>}
-                    </div>
-                    {c.label}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+      <div className="text-xs text-gray-500 dark:text-slate-400 mb-2">
+        {hasMetrics} of {rendered.length} companies have metrics data.
       </div>
 
       {/* Table — NO overflow wrapper: thead uses position: sticky against

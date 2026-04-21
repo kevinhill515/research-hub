@@ -10,7 +10,7 @@ import { EarningsCalendar } from './components/calendar/index.js';
 import { useCompanyContext } from './context/CompanyContext.jsx';
 import { ErrorBoundary } from './components/ErrorBoundary.jsx';
 import MarketsDashboard from './components/dashboard/MarketsDashboard.jsx';
-import MetricsTable from './components/tables/MetricsTable.jsx';
+import MetricsTable, { METRICS_COLS, DEFAULT_METRICS_VISIBLE } from './components/tables/MetricsTable.jsx';
 import { useCompanies, useSynthesis, useLibrary, useRecall, useImport } from './hooks/index.js';
 import { PortfoliosTable } from './components/portfolios/PortfoliosTable.jsx';
 import { OverlapTable } from './components/portfolios/OverlapTable.jsx';
@@ -59,6 +59,7 @@ export default function App(){
   const [dashPort,setDashPort]=useState("All");
   const [dashSubTab,setDashSubTab]=useState("markets");
   const [companiesView,setCompaniesView]=useState("standard"); /* "standard" | "metrics" */
+  const [metricsVisibleCols,setMetricsVisibleCols]=useState(DEFAULT_METRICS_VISIBLE);
   const [calFilter,setCalFilter]=useState("All");
   const [showDiscussions,setShowDiscussions]=useState(false);
   const [discussionScope,setDiscussionScope]=useState({scope:null,portfolio:null,companyId:null});
@@ -105,7 +106,7 @@ export default function App(){
   /* Header row derived from the single column schema in companyColumns.js,
      filtered by which columns the user has toggled visible. */
   var HEADER_COLS=COMPANY_COLUMNS.filter(function(c){return visibleCols.has(c.id);}).map(function(c){return{label:c.label,sort:c.sort};});
-  var coTabs=[...TEMPLATE_SECTIONS.map(function(s){return{id:"section:"+s,label:s};}),{id:"earnings",label:"Earnings & Thesis Check"},{id:"template",label:"Template"},
+  var coTabs=[...TEMPLATE_SECTIONS.map(function(s){return{id:"section:"+s,label:s};}),{id:"earnings",label:"Earnings & Thesis Check"},{id:"metrics",label:"Metrics"},{id:"template",label:"Template"},
     {id:"weights",label:"Weights"+((selCo&&selCo.portWeightHistory&&selCo.portWeightHistory.length>0)?" ("+selCo.portWeightHistory.length+")":"")},
     {id:"transactions",label:"Transactions"+((selCo&&selCo.transactions&&selCo.transactions.length>0)?" ("+selCo.transactions.length+")":"")},
     {id:"linked",label:"Linked"+(linkedEntries.length>0?" ("+linkedEntries.length+")":"")},{id:"upload",label:"Upload"},{id:"history",label:"Log"+((selCo&&selCo.updateLog&&selCo.updateLog.length>0)?" ("+selCo.updateLog.length+")":"")}];
@@ -179,7 +180,19 @@ export default function App(){
               {["All"].concat(subOpts).map(function(so){var a=coStatusSubFilter===so;return <span key={so} onClick={function(){setCoStatusSubFilter(so);}} className={"text-[10px] px-2 py-0.5 rounded-full cursor-pointer transition-colors "+(a?"font-semibold":"font-normal")} style={{border:"1px solid "+(a&&cfg?cfg.color:"transparent"),background:a&&cfg?cfg.bg:"transparent",color:a&&cfg?cfg.color:undefined}}>{so}</span>;})}
             </span>;
           })()}
-          <div className="ml-auto relative"><button onClick={function(){setShowColPicker(function(s){return !s;});}} className={BTN}>Columns {"\u25BE"}</button>{showColPicker&&<div className="absolute right-0 top-[calc(100%+4px)] z-[100] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3.5 py-2.5 shadow-lg min-w-[160px]">{ALL_COLS.map(function(col){var on=visibleCols.has(col);return(<div key={col} onClick={function(){setVisibleCols(function(prev){var n=new Set(prev);on?n.delete(col):n.add(col);return n;});}} className="flex items-center gap-2 py-1 cursor-pointer text-xs text-gray-900 dark:text-slate-100"><div className="w-3.5 h-3.5 rounded-[3px] shrink-0" style={{border:"1px solid "+(on?"#3b82f6":"#cbd5e1"),background:on?"#dbeafe":"transparent"}}/>{col}</div>);})}</div>}</div>
+          <div className="ml-auto relative"><button onClick={function(){setShowColPicker(function(s){return !s;});}} className={BTN}>Columns {"\u25BE"}</button>{showColPicker&&(companiesView==="metrics"?(
+  /* Metrics picker — full list from MetricsTable's column schema. */
+  <div className="absolute right-0 top-[calc(100%+4px)] z-[100] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3.5 py-2.5 shadow-lg min-w-[200px] max-h-[65vh] overflow-y-auto">
+    <div className="flex justify-between mb-1.5 pb-1.5 border-b border-slate-200 dark:border-slate-700">
+      <button type="button" onClick={function(){setMetricsVisibleCols(DEFAULT_METRICS_VISIBLE);}} className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline">Defaults</button>
+      <button type="button" onClick={function(){setMetricsVisibleCols(new Set(METRICS_COLS.map(function(c){return c.key;})));}} className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline">All</button>
+    </div>
+    {METRICS_COLS.map(function(col){var on=metricsVisibleCols.has(col.key);return(<div key={col.key} onClick={function(){setMetricsVisibleCols(function(prev){var n=new Set(prev);on?n.delete(col.key):n.add(col.key);return n;});}} className="flex items-center gap-2 py-1 cursor-pointer text-xs text-gray-900 dark:text-slate-100"><div className="w-3.5 h-3.5 rounded-[3px] shrink-0" style={{border:"1px solid "+(on?"#3b82f6":"#cbd5e1"),background:on?"#dbeafe":"transparent"}}/>{col.label}</div>);})}
+  </div>
+):(
+  /* Standard picker. */
+  <div className="absolute right-0 top-[calc(100%+4px)] z-[100] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3.5 py-2.5 shadow-lg min-w-[160px]">{ALL_COLS.map(function(col){var on=visibleCols.has(col);return(<div key={col} onClick={function(){setVisibleCols(function(prev){var n=new Set(prev);on?n.delete(col):n.add(col);return n;});}} className="flex items-center gap-2 py-1 cursor-pointer text-xs text-gray-900 dark:text-slate-100"><div className="w-3.5 h-3.5 rounded-[3px] shrink-0" style={{border:"1px solid "+(on?"#3b82f6":"#cbd5e1"),background:on?"#dbeafe":"transparent"}}/>{col}</div>);})}</div>
+))}</div>
         </div>
         {selectedIds.size>0&&(<div className="rounded-lg mb-2 flex gap-2 items-center flex-wrap px-3.5 py-3" style={{background:"#dbeafe",border:"1px solid #93c5fd"}}><span className="text-xs font-medium" style={{color:"#1e40af"}}>{selectedIds.size} selected</span><select value={bulkStatus} onChange={function(e){setBulkStatus(e.target.value);}} className={INP + " !text-xs !px-2 !py-0.5"}><option value="">Set status{"\u2026"}</option><option>Own</option><option>Focus</option><option>Watch</option><option>Sold</option></select><select value={bulkTier} onChange={function(e){setBulkTier(e.target.value);}} className={INP + " !text-xs !px-2 !py-0.5"}><option value="">Set tier{"\u2026"}</option>{TIER_ORDER.map(function(t){return <option key={t}>{t}</option>;})}</select><button onClick={applyBulkEdit} disabled={!bulkStatus&&!bulkTier} className={BTN_SM}>Apply</button><span onClick={clearSelected} className="text-xs cursor-pointer" style={{color:"#1e40af"}}>Clear</span><span onClick={selectAll} className="text-xs cursor-pointer" style={{color:"#1e40af"}}>Select all ({displayedCos.length})</span></div>)}
         <div className="flex gap-1.5 flex-wrap mb-2.5 justify-end items-center">
@@ -210,7 +223,7 @@ export default function App(){
           {[["standard","Standard"],["metrics","Metrics"]].map(function(v){var active=companiesView===v[0];return <button key={v[0]} onClick={function(){setCompaniesView(v[0]);}} className={"text-xs px-3 py-1 rounded-md cursor-pointer transition-colors "+(active?"bg-blue-700 text-white font-semibold":"bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-gray-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800")}>{v[1]}</button>;})}
         </div>)}
         {companies.length===0?<p className="text-sm text-gray-500 dark:text-slate-400">No companies yet.</p>:(companiesView==="metrics"?(
-          <MetricsTable companies={displayedCos} search={coSearch} dark={dark} onSelectCompany={function(c){setSelCo(c);setCoView("section:Valuation");}}/>
+          <MetricsTable companies={displayedCos} search={coSearch} dark={dark} visible={metricsVisibleCols} onSelectCompany={function(c){setSelCo(c);setCoView("section:Valuation");}}/>
         ):(
           <div style={{display:"table",width:"100%",borderCollapse:"separate",borderSpacing:"0 2px"}}>
             <div style={{display:"table-row"}} className="print-thead">

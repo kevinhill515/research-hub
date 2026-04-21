@@ -347,7 +347,7 @@ export function CompanyDetail(props){
                       </div>
                     );
                   })()}
-                 {(pv.peCurrent||pv.peLow5||pv.peHigh5||pv.peAvg5||pv.peMed5||true)&&<div className="flex gap-2 mb-4 flex-wrap">{[["Current",pv.peCurrent],["5Yr Low",pv.peLow5],["5Yr High",pv.peHigh5],["5Yr Avg",pv.peAvg5],["5Yr Median",pv.peMed5]].map(function(item){return item[1]?(<div key={item[0]} className="px-3.5 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 min-w-[80px]"><div className="text-[10px] text-gray-500 dark:text-slate-400 mb-0.5">{item[0]} {item[0]==="Current"?"FPE":"P/E"}</div><div className="text-base font-semibold text-gray-900 dark:text-slate-100">{item[1]}x</div></div>):null;})}</div>}
+                 {(pv.peCurrent||pv.peLow5||pv.peHigh5||pv.peAvg5||pv.peMed5||true)&&<div className="flex gap-2 mb-4 flex-wrap">{[["Current",pv.peCurrent],["5Yr Low",pv.peLow5],["5Yr High",pv.peHigh5],["5Yr Avg",pv.peAvg5],["5Yr Median",pv.peMed5]].map(function(item){return item[1]?(<div key={item[0]} className="px-3.5 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 min-w-[80px]"><div className="text-[10px] text-gray-500 dark:text-slate-400 mb-0.5">{item[0]} {item[0]==="Current"?"FPE":"P/E"}</div><div className="text-base font-semibold text-gray-900 dark:text-slate-100">{(function(){var n=parseFloat(item[1]);return isNaN(n)?item[1]:n.toFixed(1);})()}x</div></div>):null;})}</div>}
                 {/* 2. Price, P/E, currency, FY month */}
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-3 mb-4">
                   <div><label className={LABEL}>Current Price ({activeCurrency})</label><input type="number" step="0.01" value={pv.price||""} onChange={function(e){setPendingVal(function(p){return Object.assign({},p,{price:e.target.value});});}} placeholder="e.g. 45.20" className={INP + " w-full box-border"}/></div>
@@ -398,6 +398,74 @@ export function CompanyDetail(props){
               </div>)}
               <SectionEditTab title={sectionName} content={selCo.sections&&selCo.sections[sectionName]} onSave={function(newContent){var ns=Object.assign({},selCo.sections,{[sectionName]:newContent});var u=Object.assign({},selCo,{sections:ns,lastUpdated:todayStr()});setSelCo(u);setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});});}}/>
             </div>);
+          }())}
+
+          {/* METRICS TAB — displays everything under selCo.metrics in a
+              grouped layout. Read-only; populated by the daily FactSet
+              script or via the Data Hub Metrics upload. */}
+          {coView==="metrics"&&(function(){
+            var m=selCo.metrics||{};
+            var has=Object.keys(m).length>0;
+            if(!has){
+              return (
+                <div className="text-sm text-gray-500 dark:text-slate-400 italic py-6">
+                  No metrics data yet. The daily FactSet job (7:20 AM weekdays) or the Data Hub → Metrics upload populates this view.
+                </div>
+              );
+            }
+            function fmtPct(v){var n=parseFloat(v);return isNaN(n)?"--":(n*100).toFixed(1)+"%";}
+            function fmtX(v){var n=parseFloat(v);return isNaN(n)?"--":n.toFixed(1)+"x";}
+            function fmtRatio(v){var n=parseFloat(v);return isNaN(n)?"--":n.toFixed(2);}
+            function fmtBn(v){var n=parseFloat(v);return isNaN(n)?"--":"$"+n.toFixed(1)+"B";}
+            function fmtPerf(v){var n=parseFloat(v);if(isNaN(n))return"--";var s=(n*100).toFixed(1);return(n>=0?"+":"")+s+"%";}
+            function perfColor(v){var n=parseFloat(v);if(isNaN(n))return undefined;return n>=0?"#166534":"#dc2626";}
+            var GROUPS=[
+              {title:"Size", items:[["MktCap (USD)",m.mktCap,fmtBn]]},
+              {title:"Valuation",items:[["P/E +1",m.fpe1,fmtX],["P/E +2",m.fpe2,fmtX],["FCF Yld +1",m.fcfYld1,fmtPct],["FCF Yld +2",m.fcfYld2,fmtPct],["Div Yld +1",m.divYld1,fmtPct],["Div Yld +2",m.divYld2,fmtPct],["Payout +1",m.payout1,fmtPct],["Payout +2",m.payout2,fmtPct]]},
+              {title:"Leverage",items:[["Net D/E +1",m.netDE1,fmtPct],["Net D/E +2",m.netDE2,fmtPct],["Int Cov",m.intCov,fmtRatio]]},
+              {title:"Growth",  items:[["LT EPS Growth",m.ltEPS,fmtPct]]},
+              {title:"Margins", items:[["Gross Mgn +1",m.grMgn1,fmtPct],["Gross Mgn +2",m.grMgn2,fmtPct],["Net Mgn +1",m.netMgn1,fmtPct],["Net Mgn +2",m.netMgn2,fmtPct]]},
+              {title:"Returns on Assets / Equity",items:[["GP / Assets +1",m.gpAss1,fmtPct],["GP / Assets +2",m.gpAss2,fmtPct],["NP / Assets +1",m.npAss1,fmtPct],["NP / Assets +2",m.npAss2,fmtPct],["Op ROE +1",m.opROE1,fmtPct],["Op ROE +2",m.opROE2,fmtPct]]},
+            ];
+            var perf=m.perf||{};
+            var PERF_ITEMS=[["MTD",perf.MTD],["QTD",perf.QTD],["3M",perf["3M"]],["6M",perf["6M"]],["YTD",perf.YTD],["1Y",perf["1Y"]]];
+            return (
+              <div className="mb-6">
+                <div className="text-[11px] text-gray-500 dark:text-slate-400 mb-3 italic">Auto-updated daily from FactSet. Read-only.</div>
+                {GROUPS.map(function(g){
+                  return (
+                    <div key={g.title} className="mb-4">
+                      <div className={SECTION_LABEL}>{g.title}</div>
+                      <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2">
+                        {g.items.map(function(it){
+                          var key=it[0], val=it[1], fmter=it[2];
+                          return (
+                            <div key={key} className="px-3 py-2 rounded-md bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                              <div className="text-[10px] text-gray-500 dark:text-slate-400 mb-0.5 whitespace-nowrap">{key}</div>
+                              <div className="text-sm font-semibold text-gray-900 dark:text-slate-100 font-mono">{fmter(val)}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+                <div className="mb-2">
+                  <div className={SECTION_LABEL}>Trailing Performance</div>
+                  <div className="grid grid-cols-[repeat(auto-fill,minmax(110px,1fr))] gap-2">
+                    {PERF_ITEMS.map(function(it){
+                      var key=it[0], val=it[1];
+                      return (
+                        <div key={key} className="px-3 py-2 rounded-md bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                          <div className="text-[10px] text-gray-500 dark:text-slate-400 mb-0.5">{key}</div>
+                          <div className="text-sm font-semibold font-mono" style={{color:perfColor(val)}}>{fmtPerf(val)}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            );
           }())}
 
           {/* EARNINGS & THESIS CHECK TAB */}
