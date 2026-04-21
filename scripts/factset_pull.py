@@ -127,6 +127,7 @@ class ExcelSession:
         self.xl = None
         self.master_wb = None
         self.wb = None
+        self._scratch_wb = None
 
     def __enter__(self):
         import win32com.client
@@ -134,8 +135,11 @@ class ExcelSession:
         self.xl = win32com.client.DispatchEx("Excel.Application")
         self.xl.Visible = False
         self.xl.DisplayAlerts = False
-        # CRITICAL: manual calc before opening anything, so _xll.FDSLIVE
-        # cells don't fire during Workbooks.Open().
+        # Excel refuses to set Application.Calculation until at least one
+        # workbook exists. Add a blank throwaway workbook first, THEN set
+        # manual calc, THEN open the real files so _xll.FDSLIVE cells
+        # don't auto-fire on open.
+        self._scratch_wb = self.xl.Workbooks.Add()
         self.xl.Calculation = CALC_MANUAL
         self.xl.ScreenUpdating = False
 
@@ -214,13 +218,16 @@ class ExcelSession:
             if self.master_wb is not None: self.master_wb.Close(SaveChanges=False)
         except Exception as e: log(f"Close master: {e}")
         try:
+            if self._scratch_wb is not None: self._scratch_wb.Close(SaveChanges=False)
+        except Exception as e: log(f"Close scratch: {e}")
+        try:
             if self.xl is not None:
                 # restore auto-calc before quitting (doesn't really matter but clean)
                 try: self.xl.Calculation = CALC_AUTOMATIC
                 except Exception: pass
                 self.xl.Quit()
         except Exception as e: log(f"Quit: {e}")
-        self.wb = self.master_wb = self.xl = None
+        self.wb = self.master_wb = self._scratch_wb = self.xl = None
 
 
 # ----------------------------------------------------------------------
