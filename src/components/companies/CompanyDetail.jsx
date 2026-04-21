@@ -69,6 +69,14 @@ export function CompanyDetail(props){
         var currency=getCurrency(selCo.country);var pv=pendingVal||selCo.valuation||{};var activeCurrency=pv.currency||currency;
         var normEPS=calcNormEPS(pv);var eps=normEPS!==null?normEPS:parseFloat(pv.eps);
         var tp=calcTP(pv.pe,eps);var mos=calcMOS(tp,pv.price);var mosStyle=mosBg(mos);
+        /* Fixed (snapshot) EPS — user freezes the normalized EPS at portfolio-
+           decision time so the fixed TP/MOS don't drift as FactSet updates
+           eps1/eps2. Null if never set. */
+        var normEPSFixedNum=parseFloat(pv.normEPSFixed);
+        var hasFixed=!isNaN(normEPSFixedNum);
+        var tpFixed=hasFixed?calcTP(pv.pe,normEPSFixedNum):null;
+        var mosFixed=calcMOS(tpFixed,pv.price);
+        var mosFixedStyle=mosBg(mosFixed);
         var hist=selCo.tpHistory||[];var portfolios=selCo.portfolios||[];var portWeights=selCo.portWeights||{};
         var earningsEntries=selCo.earningsEntries||[];
         return(<div>
@@ -281,18 +289,61 @@ export function CompanyDetail(props){
                   )}
                 </div>
 
-                {/* 1. TP and MOS display */}
-                <div className="grid grid-cols-2 gap-3 mb-4">
+                {/* 1. TP and MOS display — 2x2 grid: live (FactSet-driven) on
+                      top row, fixed (snapshot EPS) on bottom row. */}
+                <div className="grid grid-cols-2 gap-3 mb-3">
                   <div className="px-4 py-3.5 rounded-lg" style={{background:tp!==null?"#dcfce7":undefined,border:"1px solid "+(tp!==null?"#86efac":"#e2e8f0")}}>
-                    <div className="text-[11px] text-gray-500 dark:text-slate-400 mb-0.5">Target Price{impliedFYLabel(pv)?" ("+impliedFYLabel(pv)+")":""}</div>
+                    <div className="text-[11px] text-gray-500 dark:text-slate-400 mb-0.5">TP Live{impliedFYLabel(pv)?" ("+impliedFYLabel(pv)+")":""}</div>
                     <div className="text-[22px] font-bold" style={{color:tp!==null?"#166534":undefined}}>{fmtTP(tp,activeCurrency)}</div>
-                    {tp!==null&&<div className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">{pv.pe}x {"\u00D7"} {activeCurrency} {eps&&eps.toFixed?eps.toFixed(4):eps}</div>}
+                    {tp!==null&&<div className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">{pv.pe}x {"\u00D7"} {activeCurrency} {eps&&eps.toFixed?eps.toFixed(2):eps}</div>}
                   </div>
                   <div className="px-4 py-3.5 rounded-lg" style={{background:mosStyle?mosStyle.bg:undefined,border:"1px solid "+(mosStyle?"transparent":"#e2e8f0")}}>
-                    <div className="text-[11px] mb-0.5" style={{color:mosStyle?mosStyle.color:undefined}}>Margin of Safety</div>
+                    <div className="text-[11px] mb-0.5" style={{color:mosStyle?mosStyle.color:undefined}}>MOS Live</div>
                     <div className="text-[22px] font-bold" style={{color:mosStyle?mosStyle.color:undefined}}>{mos!==null?fmtMOS(mos):"--"}</div>
                     {mos!==null&&pv.price&&<div className="text-[11px] mt-0.5" style={{color:mosStyle?mosStyle.color:undefined}}>Price: {activeCurrency} {fmtPrice(pv.price)}</div>}
                   </div>
+                  <div className="px-4 py-3.5 rounded-lg" style={{background:tpFixed!==null?"#ecfdf5":undefined,border:"1px solid "+(tpFixed!==null?"#a7f3d0":"#e2e8f0")}}>
+                    <div className="text-[11px] text-gray-500 dark:text-slate-400 mb-0.5">TP Fixed {pv.normEPSFixedDate?"("+pv.normEPSFixedDate+")":""}</div>
+                    <div className="text-[22px] font-bold" style={{color:tpFixed!==null?"#047857":undefined}}>{tpFixed!==null?fmtTP(tpFixed,activeCurrency):"--"}</div>
+                    {tpFixed!==null&&<div className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">{pv.pe}x {"\u00D7"} {activeCurrency} {normEPSFixedNum.toFixed(2)}</div>}
+                  </div>
+                  <div className="px-4 py-3.5 rounded-lg" style={{background:mosFixedStyle?mosFixedStyle.bg:undefined,border:"1px solid "+(mosFixedStyle?"transparent":"#e2e8f0")}}>
+                    <div className="text-[11px] mb-0.5" style={{color:mosFixedStyle?mosFixedStyle.color:undefined}}>MOS Fixed</div>
+                    <div className="text-[22px] font-bold" style={{color:mosFixedStyle?mosFixedStyle.color:undefined}}>{mosFixed!==null?fmtMOS(mosFixed):"--"}</div>
+                    {mosFixed!==null&&pv.price&&<div className="text-[11px] mt-0.5" style={{color:mosFixedStyle?mosFixedStyle.color:undefined}}>Price: {activeCurrency} {fmtPrice(pv.price)}</div>}
+                  </div>
+                </div>
+                {/* Snapshot controls for the fixed EPS */}
+                <div className="flex items-center gap-2 mb-4 flex-wrap text-xs">
+                  <label className="text-gray-500 dark:text-slate-400">Fixed NormEPS:</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={pv.normEPSFixed||""}
+                    onChange={function(e){setPendingVal(function(p){return Object.assign({},p,{normEPSFixed:e.target.value,normEPSFixedDate:todayStr()});});}}
+                    placeholder="e.g. 12.34"
+                    className={INP + " w-28 !text-xs !px-2 !py-1"}
+                  />
+                  <button
+                    type="button"
+                    onClick={function(){
+                      if(eps===null||isNaN(eps))return;
+                      setPendingVal(function(p){return Object.assign({},p,{normEPSFixed:String(Math.round(eps*10000)/10000),normEPSFixedDate:todayStr()});});
+                    }}
+                    disabled={eps===null||isNaN(eps)}
+                    className={BTN_SM + " disabled:opacity-50"}
+                    title="Copy the current (FactSet-derived) NormEPS into the Fixed field, stamped with today"
+                  >
+                    {"\u2193"} Snapshot current ({eps&&eps.toFixed?eps.toFixed(2):"--"})
+                  </button>
+                  {pv.normEPSFixed&&(
+                    <button
+                      type="button"
+                      onClick={function(){setPendingVal(function(p){var n=Object.assign({},p);delete n.normEPSFixed;delete n.normEPSFixedDate;return n;});}}
+                      className={LNK}
+                    >Clear</button>
+                  )}
+                  <span className="text-[10px] text-gray-400 dark:text-slate-500 italic">Fixed until updated — FactSet estimate changes won't affect it.</span>
                 </div>
  {/* 5-year P/E range visual — shows low/median/avg/high endpoints with a
                     marker at the current FPE. Rendered only when we have enough to place it. */}

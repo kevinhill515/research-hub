@@ -31,7 +31,7 @@ export default function PortfolioRow(props) {
   const {
     company, portTab, rowIdx, rowData, annotations, dark,
     editingTarget, setEditingTarget, updateTargetWeight,
-    openDiscussions, onOpenCompany, onOpenTransactions,
+    openDiscussions, onOpenCompany, onOpenTransactions, onAddTransaction,
   } = props;
 
   const c = company;
@@ -163,30 +163,39 @@ export default function PortfolioRow(props) {
           : <span className="cursor-pointer hover:underline">{monthsHeld.toFixed(1)}</span>}
       </Cell>
 
-      {/* Last Trade */}
-      <Cell
-        className="text-xs"
-        style={cellStyle}
-        onClick={function (e) {
-          if ((c.transactions || []).length > 0) {
-            e.stopPropagation();
-            onOpenTransactions(c);
-          }
-        }}
-      >
-        {lastTx === null
-          ? <Dash />
-          : (function () {
-              const isBuy = (parseFloat(lastTx.shares) || 0) >= 0;
-              return (
-                <span className="inline-flex items-center gap-1 font-mono cursor-pointer hover:underline">
-                  <span style={{ color: isBuy ? "#166534" : "#dc2626", fontWeight: 700 }}>
-                    {isBuy ? "▲" : "▼"}
+      {/* Last Trade — clicking the date opens Transactions history; the
+          "+" button opens the Add Transaction form pre-filled with this
+          portfolio + today's date. */}
+      <Cell className="text-xs" style={cellStyle}>
+        <span className="inline-flex items-center gap-1">
+          {lastTx === null
+            ? <Dash />
+            : (function () {
+                const isBuy = (parseFloat(lastTx.shares) || 0) >= 0;
+                return (
+                  <span
+                    className="inline-flex items-center gap-1 font-mono cursor-pointer hover:underline"
+                    onClick={function (e) {
+                      e.stopPropagation();
+                      if ((c.transactions || []).length > 0) onOpenTransactions(c);
+                    }}
+                  >
+                    <span style={{ color: isBuy ? "#166534" : "#dc2626", fontWeight: 700 }}>
+                      {isBuy ? "▲" : "▼"}
+                    </span>
+                    <span className="text-gray-700 dark:text-slate-300">{lastTx.date}</span>
                   </span>
-                  <span className="text-gray-700 dark:text-slate-300">{lastTx.date}</span>
-                </span>
-              );
-            })()}
+                );
+              })()}
+          {onAddTransaction && (
+            <button
+              type="button"
+              title="Log a new buy or sell for this company"
+              onClick={function (e) { e.stopPropagation(); onAddTransaction(c); }}
+              className="ml-0.5 text-[10px] leading-none text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded px-1 py-0.5 border border-blue-200 dark:border-blue-800 bg-transparent cursor-pointer"
+            >+</button>
+          )}
+        </span>
       </Cell>
 
       {/* Price */}

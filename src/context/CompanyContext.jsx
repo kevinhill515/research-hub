@@ -321,11 +321,15 @@ export function CompanyProvider({children}){
   function newId(){return(typeof crypto!=="undefined"&&crypto.randomUUID)?crypto.randomUUID():(Date.now()+"-"+Math.random().toString(36).slice(2));}
   /* Target-weight edits: log every meaningful change (|delta|>=0.01%) to portWeightHistory and save the new weight. */
   function updateTargetWeight(companyId,portfolio,rawNewValue){
+    /* Compute the delta first (in state-update-safe way), so we can
+       shift CASH by the opposite amount to preserve target sum = 100%. */
+    var deltaForCash=0;
     setCompanies(function(cs){return cs.map(function(c){
       if(c.id!==companyId)return c;
       var oldRaw=(c.portWeights||{})[portfolio];
       var oldNum=parseFloat(oldRaw);if(isNaN(oldNum))oldNum=0;
       var newNum=parseFloat(rawNewValue);if(isNaN(newNum))newNum=0;
+      deltaForCash=newNum-oldNum;
       var nw=Object.assign({},c.portWeights||{});
       nw[portfolio]=rawNewValue===""||rawNewValue===null||rawNewValue===undefined?"":rawNewValue;
       /* Only log if the numeric value actually changed */
@@ -334,6 +338,21 @@ export function CompanyProvider({children}){
       var hist=[entry].concat(c.portWeightHistory||[]);
       return Object.assign({},c,{portWeights:nw,portWeightHistory:hist});
     });});
+    /* If the target actually changed, shift CASH target by the opposite
+       delta so the portfolio's total target stays at 100%. Rounded to 1
+       decimal to match the display. Clamped at 0 so CASH never goes
+       negative (user can still edit it directly if needed). */
+    if(Math.abs(deltaForCash)>=0.01){
+      setSpecialWeights(function(prev){
+        var next=Object.assign({},prev);
+        var cashRow=Object.assign({},next.CASH||{});
+        var oldCash=parseFloat(cashRow[portfolio]);if(isNaN(oldCash))oldCash=0;
+        var newCash=Math.max(0,Math.round((oldCash-deltaForCash)*10)/10);
+        cashRow[portfolio]=newCash;
+        next.CASH=cashRow;
+        return next;
+      });
+    }
   }
   /* Manual backfill: add a historical entry without changing current portWeights. */
   function addTargetHistoryEntry(companyId,entry){

@@ -105,7 +105,7 @@ export function PortfoliosTable(props) {
     portTab, portSort, portSortDir, setPortSort, setPortSortDir,
     editingTarget, setEditingTarget,
     setTxFilter, setSelCoOrigin, setSelCo, setTab, setCoView,
-    openDiscussions,
+    openDiscussions, onAddTransaction,
   } = props;
   const {
     companies, repData, fxRates, specialWeights, annotations, dark,
@@ -388,6 +388,7 @@ export function PortfoliosTable(props) {
               openDiscussions={openDiscussions}
               onOpenCompany={onOpenCompany}
               onOpenTransactions={onOpenTransactions}
+              onAddTransaction={onAddTransaction}
             />
           );
         })}
