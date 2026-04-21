@@ -230,6 +230,14 @@ class ExcelSession:
         self.xl = win32com.client.DispatchEx("Excel.Application")
         self.xl.Visible = False
         self.xl.DisplayAlerts = False
+        # Interactive=False suppresses modal dialogs (including VBA runtime
+        # error pop-ups like "1004 Application-defined error"). Without this,
+        # a failing macro pops a dialog that blocks the whole script until
+        # someone clicks OK — not acceptable for a scheduled run.
+        try:
+            self.xl.Interactive = False
+        except Exception as e:
+            log(f"  Could not set Interactive=False: {e}")
 
         # Load FactSet add-in into this isolated Excel instance. DispatchEx
         # launches a fresh Excel with NO add-ins loaded, so _xll.FDS etc.
@@ -263,33 +271,58 @@ class ExcelSession:
         if self.master_wb is None:
             log("  (skipping rep holdings — Master List not open)")
             return
+
+        # The three macros need to be tried with both likely filenames
+        # because we're pointing at a COPY of Master List.xlsm.
+        def run_macro(name: str) -> bool:
+            for host in ("Master List COPY.xlsm", "Master List.xlsm"):
+                try:
+                    self.xl.Run(f"'{host}'!{name}")
+                    return True
+                except Exception:
+                    continue
+            return False
+
+        # 1. Open the connection. In the user's main Excel this is already
+        # open from when they last used it, but our isolated instance starts
+        # with no connection — LoadPositions will throw 1004 without this.
+        log("Running OpenConnection macro...")
+        if run_macro("OpenConnection"):
+            time.sleep(5)  # give the auth handshake a moment
+            log("  OpenConnection done")
+        else:
+            log("  OpenConnection failed (continuing anyway)")
+
+        # 2. Load positions
         log("Running LoadPositions macro...")
-        try:
-            self.xl.Run("'Master List COPY.xlsm'!LoadPositions")
-        except Exception:
-            # try the original filename as a fallback — user may point this
-            # at the real file whose name is 'Master List.xlsm'
-            try:
-                self.xl.Run("'Master List.xlsm'!LoadPositions")
-            except Exception as e:
-                log(f"  LoadPositions macro failed: {e}")
-                return
+        if not run_macro("LoadPositions"):
+            log("  LoadPositions macro failed; skipping rep holdings refresh")
+            return
+
         log(f"Waiting {REP_WAIT_SECONDS}s for rep holdings to populate...")
         time.sleep(REP_WAIT_SECONDS)
-        # Recalc the Rep Holdings sheet so cols K-N parsing formulas update
+
+        # 3. Recalc the Rep Holdings sheet so cols K-N parsing formulas update
         try:
             self.wb.Sheets("Rep Holdings").Calculate()
             log("  Rep Holdings recalc done")
         except Exception as e:
             log(f"  Rep Holdings recalc failed: {e}")
-        # Log the refresh timestamp on D1 so we can verify the macro actually
-        # fired. The workbook isn't saved, so user's local xlsx keeps the
-        # old timestamp — but the in-memory D1 shows what we just pulled.
+
+        # 4. Log the refresh timestamp on D1 so we can verify the macro
+        # actually fired. The workbook isn't saved, so user's local xlsx
+        # keeps the old timestamp — but the in-memory D1 shows what we
+        # just pulled.
         try:
             stamp = self.wb.Sheets("Rep Holdings").Cells(1, 4).Value
             log(f"  Rep Holdings D1 (in-memory): {stamp}")
         except Exception:
             pass
+
+        # 5. Close the connection to free server-side resources. Not critical
+        # if it fails.
+        if run_macro("CloseConnection"):
+            log("  CloseConnection done")
 
     # -- Refresh: FactSet --
     def refresh_factset(self) -> None:
