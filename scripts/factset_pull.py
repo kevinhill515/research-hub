@@ -308,10 +308,27 @@ class ExcelSession:
             pass
 
     def cell(self, sheet_name: str, row: int, col: int):
-        v = self.wb.Sheets(sheet_name).Cells(row, col).Value
-        if v is None: return None
-        if isinstance(v, str) and v.startswith("#"): return None
-        return v
+        """Read a cell's value, retrying on RPC_E_CALL_REJECTED which Excel
+        throws when FactSet is in the middle of a background fetch. Up to
+        6 attempts with exponential backoff (0.5s -> 16s)."""
+        import pywintypes
+        last_err = None
+        for attempt in range(6):
+            try:
+                v = self.wb.Sheets(sheet_name).Cells(row, col).Value
+                if v is None: return None
+                if isinstance(v, str) and v.startswith("#"): return None
+                return v
+            except pywintypes.com_error as e:
+                # hresult -2147418111 = RPC_E_CALL_REJECTED ("Call was rejected by callee")
+                # hresult -2147417846 = RPC_E_SERVERCALL_RETRYLATER
+                if e.hresult in (-2147418111, -2147417846):
+                    time.sleep(0.5 * (2 ** attempt))
+                    last_err = e
+                    continue
+                raise
+        log(f"  cell({sheet_name} R{row}C{col}) failed after retries: {last_err}")
+        return None
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         try:
