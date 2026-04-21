@@ -213,77 +213,105 @@ def _enable_factset_addins(xl) -> None:
 
 
 class ExcelSession:
-    """Open Excel in manual-calc mode, open Master List + main workbook,
-    trigger refreshes explicitly, then close everything cleanly."""
+    """Attach to the user's already-running Excel session (assumed to have
+    Master List.xlsm already open with a live connection + FactSet add-in
+    loaded). This avoids all the headless-Excel pitfalls (macros that fail
+    with 1004 because of no UI context, add-ins that don't auto-load, etc).
+
+    If the main Research Hub Upload.xlsx is open, we reuse that workbook;
+    otherwise we open it. Same for Master List. We track what we opened
+    ourselves vs. what was already open, and on exit we only close our own
+    and never Quit() Excel (would kill the user's session)."""
 
     def __init__(self, main_path: Path, master_path: Path):
         self.main_path = main_path
         self.master_path = master_path
         self.xl = None
-        self.master_wb = None
         self.wb = None
-        self._scratch_wb = None
+        self.master_wb = None
+        # Track which workbooks the script opened vs. found already-open,
+        # so on exit we close only the ones we opened.
+        self._we_opened_main = False
+        self._we_opened_master = False
+        # Save/restore the user's global Calculation setting so we don't
+        # leave their Excel in manual mode after we exit.
+        self._saved_calc = None
 
     def __enter__(self):
         import win32com.client
-        log(f"Opening Excel (manual calc mode)...")
-        self.xl = win32com.client.DispatchEx("Excel.Application")
-        self.xl.Visible = False
-        self.xl.DisplayAlerts = False
+        log("Attaching to running Excel instance...")
+        try:
+            self.xl = win32com.client.GetActiveObject("Excel.Application")
+        except Exception:
+            log("  No running Excel found — falling back to DispatchEx (new instance)")
+            log("  NOTE: rep-holdings macro will likely fail without an existing session.")
+            self.xl = win32com.client.DispatchEx("Excel.Application")
+            self.xl.Visible = False
 
-        # Load FactSet add-in into this isolated Excel instance. DispatchEx
-        # launches a fresh Excel with NO add-ins loaded, so _xll.FDS etc.
-        # would return #NAME? (Excel error -2146826259) for every cell.
-        # Iterate all registered AddIns + COMAddIns and enable any whose
-        # name mentions FactSet/FDS.
-        _enable_factset_addins(self.xl)
+        # Don't touch Visible or DisplayAlerts on an attached user session —
+        # they may have dialogs open we shouldn't suppress. But DO save and
+        # change the Calculation setting while we work, so opening our
+        # big workbook doesn't trigger a 15-minute auto-recalc.
+        try:
+            self._saved_calc = self.xl.Calculation
+            self.xl.Calculation = CALC_MANUAL
+        except Exception as e:
+            log(f"  Could not set Calculation=Manual: {e}")
 
-        # Excel refuses to set Application.Calculation until at least one
-        # workbook exists. Add a blank throwaway workbook first, THEN set
-        # manual calc, THEN open the real files so _xll.FDSLIVE cells
-        # don't auto-fire on open.
-        self._scratch_wb = self.xl.Workbooks.Add()
-        self.xl.Calculation = CALC_MANUAL
-        self.xl.ScreenUpdating = False
-
-        if self.master_path.exists():
-            log(f"Opening Master List: {self.master_path}")
-            self.master_wb = self.xl.Workbooks.Open(str(self.master_path),
-                                                    UpdateLinks=False, ReadOnly=True)
+        # Find or open Master List
+        self.master_wb = self._find_or_open(self.master_path, "master")
+        if self.master_wb is not None:
+            log(f"  Master List: {'found open' if not self._we_opened_master else 'opened'} — {self.master_wb.Name}")
         else:
-            log(f"WARNING: Master List not found at {self.master_path} — rep holdings refresh will fail")
+            log(f"  Master List unavailable — rep-holdings refresh will be skipped")
 
-        log(f"Opening workbook: {self.main_path}")
-        self.wb = self.xl.Workbooks.Open(str(self.main_path),
-                                          UpdateLinks=False, ReadOnly=False)
+        # Find or open the main workbook
+        self.wb = self._find_or_open(self.main_path, "main")
+        if self.wb is None:
+            raise RuntimeError(f"Could not open main workbook at {self.main_path}")
+        log(f"  Main workbook: {'found open' if not self._we_opened_main else 'opened'} — {self.wb.Name}")
         return self
 
+    def _find_or_open(self, path: Path, which: str):
+        """Return the Workbook object for `path`. If it's already open in
+        the attached Excel, return that; otherwise open it. Returns None
+        if path doesn't exist."""
+        if not path.exists():
+            return None
+        # Normalize path for comparison
+        target = str(path).lower()
+        for wb in self.xl.Workbooks:
+            try:
+                if (wb.FullName or "").lower() == target:
+                    return wb
+            except Exception:
+                continue
+        # Not already open — open it
+        try:
+            wb = self.xl.Workbooks.Open(str(path), UpdateLinks=False,
+                                          ReadOnly=(which == "master"))
+            if which == "main": self._we_opened_main = True
+            else: self._we_opened_master = True
+            return wb
+        except Exception as e:
+            log(f"  Failed to open {path}: {e}")
+            return None
+
     # -- Refresh: rep holdings --
-    def refresh_rep_holdings(self, try_macro: bool = False) -> None:
-        """Refresh rep holdings. By default we SKIP the LoadPositions macro
-        because it requires user-session state (connection auth) that isn't
-        available in a headless DispatchEx Excel — calling it throws
-        VBA runtime 1004 which becomes a modal dialog that blocks the script.
+    def refresh_rep_holdings(self, try_macro: bool = True) -> None:
+        """Refresh rep holdings via the LoadPositions macro. Now that we
+        attach to the user's running Excel (which has Master List open and
+        the data connection already established), this works reliably.
 
-        Instead we read cols K-N as they already exist in the workbook, which
-        contain the user's last manual refresh. Staleness is logged so the
-        user can decide whether to do a manual refresh + save before the
-        scheduled run.
-
-        If `try_macro=True` (passed via --refresh-rep flag), we DO attempt
-        the OpenConnection + LoadPositions + CloseConnection dance — useful
-        for ad-hoc runs where the user is at their desk to dismiss any
-        error dialog that pops up."""
+        If `try_macro=False` we skip the macro and just read whatever's in
+        cols K-N — useful if Master List isn't available for some reason."""
         if self.master_wb is None:
             log("  (rep holdings: Master List not open — reading cached data)")
+        elif try_macro:
+            self._try_macro_refresh()
         else:
-            if try_macro:
-                self._try_macro_refresh()
-            else:
-                log("  (rep holdings: using cached data from last manual refresh)")
+            log("  (rep holdings: --no-refresh-rep flag set, using cached data)")
 
-        # Always recalc + log the effective timestamp, regardless of whether
-        # we ran the macro. This tells the user how fresh the data is.
         try:
             self.wb.Sheets("Rep Holdings").Calculate()
         except Exception as e:
@@ -295,9 +323,10 @@ class ExcelSession:
             pass
 
     def _try_macro_refresh(self) -> None:
-        """Run the Master List macros. Currently fails on OpenConnection
-        with 1004 in headless Excel — left here for future debugging /
-        --refresh-rep flag usage."""
+        """Run Master List's OpenConnection → LoadPositions → CloseConnection.
+        Requires an attached user Excel session (Dispatch, not DispatchEx)
+        because the macros rely on interactive-UI state + persistent
+        connection handles that a headless Excel doesn't have."""
         def run_macro(name: str) -> bool:
             for host in ("Master List COPY.xlsm", "Master List.xlsm"):
                 try:
@@ -306,19 +335,24 @@ class ExcelSession:
                 except Exception:
                     continue
             return False
+
         log("Running OpenConnection macro...")
-        if run_macro("OpenConnection"):
-            time.sleep(5); log("  OpenConnection done")
+        opened = run_macro("OpenConnection")
+        if opened:
+            time.sleep(5)
+            log("  OpenConnection done")
         else:
-            log("  OpenConnection failed (connection may need interactive Excel)")
-            return
+            log("  OpenConnection couldn't be run — trying LoadPositions anyway (connection may already be open)")
+
         log("Running LoadPositions macro...")
         if not run_macro("LoadPositions"):
-            log("  LoadPositions failed — continuing with cached data")
+            log("  LoadPositions failed — continuing with cached Rep Holdings data")
             return
-        log(f"Waiting {REP_WAIT_SECONDS}s...")
+        log(f"Waiting {REP_WAIT_SECONDS}s for positions to populate...")
         time.sleep(REP_WAIT_SECONDS)
-        run_macro("CloseConnection")
+
+        if opened and run_macro("CloseConnection"):
+            log("  CloseConnection done")
 
     # -- Refresh: FactSet --
     def refresh_factset(self) -> None:
@@ -368,23 +402,20 @@ class ExcelSession:
         return None
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        try:
-            if self.wb is not None: self.wb.Close(SaveChanges=False)
-        except Exception as e: log(f"Close main: {e}")
-        try:
-            if self.master_wb is not None: self.master_wb.Close(SaveChanges=False)
-        except Exception as e: log(f"Close master: {e}")
-        try:
-            if self._scratch_wb is not None: self._scratch_wb.Close(SaveChanges=False)
-        except Exception as e: log(f"Close scratch: {e}")
-        try:
-            if self.xl is not None:
-                # restore auto-calc before quitting (doesn't really matter but clean)
-                try: self.xl.Calculation = CALC_AUTOMATIC
-                except Exception: pass
-                self.xl.Quit()
-        except Exception as e: log(f"Quit: {e}")
-        self.wb = self.master_wb = self._scratch_wb = self.xl = None
+        # Close only the workbooks we opened ourselves. Leave the user's
+        # session + their open workbooks (Master List + anything else) alone.
+        if self._we_opened_main and self.wb is not None:
+            try: self.wb.Close(SaveChanges=False)
+            except Exception as e: log(f"Close main: {e}")
+        if self._we_opened_master and self.master_wb is not None:
+            try: self.master_wb.Close(SaveChanges=False)
+            except Exception as e: log(f"Close master: {e}")
+        # Restore the user's calculation setting
+        if self._saved_calc is not None:
+            try: self.xl.Calculation = self._saved_calc
+            except Exception: pass
+        # Never Quit() — that would kill the user's whole Excel session.
+        self.wb = self.master_wb = self.xl = None
 
 
 # ----------------------------------------------------------------------
@@ -848,22 +879,20 @@ def clean_legacy_errors(companies: list[dict], fx_rates: dict) -> tuple[int, int
 # Main
 # ----------------------------------------------------------------------
 def main() -> int:
-    # Flags: --refresh-rep forces an attempt at LoadPositions (interactive
-    # only — will fail with a 1004 dialog in headless mode).
-    try_macro = "--refresh-rep" in sys.argv[1:]
+    # Flags: --no-refresh-rep skips the LoadPositions macro (useful for
+    # testing when Master List isn't running, or as a safety override).
+    try_macro = "--no-refresh-rep" not in sys.argv[1:]
 
     log("=" * 60)
     log("Run start")
     log(f"Workbook: {WORKBOOK_PATH}")
     log(f"Master List: {MASTER_LIST_PATH}")
-    log(f"Rep-holdings macro refresh: {'YES (--refresh-rep)' if try_macro else 'no (cached data)'}")
+    log(f"Rep-holdings macro refresh: {'yes (default)' if try_macro else 'NO (--no-refresh-rep)'}")
     if not WORKBOOK_PATH.exists():
         log(f"ERROR: workbook not found"); return 1
 
     try:
         with ExcelSession(WORKBOOK_PATH, MASTER_LIST_PATH) as xl:
-            # 1. Rep holdings — uses cached K-N by default; pass try_macro=True
-            #    via --refresh-rep to attempt OpenConnection + LoadPositions.
             xl.refresh_rep_holdings(try_macro=try_macro)
             # 2. FactSet — slow (~120s)
             xl.refresh_factset()
