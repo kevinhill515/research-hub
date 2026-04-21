@@ -210,7 +210,7 @@ export default function App(){
           {[["standard","Standard"],["metrics","Metrics"]].map(function(v){var active=companiesView===v[0];return <button key={v[0]} onClick={function(){setCompaniesView(v[0]);}} className={"text-xs px-3 py-1 rounded-md cursor-pointer transition-colors "+(active?"bg-blue-700 text-white font-semibold":"bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-gray-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800")}>{v[1]}</button>;})}
         </div>)}
         {companies.length===0?<p className="text-sm text-gray-500 dark:text-slate-400">No companies yet.</p>:(companiesView==="metrics"?(
-          <MetricsTable companies={companies} search={search} onSelectCompany={function(c){setSelCo(c);setCoView("section:Valuation");}}/>
+          <MetricsTable companies={displayedCos} search={coSearch} dark={dark} onSelectCompany={function(c){setSelCo(c);setCoView("section:Valuation");}}/>
         ):(
           <div style={{display:"table",width:"100%",borderCollapse:"separate",borderSpacing:"0 2px"}}>
             <div style={{display:"table-row"}} className="print-thead">

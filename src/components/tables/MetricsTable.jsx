@@ -1,69 +1,66 @@
 /* Metrics view of the Companies list.
  *
- * Reads company.metrics (populated by the daily factset_pull.py or via
- * the Data Hub manual upload) and renders one wide table. Horizontal
- * scroll because there are 29 columns. Click a row to open the company
- * detail, same as the standard view.
+ * Renders a wide table of FactSet-sourced metrics per company. Companies
+ * arrive pre-sorted by the parent (matching Standard view's order); the
+ * user can override with header clicks (3-state: default → desc → asc →
+ * back to default).
  *
- * Formatting:
- *  - MktCap -> $12.3B
- *  - P/E -> 18.5x
- *  - Percent fields (yields, margins, ROE, returns) -> 3.2%
- *  - Ratios (Net D/E, Int Cov) -> 0.45 / 12.3
+ * Columns beyond the default-visible set can be toggled via the Columns
+ * button. By default all "+2" (year+2) projection columns are hidden so
+ * the table fits on most screens without horizontal scroll.
  *
- * Color-coded performance cells (green/red with magnitude shading) for
- * the MTD/QTD/3M/6M/YTD/1Y columns.
- */
+ * Row background tints follow the Tier-based coloring used in the
+ * Standard view (light mode only, matching CoRow behavior). */
 
-import { useMemo, useState } from 'react';
-import { truncName } from '../../utils/index.js';
+import { useMemo, useRef, useState, useEffect } from 'react';
+import { truncName, getTiers, tierBg, tierPillStyle } from '../../utils/index.js';
+import FpeRangeMini from '../ui/FpeRangeMini.jsx';
 
 const COLS = [
-  /* label, key, kind, right-aligned? (all numeric are right) */
-  { label: "Name",       key: "__name",   kind: "name",  w: 160, sticky: true },
-  { label: "Ticker",     key: "__ticker", kind: "text",  w: 80 },
-  { label: "MktCap",     key: "mktCap",   kind: "bn",    w: 70 },
-  { label: "F P/E +1",   key: "fpe1",     kind: "x",     w: 70 },
-  { label: "F P/E +2",   key: "fpe2",     kind: "x",     w: 70 },
-  { label: "FCF Yld +1", key: "fcfYld1",  kind: "pct",   w: 80 },
-  { label: "FCF Yld +2", key: "fcfYld2",  kind: "pct",   w: 80 },
-  { label: "Div Yld +1", key: "divYld1",  kind: "pct",   w: 80 },
-  { label: "Div Yld +2", key: "divYld2",  kind: "pct",   w: 80 },
-  { label: "Payout +1",  key: "payout1",  kind: "pct",   w: 75 },
-  { label: "Payout +2",  key: "payout2",  kind: "pct",   w: 75 },
-  { label: "Net D/E +1", key: "netDE1",   kind: "ratio", w: 80 },
-  { label: "Net D/E +2", key: "netDE2",   kind: "ratio", w: 80 },
-  { label: "Int Cov",    key: "intCov",   kind: "ratio", w: 70 },
-  { label: "LT EPS",     key: "ltEPS",    kind: "pct",   w: 70 },
-  { label: "Gr Mgn +1",  key: "grMgn1",   kind: "pct",   w: 80 },
-  { label: "Gr Mgn +2",  key: "grMgn2",   kind: "pct",   w: 80 },
-  { label: "Net Mgn +1", key: "netMgn1",  kind: "pct",   w: 80 },
-  { label: "Net Mgn +2", key: "netMgn2",  kind: "pct",   w: 80 },
-  { label: "GP/Ass +1",  key: "gpAss1",   kind: "pct",   w: 75 },
-  { label: "GP/Ass +2",  key: "gpAss2",   kind: "pct",   w: 75 },
-  { label: "NP/Ass +1",  key: "npAss1",   kind: "pct",   w: 75 },
-  { label: "NP/Ass +2",  key: "npAss2",   kind: "pct",   w: 75 },
-  { label: "Op ROE +1",  key: "opROE1",   kind: "pct",   w: 75 },
-  { label: "Op ROE +2",  key: "opROE2",   kind: "pct",   w: 75 },
+  /* key, label, kind, width, default-visible */
+  { key: "__tier",     label: "Tier",       kind: "tier",     w: 72,  vis: true  },
+  { key: "__name",     label: "Name",       kind: "name",     w: 170, vis: true  },
+  { key: "mktCap",     label: "MktCap",     kind: "bn",       w: 70,  vis: true  },
+  { key: "fpe1",       label: "F P/E +1",   kind: "x",        w: 70,  vis: true  },
+  { key: "fpe2",       label: "F P/E +2",   kind: "x",        w: 70,  vis: false },
+  { key: "fcfYld1",    label: "FCF Yld +1", kind: "pct",      w: 80,  vis: true  },
+  { key: "fcfYld2",    label: "FCF Yld +2", kind: "pct",      w: 80,  vis: false },
+  { key: "divYld1",    label: "Div Yld +1", kind: "pct",      w: 80,  vis: true  },
+  { key: "divYld2",    label: "Div Yld +2", kind: "pct",      w: 80,  vis: false },
+  { key: "payout1",    label: "Payout +1",  kind: "pct",      w: 75,  vis: true  },
+  { key: "payout2",    label: "Payout +2",  kind: "pct",      w: 75,  vis: false },
+  { key: "netDE1",     label: "Net D/E +1", kind: "ratio",    w: 80,  vis: true  },
+  { key: "netDE2",     label: "Net D/E +2", kind: "ratio",    w: 80,  vis: false },
+  { key: "intCov",     label: "Int Cov",    kind: "ratio",    w: 70,  vis: true  },
+  { key: "ltEPS",      label: "LT EPS",     kind: "pct",      w: 70,  vis: true  },
+  { key: "grMgn1",     label: "Gr Mgn +1",  kind: "pct",      w: 80,  vis: true  },
+  { key: "grMgn2",     label: "Gr Mgn +2",  kind: "pct",      w: 80,  vis: false },
+  { key: "netMgn1",    label: "Net Mgn +1", kind: "pct",      w: 80,  vis: true  },
+  { key: "netMgn2",    label: "Net Mgn +2", kind: "pct",      w: 80,  vis: false },
+  { key: "gpAss1",     label: "GP/Ass +1",  kind: "pct",      w: 75,  vis: true  },
+  { key: "gpAss2",     label: "GP/Ass +2",  kind: "pct",      w: 75,  vis: false },
+  { key: "npAss1",     label: "NP/Ass +1",  kind: "pct",      w: 75,  vis: true  },
+  { key: "npAss2",     label: "NP/Ass +2",  kind: "pct",      w: 75,  vis: false },
+  { key: "opROE1",     label: "Op ROE +1",  kind: "pct",      w: 75,  vis: true  },
+  { key: "opROE2",     label: "Op ROE +2",  kind: "pct",      w: 75,  vis: false },
+  { key: "__fpeRange", label: "FPE Range",  kind: "fperange", w: 110, vis: true  },
   /* Performance — colored cells */
-  { label: "MTD", key: "perf.MTD", kind: "perf", w: 60 },
-  { label: "QTD", key: "perf.QTD", kind: "perf", w: 60 },
-  { label: "3M",  key: "perf.3M",  kind: "perf", w: 60 },
-  { label: "6M",  key: "perf.6M",  kind: "perf", w: 60 },
-  { label: "YTD", key: "perf.YTD", kind: "perf", w: 60 },
-  { label: "1Y",  key: "perf.1Y",  kind: "perf", w: 60 },
+  { key: "perf.MTD",   label: "MTD",        kind: "perf",     w: 60,  vis: true  },
+  { key: "perf.QTD",   label: "QTD",        kind: "perf",     w: 60,  vis: true  },
+  { key: "perf.3M",    label: "3M",         kind: "perf",     w: 60,  vis: true  },
+  { key: "perf.6M",    label: "6M",         kind: "perf",     w: 60,  vis: true  },
+  { key: "perf.YTD",   label: "YTD",        kind: "perf",     w: 60,  vis: true  },
+  { key: "perf.1Y",    label: "1Y",         kind: "perf",     w: 60,  vis: true  },
 ];
+
+const DEFAULT_VISIBLE = new Set(COLS.filter(function (c) { return c.vis; }).map(function (c) { return c.key; }));
 
 function getCellValue(company, key) {
   const m = company.metrics || {};
-  if (key === "__name") return company.name;
-  if (key === "__ticker") {
-    const ord = (company.tickers || []).find(function (t) { return t.isOrdinary; });
-    return (ord && ord.ticker) || company.ticker || "";
-  }
-  if (key.startsWith("perf.")) {
-    return m.perf ? m.perf[key.slice(5)] : null;
-  }
+  if (key === "__name")     return company.name;
+  if (key === "__tier")     return company.tier;
+  if (key === "__fpeRange") return null; /* not sortable */
+  if (key.startsWith("perf.")) return m.perf ? m.perf[key.slice(5)] : null;
   return m[key];
 }
 
@@ -82,7 +79,6 @@ function fmt(v, kind) {
   }
 }
 
-/* Color-graded cell bg for perf columns — reused from MarketsDashboard. */
 function perfStyle(v) {
   if (v === null || v === undefined || isNaN(v)) return null;
   const n = v * 100;
@@ -93,9 +89,39 @@ function perfStyle(v) {
   return { background: `rgba(220,38,38,${alpha})`, color: mag > 0.5 ? "#7f1d1d" : undefined };
 }
 
-export default function MetricsTable({ companies, onSelectCompany, search }) {
-  const [sortKey, setSortKey] = useState("__name");
-  const [sortDir, setSortDir] = useState("asc");
+function TierCell({ tier }) {
+  const tiers = getTiers(tier);
+  if (tiers.length === 0) return <span className="text-gray-400 dark:text-slate-500">--</span>;
+  return (
+    <div className="flex gap-0.5 flex-wrap">
+      {tiers.map(function (t) {
+        const ps = tierPillStyle(t);
+        return (
+          <span key={t} className="text-[9px] px-1 py-0 rounded-full font-medium"
+                style={{ background: ps.bg, color: ps.color }}>
+            {t}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+export default function MetricsTable({ companies, search, onSelectCompany, dark }) {
+  /* null sortKey = use parent-supplied order (Standard sort). */
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState(null);
+  const [visible, setVisible] = useState(DEFAULT_VISIBLE);
+  const [showColPicker, setShowColPicker] = useState(false);
+  const pickerRef = useRef();
+
+  /* Close picker on outside-click */
+  useEffect(function () {
+    if (!showColPicker) return;
+    function h(e) { if (pickerRef.current && !pickerRef.current.contains(e.target)) setShowColPicker(false); }
+    document.addEventListener("mousedown", h);
+    return function () { document.removeEventListener("mousedown", h); };
+  }, [showColPicker]);
 
   const filtered = useMemo(function () {
     if (!search) return companies;
@@ -106,15 +132,15 @@ export default function MetricsTable({ companies, onSelectCompany, search }) {
     });
   }, [companies, search]);
 
-  const sorted = useMemo(function () {
+  const rendered = useMemo(function () {
+    if (sortKey === null) return filtered; /* parent order */
     const mult = sortDir === "asc" ? 1 : -1;
     return filtered.slice().sort(function (a, b) {
       const va = getCellValue(a, sortKey);
       const vb = getCellValue(b, sortKey);
-      if (sortKey === "__name" || sortKey === "__ticker") {
+      if (sortKey === "__name" || sortKey === "__tier") {
         return mult * String(va || "").localeCompare(String(vb || ""));
       }
-      /* Nulls always sink to the bottom regardless of direction. */
       const na = typeof va === "number" ? va : parseFloat(va);
       const nb = typeof vb === "number" ? vb : parseFloat(vb);
       const aBad = va === null || va === undefined || isNaN(na);
@@ -127,37 +153,94 @@ export default function MetricsTable({ companies, onSelectCompany, search }) {
   }, [filtered, sortKey, sortDir]);
 
   function handleHeaderClick(key) {
-    if (sortKey === key) {
-      setSortDir(function (d) { return d === "asc" ? "desc" : "asc"; });
+    const col = COLS.find(function (c) { return c.key === key; });
+    if (!col) return;
+    if (col.kind === "fperange" || col.key === "__tier") return; /* not sortable */
+    /* First click: default direction. Numeric cols -> desc, text -> asc. */
+    const firstDir = (col.kind === "name") ? "asc" : "desc";
+    if (sortKey !== key) {
+      setSortKey(key); setSortDir(firstDir);
+    } else if (sortDir === firstDir) {
+      setSortDir(firstDir === "asc" ? "desc" : "asc");
     } else {
-      setSortKey(key);
-      /* Numeric columns default to desc (biggest first) */
-      setSortDir(key === "__name" || key === "__ticker" ? "asc" : "desc");
+      /* Third click — clear sort, fall back to parent order */
+      setSortKey(null); setSortDir(null);
     }
   }
 
-  const hasMetrics = sorted.filter(function (c) { return c.metrics; }).length;
+  const visibleCols = COLS.filter(function (c) { return visible.has(c.key); });
+  const hasMetrics = rendered.filter(function (c) { return c.metrics; }).length;
 
   return (
     <div>
-      <div className="text-xs text-gray-500 dark:text-slate-400 mb-2">
-        {hasMetrics} of {sorted.length} companies have metrics data.
-        {hasMetrics === 0 && " Run the daily FactSet pull or paste data into the Data Hub Metrics tab."}
+      {/* Header controls */}
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
+        <div className="text-xs text-gray-500 dark:text-slate-400">
+          {hasMetrics} of {rendered.length} companies have metrics data.
+        </div>
+        <div className="relative ml-auto" ref={pickerRef}>
+          <button
+            type="button"
+            onClick={function () { setShowColPicker(function (s) { return !s; }); }}
+            className="text-xs px-2.5 py-1 font-medium rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+          >
+            Columns ({visibleCols.length})
+          </button>
+          {showColPicker && (
+            <div className="absolute top-full right-0 mt-1 z-30 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md p-2 shadow-lg min-w-[220px] max-h-[60vh] overflow-y-auto">
+              <div className="flex justify-between mb-1.5 pb-1.5 border-b border-slate-200 dark:border-slate-700">
+                <button type="button" onClick={function () { setVisible(DEFAULT_VISIBLE); }}
+                        className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline">Defaults</button>
+                <button type="button" onClick={function () { setVisible(new Set(COLS.map(function (c) { return c.key; }))); }}
+                        className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline">All</button>
+              </div>
+              {COLS.map(function (c) {
+                const on = visible.has(c.key);
+                return (
+                  <div key={c.key}
+                       onClick={function () {
+                         setVisible(function (prev) {
+                           const n = new Set(prev);
+                           on ? n.delete(c.key) : n.add(c.key);
+                           return n;
+                         });
+                       }}
+                       className="flex items-center gap-2 py-1 cursor-pointer text-xs text-gray-900 dark:text-slate-100">
+                    <div className="w-3.5 h-3.5 rounded-[3px] shrink-0"
+                         style={{
+                           border: "1px solid " + (on ? "#3b82f6" : "#cbd5e1"),
+                           background: on ? "#3b82f6" : undefined,
+                         }}>
+                      {on && <svg viewBox="0 0 14 14" className="w-3.5 h-3.5 fill-white"><path d="M5.5 10L2 6.5l1-1L5.5 8l5.5-5.5 1 1z"/></svg>}
+                    </div>
+                    {c.label}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
-      <div className="overflow-x-auto border border-slate-200 dark:border-slate-700 rounded-md">
-        <table className="text-xs" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
-          <thead className="bg-slate-50 dark:bg-slate-800 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 sticky top-0 z-10">
+
+      {/* Table — NO overflow wrapper: thead uses position: sticky against
+          the page viewport, so it stays visible when the user scrolls
+          vertically. Horizontal overflow is handled by the page itself
+          if the table is wider than the viewport. */}
+      <div className="border border-slate-200 dark:border-slate-700 rounded-md overflow-hidden">
+        <table className="text-xs w-full" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
+          <thead>
             <tr>
-              {COLS.map(function (col) {
+              {visibleCols.map(function (col) {
                 const active = sortKey === col.key;
                 const arrow = active ? (sortDir === "asc" ? " ↑" : " ↓") : "";
-                const sticky = col.sticky ? { position: "sticky", left: 0, zIndex: 11, background: "inherit" } : {};
+                const sortable = col.kind !== "fperange" && col.key !== "__tier";
                 return (
                   <th
                     key={col.key}
-                    onClick={function () { handleHeaderClick(col.key); }}
-                    className="px-2 py-1.5 text-left font-medium cursor-pointer hover:text-gray-700 dark:hover:text-slate-300 select-none whitespace-nowrap"
-                    style={Object.assign({ minWidth: col.w, width: col.w }, sticky)}
+                    onClick={sortable ? function () { handleHeaderClick(col.key); } : undefined}
+                    className={"sticky top-0 z-10 bg-slate-50 dark:bg-slate-800 px-2 py-1.5 text-[10px] uppercase tracking-wide text-left font-medium text-gray-500 dark:text-slate-400 whitespace-nowrap border-b border-slate-200 dark:border-slate-700 " +
+                      (sortable ? "cursor-pointer hover:text-gray-700 dark:hover:text-slate-300 select-none" : "")}
+                    style={{ minWidth: col.w }}
                   >
                     {col.label}{arrow}
                   </th>
@@ -166,31 +249,52 @@ export default function MetricsTable({ companies, onSelectCompany, search }) {
             </tr>
           </thead>
           <tbody>
-            {sorted.map(function (c) {
+            {rendered.map(function (c) {
+              const rowBgLight = tierBg(c.tier);
+              const rowStyle = dark ? undefined : { background: rowBgLight };
               return (
                 <tr
                   key={c.id}
                   onClick={function () { onSelectCompany(c); }}
-                  className="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer"
+                  style={rowStyle}
+                  className="border-t border-slate-100 dark:border-slate-800 hover:brightness-95 dark:hover:bg-slate-800/40 cursor-pointer transition-all"
                 >
-                  {COLS.map(function (col) {
+                  {visibleCols.map(function (col) {
+                    if (col.kind === "tier") {
+                      return (
+                        <td key={col.key} className="px-2 py-1 align-middle" style={{ minWidth: col.w }}>
+                          <TierCell tier={c.tier} />
+                        </td>
+                      );
+                    }
+                    if (col.kind === "name") {
+                      return (
+                        <td key={col.key}
+                            className="px-2 py-1 text-gray-900 dark:text-slate-100 font-medium whitespace-nowrap"
+                            style={{ minWidth: col.w }}
+                            title={c.name}>
+                          {truncName(c.name, 22)}
+                        </td>
+                      );
+                    }
+                    if (col.kind === "fperange") {
+                      return (
+                        <td key={col.key} className="px-2 py-1 align-middle" style={{ minWidth: col.w }}>
+                          {(function () {
+                            const el = <FpeRangeMini valuation={c.valuation} width={100} />;
+                            return el || <span className="text-gray-400 dark:text-slate-500">--</span>;
+                          })()}
+                        </td>
+                      );
+                    }
                     const v = getCellValue(c, col.key);
-                    let text = "";
-                    let style = null;
-                    if (col.kind === "name") text = truncName(c.name, 24);
-                    else if (col.kind === "text") text = v || "--";
-                    else text = fmt(v, col.kind);
-                    if (col.kind === "perf") style = perfStyle(v);
-                    const sticky = col.sticky ? {
-                      position: "sticky", left: 0, background: "inherit", zIndex: 1,
-                    } : {};
-                    const align = (col.kind === "name" || col.kind === "text") ? "text-left" : "text-right font-mono";
+                    const text = fmt(v, col.kind);
+                    const style = col.kind === "perf" ? perfStyle(v) : null;
                     return (
                       <td
                         key={col.key}
-                        className={"px-2 py-1 whitespace-nowrap " + align + " " + (col.kind === "name" ? "text-gray-900 dark:text-slate-100 font-medium" : "text-gray-700 dark:text-slate-300")}
-                        style={Object.assign({ minWidth: col.w }, style || {}, sticky)}
-                        title={col.kind === "name" ? c.name : undefined}
+                        className="px-2 py-1 text-right font-mono text-gray-700 dark:text-slate-300 whitespace-nowrap"
+                        style={Object.assign({ minWidth: col.w }, style || {})}
                       >
                         {text}
                       </td>

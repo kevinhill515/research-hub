@@ -275,7 +275,22 @@ export function useCompanies(){
     return Object.assign({},c,updates);});});
     setPriceImportText("");setShowPriceImport(false);var priceUpdateStr=todayStr()+" "+new Date().toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"});setLastPriceUpdate(priceUpdateStr);supaUpsert("meta",{key:"lastPriceUpdate",value:priceUpdateStr});setTimeout(function(){alert("Updated prices for "+count+" companies.");},100);
   }
-  function handleSortClick(colSort){     if(coSort===colSort){setCoSortDir(function(d){return d==="asc"?"desc":"asc";});}     else{setCoSort(colSort);var descByDefault=colSort==="Last Reviewed"||colSort==="Last Updated"||colSort==="5D%"||colSort==="MOS";setCoSortDir(descByDefault?"desc":"asc");}   }
+  /* Three-state click cycle on column headers:
+       0: (cold) column not active -> set to this col's default direction
+       1: active at default dir     -> flip to opposite dir
+       2: active at opposite dir    -> clear sort (return to default "Tier") */
+  function handleSortClick(colSort){
+    var descByDefault=colSort==="Last Reviewed"||colSort==="Last Updated"||colSort==="5D%"||colSort==="MOS";
+    var firstDir=descByDefault?"desc":"asc";
+    if(coSort!==colSort){
+      setCoSort(colSort); setCoSortDir(firstDir);
+    } else if(coSortDir===firstDir){
+      setCoSortDir(firstDir==="asc"?"desc":"asc");
+    } else {
+      /* Clicked on the flipped direction — clear back to default order */
+      setCoSort("Tier"); setCoSortDir("asc");
+    }
+  }
   function exportToPDF(title,htmlContent){   var win=window.open("","_blank");   if(!win){alert("Please allow popups to export PDF.");return;}   win.document.write("<!DOCTYPE html><html><head><title>"+title+"</title><style>body{font-family:Georgia,serif;max-width:800px;margin:40px auto;padding:0 40px;color:#111;line-height:1.7;}h1{font-size:22px;border-bottom:2px solid #334155;padding-bottom:10px;margin-bottom:20px;}h2{font-size:16px;color:#1e40af;margin-top:28px;margin-bottom:8px;}p{font-size:14px;}.meta{font-size:12px;color:#6b7280;margin-bottom:20px;}</style></head><body>"+htmlContent+"</body></html>");   win.document.close();   setTimeout(function(){win.print();},500); }
   function exportCompanyPDF(co){   var html="<h1>"+co.name+(co.ticker?" ("+co.ticker+")":"")+"</h1><div class='meta'>";   if(co.sector)html+="Sector: "+co.sector+" | ";   if(co.country)html+="Country: "+co.country+" | ";   if(co.status)html+="Status: "+co.status;   html+="</div>";   var v=co.valuation||{};var ne=calcNormEPS(v)||parseFloat(v.eps);var tp=calcTP(v.pe,ne);var mos=calcMOS(tp,v.price);var cur=(v.currency)||getCurrency(co.country);   if(tp!==null||v.price){html+="<h2>Valuation</h2><p>";if(v.price)html+="Price: "+cur+" "+fmtPrice(v.price)+" &nbsp;";if(tp!==null)html+="TP: "+fmtTP(tp,cur)+" &nbsp;";if(mos!==null)html+="MOS: "+fmtMOS(mos);html+="</p>";}   TEMPLATE_SECTIONS.forEach(function(s){var c=co.sections&&co.sections[s];if(c&&c.trim()){html+="<h2>"+s+"</h2><p>"+c.replace(/\n/g,"<br/>")+"</p>";}});   if(co.earningsEntries&&co.earningsEntries.length){html+="<h2>Earnings History</h2>";co.earningsEntries.forEach(function(e){html+="<p><strong>"+e.quarter+"</strong> "+e.reportDate+"<br/>"+(e.shortTakeaway||"")+"</p>";});}   exportToPDF(co.name,html); }
   function exportCSV(){
