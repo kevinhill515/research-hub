@@ -230,14 +230,6 @@ class ExcelSession:
         self.xl = win32com.client.DispatchEx("Excel.Application")
         self.xl.Visible = False
         self.xl.DisplayAlerts = False
-        # Interactive=False suppresses modal dialogs (including VBA runtime
-        # error pop-ups like "1004 Application-defined error"). Without this,
-        # a failing macro pops a dialog that blocks the whole script until
-        # someone clicks OK — not acceptable for a scheduled run.
-        try:
-            self.xl.Interactive = False
-        except Exception as e:
-            log(f"  Could not set Interactive=False: {e}")
 
         # Load FactSet add-in into this isolated Excel instance. DispatchEx
         # launches a fresh Excel with NO add-ins loaded, so _xll.FDS etc.
@@ -267,13 +259,45 @@ class ExcelSession:
         return self
 
     # -- Refresh: rep holdings --
-    def refresh_rep_holdings(self) -> None:
-        if self.master_wb is None:
-            log("  (skipping rep holdings — Master List not open)")
-            return
+    def refresh_rep_holdings(self, try_macro: bool = False) -> None:
+        """Refresh rep holdings. By default we SKIP the LoadPositions macro
+        because it requires user-session state (connection auth) that isn't
+        available in a headless DispatchEx Excel — calling it throws
+        VBA runtime 1004 which becomes a modal dialog that blocks the script.
 
-        # The three macros need to be tried with both likely filenames
-        # because we're pointing at a COPY of Master List.xlsm.
+        Instead we read cols K-N as they already exist in the workbook, which
+        contain the user's last manual refresh. Staleness is logged so the
+        user can decide whether to do a manual refresh + save before the
+        scheduled run.
+
+        If `try_macro=True` (passed via --refresh-rep flag), we DO attempt
+        the OpenConnection + LoadPositions + CloseConnection dance — useful
+        for ad-hoc runs where the user is at their desk to dismiss any
+        error dialog that pops up."""
+        if self.master_wb is None:
+            log("  (rep holdings: Master List not open — reading cached data)")
+        else:
+            if try_macro:
+                self._try_macro_refresh()
+            else:
+                log("  (rep holdings: using cached data from last manual refresh)")
+
+        # Always recalc + log the effective timestamp, regardless of whether
+        # we ran the macro. This tells the user how fresh the data is.
+        try:
+            self.wb.Sheets("Rep Holdings").Calculate()
+        except Exception as e:
+            log(f"  Rep Holdings recalc failed: {e}")
+        try:
+            stamp = self.wb.Sheets("Rep Holdings").Cells(1, 4).Value
+            log(f"  Rep Holdings D1: {stamp}")
+        except Exception:
+            pass
+
+    def _try_macro_refresh(self) -> None:
+        """Run the Master List macros. Currently fails on OpenConnection
+        with 1004 in headless Excel — left here for future debugging /
+        --refresh-rep flag usage."""
         def run_macro(name: str) -> bool:
             for host in ("Master List COPY.xlsm", "Master List.xlsm"):
                 try:
@@ -282,47 +306,19 @@ class ExcelSession:
                 except Exception:
                     continue
             return False
-
-        # 1. Open the connection. In the user's main Excel this is already
-        # open from when they last used it, but our isolated instance starts
-        # with no connection — LoadPositions will throw 1004 without this.
         log("Running OpenConnection macro...")
         if run_macro("OpenConnection"):
-            time.sleep(5)  # give the auth handshake a moment
-            log("  OpenConnection done")
+            time.sleep(5); log("  OpenConnection done")
         else:
-            log("  OpenConnection failed (continuing anyway)")
-
-        # 2. Load positions
+            log("  OpenConnection failed (connection may need interactive Excel)")
+            return
         log("Running LoadPositions macro...")
         if not run_macro("LoadPositions"):
-            log("  LoadPositions macro failed; skipping rep holdings refresh")
+            log("  LoadPositions failed — continuing with cached data")
             return
-
-        log(f"Waiting {REP_WAIT_SECONDS}s for rep holdings to populate...")
+        log(f"Waiting {REP_WAIT_SECONDS}s...")
         time.sleep(REP_WAIT_SECONDS)
-
-        # 3. Recalc the Rep Holdings sheet so cols K-N parsing formulas update
-        try:
-            self.wb.Sheets("Rep Holdings").Calculate()
-            log("  Rep Holdings recalc done")
-        except Exception as e:
-            log(f"  Rep Holdings recalc failed: {e}")
-
-        # 4. Log the refresh timestamp on D1 so we can verify the macro
-        # actually fired. The workbook isn't saved, so user's local xlsx
-        # keeps the old timestamp — but the in-memory D1 shows what we
-        # just pulled.
-        try:
-            stamp = self.wb.Sheets("Rep Holdings").Cells(1, 4).Value
-            log(f"  Rep Holdings D1 (in-memory): {stamp}")
-        except Exception:
-            pass
-
-        # 5. Close the connection to free server-side resources. Not critical
-        # if it fails.
-        if run_macro("CloseConnection"):
-            log("  CloseConnection done")
+        run_macro("CloseConnection")
 
     # -- Refresh: FactSet --
     def refresh_factset(self) -> None:
@@ -852,17 +848,23 @@ def clean_legacy_errors(companies: list[dict], fx_rates: dict) -> tuple[int, int
 # Main
 # ----------------------------------------------------------------------
 def main() -> int:
+    # Flags: --refresh-rep forces an attempt at LoadPositions (interactive
+    # only — will fail with a 1004 dialog in headless mode).
+    try_macro = "--refresh-rep" in sys.argv[1:]
+
     log("=" * 60)
     log("Run start")
     log(f"Workbook: {WORKBOOK_PATH}")
     log(f"Master List: {MASTER_LIST_PATH}")
+    log(f"Rep-holdings macro refresh: {'YES (--refresh-rep)' if try_macro else 'no (cached data)'}")
     if not WORKBOOK_PATH.exists():
         log(f"ERROR: workbook not found"); return 1
 
     try:
         with ExcelSession(WORKBOOK_PATH, MASTER_LIST_PATH) as xl:
-            # 1. Rep holdings — fast (~25s)
-            xl.refresh_rep_holdings()
+            # 1. Rep holdings — uses cached K-N by default; pass try_macro=True
+            #    via --refresh-rep to attempt OpenConnection + LoadPositions.
+            xl.refresh_rep_holdings(try_macro=try_macro)
             # 2. FactSet — slow (~120s)
             xl.refresh_factset()
             # 3. Read everything
