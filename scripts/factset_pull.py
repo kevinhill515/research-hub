@@ -449,8 +449,6 @@ class ExcelSession:
                 if isinstance(v, str) and v.startswith("#"): return None
                 return v
             except pywintypes.com_error as e:
-                # hresult -2147418111 = RPC_E_CALL_REJECTED ("Call was rejected by callee")
-                # hresult -2147417846 = RPC_E_SERVERCALL_RETRYLATER
                 if e.hresult in (-2147418111, -2147417846):
                     time.sleep(0.5 * (2 ** attempt))
                     last_err = e
@@ -458,6 +456,39 @@ class ExcelSession:
                 raise
         log(f"  cell({sheet_name} R{row}C{col}) failed after retries: {last_err}")
         return None
+
+    def read_range(self, sheet_name: str, range_str: str):
+        """Read a whole rectangular Range as a 2D list of cell values.
+        ONE COM round trip instead of one-per-cell — typically 50-200x
+        faster for sheets with hundreds of cells. Excel returns
+        ((row1cells), (row2cells), ...) for multi-cell ranges or a
+        single value for 1x1 ranges. Normalized here to a 2D list.
+
+        Same retry logic as cell() for transient RPC_E_CALL_REJECTED.
+        Empty cells come through as None."""
+        import pywintypes
+        last_err = None
+        for attempt in range(6):
+            try:
+                raw = self.wb.Sheets(sheet_name).Range(range_str).Value
+                if raw is None:
+                    return [[None]]
+                if not isinstance(raw, tuple):
+                    return [[raw]]
+                # Two cases:
+                # - Multi-row range: tuple of tuples
+                # - Single-row range: tuple of values
+                if len(raw) > 0 and isinstance(raw[0], tuple):
+                    return [list(row) for row in raw]
+                return [list(raw)]
+            except pywintypes.com_error as e:
+                if e.hresult in (-2147418111, -2147417846):
+                    time.sleep(0.5 * (2 ** attempt))
+                    last_err = e
+                    continue
+                raise
+        log(f"  read_range({sheet_name} {range_str}) failed after retries: {last_err}")
+        return [[None]]
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         # IMPORTANT ordering: restore Calculation BEFORE closing workbooks,
@@ -522,61 +553,77 @@ def _num(v) -> float | None:
     except (TypeError, ValueError): return None
 
 
+def _str(v) -> str | None:
+    """Coerce cell value to a stripped string, filtering errors/None."""
+    if v is None: return None
+    if _is_excel_error(v): return None
+    if isinstance(v, str) and v.startswith("#"): return None
+    s = str(v).strip()
+    return s if s else None
+
+
 def read_prices(xl: ExcelSession) -> dict[str, dict]:
+    """Returns { upper_ticker: {price, perf5d} } for every populated row.
+    Single bulk range read — much faster than the per-cell loop."""
     out: dict[str, dict] = {}
-    for r in range(2, MAX_COMPANY_ROW + 1):
-        ord_ticker = xl.cell("Prices", r, 2)
-        if not ord_ticker: continue
-        tk = str(ord_ticker).strip().upper()
-        price = _num(xl.cell("Prices", r, 3))
-        perf  = _num(xl.cell("Prices", r, 4))
-        if perf is not None: perf = round(perf * 100, 2)
-        if price is not None or perf is not None:
-            out[tk] = {"price": price, "perf5d": perf}
-        us_ticker = xl.cell("Prices", r, 5)
-        if us_ticker:
-            us_tk = str(us_ticker).strip().upper()
-            us_price = _num(xl.cell("Prices", r, 6))
-            us_perf  = _num(xl.cell("Prices", r, 7))
-            if us_perf is not None: us_perf = round(us_perf * 100, 2)
-            if us_price is not None or us_perf is not None:
-                out[us_tk] = {"price": us_price, "perf5d": us_perf}
+    rows = xl.read_range("Prices", f"A2:G{MAX_COMPANY_ROW}")
+    for row in rows:
+        # row[0]=Company A, [1]=Ord Ticker B, [2]=Price C, [3]=Perf5D D,
+        # [4]=US Ticker E, [5]=US Price F, [6]=US Perf G
+        if len(row) < 4: continue
+        ord_tk = _str(row[1])
+        if ord_tk:
+            price = _num(row[2])
+            perf = _num(row[3])
+            if perf is not None: perf = round(perf * 100, 2)
+            if price is not None or perf is not None:
+                out[ord_tk.upper()] = {"price": price, "perf5d": perf}
+        if len(row) >= 7:
+            us_tk = _str(row[4])
+            if us_tk:
+                us_price = _num(row[5])
+                us_perf = _num(row[6])
+                if us_perf is not None: us_perf = round(us_perf * 100, 2)
+                if us_price is not None or us_perf is not None:
+                    out[us_tk.upper()] = {"price": us_price, "perf5d": us_perf}
     log(f"  Prices: {len(out)} tickers")
     return out
 
 
 def read_valuation(xl: ExcelSession) -> dict[str, dict]:
+    """Bulk-read Valuation A..Q for all rows."""
     out: dict[str, dict] = {}
     def s(v):
         if v is None: return None
         if isinstance(v, (int, float)): return str(round(float(v), 4))
         return str(v).strip()
-    for r in range(2, MAX_COMPANY_ROW + 1):
-        tk = xl.cell("Valuation", r, 1)
+    rows = xl.read_range("Valuation", f"A2:Q{MAX_COMPANY_ROW}")
+    for row in rows:
+        # Padded so A=row[0], Q=row[16]
+        while len(row) < 17: row.append(None)
+        tk = _str(row[0])
         if not tk: continue
-        tk = str(tk).strip().upper()
+        tk = tk.upper()
         patch: dict = {}
-        for label, col, stringify in (
-            ("peCurrent", 5, True), ("peLow5", 6, True), ("peHigh5", 7, True),
-            ("peAvg5", 8, True),    ("peMed5", 9, True),
-        ):
-            v = _num(xl.cell("Valuation", r, col))
+        for label, idx in (("peCurrent", 4), ("peLow5", 5), ("peHigh5", 6),
+                            ("peAvg5", 7), ("peMed5", 8)):
+            v = _num(row[idx])
             if v is not None: patch[label] = s(v)
-        fy_month = _excel_date_to_month_name(xl.cell("Valuation", r, 10))
+        fy_month = _excel_date_to_month_name(row[9])
         if fy_month: patch["fyMonth"] = fy_month
-        ccy = xl.cell("Valuation", r, 11)
-        if ccy: patch["currency"] = str(ccy).strip().upper()
-        fy1 = _excel_date_to_fy_label(xl.cell("Valuation", r, 12))
+        ccy = _str(row[10])
+        if ccy: patch["currency"] = ccy.upper()
+        fy1 = _excel_date_to_fy_label(row[11])
         if fy1: patch["fy1"] = fy1
-        eps1 = _num(xl.cell("Valuation", r, 13))
+        eps1 = _num(row[12])
         if eps1 is not None: patch["eps1"] = s(eps1)
-        w1 = _num(xl.cell("Valuation", r, 14))
+        w1 = _num(row[13])
         if w1 is not None: patch["w1"] = s(w1)
-        fy2 = _excel_date_to_fy_label(xl.cell("Valuation", r, 15))
+        fy2 = _excel_date_to_fy_label(row[14])
         if fy2: patch["fy2"] = fy2
-        eps2 = _num(xl.cell("Valuation", r, 16))
+        eps2 = _num(row[15])
         if eps2 is not None: patch["eps2"] = s(eps2)
-        w2 = _num(xl.cell("Valuation", r, 17))
+        w2 = _num(row[16])
         if w2 is not None: patch["w2"] = s(w2)
         if patch: out[tk] = patch
     log(f"  Valuation: {len(out)} tickers")
@@ -608,18 +655,17 @@ def _excel_serial_to_date(serial: float):
 
 
 def read_earnings_dates(xl: ExcelSession) -> dict[str, dict]:
-    """Returns { upper_ticker: {next: 'YYYY-MM-DD', last: 'YYYY-MM-DD'} }.
-    Column D = Ticker, E = Next Rpt Date (from QTR_ROLL), F = Last Rpt Date
-    (from the most recent FE_ACTUAL_DATE)."""
+    """Bulk-read cols D..F. D=Ticker, E=Next Rpt Date, F=Last Rpt Date."""
     out: dict[str, dict] = {}
-    for r in range(2, MAX_COMPANY_ROW + 1):
-        tk = xl.cell("Earnings Dates", r, 4)
+    rows = xl.read_range("Earnings Dates", f"D2:F{MAX_COMPANY_ROW}")
+    for row in rows:
+        while len(row) < 3: row.append(None)
+        tk = _str(row[0])
         if not tk: continue
-        tk = str(tk).strip().upper()
-        nxt = _any_date_to_iso(xl.cell("Earnings Dates", r, 5))
-        last = _any_date_to_iso(xl.cell("Earnings Dates", r, 6))
+        nxt = _any_date_to_iso(row[1])
+        last = _any_date_to_iso(row[2])
         if nxt or last:
-            out[tk] = {"next": nxt, "last": last}
+            out[tk.upper()] = {"next": nxt, "last": last}
     log(f"  Earnings dates: {len(out)} tickers")
     return out
 
@@ -655,12 +701,15 @@ def _any_date_to_iso(raw) -> str | None:
 
 
 def read_fx(xl: ExcelSession) -> dict[str, float]:
+    """Bulk-read FX A..B for up to 60 rows."""
     out: dict[str, float] = {}
-    for r in range(2, 60):
-        pair = xl.cell("FX", r, 1)
-        rate = _num(xl.cell("FX", r, 2))
+    rows = xl.read_range("FX", "A2:B60")
+    for row in rows:
+        while len(row) < 2: row.append(None)
+        pair = _str(row[0])
+        rate = _num(row[1])
         if not pair or rate is None or rate == 0: continue
-        pair = str(pair).strip().upper()
+        pair = pair.upper()
         if pair.endswith("USD") and len(pair) == 6:
             ccy = pair[:3]
             out[ccy] = round(1.0 / rate, 6) if rate else None
@@ -681,18 +730,27 @@ def _resolve_perf_sheet(xl: ExcelSession) -> str:
 
 
 def read_performance1(xl: ExcelSession) -> dict[str, dict[str, float]]:
+    """Bulk-read just rows 1-2 across cols A..AM (sheet has headers in row
+    1 and current month's MTD values in row 2)."""
     _PERF_SHEET = _resolve_perf_sheet(xl)
+    rows = xl.read_range(_PERF_SHEET, "A1:AM2")
+    if len(rows) < 2: return {"GL": {}, "FGL": {}, "IN": {}, "FIN": {}, "EM": {}, "SC": {}}
+    headers = rows[0]
+    values = rows[1]
     out: dict[str, dict[str, float]] = {"GL": {}, "FGL": {}, "IN": {}, "FIN": {}, "EM": {}, "SC": {}}
-    def grab(group, col):
-        name = xl.cell(_PERF_SHEET, 1, col)
-        ret = _num(xl.cell(_PERF_SHEET, 2, col))
+    GROUPS = {"GL":["GL","FGL"], "IN":["IN","FIN"], "EM":["EM"], "SC":["SC"]}
+    def grab(group, col_idx):
+        if col_idx >= len(headers) or col_idx >= len(values): return
+        name = _str(headers[col_idx])
+        ret = _num(values[col_idx])
         if name and ret is not None:
-            for p in {"GL":["GL","FGL"], "IN":["IN","FIN"], "EM":["EM"], "SC":["SC"]}[group]:
-                out[p][str(name).strip()] = ret
-    for c in (4,5,6,7,8,9): grab("GL", c)
-    for c in range(14,21):  grab("IN", c)
-    for c in range(24,31):  grab("EM", c)
-    for c in range(34,40):  grab("SC", c)
+            for p in GROUPS[group]:
+                out[p][name] = ret
+    # Col indices are 0-based here. Convert from old 1-based (col 4=index 3).
+    for c in (3, 4, 5, 6, 7, 8): grab("GL", c)
+    for c in range(13, 20):       grab("IN", c)
+    for c in range(23, 30):       grab("EM", c)
+    for c in range(33, 39):       grab("SC", c)
     total = sum(len(v) for v in out.values())
     log(f"  Performance1: {total} series-months")
     return out
@@ -714,18 +772,20 @@ def read_rep_holdings(xl: ExcelSession) -> dict[str, dict[str, dict]]:
     }
     out: dict[str, dict[str, dict]] = {k: {} for k in rep_accounts.values()}
 
-    for r in range(4, MAX_REP_HOLDINGS_ROW + 1):
-        port_code = xl.cell("Rep Holdings", r, 11)  # K
+    # Bulk-read cols K..N for the whole rep-holdings range. ~3000 rows
+    # × 4 cells = 12000 COM calls would have been; now it's 1.
+    rows = xl.read_range("Rep Holdings", f"K4:N{MAX_REP_HOLDINGS_ROW}")
+    for row in rows:
+        while len(row) < 4: row.append(None)
+        port_code = _str(row[0])
         if not port_code: continue
-        port_key = rep_accounts.get(str(port_code).strip().upper())
+        port_key = rep_accounts.get(port_code.upper())
         if not port_key: continue
-        ticker = xl.cell("Rep Holdings", r, 12)     # L
-        shares = _num(xl.cell("Rep Holdings", r, 13))  # M
-        avg    = _num(xl.cell("Rep Holdings", r, 14))  # N
+        ticker = _str(row[1])
+        shares = _num(row[2])
+        avg = _num(row[3])
         if not ticker or shares is None: continue
-        tk = str(ticker).strip().upper()
-        if not tk: continue
-        out[port_key][tk] = {"shares": shares, "avgCost": avg if avg is not None else 0}
+        out[port_key][ticker.upper()] = {"shares": shares, "avgCost": avg if avg is not None else 0}
 
     total = sum(len(v) for v in out.values())
     log(f"  Rep Holdings: {total} positions across {sum(1 for v in out.values() if v)} portfolios")
@@ -776,24 +836,31 @@ METRICS_PERF_COLS = [
 
 
 def read_metrics(xl: ExcelSession) -> dict[str, dict]:
-    """Returns { upper_ticker: {metric_key: value, ..., perf: {period: value}} }"""
+    """Bulk-read the Metrics tab in one shot — A..AO covers ord ticker
+    + every metric + 6 trailing perf periods. Was 14000 COM calls
+    (400 rows × 35 cols), now 1."""
     out: dict[str, dict] = {}
-    for r in range(2, MAX_COMPANY_ROW + 1):
-        tk = xl.cell("Metrics", r, 2)  # B = ord ticker
+    rows = xl.read_range("Metrics", f"A2:AO{MAX_COMPANY_ROW}")
+    for row in rows:
+        if len(row) < 3: continue
+        tk = _str(row[1])  # col B = ord ticker
         if not tk: continue
-        tk = str(tk).strip().upper()
         m: dict = {}
         for key, col, _pct in METRICS_COLS:
-            v = _num(xl.cell("Metrics", r, col))
-            if v is not None:
-                m[key] = v
+            idx = col - 1  # METRICS_COLS uses 1-based col numbers
+            if idx < len(row):
+                v = _num(row[idx])
+                if v is not None:
+                    m[key] = v
         perf: dict = {}
         for period, col in METRICS_PERF_COLS:
-            v = _num(xl.cell("Metrics", r, col))
-            if v is not None:
-                perf[period] = v
+            idx = col - 1
+            if idx < len(row):
+                v = _num(row[idx])
+                if v is not None:
+                    perf[period] = v
         if perf: m["perf"] = perf
-        if m: out[tk] = m
+        if m: out[tk.upper()] = m
     log(f"  Metrics: {len(out)} tickers")
     return out
 
@@ -816,31 +883,30 @@ MARKETS_PERIOD_COLS = [("1D",4),("5D",5),("MTD",6),("QTD",7),("YTD",8),("1Y",9),
 
 
 def read_markets(xl: ExcelSession) -> dict:
+    """Bulk-read Dashboard A..J for the entire scan range, then iterate
+    in-memory to detect sections and FX matrix blocks. Was thousands of
+    COM calls, now 1."""
     snap = {"asOf": datetime.now(timezone.utc).isoformat(timespec="seconds")}
-    # Initialize buckets for each section
     buckets = {key: [] for key in MARKETS_SECTIONS.keys()}
-    # Map label (case-insensitive) -> key
     section_lookup = {name.lower(): key for key, name in MARKETS_SECTIONS.items()}
-    # FX matrix blocks discovered inline. Keyed by period ("3M", "12M").
     fx_matrices: dict = {}
-    # Scan col A row by row. Three cases:
-    #   1. Section row (Indices/Sectors/...): read cols B,C,D-J into buckets.
-    #   2. FX block header ("FX - 3M", "FX - 12M"): read the 5x5 matrix
-    #      that follows (col-header row + 5 data rows) and skip past it.
-    #   3. Anything else (blank run, junk): increment a blank-run counter
-    #      and break out after 10 consecutive blanks.
     import re as _re
     _FX_PAT = _re.compile(r"FX\s*[-_]?\s*(3M|12M)", _re.IGNORECASE)
 
-    r = 2
+    # Single bulk read.
+    grid = xl.read_range("Dashboard", f"A2:J{MARKETS_SCAN_MAX_ROW}")
+    # grid[i] is the i-th data row; row index in workbook = i + 2
+    n = len(grid)
+    i = 0
     blank_streak = 0
-    while r <= MARKETS_SCAN_MAX_ROW:
-        section_raw = xl.cell("Dashboard", r, 1)
-        if not section_raw:
+    while i < n:
+        row = grid[i]
+        while len(row) < 10: row.append(None)
+        section_raw = row[0]
+        if section_raw is None or (isinstance(section_raw, str) and not section_raw.strip()):
             blank_streak += 1
-            if blank_streak >= 10:
-                break
-            r += 1
+            if blank_streak >= 10: break
+            i += 1
             continue
         blank_streak = 0
         section_str = str(section_raw).strip()
@@ -849,43 +915,48 @@ def read_markets(xl: ExcelSession) -> dict:
         m = _FX_PAT.search(section_str)
         if m:
             period = m.group(1).upper()
-            # Column-header row is r+1 (or the next non-blank row)
-            header_row = r + 1
-            while header_row <= MARKETS_SCAN_MAX_ROW:
-                a = xl.cell("Dashboard", header_row, 1)
-                if a:
+            # Column-header row = next non-blank row in our slice
+            j = i + 1
+            while j < n:
+                hdr_row = grid[j]
+                hdr_first = hdr_row[0] if hdr_row else None
+                if hdr_first is not None and (not isinstance(hdr_first, str) or hdr_first.strip()):
                     break
-                header_row += 1
-            # Read col headers from cols B..F (2..6). Skip any col-0 ">" marker.
+                j += 1
+            if j >= n: i = n; continue
+            hdr_row = grid[j]
+            while len(hdr_row) < 7: hdr_row.append(None)
+            # cols B..F (indices 1..5). Filter blanks.
             col_labels = []
-            for c in range(2, 7):
-                v = xl.cell("Dashboard", header_row, c)
-                if v:
-                    col_labels.append(str(v).strip())
-            # Data rows: 5 rows starting at header_row+1
+            for c in range(1, 6):
+                v = hdr_row[c]
+                if v: col_labels.append(str(v).strip())
+            # Data: next 5 rows
             rows_data = []
-            for dr in range(header_row + 1, header_row + 1 + 5):
-                row_label = xl.cell("Dashboard", dr, 1)
-                if not row_label:
-                    continue
+            for dr in range(j + 1, min(j + 1 + 5, n)):
+                drow = grid[dr]
+                while len(drow) < 7: drow.append(None)
+                row_label = drow[0]
+                if not row_label: continue
                 values = []
-                for c in range(2, 2 + len(col_labels)):
-                    values.append(_num(xl.cell("Dashboard", dr, c)))
+                for c in range(1, 1 + len(col_labels)):
+                    values.append(_num(drow[c]))
                 rows_data.append({"label": str(row_label).strip(), "values": values})
             fx_matrices[period] = {"cols": col_labels, "rows": rows_data}
-            r = header_row + 1 + 5
+            i = j + 1 + 5
             continue
 
         section_key = section_lookup.get(section_str.lower())
         if section_key:
-            label = xl.cell("Dashboard", r, 2)   # col B
+            label = row[1]
             if label:
-                ticker = xl.cell("Dashboard", r, 3)  # col C
+                ticker = row[2]
                 row_obj = {"label": str(label), "ticker": str(ticker) if ticker else None}
                 for period, c in MARKETS_PERIOD_COLS:
-                    row_obj[period] = _num(xl.cell("Dashboard", r, c))
+                    idx = c - 1
+                    row_obj[period] = _num(row[idx]) if idx < len(row) else None
                 buckets[section_key].append(row_obj)
-        r += 1
+        i += 1
 
     for key, rows in buckets.items():
         snap[key] = rows
