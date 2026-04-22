@@ -22,7 +22,7 @@ const TABST_INACTIVE = "text-[13px] px-3 py-1.5 border-b-2 border-transparent te
 /* Single row for one sector/country — two side-by-side horizontal bars
  * for portfolio vs benchmark, plus a numeric delta on the right. Bars
  * share the same scale (max = bigger of the two in the row). */
-function WeightRow({ label, color, portfolio, benchmark, hasBenchmark, maxForScale }) {
+function WeightRow({ label, color, portfolio, benchmark, hasBenchmark, maxForScale, contributors }) {
   const portPct = Math.max(0, portfolio || 0);
   const bmPct = Math.max(0, benchmark || 0);
   const diff = (hasBenchmark && portfolio !== null && benchmark !== null)
@@ -34,14 +34,46 @@ function WeightRow({ label, color, portfolio, benchmark, hasBenchmark, maxForSca
     : diff <= -0.25 ? "#dc2626"
     : "#64748b";
 
+  /* Total bar width as % of the row's scale slot. We then split the
+     SAME width amount across the contributing holdings — so the bar
+     length still represents the aggregate portfolio weight, but with
+     vertical hairlines marking each company's contribution. */
+  const totalBarPct = Math.min(100, (portPct / scale) * 100);
+  const usable = contributors && contributors.length > 0
+    ? contributors.reduce(function (s, c) { return s + (c.weight || 0); }, 0)
+    : 0;
+
   return (
     <div className="grid grid-cols-[140px_1fr_70px] items-center gap-2 py-1 text-xs border-b border-slate-100 dark:border-slate-800">
       <div className="truncate font-medium" style={{ color }} title={label}>{label}</div>
       <div>
-        {/* Portfolio bar */}
+        {/* Portfolio bar — segmented by holding when contributors are passed */}
         <div className="flex items-center gap-1.5 mb-0.5">
           <div className="flex-1 h-2.5 rounded-sm bg-slate-100 dark:bg-slate-800 overflow-hidden">
-            <div className="h-full" style={{ width: Math.min(100, (portPct / scale) * 100) + "%", background: color }} />
+            {contributors && contributors.length > 0 && usable > 0 ? (
+              <div className="flex h-full" style={{ width: totalBarPct + "%" }}>
+                {contributors.map(function (co, i) {
+                  /* Each segment's share of the parent bar = its weight as
+                     a fraction of the row's total weight. */
+                  const seg = (co.weight / usable) * 100;
+                  return (
+                    <div
+                      key={co.id || co.name || i}
+                      style={{
+                        width: seg + "%",
+                        background: color,
+                        borderRight: i < contributors.length - 1
+                          ? "1px solid rgba(255,255,255,0.55)"
+                          : undefined,
+                      }}
+                      title={co.name + " — " + co.weight.toFixed(2) + "%"}
+                    />
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="h-full" style={{ width: totalBarPct + "%", background: color }} />
+            )}
           </div>
           <div className="w-12 text-right font-mono text-[10px] text-gray-700 dark:text-slate-300">
             {portPct.toFixed(1)}%
@@ -65,6 +97,32 @@ function WeightRow({ label, color, portfolio, benchmark, hasBenchmark, maxForSca
       </div>
     </div>
   );
+}
+
+/* For a sector/country/region row, return the list of holdings whose
+ * combined weight makes up the row total. Sorted by weight desc.
+ *
+ * `byCompany` comes from calcBreakdowns; each entry has {id, name,
+ * sector, country, mv, portfolio}. `totalMV` is the portfolio's
+ * aggregate USD MV (so weight = mv/totalMV*100).  */
+function contributorsFor(byCompany, totalMV, kind, label, regionByGroup) {
+  if (!byCompany || !byCompany.length || !(totalMV > 0)) return [];
+  let filtered;
+  if (kind === "sectors") {
+    filtered = byCompany.filter(function (c) { return c.sector === label; });
+  } else if (kind === "countries") {
+    filtered = byCompany.filter(function (c) { return c.country === label; });
+  } else if (kind === "region") {
+    filtered = byCompany.filter(function (c) {
+      const g = COUNTRY_GROUPS[c.country];
+      return g && regionByGroup[g] === label;
+    });
+  } else {
+    return [];
+  }
+  return filtered.map(function (c) {
+    return { id: c.id, name: c.name, weight: (c.mv / totalMV) * 100 };
+  }).sort(function (a, b) { return b.weight - a.weight; });
 }
 
 /* Aggregate a country-weight map into region weights. Uses COUNTRY_GROUPS
@@ -285,6 +343,12 @@ export default function BreakdownView({ kind }) {
                 const regionMax = regionRows.reduce(function (m, r) {
                   return Math.max(m, r.portfolio || 0, r.benchmark || 0);
                 }, 1);
+                /* Pre-compute country-group → region map once for the
+                   region contributor lookups. */
+                const regionByGroup = {};
+                Object.keys(REGION_GROUPS).forEach(function (region) {
+                  REGION_GROUPS[region].forEach(function (g) { regionByGroup[g] = region; });
+                });
                 return regionRows.map(function (r) {
                   return (
                     <WeightRow
@@ -295,6 +359,7 @@ export default function BreakdownView({ kind }) {
                       benchmark={r.benchmark}
                       hasBenchmark={hasBenchmark}
                       maxForScale={regionMax}
+                      contributors={contributorsFor(breakdown.byCompany, breakdown.totalMV, "region", r.label, regionByGroup)}
                     />
                   );
                 });
@@ -329,6 +394,7 @@ export default function BreakdownView({ kind }) {
                 benchmark={r.benchmark}
                 hasBenchmark={hasBenchmark}
                 maxForScale={maxForScale}
+                contributors={contributorsFor(breakdown.byCompany, breakdown.totalMV, kind, r.label)}
               />
             );
           })}
