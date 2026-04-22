@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useCompanyContext } from '../context/CompanyContext.jsx';
 import { todayStr, blankEarnings, getCurrency, parseDate } from '../utils/index.js';
 import { supaUpsert, supaGet } from '../api/index.js';
+import { pctToDecimal } from '../utils/format.js';
+import { parseDashboardUpload } from '../utils/dashboardParser.js';
 import { REP_ACCOUNTS } from '../constants/index.js';
 
 export function useImport(){
@@ -240,7 +242,6 @@ export function useImport(){
       npAss:1,  npAss1:1,  npAss2:1,
       opROE:1,  opROE1:1,  opROE2:1,
     };
-    var PERF_IS_PCT = true; /* MTD/QTD/3M/6M/YTD/1Y also percent-form */
     var count=0;
     setCompanies(function(prev){
       return prev.map(function(c){
@@ -265,25 +266,22 @@ export function useImport(){
         var useNew = parts.length >= 36;
         var METRIC_KEYS = useNew ? METRIC_KEYS_NEW : METRIC_KEYS_OLD;
         var perfStart = useNew ? NEW_PERF_START : OLD_PERF_START;
+        /* Percent-kind fields go through pctToDecimal (shared helper in
+           utils/format.js). Non-percent fields (mktCap, fpe*, intCov)
+           stay numeric. Keeps metrics + dashboard upload percent-handling
+           consistent and tested in one place. */
         var m = {};
         for(var i=2; i<METRIC_KEYS.length; i++){
           var key = METRIC_KEYS[i];
           if(!key) continue;
-          var v = num(i);
-          if(v === null) continue;
-          /* Percent-form pastes → stored as decimal. The upload is
-             always in percent form (3.2 for 3.2%, 0.5 for 0.5%), so
-             divide ALL pct-kind fields by 100 unconditionally. The
-             previous >1.5 heuristic was missing small percents. */
-          if(PCT_FIELDS[key]) v = v / 100;
-          m[key] = v;
+          var v = PCT_FIELDS[key] ? pctToDecimal(parts[i]) : num(i);
+          if(v !== null) m[key] = v;
         }
         var perf = {};
         for(var j=0; j<PERF_KEYS.length; j++){
-          var v2 = num(perfStart + j);
-          if(v2 === null) continue;
-          if(PERF_IS_PCT) v2 = v2 / 100;
-          perf[PERF_KEYS[j]] = v2;
+          /* Trailing-return perf values are always percent-form */
+          var v2 = pctToDecimal(parts[perfStart + j]);
+          if(v2 !== null) perf[PERF_KEYS[j]] = v2;
         }
         if(Object.keys(perf).length > 0) m.perf = perf;
         if(Object.keys(m).length === 0) return c;
@@ -375,82 +373,13 @@ export function useImport(){
      preserved (FX matrix only overwritten if an FX block is included). */
   function applyDashboardImport(){
     if(!dashboardImportText.trim())return;
-    var raw=dashboardImportText.split("\n").map(function(l){return l.replace("\r","");});
-    var SECTION_ALIASES={indices:"indices",sectors:"sectors",countries:"countries",commodities:"commodities",bonds:"bonds"};
-    var PERIODS=["1D","5D","MTD","QTD","YTD","1Y","3Y"];
-    var bySection={indices:[],sectors:[],countries:[],commodities:[],bonds:[]};
-    var fxMatrices={}; /* "3M"->{rows:[...], cols:[...]} and "12M" */
-    var dropped=0;
-
-    function splitRow(line){
-      var delim=line.indexOf("\t")>=0?"\t":",";
-      return line.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});
-    }
-    function pctize(raw){
-      var n=parseFloat(raw);
-      if(isNaN(n))return null;
-      /* Upload is always in percent-form (2.3 for 2.3%, 0.5 for 0.5%).
-         Divide unconditionally to match how the script stores values
-         in marketsSnapshot (as decimals; UI multiplies by 100 on display). */
-      return n/100;
-    }
-
-    var i=0;
-    while(i<raw.length){
-      var line=raw[i];
-      if(!line.trim()){i++;continue;}
-      /* Detect FX matrix block header anywhere in the first cell.
-         Handles "FX - 3M %", "FX-3M", "FX 3M", etc. */
-      var fxMatch=/FX\s*[-_]?\s*(3M|12M)/i.exec(splitRow(line)[0]||"");
-      if(fxMatch){
-        var period=fxMatch[1].toUpperCase();
-        /* Find the next non-blank line that looks like the column-
-           header row: first cell is blank or ">" or a currency code,
-           the rest are currency codes. */
-        var j=i+1;
-        while(j<raw.length && !raw[j].trim()) j++;
-        if(j>=raw.length){i=j;continue;}
-        var headerCells=splitRow(raw[j]);
-        /* Drop a leading ">" or blank cell used in the xlsx */
-        var colStart=0;
-        if(headerCells[0]===">" || headerCells[0]==="") colStart=1;
-        var cols=headerCells.slice(colStart).filter(function(x){return x;});
-        if(cols.length===0){i=j+1;continue;}
-        /* Parse subsequent rows until blank or until we hit another
-           known section/FX block header. */
-        var rows=[];
-        var k=j+1;
-        while(k<raw.length){
-          if(!raw[k].trim())break;
-          var cells=splitRow(raw[k]);
-          var firstCell=(cells[0]||"").trim();
-          if(!firstCell)break;
-          /* Another FX block header? stop. */
-          if(/FX\s*[-_]?\s*(3M|12M)/i.test(firstCell))break;
-          /* Another flat section row? stop. */
-          if(SECTION_ALIASES[firstCell.toLowerCase()])break;
-          var values=cells.slice(colStart, colStart+cols.length).map(pctize);
-          rows.push({label:firstCell, values:values});
-          k++;
-        }
-        fxMatrices[period]={rows:rows, cols:cols};
-        i=k;
-        continue;
-      }
-      /* Flat section row? */
-      var parts=splitRow(line);
-      /* Skip header row like "Section, Label, Ticker, ..." */
-      if(/^section$|^name$|^label$/i.test(parts[0]||"")){i++;continue;}
-      var secKey=SECTION_ALIASES[(parts[0]||"").toLowerCase().trim()];
-      if(!secKey || parts.length<4){dropped++;i++;continue;}
-      var row={label:parts[1]||"", ticker:parts[2]||null};
-      for(var p2=0;p2<PERIODS.length;p2++){
-        row[PERIODS[p2]]=pctize(parts[3+p2]);
-      }
-      bySection[secKey].push(row);
-      i++;
-    }
-
+    /* Parsing is fully delegated to the pure parser in
+       utils/dashboardParser.js (unit-tested there). This hook only
+       handles the state update + Supabase write. */
+    var parsed=parseDashboardUpload(dashboardImportText);
+    var bySection=parsed.bySection;
+    var fxMatrices=parsed.fxMatrices;
+    var dropped=parsed.dropped;
     var hasFlat=Object.keys(bySection).some(function(k){return bySection[k].length>0;});
     var hasFx=Object.keys(fxMatrices).length>0;
     if(!hasFlat && !hasFx){alert("No valid rows parsed. Expected flat rows (Section, Label, Ticker, 1D, 5D, MTD, QTD, YTD, 1Y, 3Y) and/or FX matrix blocks.");return;}
