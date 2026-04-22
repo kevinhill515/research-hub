@@ -351,60 +351,135 @@ export function useImport(){
   }
 
   /* Markets dashboard upload — manual path equivalent to what the
-     daily FactSet script does. 10 columns, section-tagged:
-       Section, Label, Ticker, 1D, 5D, MTD, QTD, YTD, 1Y, 3Y
-     Where Section is one of: Indices, Sectors, Countries, Commodities,
-     Bonds (case-insensitive). Values are decimals (0.023 for 2.3%) or
-     percent-form (2.3 for 2.3%) — auto-detected by magnitude.
-     FX matrix is intentionally NOT handled here; it comes from the
-     script (or you can manually edit meta.marketsSnapshot via console).
-     Replaces the existing snapshot for the sections in the paste;
-     unaffected sections (and FX) are preserved. */
+     daily FactSet script does. Supports two formats mixed in one paste:
+
+     1. Flat 10-col section rows:
+          Section, Label, Ticker, 1D, 5D, MTD, QTD, YTD, 1Y, 3Y
+        Section ∈ Indices / Sectors / Countries / Commodities / Bonds.
+
+     2. FX matrix blocks (optional; can be appended after flat rows):
+          FX - 3M %
+                  USD    EUR    GBP    JPY    CAD
+          USD            0.5    0.8    1.2    0.3
+          EUR    -0.5           0.3    0.7   -0.1
+          ...
+          FX - 12M %
+          ... (same structure)
+
+     The parser detects matrix blocks by a header line containing
+     "FX - 3M" or "FX - 12M" (case-insensitive; the leading ">" in
+     Excel-exported header rows is ignored). Values are decimals or
+     percent-form — auto-detected by magnitude.
+
+     Replaces snapshot sections in the paste; unaffected sections are
+     preserved (FX matrix only overwritten if an FX block is included). */
   function applyDashboardImport(){
     if(!dashboardImportText.trim())return;
-    var lines=dashboardImportText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});
-    if(lines.length===0)return;
-    /* Skip header row if first cell looks like "Section" or "Name". */
-    var first=lines[0];
-    var delim0=first.indexOf("\t")>=0?"\t":",";
-    var firstParts=first.split(delim0).map(function(s){return s.trim();});
-    if(/^section$|^name$|^label$/i.test(firstParts[0]||"")){lines.shift();}
+    var raw=dashboardImportText.split("\n").map(function(l){return l.replace("\r","");});
     var SECTION_ALIASES={indices:"indices",sectors:"sectors",countries:"countries",commodities:"commodities",bonds:"bonds"};
     var PERIODS=["1D","5D","MTD","QTD","YTD","1Y","3Y"];
     var bySection={indices:[],sectors:[],countries:[],commodities:[],bonds:[]};
+    var fxMatrices={}; /* "3M"->{rows:[...], cols:[...]} and "12M" */
     var dropped=0;
-    lines.forEach(function(line){
+
+    function splitRow(line){
       var delim=line.indexOf("\t")>=0?"\t":",";
-      var p=line.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});
-      if(p.length<4){dropped++;return;}
-      var secKey=SECTION_ALIASES[(p[0]||"").toLowerCase().trim()];
-      if(!secKey){dropped++;return;}
-      var row={label:p[1]||"",ticker:p[2]||null};
-      for(var i=0;i<PERIODS.length;i++){
-        var raw=parseFloat(p[3+i]);
-        if(isNaN(raw)){row[PERIODS[i]]=null;continue;}
-        /* Percent vs decimal auto-detect: anything >1.5 in magnitude
-           is assumed percent-form and divided by 100. */
-        row[PERIODS[i]]=Math.abs(raw)>1.5?raw/100:raw;
+      return line.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});
+    }
+    function pctize(raw){
+      var n=parseFloat(raw);
+      if(isNaN(n))return null;
+      return Math.abs(n)>1.5?n/100:n;
+    }
+
+    var i=0;
+    while(i<raw.length){
+      var line=raw[i];
+      if(!line.trim()){i++;continue;}
+      /* Detect FX matrix block header anywhere in the first cell.
+         Handles "FX - 3M %", "FX-3M", "FX 3M", etc. */
+      var fxMatch=/FX\s*[-_]?\s*(3M|12M)/i.exec(splitRow(line)[0]||"");
+      if(fxMatch){
+        var period=fxMatch[1].toUpperCase();
+        /* Find the next non-blank line that looks like the column-
+           header row: first cell is blank or ">" or a currency code,
+           the rest are currency codes. */
+        var j=i+1;
+        while(j<raw.length && !raw[j].trim()) j++;
+        if(j>=raw.length){i=j;continue;}
+        var headerCells=splitRow(raw[j]);
+        /* Drop a leading ">" or blank cell used in the xlsx */
+        var colStart=0;
+        if(headerCells[0]===">" || headerCells[0]==="") colStart=1;
+        var cols=headerCells.slice(colStart).filter(function(x){return x;});
+        if(cols.length===0){i=j+1;continue;}
+        /* Parse subsequent rows until blank or until we hit another
+           known section/FX block header. */
+        var rows=[];
+        var k=j+1;
+        while(k<raw.length){
+          if(!raw[k].trim())break;
+          var cells=splitRow(raw[k]);
+          var firstCell=(cells[0]||"").trim();
+          if(!firstCell)break;
+          /* Another FX block header? stop. */
+          if(/FX\s*[-_]?\s*(3M|12M)/i.test(firstCell))break;
+          /* Another flat section row? stop. */
+          if(SECTION_ALIASES[firstCell.toLowerCase()])break;
+          var values=cells.slice(colStart, colStart+cols.length).map(pctize);
+          rows.push({label:firstCell, values:values});
+          k++;
+        }
+        fxMatrices[period]={rows:rows, cols:cols};
+        i=k;
+        continue;
+      }
+      /* Flat section row? */
+      var parts=splitRow(line);
+      /* Skip header row like "Section, Label, Ticker, ..." */
+      if(/^section$|^name$|^label$/i.test(parts[0]||"")){i++;continue;}
+      var secKey=SECTION_ALIASES[(parts[0]||"").toLowerCase().trim()];
+      if(!secKey || parts.length<4){dropped++;i++;continue;}
+      var row={label:parts[1]||"", ticker:parts[2]||null};
+      for(var p2=0;p2<PERIODS.length;p2++){
+        row[PERIODS[p2]]=pctize(parts[3+p2]);
       }
       bySection[secKey].push(row);
-    });
-    var hasData=Object.keys(bySection).some(function(k){return bySection[k].length>0;});
-    if(!hasData){alert("No valid rows parsed. Expected columns: Section, Label, Ticker, 1D, 5D, MTD, QTD, YTD, 1Y, 3Y.");return;}
-    /* Merge into existing marketsSnapshot; preserve FX and any sections
-       the user didn't paste. */
+      i++;
+    }
+
+    var hasFlat=Object.keys(bySection).some(function(k){return bySection[k].length>0;});
+    var hasFx=Object.keys(fxMatrices).length>0;
+    if(!hasFlat && !hasFx){alert("No valid rows parsed. Expected flat rows (Section, Label, Ticker, 1D, 5D, MTD, QTD, YTD, 1Y, 3Y) and/or FX matrix blocks.");return;}
+
     (async function(){
       var existing={};
       try{
         var r=await supaGet("meta","key","marketsSnapshot");
         if(r&&r.value)existing=JSON.parse(r.value);
-      }catch(e){/* no existing snapshot */}
+      }catch(e){}
       var next=Object.assign({},existing,{asOf:new Date().toISOString()});
       Object.keys(bySection).forEach(function(k){
         if(bySection[k].length>0)next[k]=bySection[k];
       });
+      if(fxMatrices["3M"]){
+        next.fxMatrix3M=fxMatrices["3M"];
+        /* Backward-compat vs-USD list = first column of matrix */
+        next.fx3M=fxMatrices["3M"].rows.map(function(r){
+          return {label:r.label, value:r.values[0]};
+        }).filter(function(x){return x.value!==null;});
+      }
+      if(fxMatrices["12M"]){
+        next.fxMatrix12M=fxMatrices["12M"];
+        next.fx12M=fxMatrices["12M"].rows.map(function(r){
+          return {label:r.label, value:r.values[0]};
+        }).filter(function(x){return x.value!==null;});
+      }
       supaUpsert("meta",{key:"marketsSnapshot",value:JSON.stringify(next)});
-      var msg="Updated "+Object.keys(bySection).filter(function(k){return bySection[k].length>0;}).map(function(k){return k+"("+bySection[k].length+")";}).join(", ");
+      var bits=Object.keys(bySection).filter(function(k){return bySection[k].length>0;}).map(function(k){return k+"("+bySection[k].length+")";});
+      if(fxMatrices["3M"])bits.push("fxMatrix3M("+fxMatrices["3M"].rows.length+"x"+fxMatrices["3M"].cols.length+")");
+      if(fxMatrices["12M"])bits.push("fxMatrix12M("+fxMatrices["12M"].rows.length+"x"+fxMatrices["12M"].cols.length+")");
+      var msg="Updated "+bits.join(", ");
       if(dropped>0)msg+=" — skipped "+dropped+" invalid row(s)";
       setTimeout(function(){alert(msg);setDashboardImportText("");},100);
     })();
