@@ -41,4 +41,15 @@ export const TEAM_MEMBERS=["Chris","Al","Bob","Kevin","Ron","Emily"];
 export const TEAM_COLORS={"Chris":"#7c3aed","Al":"#dc2626","Bob":"#16a34a","Kevin":"#2563eb","Ron":"#ea580c","Emily":"#ca8a04"};
 export const REP_ACCOUNTS={"LWGA0013":"GL","LWFOCGL1":"FGL","LWIV0004":"IN","LWIF0001":"FIN","LWEA0001":"EM","LWSC0003":"SC"};
 export const PORT_NAMES={"GL":"Global Value","FGL":"Focused Global Value","IN":"International Value","FIN":"Focused International Value","EM":"Emerging Markets Value","SC":"International Small Cap Value"};
+/* Benchmark labels per portfolio. Sector/country weights are uploaded
+   quarterly into meta.benchmarkWeights keyed by these exact strings. */
+export const BENCHMARKS={
+  GL:  {core:"ACWI",          value:"ACWI Value"},
+  FGL: {core:"ACWI",          value:"ACWI Value"},
+  IN:  {core:"ACWI ex US",    value:"ACWI ex US Value"},
+  FIN: {core:"ACWI ex US",    value:"ACWI ex US Value"},
+  EM:  {core:"MSCI EM",       value:"MSCI EM Value"},
+  SC:  {core:"ACWI ex US SC", value:"ACWI ex US SC Value"},
+};
+export const BENCHMARK_NAMES=Array.from(new Set([].concat.apply([],Object.values(BENCHMARKS).map(function(b){return[b.core,b.value];}))));
 export const FLAG_STYLES={"Needs Review":{bg:"#fef9c3",color:"#854d0e",icon:"⚑"},"Urgent":{bg:"#fee2e2",color:"#991b1b",icon:"🔴"}};

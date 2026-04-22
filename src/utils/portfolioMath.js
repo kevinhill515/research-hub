@@ -111,6 +111,52 @@ export function getNextReport(company, today) {
   return next;
 }
 
+/* Sector & country weight breakdowns for a portfolio (or aggregate of
+ * portfolios). Returns { sectors, countries, totalMV, byCompany } where
+ * sectors/countries are maps of name -> weight percent (0-100). */
+export function calcBreakdowns(companies, repData, fxRates, portKey) {
+  const ports = portKey === "All" ? null : (Array.isArray(portKey) ? portKey : [portKey]);
+  /* Pool rep data across selected portfolios. If "All", include every
+   * portfolio in repData. */
+  const portKeys = ports || Object.keys(repData || {});
+  let totalMV = 0;
+  const sectors = {};
+  const countries = {};
+  const byCompany = [];
+
+  portKeys.forEach(function (pk) {
+    const pRep = (repData || {})[pk] || {};
+    const inPort = companies.filter(function (c) {
+      if (portKey === "All") return true;
+      return (c.portfolios || []).indexOf(pk) >= 0;
+    });
+    const others = companies.filter(function (c) {
+      if (portKey === "All") return false;
+      return (c.portfolios || []).indexOf(pk) < 0;
+    });
+    const owners = buildTickerOwners(inPort, others);
+    const portTotal = calcTotalMV(inPort, pRep, fxRates, owners);
+    totalMV += portTotal;
+
+    inPort.forEach(function (c) {
+      const mv = calcCompanyRepMV(c, pRep, fxRates, owners);
+      if (!mv) return;
+      if (c.sector) sectors[c.sector] = (sectors[c.sector] || 0) + mv;
+      if (c.country) countries[c.country] = (countries[c.country] || 0) + mv;
+      byCompany.push({ id: c.id, name: c.name, sector: c.sector, country: c.country, mv, portfolio: pk });
+    });
+  });
+
+  function toPct(map) {
+    const out = {};
+    if (totalMV > 0) {
+      Object.keys(map).forEach(function (k) { out[k] = (map[k] / totalMV) * 100; });
+    }
+    return out;
+  }
+  return { sectors: toPct(sectors), countries: toPct(countries), totalMV: totalMV, byCompany: byCompany };
+}
+
 /* 5-day perf from the company's ordinary ticker, or null. */
 export function getPerf5d(company) {
   const ord = ((company && company.tickers) || []).find(function (t) { return t.isOrdinary; });

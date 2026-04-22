@@ -5,7 +5,7 @@ import { supaUpsert } from '../api/index.js';
 import { REP_ACCOUNTS } from '../constants/index.js';
 
 export function useImport(){
-  const { companies, setCompanies, saved, setSaved, setCopied, currentUser, repData, setRepData, fxRates, setFxRates, specialWeights, setSpecialWeights, calLastUpdated, setCalLastUpdated, calLastUpdatedBy, setCalLastUpdatedBy, repLastUpdated, setRepLastUpdated, fxLastUpdated, setFxLastUpdated, applyPerfBulk } = useCompanyContext();
+  const { companies, setCompanies, saved, setSaved, setCopied, currentUser, repData, setRepData, fxRates, setFxRates, specialWeights, setSpecialWeights, benchmarkWeights, setBenchmarkWeights, calLastUpdated, setCalLastUpdated, calLastUpdatedBy, setCalLastUpdatedBy, repLastUpdated, setRepLastUpdated, fxLastUpdated, setFxLastUpdated, applyPerfBulk } = useCompanyContext();
 
   const [showDataPanel,setShowDataPanel]=useState(false);
   const [importText,setImportText]=useState("");
@@ -14,6 +14,8 @@ export function useImport(){
   const [valImportText,setValImportText]=useState("");
   const [estImportText,setEstImportText]=useState("");
   const [metricsImportText,setMetricsImportText]=useState("");
+  const [benchmarkImportText,setBenchmarkImportText]=useState("");
+  const [benchmarkAsOf,setBenchmarkAsOf]=useState("");
   const [weightsImportText,setWeightsImportText]=useState("");
   const [calImportText,setCalImportText]=useState("");
   const [repText,setRepText]=useState("");
@@ -239,6 +241,62 @@ export function useImport(){
     setTimeout(function(){alert("Updated metrics for "+count+" companies.");setMetricsImportText("");},100);
   }
 
+  /* Benchmark weights upload. Paste format is 4 columns:
+       Benchmark, Type, Name, Weight%
+     Type is "Sector" or "Country". Rows for the same benchmark are merged
+     (so you can paste sectors and countries together). Weights should be
+     percent (e.g. 11.2 for 11.2%). A header row, if present, is skipped.
+     asOf is an optional quarter label like "2026 Q1" stored per benchmark. */
+  function applyBenchmarkImport(){
+    if(!benchmarkImportText.trim())return;
+    var lines=benchmarkImportText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});
+    /* Skip header if present: first cell is "Benchmark" or not a known benchmark name */
+    var first=lines[0];
+    if(first){
+      var delim0=first.indexOf("\t")>=0?"\t":",";
+      var firstParts=first.split(delim0).map(function(s){return s.trim().replace(/^"|"$/g,"");});
+      if(/^benchmark$/i.test(firstParts[0]||"") || /^sector$|^country$/i.test(firstParts[1]||"") || /^type$/i.test(firstParts[1]||"")) {
+        lines.shift();
+      }
+    }
+    var affected={};
+    var dropped=0;
+    lines.forEach(function(line){
+      var delim=line.indexOf("\t")>=0?"\t":",";
+      var p=line.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});
+      if(p.length<4){dropped++;return;}
+      var bm=p[0];
+      var type=(p[1]||"").toLowerCase();
+      var name=p[2];
+      var w=parseFloat(p[3]);
+      if(!bm||!name||isNaN(w)){dropped++;return;}
+      var bucket=type.indexOf("country")>=0?"countries":type.indexOf("sector")>=0?"sectors":null;
+      if(!bucket){dropped++;return;}
+      if(!affected[bm])affected[bm]={sectors:{},countries:{},asOf:benchmarkAsOf||""};
+      affected[bm][bucket][name]=w;
+    });
+    if(Object.keys(affected).length===0){alert("No valid rows parsed. Format: Benchmark, Type (Sector|Country), Name, Weight%");return;}
+    setBenchmarkWeights(function(prev){
+      var next=Object.assign({},prev);
+      Object.keys(affected).forEach(function(bm){
+        var cur=next[bm]||{sectors:{},countries:{},asOf:""};
+        /* Merge: incoming sectors/countries REPLACE existing for same bm
+         * (a full paste each quarter), but if user pasted only sectors
+         * then countries stay put, and vice versa. */
+        var inc=affected[bm];
+        next[bm]={
+          sectors: Object.keys(inc.sectors).length>0 ? inc.sectors : (cur.sectors||{}),
+          countries: Object.keys(inc.countries).length>0 ? inc.countries : (cur.countries||{}),
+          asOf: inc.asOf || cur.asOf || "",
+        };
+      });
+      return next;
+    });
+    var msg="Updated "+Object.keys(affected).length+" benchmark(s): "+Object.keys(affected).join(", ");
+    if(dropped>0)msg+="  ("+dropped+" row(s) skipped)";
+    setTimeout(function(){alert(msg);setBenchmarkImportText("");},100);
+  }
+
   function importAll(){
     setImportError("");
     try{var d=JSON.parse(importText);var cos=d.companies||(Array.isArray(d)?d:null),lib=d.library||null;if(!cos&&!lib){setImportError("No data found.");return;}if(cos&&Array.isArray(cos)){setCompanies(cos);supaUpsert("companies",{id:"shared",data:JSON.stringify(cos)});}if(lib&&Array.isArray(lib)){setSaved(lib);supaUpsert("library",{id:"shared",data:JSON.stringify(lib)});}setImportText("");setShowDataPanel(false);}
@@ -250,9 +308,10 @@ export function useImport(){
     showDataPanel,setShowDataPanel,importText,setImportText,importError,setImportError,
     dataHubTab,setDataHubTab,valImportText,setValImportText,estImportText,setEstImportText,
     metricsImportText,setMetricsImportText,
+    benchmarkImportText,setBenchmarkImportText,benchmarkAsOf,setBenchmarkAsOf,
     weightsImportText,setWeightsImportText,calImportText,setCalImportText,
     repText,setRepText,fxText,setFxText,txText,setTxText,perfPortTargets,setPerfPortTargets,perfText,setPerfText,portTab,setPortTab,portSort,setPortSort,portSortDir,setPortSortDir,
-    applyFxImport,applyRepImport,applyTxImport,applyPerfImport,applyCalImport,applyWeightsImport,applyValImport,applyEstImport,applyMetricsImport,
+    applyFxImport,applyRepImport,applyTxImport,applyPerfImport,applyCalImport,applyWeightsImport,applyValImport,applyEstImport,applyMetricsImport,applyBenchmarkImport,
     importAll,exportAll
   };
 }
