@@ -189,7 +189,7 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
         <div className={tdBase} style={rowBg ? { background: rowBg } : undefined}>
           {mosStyle ? (
             <span title="Margin of Safety" className="text-[10px] px-1.5 rounded-full font-bold whitespace-nowrap" style={{ background: mosStyle.bg, color: mosStyle.color }}>
-              {fmtMOS(mos)}
+              {fmtMOS0(mos)}
             </span>
           ) : (
             <span className="text-xs text-gray-400 dark:text-slate-500">--</span>

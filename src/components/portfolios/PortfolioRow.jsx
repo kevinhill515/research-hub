@@ -231,7 +231,7 @@ export default function PortfolioRow(props) {
         {mosStyle
           ? <span className="text-[11px] px-1.5 py-0.5 rounded-full font-semibold"
                   style={{ background: mosStyle.bg, color: mosStyle.color }}>
-              {fmtMOS(mos)}
+              {fmtMOS0(mos)}
             </span>
           : "--"}
       </Cell>

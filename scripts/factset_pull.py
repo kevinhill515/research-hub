@@ -460,6 +460,37 @@ class ExcelSession:
         return None
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        # IMPORTANT ordering: restore Calculation BEFORE closing workbooks,
+        # and force Master List's FDSLIVE streaming cells to re-subscribe.
+        # Otherwise the user's open Master List sheet keeps FDSLIVE cells
+        # stuck at #NUM (they went dormant while we were in manual calc
+        # and don't auto-resume on restore).
+        try:
+            # Force a full rebuild once calc is back on, so streaming UDFs
+            # get their first recalc pulse.
+            if self.xl is not None:
+                self.xl.Calculation = CALC_AUTOMATIC
+                try: self.xl.CalculateFullRebuild()
+                except Exception: pass
+        except Exception as e:
+            log(f"Restore Calculation: {e}")
+
+        # Poke Master List's sheets to resubscribe FDSLIVE streams. Toggling
+        # EnableCalculation False→True marks the sheet dirty and re-evaluates
+        # UDFs; this is the well-known Excel remedy for streaming cells
+        # stuck after a manual-calc episode.
+        if self.master_wb is not None:
+            try:
+                for ws in self.master_wb.Worksheets:
+                    try:
+                        ws.EnableCalculation = False
+                        ws.EnableCalculation = True
+                    except Exception:
+                        continue
+                log("  Resubscribed Master List FDSLIVE cells")
+            except Exception as e:
+                log(f"  FDSLIVE resume failed: {e}")
+
         # Close only the workbooks we opened ourselves. Leave the user's
         # session + their open workbooks (Master List + anything else) alone.
         if self._we_opened_main and self.wb is not None:
@@ -468,10 +499,14 @@ class ExcelSession:
         if self._we_opened_master and self.master_wb is not None:
             try: self.master_wb.Close(SaveChanges=False)
             except Exception as e: log(f"Close master: {e}")
-        # Restore the user's calculation setting
-        if self._saved_calc is not None:
+
+        # Final: restore user's ORIGINAL calculation setting (in case they
+        # had Manual on purpose). We already toggled Automatic above to
+        # wake streaming; now honor whatever they had.
+        if self._saved_calc is not None and self._saved_calc != CALC_AUTOMATIC:
             try: self.xl.Calculation = self._saved_calc
             except Exception: pass
+
         # Never Quit() — that would kill the user's whole Excel session.
         self.wb = self.master_wb = self.xl = None
 
