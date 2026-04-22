@@ -47,7 +47,7 @@ export default function App(){
   const [showAddTargetHist,setShowAddTargetHist]=useState(false);
   const [newTargetHist,setNewTargetHist]=useState({date:"",portfolio:"",oldWeight:"",newWeight:""});
   const [showAddTx,setShowAddTx]=useState(false);
-  const [newTx,setNewTx]=useState({date:"",portfolio:"",shares:"",price:"",amount:""});
+  const [newTx,setNewTx]=useState({date:"",portfolio:"",shares:"",price:"",amount:"",cashFlow:false});
   const [editingTarget,setEditingTarget]=useState(null);
   const [weightsFilter,setWeightsFilter]=useState("All");
   const [txFilter,setTxFilter]=useState("All");

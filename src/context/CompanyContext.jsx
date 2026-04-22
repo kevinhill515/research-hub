@@ -405,6 +405,20 @@ export function CompanyProvider({children}){
       })});
     });});
   }
+  /* Toggle whether a transaction was driven by a portfolio cash inflow
+     or outflow (client money moving, not a discretionary decision).
+     Pass true/false to set; pass null/undefined to clear. */
+  function setTxCashFlow(companyId,txId,flag){
+    setCompanies(function(cs){return cs.map(function(c){
+      if(c.id!==companyId)return c;
+      return Object.assign({},c,{transactions:(c.transactions||[]).map(function(t){
+        if(t.id!==txId)return t;
+        var n=Object.assign({},t);
+        if(flag===undefined||flag===null)delete n.cashFlow;else n.cashFlow=!!flag;
+        return n;
+      })});
+    });});
+  }
 
   function cp(text,key){try{var el=document.createElement("textarea");el.value=text;el.style.position="fixed";el.style.opacity="0";document.body.appendChild(el);el.focus();el.select();document.execCommand("copy");document.body.removeChild(el);setCopied(key);setTimeout(function(){setCopied(null);},1500);}catch(e){}}
 
@@ -436,7 +450,7 @@ export function CompanyProvider({children}){
     annotations,setAnnotations,
     addAnnotation,updateAnnotation,deleteAnnotation,resolveAnnotation,unresolveAnnotation,addReply,markAnnotationRead,parseMentions,
     updateTargetWeight,addTargetHistoryEntry,deleteTargetHistoryEntry,
-    addTransaction,deleteTransaction,setTxInitOverride,updateInitiatedDate,
+    addTransaction,deleteTransaction,setTxInitOverride,setTxCashFlow,updateInitiatedDate,
     researchAssignments,setResearchAssignments,setResearchSlot,setReorgSlot,
     perfData,setPerfData,setPerfSeries,addPerfSeries,removePerfSeries,movePerfSeries,setPerfSeriesOrder,setPerfReturn,setPerfLastMonthEMV,applyPerfBulk,
     feedback,setFeedback,addFeedback,updateFeedback,removeFeedback,moveFeedback
