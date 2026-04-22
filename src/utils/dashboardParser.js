@@ -20,12 +20,20 @@ const PERIODS = ["1D", "5D", "MTD", "QTD", "YTD", "1Y", "3Y"];
 export const FX_PATTERN = /FX\s*[-_]?\s*(3M|12M)/i;
 
 /* Split one line into cells, handling tab- OR comma-separated + stripping
- * wrapping quotes. Whitespace around each cell is trimmed. */
+ * wrapping quotes. Whitespace AROUND each cell is trimmed; whitespace
+ * INSIDE a quoted value is preserved (standard CSV behavior). */
 export function splitRow(line) {
   const delim = line.indexOf("\t") >= 0 ? "\t" : ",";
   return line.split(delim).map(function (s) {
     return s.trim().replace(/^"|"$/g, "");
   });
+}
+
+/* True when a line is empty OR contains only delimiters/whitespace —
+ * Excel "copy empty row" often produces ",,,,," rather than "". */
+export function isBlankLine(line) {
+  if (!line.trim()) return true;
+  return !line.replace(/[\s,\t]/g, "");
 }
 
 /* Parse a single FX matrix block. Given all lines and the index of the
@@ -34,9 +42,10 @@ export function splitRow(line) {
  * and endIdx is the next line to resume scanning from.
  * Returns block=null when the block is malformed/empty. */
 export function parseFxMatrixBlock(lines, startIdx) {
-  /* Find the col-header row: next non-blank line after the block label. */
+  /* Find the col-header row: next non-blank line after the block label.
+   * isBlankLine treats ",,,,," as blank (xlsx export of a blank row). */
   let j = startIdx + 1;
-  while (j < lines.length && !lines[j].trim()) j++;
+  while (j < lines.length && isBlankLine(lines[j])) j++;
   if (j >= lines.length) return { block: null, endIdx: j };
 
   const headerCells = splitRow(lines[j]);
@@ -51,7 +60,7 @@ export function parseFxMatrixBlock(lines, startIdx) {
   const rows = [];
   let k = j + 1;
   while (k < lines.length) {
-    if (!lines[k].trim()) break;
+    if (isBlankLine(lines[k])) break;
     const cells = splitRow(lines[k]);
     const firstCell = (cells[0] || "").trim();
     if (!firstCell) break;

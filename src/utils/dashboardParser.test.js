@@ -16,8 +16,9 @@ describe("splitRow", () => {
     expect(splitRow("a,b,c")).toEqual(["a", "b", "c"]);
   });
 
-  it("trims whitespace + strips wrapping quotes", () => {
-    expect(splitRow('"a",  b ," c "')).toEqual(["a", "b", "c"]);
+  it("trims outer whitespace + strips wrapping quotes (preserves inner)", () => {
+    /* CSV semantics: whitespace inside a quoted value is preserved. */
+    expect(splitRow('"a",  b ," c "')).toEqual(["a", "b", " c "]);
   });
 });
 
@@ -43,10 +44,11 @@ describe("parseDashboardUpload — flat rows", () => {
       label: "MSCI ACWI",
       ticker: "ACWI-US",
     });
-    /* Percent-form values stored as decimal */
-    expect(r.bySection.indices[0]["1D"]).toBe(0.001);
-    expect(r.bySection.indices[0]["3Y"]).toBe(0.234);
-    expect(r.bySection.bonds[0]["3Y"]).toBe(-0.024);
+    /* Percent-form values stored as decimal — toBeCloseTo because /100
+       in JS produces tiny float-precision artifacts (0.234 -> 0.23399…). */
+    expect(r.bySection.indices[0]["1D"]).toBeCloseTo(0.001, 5);
+    expect(r.bySection.indices[0]["3Y"]).toBeCloseTo(0.234, 5);
+    expect(r.bySection.bonds[0]["3Y"]).toBeCloseTo(-0.024, 5);
   });
 
   it("auto-skips a header row", () => {
@@ -113,9 +115,9 @@ describe("parseFxMatrixBlock", () => {
     expect(r.block).not.toBeNull();
     expect(r.block.cols).toEqual(["USD", "EUR", "GBP", "JPY", "CAD"]);
     expect(r.block.rows).toHaveLength(5);
-    /* USD row: DXY in col 0 */
+    /* USD row: DXY in col 0 (toBeCloseTo to dodge float precision) */
     expect(r.block.rows[0].label).toBe("USD");
-    expect(r.block.rows[0].values[0]).toBe(-0.0045);
+    expect(r.block.rows[0].values[0]).toBeCloseTo(-0.0045, 5);
     /* EUR row: diagonal blank */
     expect(r.block.rows[1].label).toBe("EUR");
     expect(r.block.rows[1].values[1]).toBeNull();
@@ -203,9 +205,9 @@ describe("parseDashboardUpload — mixed content", () => {
     expect(r.fxMatrices["3M"].rows).toHaveLength(5);
     expect(r.fxMatrices["12M"].rows).toHaveLength(5);
     /* DXY for 3M */
-    expect(r.fxMatrices["3M"].rows[0].values[0]).toBe(-0.0045);
+    expect(r.fxMatrices["3M"].rows[0].values[0]).toBeCloseTo(-0.0045, 5);
     /* DXY for 12M */
-    expect(r.fxMatrices["12M"].rows[0].values[0]).toBe(-0.0185);
+    expect(r.fxMatrices["12M"].rows[0].values[0]).toBeCloseTo(-0.0185, 5);
   });
 
   it("blank lines between sections don't break parsing", () => {

@@ -13,16 +13,20 @@
  * the "some fields divided, some not" state that caused multiple bugs.
  */
 
+/* Excel COM error codes returned by pywintypes when a cell has #NAME?,
+ * #N/A, #DIV/0!, etc. They fall in a narrow band around -2.14e9. */
+const EXCEL_ERROR_MIN = -2146826300;
+const EXCEL_ERROR_MAX = -2146826200;
+
 /* Parse to a number, or null if the input isn't parseable or blank.
- * No unit conversion. Safe against empty strings, whitespace, and
- * Excel error codes (which come through as huge negatives). */
+ * No unit conversion. Rejects Excel error codes so they never leak
+ * into stored data. */
 export function numOrNull(raw) {
   if (raw === null || raw === undefined) return null;
   if (typeof raw === "string" && raw.trim() === "") return null;
   const n = typeof raw === "number" ? raw : parseFloat(raw);
   if (isNaN(n)) return null;
-  /* Excel COM error codes are in the -2.15e9 range. Reject them. */
-  if (n < -1e12 || n > 1e15) return null;
+  if (n >= EXCEL_ERROR_MIN && n <= EXCEL_ERROR_MAX) return null;
   return n;
 }
 
