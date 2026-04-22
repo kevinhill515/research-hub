@@ -6,7 +6,7 @@ import StatusPill from '../ui/StatusPill.jsx';
  * `variant` = "upcoming" or "recent" controls the day-label wording and
  * urgency tinting (upcoming uses today/soon red/amber; recent uses a
  * calmer neutral palette). */
-function Row({ c, date, daysAway, entry, variant }) {
+function Row({ c, date, daysAway, entry, variant, onClick }) {
   const ss = c.sector ? sectorStyle(c.sector) : null;
 
   let borderStyle = "4px solid transparent";
@@ -40,8 +40,10 @@ function Row({ c, date, daysAway, entry, variant }) {
 
   return (
     <div
-      className={"flex gap-3 items-center px-3.5 py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 mb-1.5 transition-colors " + tintClass}
+      onClick={onClick}
+      className={"flex gap-3 items-center px-3.5 py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 mb-1.5 transition-colors " + tintClass + (onClick ? " cursor-pointer hover:brightness-95 dark:hover:brightness-110" : "")}
       style={{ borderLeft: borderStyle }}
+      title={onClick ? "Open " + c.name : undefined}
     >
       <div className="min-w-[60px] text-center">
         <div className="text-lg font-bold" style={{ color: labelColor }}>
@@ -73,7 +75,7 @@ function Row({ c, date, daysAway, entry, variant }) {
   );
 }
 
-function EarningsCalendar({ companies }) {
+function EarningsCalendar({ companies, onSelectCompany }) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const upcomingCutoff = new Date(today); upcomingCutoff.setDate(upcomingCutoff.getDate() + 30);
@@ -140,7 +142,7 @@ function EarningsCalendar({ companies }) {
         {upcoming.length === 0 ? (
           <p className="text-sm text-gray-500 dark:text-slate-400">No earnings scheduled in the next 30 days.</p>
         ) : upcoming.map(function (u, i) {
-          return <Row key={"u"+i} c={u.company} date={u.date} daysAway={u.daysAway} entry={u.entry} variant="upcoming" />;
+          return <Row key={"u"+i} c={u.company} date={u.date} daysAway={u.daysAway} entry={u.entry} variant="upcoming" onClick={onSelectCompany ? function(){onSelectCompany(u.company);} : undefined} />;
         })}
       </div>
       <div>
@@ -148,7 +150,7 @@ function EarningsCalendar({ companies }) {
         {recent.length === 0 ? (
           <p className="text-sm text-gray-500 dark:text-slate-400">No earnings reported in the last 30 days. Run the daily FactSet pull or paste into the Earnings Dates upload (now accepts a 3rd column: Last Rpt Date).</p>
         ) : recent.map(function (r, i) {
-          return <Row key={"r"+i} c={r.company} date={r.date} daysAway={r.daysAway} entry={r.entry} variant="recent" />;
+          return <Row key={"r"+i} c={r.company} date={r.date} daysAway={r.daysAway} entry={r.entry} variant="recent" onClick={onSelectCompany ? function(){onSelectCompany(r.company);} : undefined} />;
         })}
       </div>
     </div>
