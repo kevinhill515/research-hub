@@ -105,9 +105,10 @@ function GroupTable({ title, rows }) {
 
 function FxMatrix({ label, matrix }) {
   if (!matrix || !matrix.rows || matrix.rows.length === 0) return null;
-  /* USD column (col L in the workbook) is the "vs USD" reading — DXY
-     for the USD row, USD-per-X for others. Relabel the column header
-     as DXY for clarity; keep row/currency labels as-is. */
+  /* Cell semantics: row currency's return in terms of column currency.
+     USD/USD is special — populated with the DXY dollar-index return
+     as a proxy. Render by value: em-dash for null (e.g. EUR/EUR, etc.
+     that are genuinely blank), percent for anything with data. */
   return (
     <div className="border border-slate-200 dark:border-slate-700 rounded-md p-2">
       <div className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 mb-1">{label}</div>
@@ -116,8 +117,7 @@ function FxMatrix({ label, matrix }) {
           <tr>
             <th className="px-1 py-0.5"></th>
             {matrix.cols.map(function (c, i) {
-              const colLabel = i === 0 ? "DXY / " + c : c;
-              return <th key={i} className="px-1 py-0.5 text-right font-medium text-gray-500 dark:text-slate-400">{colLabel}</th>;
+              return <th key={i} className="px-1 py-0.5 text-right font-medium text-gray-500 dark:text-slate-400">{c}</th>;
             })}
           </tr>
         </thead>
@@ -127,15 +127,19 @@ function FxMatrix({ label, matrix }) {
               <tr key={i} className="border-t border-slate-100 dark:border-slate-800">
                 <td className="px-1 py-0.5 font-medium text-gray-700 dark:text-slate-300">{row.label}</td>
                 {row.values.map(function (v, j) {
+                  if (v === null || v === undefined) {
+                    return <td key={j} className="px-1 py-0.5 text-right font-mono text-gray-400 dark:text-slate-600">—</td>;
+                  }
                   const style = returnStyle(v);
-                  /* Diagonal (same-to-same) cells are intentionally blank in
-                     the workbook — show an em-dash instead of "--" % which
-                     would be misread. */
-                  const isDiagonal = (row.label || "").toUpperCase() === (matrix.cols[j] || "").toUpperCase();
+                  /* Tooltip tags the USD/USD cell as DXY for clarity. */
+                  const isDxy = (row.label || "").toUpperCase() === "USD" &&
+                                (matrix.cols[j] || "").toUpperCase() === "USD";
                   return (
-                    <td key={j} className="px-1 py-0.5 text-right font-mono whitespace-nowrap"
-                        style={style || undefined}>
-                      {isDiagonal ? "—" : fmtPct(v)}
+                    <td key={j}
+                        className="px-1 py-0.5 text-right font-mono whitespace-nowrap"
+                        style={style || undefined}
+                        title={isDxy ? "DXY dollar-index return" : row.label + " vs " + matrix.cols[j]}>
+                      {fmtPct(v)}
                     </td>
                   );
                 })}
