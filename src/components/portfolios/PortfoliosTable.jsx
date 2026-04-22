@@ -220,14 +220,55 @@ export function PortfoliosTable(props) {
     };
   }, [companies, repData, fxRates, portTab, portSort, portSortDir]);
 
-  /* ---- Totals for the TOTAL row ---- */
-  const { totalTarget, totalRep } = useMemo(function () {
+  /* ---- Totals for the TOTAL row ----
+   *
+   * Rep % aggregates CASH/DIVACC too (raw MVs summed, rounded once).
+   *
+   * The per-column weighted averages (held, unreal, perf, MOS, MOS Fixed,
+   * and the 5 FPE-range fields) weight each company by its rep MV, and
+   * renormalize over companies that have a finite value for that column.
+   * A missing MOS on one holding doesn't drag the portfolio MOS toward
+   * zero — it just drops that holding out of the denominator.
+   *
+   * CASH/DIVACC are intentionally excluded from these column-level avgs
+   * (they have no held/MOS/etc.) but they ARE counted in totalRep. */
+  const { totalTarget, totalRep, wHeld, wUnreal, wPerf, wMos, wMosFixed, wFpeVal } = useMemo(function () {
     let tgt = 0;
     let rawRep = 0;
+
+    /* Column accumulators: { sumWV, sumW } per field. */
+    function mkAcc() { return { sumWV: 0, sumW: 0 }; }
+    const acc = {
+      held: mkAcc(), unreal: mkAcc(), perf: mkAcc(),
+      mos: mkAcc(), mosFixed: mkAcc(),
+      peLow5: mkAcc(), peHigh5: mkAcc(), peMed5: mkAcc(),
+      peAvg5: mkAcc(), peCurrent: mkAcc(),
+    };
+    function add(accKey, v, w) {
+      if (!isFinite(v) || !(w > 0)) return;
+      acc[accKey].sumWV += w * v;
+      acc[accKey].sumW  += w;
+    }
+
     portCos.forEach(function (c) {
       tgt += parseFloat((c.portWeights || {})[portTab]) || 0;
-      rawRep += perRowData[c.id].repMV;
+      const r = perRowData[c.id];
+      rawRep += r.repMV;
+      const w = r.repMV;
+      if (!(w > 0)) return; /* 0-MV companies don't vote */
+      add("held",     r.monthsHeld, w);
+      add("unreal",   r.unrealVal,  w);
+      add("perf",     r.perf5d,     w);
+      add("mos",      r.mos,        w);
+      add("mosFixed", r.mosFixed,   w);
+      const val = c.valuation || {};
+      add("peLow5",    parseFloat(val.peLow5),    w);
+      add("peHigh5",   parseFloat(val.peHigh5),   w);
+      add("peMed5",    parseFloat(val.peMed5),    w);
+      add("peAvg5",    parseFloat(val.peAvg5),    w);
+      add("peCurrent", parseFloat(val.peCurrent), w);
     });
+
     const cashShares = repShares(portRep.CASH);
     const divShares  = repShares(portRep.DIVACC);
     const cashTgt = parseFloat((specialWeights.CASH   || {})[portTab]) || 0;
@@ -235,7 +276,25 @@ export function PortfoliosTable(props) {
     tgt += cashTgt + divTgt;
     rawRep += cashShares + divShares;
     const rep = totalMV > 0 ? Math.round(rawRep / totalMV * 1000) / 10 : 0;
-    return { totalTarget: tgt, totalRep: rep };
+
+    function avg(a) { return a.sumW > 0 ? a.sumWV / a.sumW : null; }
+
+    return {
+      totalTarget: tgt,
+      totalRep:    rep,
+      wHeld:       avg(acc.held),
+      wUnreal:     avg(acc.unreal),
+      wPerf:       avg(acc.perf),
+      wMos:        avg(acc.mos),
+      wMosFixed:   avg(acc.mosFixed),
+      wFpeVal: {
+        peLow5:    avg(acc.peLow5),
+        peHigh5:   avg(acc.peHigh5),
+        peMed5:    avg(acc.peMed5),
+        peAvg5:    avg(acc.peAvg5),
+        peCurrent: avg(acc.peCurrent),
+      },
+    };
   }, [portCos, perRowData, portRep, specialWeights, portTab, totalMV]);
 
   /* ---- Diagnostic: warn if computed total doesn't match AUM ---- */
@@ -426,7 +485,16 @@ export function PortfoliosTable(props) {
 
         {/* TOTAL */}
         {totalMV > 0 && (
-          <PortfolioTotalRow totalTarget={totalTarget} totalRep={totalRep} />
+          <PortfolioTotalRow
+            totalTarget={totalTarget}
+            totalRep={totalRep}
+            wHeld={wHeld}
+            wUnreal={wUnreal}
+            wPerf={wPerf}
+            wMos={wMos}
+            wMosFixed={wMosFixed}
+            wFpeVal={wFpeVal}
+          />
         )}
       </div>
     </div>
