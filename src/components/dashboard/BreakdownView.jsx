@@ -94,8 +94,10 @@ export default function BreakdownView({ kind }) {
   const [bmType, setBmType] = useState("core"); /* "core" | "value" */
   /* Column sort: null = default (portfolio weight desc). Otherwise
      {col:"diff", dir:"desc"|"asc"}. Click cycle: default -> desc -> asc
-     -> default. */
+     -> default. Tracked separately for the main country/sector table
+     and (on country view) the region table above it. */
   const [sort, setSort] = useState(null);
+  const [regionSort, setRegionSort] = useState(null);
 
   /* Figure out which portfolios exist with any rep data (to avoid showing
    * empty tabs). */
@@ -146,27 +148,46 @@ export default function BreakdownView({ kind }) {
     return list;
   }, [breakdown, hasBenchmark, benchData, kind, sort]);
 
-  /* Region aggregation (Country Breakdown only). */
+  /* Region aggregation (Country Breakdown only). Default sort is by
+     portfolio weight desc; regionSort overrides with diff asc/desc. */
   const regionRows = useMemo(function () {
     if (kind !== "countries") return null;
     const portRegion = aggregateToRegions(breakdown.countries || {});
     const bmRegion = hasBenchmark ? aggregateToRegions(benchData.countries) : {};
     const order = Object.keys(REGION_GROUPS);
-    return order.map(function (r) {
+    const list = order.map(function (r) {
       const p = portRegion[r] || 0;
       const b = hasBenchmark ? (bmRegion[r] || 0) : null;
       return { label: r, portfolio: p, benchmark: b, diff: (b !== null ? p - b : null) };
     });
-  }, [breakdown, hasBenchmark, benchData, kind]);
+    if (regionSort && regionSort.col === "diff" && hasBenchmark) {
+      const mult = regionSort.dir === "asc" ? 1 : -1;
+      list.sort(function (a, b) {
+        if (a.diff === null && b.diff === null) return 0;
+        if (a.diff === null) return 1;
+        if (b.diff === null) return -1;
+        return mult * (a.diff - b.diff);
+      });
+    } else {
+      list.sort(function (a, b) {
+        const pa = a.portfolio || 0, pb = b.portfolio || 0;
+        if (Math.abs(pa - pb) > 0.01) return pb - pa;
+        return (b.benchmark || 0) - (a.benchmark || 0);
+      });
+    }
+    return list;
+  }, [breakdown, hasBenchmark, benchData, kind, regionSort]);
 
-  function handleDiffHeaderClick() {
+  function cycleDiffSort(setter) {
     if (!hasBenchmark) return;
-    setSort(function (prev) {
+    setter(function (prev) {
       if (!prev || prev.col !== "diff") return { col: "diff", dir: "desc" };
       if (prev.dir === "desc") return { col: "diff", dir: "asc" };
       return null; /* third click — back to default */
     });
   }
+  function handleDiffHeaderClick() { cycleDiffSort(setSort); }
+  function handleRegionDiffHeaderClick() { cycleDiffSort(setRegionSort); }
 
   const maxForScale = rows.reduce(function (m, r) {
     return Math.max(m, r.portfolio || 0, r.benchmark || 0);
@@ -247,6 +268,19 @@ export default function BreakdownView({ kind }) {
           {kind === "countries" && regionRows && (
             <div className="mb-4">
               <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-semibold mb-1">Region Breakdown</div>
+              <div className="grid grid-cols-[140px_1fr_70px] gap-2 pb-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium border-b border-slate-200 dark:border-slate-700 mb-1">
+                <div>Region</div>
+                <div>{hasBenchmark ? "Portfolio / Benchmark" : "Portfolio weight"}</div>
+                <div
+                  onClick={hasBenchmark ? handleRegionDiffHeaderClick : undefined}
+                  className={"text-right " + (hasBenchmark ? "cursor-pointer hover:text-gray-700 dark:hover:text-slate-300 select-none" : "")}
+                  title={hasBenchmark ? "Click to sort by over/under-weight (3 states: desc / asc / default)" : undefined}
+                >
+                  {hasBenchmark
+                    ? "+/−" + (regionSort && regionSort.col === "diff" ? (regionSort.dir === "asc" ? " ↑" : " ↓") : "")
+                    : ""}
+                </div>
+              </div>
               {(function () {
                 const regionMax = regionRows.reduce(function (m, r) {
                   return Math.max(m, r.portfolio || 0, r.benchmark || 0);
