@@ -3,9 +3,13 @@ import { useCompanyContext } from '../context/CompanyContext.jsx';
 import { PORTFOLIOS, TIER_ORDER, SECTOR_ORDER, COUNTRY_ORDER, ALL_COLS, COMPACT_COLS, TEMPLATE_SECTIONS, UPLOAD_TYPES, REP_ACCOUNTS } from '../constants/index.js';
 import { getCurrency, calcNormEPS, calcTP, calcMOS, fmtPrice, fmtTP, fmtMOS, impliedFYLabel, todayStr, parseDate, sortCos, blankEarnings, toHTML, downloadMD, getTiers } from '../utils/index.js';
 import { ANTHROPIC_KEY, apiCall, supaUpsert } from '../api/index.js';
+import { useAlert } from '../components/ui/DialogProvider.jsx';
 
 export function useCompanies(){
   const { companies, setCompanies, saved, setSaved, lastPriceUpdate, setLastPriceUpdate, currentUser, setCopied, updateCo, cp, T, fxRates, setFxRates, fxLastUpdated, setFxLastUpdated, repData, setRepData, repLastUpdated, setRepLastUpdated, specialWeights, setSpecialWeights, calLastUpdated, setCalLastUpdated, calLastUpdatedBy, setCalLastUpdatedBy } = useCompanyContext();
+  /* In-app dialog instead of native window.alert — keeps the look
+     consistent and works in environments that suppress native dialogs. */
+  const alertFn = useAlert();
 
   /* selCo is derived from companies[] + selCoId so it's always fresh. Previous
      implementation was a raw snapshot that went stale on every mutation,
@@ -101,7 +105,7 @@ export function useCompanies(){
         return{name:get(idx.name),ticker:ordT,ordTicker:ordT,usTicker:usT,usTickerName:get(idx.usTickerName),portfolios,portNote:get(idx.port),country:get(idx.country),sector:get(idx.sector),lastReviewed:get(idx.lastReviewed),action,takeaway:get(idx.takeaway),status,tier:get(idx.tier)};
       }).filter(function(r){return r.name||r.ticker;});
       setBulkPreview(rows);
-    }catch(e){alert("Parse error: "+e.message);}
+    }catch(e){alertFn("Parse error: "+e.message);}
     setBulkLoading(false);
   }
   function confirmBulk(mode){
@@ -230,7 +234,7 @@ export function useCompanies(){
     try{
       var allKeys=[...TEMPLATE_SECTIONS].map(function(s){return'"'+s+'"';}).join(", ");
       var res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":ANTHROPIC_KEY,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:4000,system:"You are a JSON extractor. Extract the following sections from the provided company research template and return ONLY a valid JSON object with exactly these keys: "+allKeys+". If a section is not found, use an empty string. Return nothing else — no markdown, no backticks, no explanation.",messages:[{role:"user",content:[{type:"text",text:tmplRaw.slice(0,20000)}]}]})});
-      var json=await res.json();if(json.error){alert("API error: "+JSON.stringify(json.error));setTmplLoading(false);return;}
+      var json=await res.json();if(json.error){alertFn("API error: "+JSON.stringify(json.error));setTmplLoading(false);return;}
       var raw=(json.content||[]).map(function(b){return b.text||"";}).join("");
       var clean=raw.replace(/```json/g,"").replace(/```/g,"").trim();
       var parsed=JSON.parse(clean);
@@ -238,12 +242,12 @@ export function useCompanies(){
       TEMPLATE_SECTIONS.forEach(function(s){if(parsed[s]&&parsed[s].trim())merged[s]=parsed[s];});
       var u=Object.assign({},selCo,{sections:merged,lastUpdated:todayStr()});
       setSelCo(u);setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});});setTmplRaw("");
-    }catch(e){alert("Failed: "+e.message);}
+    }catch(e){alertFn("Failed: "+e.message);}
     setTmplLoading(false);
   }
   async function processUpload(){
     if(!selCo||!upText.trim())return;setUpLoading(true);setPendingDiff(null);setPendingMeta(null);
-    try{var allSecs=[...TEMPLATE_SECTIONS];var cur=allSecs.map(function(s){return"## "+s+"\n"+((selCo.sections&&selCo.sections[s])||"(empty)");}).join("\n\n");var r=await apiCall("Investment research assistant. New research ("+upType+") for "+selCo.name+" ("+selCo.ticker+"). Current template:\n"+cur+"\n\nReturn ONLY JSON: {changes:[{section,before,after,reason}],summary:string}. No markdown fences.",[{type:"text",text:upText}],2500);var parsed=JSON.parse(r.replace(/```json|```/g,"").trim());setPendingDiff(parsed.changes||[]);setPendingMeta({summary:parsed.summary,type:upType,date:todayStr()});}catch(e){alert("Could not process: "+e.message);}
+    try{var allSecs=[...TEMPLATE_SECTIONS];var cur=allSecs.map(function(s){return"## "+s+"\n"+((selCo.sections&&selCo.sections[s])||"(empty)");}).join("\n\n");var r=await apiCall("Investment research assistant. New research ("+upType+") for "+selCo.name+" ("+selCo.ticker+"). Current template:\n"+cur+"\n\nReturn ONLY JSON: {changes:[{section,before,after,reason}],summary:string}. No markdown fences.",[{type:"text",text:upText}],2500);var parsed=JSON.parse(r.replace(/```json|```/g,"").trim());setPendingDiff(parsed.changes||[]);setPendingMeta({summary:parsed.summary,type:upType,date:todayStr()});}catch(e){alertFn("Could not process: "+e.message);}
     setUpLoading(false);
   }
   function applyPriceImport(){
@@ -273,7 +277,7 @@ export function useCompanies(){
     if(!isNaN(nowOrdinary.price)){updates.valuation=Object.assign({},c.valuation||{},{price:nowOrdinary.price,currency:nowOrdinary.currency});count++;}
     updates.tickers=newTickers;
     return Object.assign({},c,updates);});});
-    setPriceImportText("");setShowPriceImport(false);var priceUpdateStr=todayStr()+" "+new Date().toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"});setLastPriceUpdate(priceUpdateStr);supaUpsert("meta",{key:"lastPriceUpdate",value:priceUpdateStr});setTimeout(function(){alert("Updated prices for "+count+" companies.");},100);
+    setPriceImportText("");setShowPriceImport(false);var priceUpdateStr=todayStr()+" "+new Date().toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"});setLastPriceUpdate(priceUpdateStr);supaUpsert("meta",{key:"lastPriceUpdate",value:priceUpdateStr});setTimeout(function(){alertFn("Updated prices for "+count+" companies.");},100);
   }
   /* Three-state click cycle on column headers:
        0: (cold) column not active -> set to this col's default direction
@@ -291,7 +295,7 @@ export function useCompanies(){
       setCoSort("Tier"); setCoSortDir("asc");
     }
   }
-  function exportToPDF(title,htmlContent){   var win=window.open("","_blank");   if(!win){alert("Please allow popups to export PDF.");return;}   win.document.write("<!DOCTYPE html><html><head><title>"+title+"</title><style>body{font-family:Georgia,serif;max-width:800px;margin:40px auto;padding:0 40px;color:#111;line-height:1.7;}h1{font-size:22px;border-bottom:2px solid #334155;padding-bottom:10px;margin-bottom:20px;}h2{font-size:16px;color:#1e40af;margin-top:28px;margin-bottom:8px;}p{font-size:14px;}.meta{font-size:12px;color:#6b7280;margin-bottom:20px;}</style></head><body>"+htmlContent+"</body></html>");   win.document.close();   setTimeout(function(){win.print();},500); }
+  function exportToPDF(title,htmlContent){   var win=window.open("","_blank");   if(!win){alertFn("Please allow popups to export PDF.");return;}   win.document.write("<!DOCTYPE html><html><head><title>"+title+"</title><style>body{font-family:Georgia,serif;max-width:800px;margin:40px auto;padding:0 40px;color:#111;line-height:1.7;}h1{font-size:22px;border-bottom:2px solid #334155;padding-bottom:10px;margin-bottom:20px;}h2{font-size:16px;color:#1e40af;margin-top:28px;margin-bottom:8px;}p{font-size:14px;}.meta{font-size:12px;color:#6b7280;margin-bottom:20px;}</style></head><body>"+htmlContent+"</body></html>");   win.document.close();   setTimeout(function(){win.print();},500); }
   function exportCompanyPDF(co){   var html="<h1>"+co.name+(co.ticker?" ("+co.ticker+")":"")+"</h1><div class='meta'>";   if(co.sector)html+="Sector: "+co.sector+" | ";   if(co.country)html+="Country: "+co.country+" | ";   if(co.status)html+="Status: "+co.status;   html+="</div>";   var v=co.valuation||{};var ne=calcNormEPS(v)||parseFloat(v.eps);var tp=calcTP(v.pe,ne);var mos=calcMOS(tp,v.price);var cur=(v.currency)||getCurrency(co.country);   if(tp!==null||v.price){html+="<h2>Valuation</h2><p>";if(v.price)html+="Price: "+cur+" "+fmtPrice(v.price)+" &nbsp;";if(tp!==null)html+="TP: "+fmtTP(tp,cur)+" &nbsp;";if(mos!==null)html+="MOS: "+fmtMOS(mos);html+="</p>";}   TEMPLATE_SECTIONS.forEach(function(s){var c=co.sections&&co.sections[s];if(c&&c.trim()){html+="<h2>"+s+"</h2><p>"+c.replace(/\n/g,"<br/>")+"</p>";}});   if(co.earningsEntries&&co.earningsEntries.length){html+="<h2>Earnings History</h2>";co.earningsEntries.forEach(function(e){html+="<p><strong>"+e.quarter+"</strong> "+e.reportDate+"<br/>"+(e.shortTakeaway||"")+"</p>";});}   exportToPDF(co.name,html); }
   function exportCSV(){
     var rows=[["Tier","Name","Country","Sector","Portfolio","Action","Notes","Last Reviewed","Status","Ord Ticker","US Ticker","Port?","US Ticker Name"]];
