@@ -801,7 +801,9 @@ def read_metrics(xl: ExcelSession) -> dict[str, dict]:
 # Markets dashboard structure (new layout): row 1 headers, rows 2+ data.
 # Col A=Section, B=Label, C=Ticker, D..J=7 timeframe returns (1D..3Y).
 # Sections: Indices, Sectors, Countries, Commodities, Bonds.
-# FX matrix lives separately at K1:P16 and is read by the FX reader below.
+# FX matrix blocks appear inline in col A with a "FX - 3M" / "FX - 12M"
+# label, followed by a col-header row (">" in A, currencies in B-F) and
+# 5 data rows (row-currency in A, values in B-F with blank diagonals).
 MARKETS_SECTIONS = {
     "indices":     "Indices",
     "sectors":     "Sectors",
@@ -819,64 +821,93 @@ def read_markets(xl: ExcelSession) -> dict:
     buckets = {key: [] for key in MARKETS_SECTIONS.keys()}
     # Map label (case-insensitive) -> key
     section_lookup = {name.lower(): key for key, name in MARKETS_SECTIONS.items()}
+    # FX matrix blocks discovered inline. Keyed by period ("3M", "12M").
+    fx_matrices: dict = {}
+    # Scan col A row by row. Three cases:
+    #   1. Section row (Indices/Sectors/...): read cols B,C,D-J into buckets.
+    #   2. FX block header ("FX - 3M", "FX - 12M"): read the 5x5 matrix
+    #      that follows (col-header row + 5 data rows) and skip past it.
+    #   3. Anything else (blank run, junk): increment a blank-run counter
+    #      and break out after 10 consecutive blanks.
+    import re as _re
+    _FX_PAT = _re.compile(r"FX\s*[-_]?\s*(3M|12M)", _re.IGNORECASE)
+
+    r = 2
     blank_streak = 0
-    for r in range(2, MARKETS_SCAN_MAX_ROW + 1):
-        section_raw = xl.cell("Dashboard", r, 1)  # col A
+    while r <= MARKETS_SCAN_MAX_ROW:
+        section_raw = xl.cell("Dashboard", r, 1)
         if not section_raw:
             blank_streak += 1
             if blank_streak >= 10:
-                break  # probably past the last section
+                break
+            r += 1
             continue
         blank_streak = 0
-        section_key = section_lookup.get(str(section_raw).lower().strip())
-        if not section_key:
-            continue  # unknown section — skip
-        label = xl.cell("Dashboard", r, 2)   # col B
-        if not label: continue
-        ticker = xl.cell("Dashboard", r, 3)  # col C
-        row = {"label": str(label), "ticker": str(ticker) if ticker else None}
-        for period, c in MARKETS_PERIOD_COLS:
-            row[period] = _num(xl.cell("Dashboard", r, c))
-        buckets[section_key].append(row)
+        section_str = str(section_raw).strip()
+
+        # FX matrix block?
+        m = _FX_PAT.search(section_str)
+        if m:
+            period = m.group(1).upper()
+            # Column-header row is r+1 (or the next non-blank row)
+            header_row = r + 1
+            while header_row <= MARKETS_SCAN_MAX_ROW:
+                a = xl.cell("Dashboard", header_row, 1)
+                if a:
+                    break
+                header_row += 1
+            # Read col headers from cols B..F (2..6). Skip any col-0 ">" marker.
+            col_labels = []
+            for c in range(2, 7):
+                v = xl.cell("Dashboard", header_row, c)
+                if v:
+                    col_labels.append(str(v).strip())
+            # Data rows: 5 rows starting at header_row+1
+            rows_data = []
+            for dr in range(header_row + 1, header_row + 1 + 5):
+                row_label = xl.cell("Dashboard", dr, 1)
+                if not row_label:
+                    continue
+                values = []
+                for c in range(2, 2 + len(col_labels)):
+                    values.append(_num(xl.cell("Dashboard", dr, c)))
+                rows_data.append({"label": str(row_label).strip(), "values": values})
+            fx_matrices[period] = {"cols": col_labels, "rows": rows_data}
+            r = header_row + 1 + 5
+            continue
+
+        section_key = section_lookup.get(section_str.lower())
+        if section_key:
+            label = xl.cell("Dashboard", r, 2)   # col B
+            if label:
+                ticker = xl.cell("Dashboard", r, 3)  # col C
+                row_obj = {"label": str(label), "ticker": str(ticker) if ticker else None}
+                for period, c in MARKETS_PERIOD_COLS:
+                    row_obj[period] = _num(xl.cell("Dashboard", r, c))
+                buckets[section_key].append(row_obj)
+        r += 1
+
     for key, rows in buckets.items():
         snap[key] = rows
         log(f"  Markets/{key}: {len(rows)} rows")
 
-    # FX matrix K1:P16. Each block (3M then 12M) has:
-    #   row header N in K (rows 4-8 for 3M, 12-16 for 12M)
-    #   col header N in row 3 (for 3M) or row 11 (for 12M), cols L-P
-    #   data at (row, col) where row is 4..8 or 12..16, col is L..P
-    # Diagonal cells (same ccy on both axes) are blank. First col (L)
-    # is "vs USD" — DXY proxy for USD; USD/X rate for other rows.
-    def _read_fx_block(row_header_row, data_row_from, data_row_to):
-        col_labels = []
-        for c in range(12, 17):  # L..P
-            lbl = xl.cell("Dashboard", row_header_row, c)
-            col_labels.append(str(lbl) if lbl else "")
-        rows_data = []
-        for r in range(data_row_from, data_row_to + 1):
-            row_label = xl.cell("Dashboard", r, 11)  # K
-            values = []
-            for c in range(12, 17):
-                values.append(_num(xl.cell("Dashboard", r, c)))
-            rows_data.append({"label": str(row_label) if row_label else "", "values": values})
-        return {"cols": col_labels, "rows": rows_data}
-
-    fx_matrix_3m = _read_fx_block(3, 4, 8)
-    fx_matrix_12m = _read_fx_block(11, 12, 16)
-    snap["fxMatrix3M"] = fx_matrix_3m
-    snap["fxMatrix12M"] = fx_matrix_12m
-    # Backward-compat flat list (each ccy vs USD) — col L of the matrix.
+    if fx_matrices.get("3M"):
+        snap["fxMatrix3M"] = fx_matrices["3M"]
+    if fx_matrices.get("12M"):
+        snap["fxMatrix12M"] = fx_matrices["12M"]
+    # Back-compat flat "vs USD" lists (col 0 of each matrix)
     def _vs_usd(block):
+        if not block: return []
         out = []
         for row in block["rows"]:
-            vs_usd = row["values"][0] if row["values"] else None
-            if row["label"] and vs_usd is not None:
-                out.append({"label": row["label"], "value": vs_usd})
+            v = row["values"][0] if row["values"] else None
+            if row.get("label") and v is not None:
+                out.append({"label": row["label"], "value": v})
         return out
-    snap["fx3M"] = _vs_usd(fx_matrix_3m)
-    snap["fx12M"] = _vs_usd(fx_matrix_12m)
-    log(f"  Markets/fx: matrix {len(fx_matrix_3m['rows'])}x{len(fx_matrix_3m['cols'])} (3M & 12M)")
+    snap["fx3M"] = _vs_usd(fx_matrices.get("3M"))
+    snap["fx12M"] = _vs_usd(fx_matrices.get("12M"))
+    if fx_matrices:
+        log(f"  Markets/fx: matrix 3M={bool(fx_matrices.get('3M'))} 12M={bool(fx_matrices.get('12M'))}")
     return snap
 
 
