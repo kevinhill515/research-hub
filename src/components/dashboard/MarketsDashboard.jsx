@@ -103,17 +103,64 @@ function GroupTable({ title, rows }) {
   );
 }
 
+function FxMatrix({ label, matrix }) {
+  if (!matrix || !matrix.rows || matrix.rows.length === 0) return null;
+  return (
+    <div className="border border-slate-200 dark:border-slate-700 rounded-md p-2">
+      <div className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 mb-1">{label}</div>
+      <table className="w-full text-[11px] border-collapse">
+        <thead>
+          <tr>
+            <th className="px-1 py-0.5"></th>
+            {matrix.cols.map(function (c, i) {
+              return <th key={i} className="px-1 py-0.5 text-right font-medium text-gray-500 dark:text-slate-400">{fxLabel(c)}</th>;
+            })}
+          </tr>
+        </thead>
+        <tbody>
+          {matrix.rows.map(function (row, i) {
+            return (
+              <tr key={i} className="border-t border-slate-100 dark:border-slate-800">
+                <td className="px-1 py-0.5 font-medium text-gray-700 dark:text-slate-300">{fxLabel(row.label)}</td>
+                {row.values.map(function (v, j) {
+                  const style = returnStyle(v);
+                  return (
+                    <td key={j} className="px-1 py-0.5 text-right font-mono whitespace-nowrap"
+                        style={style || undefined}>
+                      {fmtPct(v)}
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function FxPanel({ snap }) {
   const fx3 = snap.fx3M || [];
   const fx12 = snap.fx12M || [];
-  if (fx3.length === 0 && fx12.length === 0) return null;
+  const m3 = snap.fxMatrix3M;
+  const m12 = snap.fxMatrix12M;
+  const hasMatrix = m3 && m3.rows && m3.rows.length > 0;
+  if (!hasMatrix && fx3.length === 0 && fx12.length === 0) return null;
   return (
     <div className="mb-5">
-      <div className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-1.5">FX vs USD</div>
-      <div className="grid grid-cols-2 gap-3">
-        <FxBlock label="3-Month" rows={fx3} />
-        <FxBlock label="12-Month" rows={fx12} />
-      </div>
+      <div className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-1.5">FX (cross-rates)</div>
+      {hasMatrix ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <FxMatrix label="3-Month %" matrix={m3} />
+          <FxMatrix label="12-Month %" matrix={m12} />
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-3">
+          <FxBlock label="3-Month" rows={fx3} />
+          <FxBlock label="12-Month" rows={fx12} />
+        </div>
+      )}
     </div>
   );
 }

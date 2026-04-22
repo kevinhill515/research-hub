@@ -803,8 +803,8 @@ MARKETS_RANGES = [
     {"key": "indices",    "row_from": 2,   "row_to": 18,  "label_col": 2, "ticker_col": 1},
     {"key": "sectors",    "row_from": 21,  "row_to": 33,  "label_col": 2, "ticker_col": 1},
     {"key": "countries",  "row_from": 36,  "row_to": 58,  "label_col": 2, "ticker_col": 1},
-    {"key": "commodities","row_from": 109, "row_to": 115, "label_col": 2, "ticker_col": 1},
-    {"key": "bonds",      "row_from": 118, "row_to": 132, "label_col": 2, "ticker_col": 1},
+    {"key": "commodities","row_from": 61,  "row_to": 67,  "label_col": 2, "ticker_col": 1},
+    {"key": "bonds",      "row_from": 70,  "row_to": 84,  "label_col": 2, "ticker_col": 1},
 ]
 MARKETS_PERIOD_COLS = [("1D",3),("5D",4),("MTD",5),("QTD",6),("YTD",7),("1Y",8),("3Y",9)]
 
@@ -824,17 +824,41 @@ def read_markets(xl: ExcelSession) -> dict:
         snap[grp["key"]] = rows
         log(f"  Markets/{grp['key']}: {len(rows)} rows")
 
-    # FX table sits in cols K (label) & L (value), not L/M.
-    fx_3m, fx_12m = [], []
-    for r in range(4, 9):
-        ccy = xl.cell("Dashboard", r, 11); v = _num(xl.cell("Dashboard", r, 12))
-        if ccy and v is not None: fx_3m.append({"label": str(ccy), "value": v})
-    for r in range(12, 17):
-        ccy = xl.cell("Dashboard", r, 11); v = _num(xl.cell("Dashboard", r, 12))
-        if ccy and v is not None: fx_12m.append({"label": str(ccy), "value": v})
-    snap["fx3M"] = fx_3m
-    snap["fx12M"] = fx_12m
-    log(f"  Markets/fx: {len(fx_3m)} (3M) + {len(fx_12m)} (12M)")
+    # FX matrix K1:P16. Each block (3M then 12M) has:
+    #   row header N in K (rows 4-8 for 3M, 12-16 for 12M)
+    #   col header N in row 3 (for 3M) or row 11 (for 12M), cols L-P
+    #   data at (row, col) where row is 4..8 or 12..16, col is L..P
+    # Diagonal cells (same ccy on both axes) are blank. First col (L)
+    # is "vs USD" — DXY proxy for USD; USD/X rate for other rows.
+    def _read_fx_block(row_header_row, data_row_from, data_row_to):
+        col_labels = []
+        for c in range(12, 17):  # L..P
+            lbl = xl.cell("Dashboard", row_header_row, c)
+            col_labels.append(str(lbl) if lbl else "")
+        rows_data = []
+        for r in range(data_row_from, data_row_to + 1):
+            row_label = xl.cell("Dashboard", r, 11)  # K
+            values = []
+            for c in range(12, 17):
+                values.append(_num(xl.cell("Dashboard", r, c)))
+            rows_data.append({"label": str(row_label) if row_label else "", "values": values})
+        return {"cols": col_labels, "rows": rows_data}
+
+    fx_matrix_3m = _read_fx_block(3, 4, 8)
+    fx_matrix_12m = _read_fx_block(11, 12, 16)
+    snap["fxMatrix3M"] = fx_matrix_3m
+    snap["fxMatrix12M"] = fx_matrix_12m
+    # Backward-compat flat list (each ccy vs USD) — col L of the matrix.
+    def _vs_usd(block):
+        out = []
+        for row in block["rows"]:
+            vs_usd = row["values"][0] if row["values"] else None
+            if row["label"] and vs_usd is not None:
+                out.append({"label": row["label"], "value": vs_usd})
+        return out
+    snap["fx3M"] = _vs_usd(fx_matrix_3m)
+    snap["fx12M"] = _vs_usd(fx_matrix_12m)
+    log(f"  Markets/fx: matrix {len(fx_matrix_3m['rows'])}x{len(fx_matrix_3m['cols'])} (3M & 12M)")
     return snap
 
 

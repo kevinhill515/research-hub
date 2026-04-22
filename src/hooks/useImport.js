@@ -270,18 +270,18 @@ export function useImport(){
           if(!key) continue;
           var v = num(i);
           if(v === null) continue;
-          /* Percent-form pastes → stored as decimal. E.g. 3.2 → 0.032.
-             Heuristic: if absolute value > 1.5 for a field we treat as a
-             ratio percent, user pasted in percent form. This also catches
-             clean values like "50" (50%) without mangling true decimals. */
-          if(PCT_FIELDS[key] && Math.abs(v) > 1.5) v = v / 100;
+          /* Percent-form pastes → stored as decimal. The upload is
+             always in percent form (3.2 for 3.2%, 0.5 for 0.5%), so
+             divide ALL pct-kind fields by 100 unconditionally. The
+             previous >1.5 heuristic was missing small percents. */
+          if(PCT_FIELDS[key]) v = v / 100;
           m[key] = v;
         }
         var perf = {};
         for(var j=0; j<PERF_KEYS.length; j++){
           var v2 = num(perfStart + j);
           if(v2 === null) continue;
-          if(PERF_IS_PCT && Math.abs(v2) > 1.5) v2 = v2 / 100;
+          if(PERF_IS_PCT) v2 = v2 / 100;
           perf[PERF_KEYS[j]] = v2;
         }
         if(Object.keys(perf).length > 0) m.perf = perf;
