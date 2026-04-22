@@ -194,15 +194,37 @@ export function useImport(){
         lines.shift();
       }
     }
-    var METRIC_KEYS = [
+    /* NEW layout (41 cols): Company, Ord Ticker, then current+1+2 triplets
+       per metric, then 6 trailing-return periods. For backward compat the
+       parser also accepts the OLD 31-col layout (no "current" fields). */
+    var METRIC_KEYS_NEW = [
       null, null,  // Company, Ticker — not stored on metrics
+      "mktCap",
+      "fpe","fpe1","fpe2",
+      "fcfYld","fcfYld1","fcfYld2",
+      "divYld","divYld1","divYld2",
+      "payout","payout1","payout2",
+      "netDE","netDE1","netDE2",
+      "intCov","ltEPS",
+      "grMgn","grMgn1","grMgn2",
+      "netMgn","netMgn1","netMgn2",
+      "gpAss","gpAss1","gpAss2",
+      "npAss","npAss1","npAss2",
+      "opROE","opROE1","opROE2",
+    ];
+    var METRIC_KEYS_OLD = [
+      null, null,
       "mktCap","fpe1","fpe2",
       "fcfYld1","fcfYld2","divYld1","divYld2",
       "payout1","payout2","netDE1","netDE2","intCov","ltEPS",
       "grMgn1","grMgn2","netMgn1","netMgn2",
       "gpAss1","gpAss2","npAss1","npAss2","opROE1","opROE2",
     ];
+    /* Auto-detect layout by column count. New = 41 (35 metric cols + 6 perf).
+       Old = 31 (25 metric cols + 6 perf). Pick the closer match per row;
+       fall back to new for ambiguous rows. */
     var PERF_KEYS = ["MTD","QTD","3M","6M","YTD","1Y"];
+    var NEW_PERF_START = 35, OLD_PERF_START = 25;
     var count=0;
     setCompanies(function(prev){
       return prev.map(function(c){
@@ -220,6 +242,13 @@ export function useImport(){
         var delim = match.indexOf("\t")>=0?"\t":",";
         var parts = match.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});
         function num(i){ var n = parseFloat(parts[i]); return isNaN(n) ? null : n; }
+        /* Choose layout: prefer NEW (41-col) when row has >=36 fields;
+           fall back to OLD (31-col) when shorter. Half-filled rows with
+           only a few numeric fields still work — unmapped indices are
+           just ignored. */
+        var useNew = parts.length >= 36;
+        var METRIC_KEYS = useNew ? METRIC_KEYS_NEW : METRIC_KEYS_OLD;
+        var perfStart = useNew ? NEW_PERF_START : OLD_PERF_START;
         var m = {};
         for(var i=2; i<METRIC_KEYS.length; i++){
           var key = METRIC_KEYS[i];
@@ -229,7 +258,7 @@ export function useImport(){
         }
         var perf = {};
         for(var j=0; j<PERF_KEYS.length; j++){
-          var v2 = num(25 + j);
+          var v2 = num(perfStart + j);
           if(v2 !== null) perf[PERF_KEYS[j]] = v2;
         }
         if(Object.keys(perf).length > 0) m.perf = perf;

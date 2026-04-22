@@ -719,40 +719,46 @@ def read_rep_holdings(xl: ExcelSession) -> dict[str, dict[str, dict]]:
     return out
 
 
-# Metrics tab: 25 FactSet columns keyed by ord ticker. Columns A=Company,
-# B=Ord Ticker, C-Y = metrics, Z-AE = 6 performance periods.
+# Metrics tab — new layout with "current" (LTM / no suffix) column before
+# each +1/+2 pair. 35 metric columns total (A=Company, B=Ord Ticker,
+# C=MktCap, D..AI=metrics, AJ..AO=trailing returns).
 METRICS_COLS = [
-    # (key, excel_col, percent_flag)
-    # percent_flag: True means the raw value is a decimal that represents
-    # a percent — we multiply by 100 for display. False means it's already
-    # a ratio / count / multiple and should be shown as-is.
-    ("mktCap",  3,  False),  # C — $B already (formula divides by 1000)
-    ("fpe1",    4,  False),  # D
-    ("fpe2",    5,  False),  # E
-    ("fcfYld1", 6,  True),   # F — /100 in formula already — leave as decimal
-    ("fcfYld2", 7,  True),   # G
-    ("divYld1", 8,  True),   # H
-    ("divYld2", 9,  True),   # I
-    ("payout1", 10, False),  # J = H/F
-    ("payout2", 11, False),  # K = I/G
-    ("netDE1",  12, False),  # L
-    ("netDE2",  13, False),  # M
-    ("intCov",  14, False),  # N
-    ("ltEPS",   15, True),   # O — already /100
-    ("grMgn1",  16, True),   # P
-    ("grMgn2",  17, True),   # Q
-    ("netMgn1", 18, True),   # R
-    ("netMgn2", 19, True),   # S
-    ("gpAss1",  20, False),  # T — ratio
-    ("gpAss2",  21, False),  # U
-    ("npAss1",  22, False),  # V
-    ("npAss2",  23, False),  # W
-    ("opROE1",  24, False),  # X
-    ("opROE2",  25, False),  # Y
+    ("mktCap",  3,  False),  # C  — $B
+    ("fpe",     4,  False),  # D  — current P/E
+    ("fpe1",    5,  False),  # E
+    ("fpe2",    6,  False),  # F
+    ("fcfYld",  7,  True),   # G  — current
+    ("fcfYld1", 8,  True),   # H
+    ("fcfYld2", 9,  True),   # I
+    ("divYld",  10, True),   # J  — current
+    ("divYld1", 11, True),   # K
+    ("divYld2", 12, True),   # L
+    ("payout",  13, False),  # M  — current (ratio)
+    ("payout1", 14, False),  # N
+    ("payout2", 15, False),  # O
+    ("netDE",   16, False),  # P  — current
+    ("netDE1",  17, False),  # Q
+    ("netDE2",  18, False),  # R
+    ("intCov",  19, False),  # S
+    ("ltEPS",   20, True),   # T
+    ("grMgn",   21, True),   # U  — current
+    ("grMgn1",  22, True),   # V
+    ("grMgn2",  23, True),   # W
+    ("netMgn",  24, True),   # X  — current
+    ("netMgn1", 25, True),   # Y
+    ("netMgn2", 26, True),   # Z
+    ("gpAss",   27, False),  # AA — current
+    ("gpAss1",  28, False),  # AB
+    ("gpAss2",  29, False),  # AC
+    ("npAss",   30, False),  # AD — current
+    ("npAss1",  31, False),  # AE
+    ("npAss2",  32, False),  # AF
+    ("opROE",   33, False),  # AG — current
+    ("opROE1",  34, False),  # AH
+    ("opROE2",  35, False),  # AI
 ]
 METRICS_PERF_COLS = [
-    # (period_key, col)
-    ("MTD", 26), ("QTD", 27), ("3M", 28), ("6M", 29), ("YTD", 30), ("1Y", 31),
+    ("MTD", 36), ("QTD", 37), ("3M", 38), ("6M", 39), ("YTD", 40), ("1Y", 41),
 ]
 
 

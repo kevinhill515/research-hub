@@ -489,13 +489,30 @@ export function CompanyDetail(props){
             function fmtBn(v){var n=parseFloat(v);return isNaN(n)?"--":"$"+n.toFixed(1)+"B";}
             function fmtPerf(v){var n=parseFloat(v);if(isNaN(n))return"--";var s=(n*100).toFixed(1);return(n>=0?"+":"")+s+"%";}
             function perfColor(v){var n=parseFloat(v);if(isNaN(n))return undefined;return n>=0?"#166534":"#dc2626";}
+            /* Each metric group now shows current (LTM), +1, +2 side-by-
+               side. Items with no data render as "--". */
             var GROUPS=[
               {title:"Size", items:[["MktCap (USD)",m.mktCap,fmtBn]]},
-              {title:"Valuation",items:[["P/E +1",m.fpe1,fmtX],["P/E +2",m.fpe2,fmtX],["FCF Yld +1",m.fcfYld1,fmtPct],["FCF Yld +2",m.fcfYld2,fmtPct],["Div Yld +1",m.divYld1,fmtPct],["Div Yld +2",m.divYld2,fmtPct],["Payout +1",m.payout1,fmtPct],["Payout +2",m.payout2,fmtPct]]},
-              {title:"Leverage",items:[["Net D/E +1",m.netDE1,fmtPct],["Net D/E +2",m.netDE2,fmtPct],["Int Cov",m.intCov,fmtRatio]]},
+              {title:"Valuation",items:[
+                ["P/E",m.fpe,fmtX],["P/E +1",m.fpe1,fmtX],["P/E +2",m.fpe2,fmtX],
+                ["FCF Yld",m.fcfYld,fmtPct],["FCF Yld +1",m.fcfYld1,fmtPct],["FCF Yld +2",m.fcfYld2,fmtPct],
+                ["Div Yld",m.divYld,fmtPct],["Div Yld +1",m.divYld1,fmtPct],["Div Yld +2",m.divYld2,fmtPct],
+                ["Payout",m.payout,fmtPct],["Payout +1",m.payout1,fmtPct],["Payout +2",m.payout2,fmtPct],
+              ]},
+              {title:"Leverage",items:[
+                ["Net D/E",m.netDE,fmtPct],["Net D/E +1",m.netDE1,fmtPct],["Net D/E +2",m.netDE2,fmtPct],
+                ["Int Cov",m.intCov,fmtRatio],
+              ]},
               {title:"Growth",  items:[["LT EPS Growth",m.ltEPS,fmtPct]]},
-              {title:"Margins", items:[["Gross Mgn +1",m.grMgn1,fmtPct],["Gross Mgn +2",m.grMgn2,fmtPct],["Net Mgn +1",m.netMgn1,fmtPct],["Net Mgn +2",m.netMgn2,fmtPct]]},
-              {title:"Returns on Assets / Equity",items:[["GP / Assets +1",m.gpAss1,fmtPct],["GP / Assets +2",m.gpAss2,fmtPct],["NP / Assets +1",m.npAss1,fmtPct],["NP / Assets +2",m.npAss2,fmtPct],["Op ROE +1",m.opROE1,fmtPct],["Op ROE +2",m.opROE2,fmtPct]]},
+              {title:"Margins", items:[
+                ["Gross Mgn",m.grMgn,fmtPct],["Gross Mgn +1",m.grMgn1,fmtPct],["Gross Mgn +2",m.grMgn2,fmtPct],
+                ["Net Mgn",m.netMgn,fmtPct],["Net Mgn +1",m.netMgn1,fmtPct],["Net Mgn +2",m.netMgn2,fmtPct],
+              ]},
+              {title:"Returns on Assets / Equity",items:[
+                ["GP / Assets",m.gpAss,fmtPct],["GP / Assets +1",m.gpAss1,fmtPct],["GP / Assets +2",m.gpAss2,fmtPct],
+                ["NP / Assets",m.npAss,fmtPct],["NP / Assets +1",m.npAss1,fmtPct],["NP / Assets +2",m.npAss2,fmtPct],
+                ["Op ROE",m.opROE,fmtPct],["Op ROE +1",m.opROE1,fmtPct],["Op ROE +2",m.opROE2,fmtPct],
+              ]},
             ];
             var perf=m.perf||{};
             var PERF_ITEMS=[["MTD",perf.MTD],["QTD",perf.QTD],["3M",perf["3M"]],["6M",perf["6M"]],["YTD",perf.YTD],["1Y",perf["1Y"]]];

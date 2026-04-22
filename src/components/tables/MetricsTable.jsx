@@ -17,31 +17,44 @@ import { truncName, getTiers, tierBg, tierPillStyle } from '../../utils/index.js
 import FpeRangeMini from '../ui/FpeRangeMini.jsx';
 
 export const METRICS_COLS = [
-  /* key, label, kind, width, default-visible */
+  /* key, label, kind, width, default-visible
+     Current (LTM) columns are placed before their +1/+2 siblings but
+     default-hidden so existing users don't see their view suddenly
+     double in width. Toggle them on via the Columns picker. */
   { key: "__tier",     label: "Tier",       kind: "tier",     w: 72,  vis: true  },
   { key: "__name",     label: "Name",       kind: "name",     w: 170, vis: true  },
   { key: "mktCap",     label: "MktCap",     kind: "bn",       w: 70,  vis: true  },
   { key: "__fpeRange", label: "FPE Range",  kind: "fperange", w: 110, vis: true  },
+  { key: "fpe",        label: "P/E",        kind: "x",        w: 70,  vis: false },
   { key: "fpe1",       label: "P/E +1",     kind: "x",        w: 70,  vis: true  },
   { key: "fpe2",       label: "P/E +2",     kind: "x",        w: 70,  vis: false },
+  { key: "fcfYld",     label: "FCF Yld",    kind: "pct",      w: 80,  vis: false },
   { key: "fcfYld1",    label: "FCF Yld +1", kind: "pct",      w: 80,  vis: true  },
   { key: "fcfYld2",    label: "FCF Yld +2", kind: "pct",      w: 80,  vis: false },
+  { key: "divYld",     label: "Div Yld",    kind: "pct",      w: 80,  vis: false },
   { key: "divYld1",    label: "Div Yld +1", kind: "pct",      w: 80,  vis: true  },
   { key: "divYld2",    label: "Div Yld +2", kind: "pct",      w: 80,  vis: false },
+  { key: "payout",     label: "Payout",     kind: "pct",      w: 75,  vis: false },
   { key: "payout1",    label: "Payout +1",  kind: "pct",      w: 75,  vis: true  },
   { key: "payout2",    label: "Payout +2",  kind: "pct",      w: 75,  vis: false },
+  { key: "netDE",      label: "Net D/E",    kind: "pct",      w: 80,  vis: false },
   { key: "netDE1",     label: "Net D/E +1", kind: "pct",      w: 80,  vis: true  },
   { key: "netDE2",     label: "Net D/E +2", kind: "pct",      w: 80,  vis: false },
   { key: "intCov",     label: "Int Cov",    kind: "ratio",    w: 70,  vis: true  },
   { key: "ltEPS",      label: "LT EPS",     kind: "pct",      w: 70,  vis: true  },
+  { key: "grMgn",      label: "Gr Mgn",     kind: "pct",      w: 80,  vis: false },
   { key: "grMgn1",     label: "Gr Mgn +1",  kind: "pct",      w: 80,  vis: true  },
   { key: "grMgn2",     label: "Gr Mgn +2",  kind: "pct",      w: 80,  vis: false },
+  { key: "netMgn",     label: "Net Mgn",    kind: "pct",      w: 80,  vis: false },
   { key: "netMgn1",    label: "Net Mgn +1", kind: "pct",      w: 80,  vis: true  },
   { key: "netMgn2",    label: "Net Mgn +2", kind: "pct",      w: 80,  vis: false },
+  { key: "gpAss",      label: "GP/Ass",     kind: "pct",      w: 75,  vis: false },
   { key: "gpAss1",     label: "GP/Ass +1",  kind: "pct",      w: 75,  vis: true  },
   { key: "gpAss2",     label: "GP/Ass +2",  kind: "pct",      w: 75,  vis: false },
+  { key: "npAss",      label: "NP/Ass",     kind: "pct",      w: 75,  vis: false },
   { key: "npAss1",     label: "NP/Ass +1",  kind: "pct",      w: 75,  vis: true  },
   { key: "npAss2",     label: "NP/Ass +2",  kind: "pct",      w: 75,  vis: false },
+  { key: "opROE",      label: "Op ROE",     kind: "pct",      w: 75,  vis: false },
   { key: "opROE1",     label: "Op ROE +1",  kind: "pct",      w: 75,  vis: true  },
   { key: "opROE2",     label: "Op ROE +2",  kind: "pct",      w: 75,  vis: false },
   /* Performance — colored cells */
