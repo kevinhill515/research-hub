@@ -252,7 +252,19 @@ export function CompanyProvider({children}){
   function removePerfSeries(portfolio,seriesIndex){
     setPerfData(function(prev){
       var port=Object.assign({series:[],lastMonthEMV:0},prev[portfolio]||{});
-      port.series=(port.series||[]).filter(function(_,i){return i!==seriesIndex;});
+      var existing=(port.series||[]);
+      var removed=existing[seriesIndex];
+      port.series=existing.filter(function(_,i){return i!==seriesIndex;});
+      /* Track the deleted series' name + aliases so the next bulk paste
+         doesn't auto-recreate the column. Users were getting duplicate
+         FIN / APHKX / etc. on every re-upload because applyPerfBulk
+         creates a fresh series for any unknown header. */
+      if(removed){
+        var ignored=(port.ignoredSeries||[]).slice();
+        var names=[removed.name].concat(removed.aliases||[]).filter(Boolean);
+        names.forEach(function(n){if(ignored.indexOf(n)<0)ignored.push(n);});
+        port.ignoredSeries=ignored;
+      }
       return Object.assign({},prev,{[portfolio]:port});
     });
   }
@@ -286,11 +298,18 @@ export function CompanyProvider({children}){
         lookup[s.name]=i;
         (s.aliases||[]).forEach(function(a){if(lookup[a]===undefined)lookup[a]=i;});
       });
+      /* Names the user explicitly deleted — skip them so paste doesn't
+         re-create the same dup series the user just removed. */
+      var ignored={};
+      (port.ignoredSeries||[]).forEach(function(n){ignored[n]=true;});
       var newSeries=(port.series||[]).slice();
-      /* Ensure a slot for each column; map each incoming header → target index. */
+      /* Ensure a slot for each column; map each incoming header → target index.
+         Headers in the ignored list get headerIdx=-1 (skipped at write time). */
       var headerIdx={};
       parsed.seriesNames.forEach(function(n){
-        if(lookup[n]!==undefined){
+        if(ignored[n]){
+          headerIdx[n]=-1;
+        }else if(lookup[n]!==undefined){
           var idx=lookup[n];
           newSeries[idx]=Object.assign({},newSeries[idx],{returns:Object.assign({},newSeries[idx].returns||{})});
           headerIdx[n]=idx;
@@ -306,7 +325,9 @@ export function CompanyProvider({children}){
           if(v===null||v===undefined||v==="")return;
           var num=Number(v);
           if(isNaN(num))return;
-          newSeries[headerIdx[n]].returns[row.month]=num;
+          var idx=headerIdx[n];
+          if(idx<0)return;            /* ignored series — skip */
+          newSeries[idx].returns[row.month]=num;
         });
       });
       port.series=newSeries;
