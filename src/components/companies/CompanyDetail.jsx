@@ -485,7 +485,7 @@ export function CompanyDetail(props){
             }
             function fmtPct(v){var n=parseFloat(v);return isNaN(n)?"--":(n*100).toFixed(1)+"%";}
             function fmtX(v){var n=parseFloat(v);return isNaN(n)?"--":n.toFixed(1)+"x";}
-            function fmtRatio(v){var n=parseFloat(v);return isNaN(n)?"--":n.toFixed(2);}
+            function fmtRatio(v){var n=parseFloat(v);return isNaN(n)?"--":n.toFixed(1);}
             function fmtBn(v){var n=parseFloat(v);return isNaN(n)?"--":"$"+n.toFixed(1)+"B";}
             function fmtPerf(v){var n=parseFloat(v);if(isNaN(n))return"--";var s=(n*100).toFixed(1);return(n>=0?"+":"")+s+"%";}
             function perfColor(v){var n=parseFloat(v);if(isNaN(n))return undefined;return n>=0?"#166534":"#dc2626";}
@@ -515,7 +515,15 @@ export function CompanyDetail(props){
               ]},
             ];
             var perf=m.perf||{};
-            var PERF_ITEMS=[["MTD",perf.MTD],["QTD",perf.QTD],["3M",perf["3M"]],["6M",perf["6M"]],["YTD",perf.YTD],["1Y",perf["1Y"]]];
+            /* 5D% comes from the ordinary ticker's latest perf5d (same
+               source the Companies 5D column uses). It's stored as a
+               percent-form string (e.g. "1.5"), so divide by 100 to
+               match the other perf values which are decimals. */
+            var ordT=((selCo.tickers||[]).find(function(t){return t.isOrdinary;})||{});
+            var perf5dRaw=ordT.perf5d;
+            var perf5d=null;
+            if(perf5dRaw&&perf5dRaw!=="#N/A"){var n=parseFloat(perf5dRaw);if(!isNaN(n))perf5d=n/100;}
+            var PERF_ITEMS=[["5D",perf5d],["MTD",perf.MTD],["QTD",perf.QTD],["3M",perf["3M"]],["6M",perf["6M"]],["YTD",perf.YTD],["1Y",perf["1Y"]]];
             return (
               <div className="mb-6">
                 <div className="text-[11px] text-gray-500 dark:text-slate-400 mb-3 italic">Auto-updated daily from FactSet. Read-only.</div>

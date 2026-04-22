@@ -668,11 +668,24 @@ def read_fx(xl: ExcelSession) -> dict[str, float]:
     return out
 
 
+def _resolve_perf_sheet(xl: ExcelSession) -> str:
+    """Return whichever performance sheet name exists in the workbook.
+    User may rename Performance1 -> Perf1 to save tab space."""
+    for candidate in ("Perf1", "Performance1"):
+        try:
+            xl.wb.Sheets(candidate)
+            return candidate
+        except Exception:
+            continue
+    return "Performance1"  # default (will error in reads if truly absent)
+
+
 def read_performance1(xl: ExcelSession) -> dict[str, dict[str, float]]:
+    _PERF_SHEET = _resolve_perf_sheet(xl)
     out: dict[str, dict[str, float]] = {"GL": {}, "FGL": {}, "IN": {}, "FIN": {}, "EM": {}, "SC": {}}
     def grab(group, col):
-        name = xl.cell("Performance1", 1, col)
-        ret = _num(xl.cell("Performance1", 2, col))
+        name = xl.cell(_PERF_SHEET, 1, col)
+        ret = _num(xl.cell(_PERF_SHEET, 2, col))
         if name and ret is not None:
             for p in {"GL":["GL","FGL"], "IN":["IN","FIN"], "EM":["EM"], "SC":["SC"]}[group]:
                 out[p][str(name).strip()] = ret

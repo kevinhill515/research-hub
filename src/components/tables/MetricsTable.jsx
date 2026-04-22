@@ -87,7 +87,7 @@ function fmt(v, kind) {
     case "x":     return n.toFixed(1) + "x";
     case "pct":   return (n * 100).toFixed(1) + "%";
     case "perf":  return (n >= 0 ? "+" : "") + (n * 100).toFixed(1) + "%";
-    case "ratio": return n.toFixed(2);
+    case "ratio": return n.toFixed(1);
     default:      return String(v);
   }
 }

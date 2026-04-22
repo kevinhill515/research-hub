@@ -225,6 +225,21 @@ export function useImport(){
        fall back to new for ambiguous rows. */
     var PERF_KEYS = ["MTD","QTD","3M","6M","YTD","1Y"];
     var NEW_PERF_START = 35, OLD_PERF_START = 25;
+    /* Fields stored as decimals internally (e.g. 0.032 for 3.2%). If
+       user pastes in percent form (3.2 for 3.2%), divide by 100. */
+    var PCT_FIELDS = {
+      fcfYld:1, fcfYld1:1, fcfYld2:1,
+      divYld:1, divYld1:1, divYld2:1,
+      payout:1, payout1:1, payout2:1,
+      netDE:1,  netDE1:1,  netDE2:1,
+      ltEPS:1,
+      grMgn:1,  grMgn1:1,  grMgn2:1,
+      netMgn:1, netMgn1:1, netMgn2:1,
+      gpAss:1,  gpAss1:1,  gpAss2:1,
+      npAss:1,  npAss1:1,  npAss2:1,
+      opROE:1,  opROE1:1,  opROE2:1,
+    };
+    var PERF_IS_PCT = true; /* MTD/QTD/3M/6M/YTD/1Y also percent-form */
     var count=0;
     setCompanies(function(prev){
       return prev.map(function(c){
@@ -254,12 +269,20 @@ export function useImport(){
           var key = METRIC_KEYS[i];
           if(!key) continue;
           var v = num(i);
-          if(v !== null) m[key] = v;
+          if(v === null) continue;
+          /* Percent-form pastes → stored as decimal. E.g. 3.2 → 0.032.
+             Heuristic: if absolute value > 1.5 for a field we treat as a
+             ratio percent, user pasted in percent form. This also catches
+             clean values like "50" (50%) without mangling true decimals. */
+          if(PCT_FIELDS[key] && Math.abs(v) > 1.5) v = v / 100;
+          m[key] = v;
         }
         var perf = {};
         for(var j=0; j<PERF_KEYS.length; j++){
           var v2 = num(perfStart + j);
-          if(v2 !== null) perf[PERF_KEYS[j]] = v2;
+          if(v2 === null) continue;
+          if(PERF_IS_PCT && Math.abs(v2) > 1.5) v2 = v2 / 100;
+          perf[PERF_KEYS[j]] = v2;
         }
         if(Object.keys(perf).length > 0) m.perf = perf;
         if(Object.keys(m).length === 0) return c;
