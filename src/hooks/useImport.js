@@ -312,10 +312,15 @@ export function useImport(){
     if(first){
       var delim0=first.indexOf("\t")>=0?"\t":",";
       var firstParts=first.split(delim0).map(function(s){return s.trim().replace(/^"|"$/g,"");});
-      if(/^benchmark$/i.test(firstParts[0]||"") || /^sector$|^country$/i.test(firstParts[1]||"") || /^type$/i.test(firstParts[1]||"")) {
+      if(/^benchmark$/i.test(firstParts[0]||"") || /^sector$|^country$|^metric$/i.test(firstParts[1]||"") || /^type$/i.test(firstParts[1]||"")) {
         lines.shift();
       }
     }
+    /* Percent-type metric keys — values pasted in percent form get divided
+     * by 100 so benchmark metrics are stored in the same decimal
+     * convention as company metrics (0.072 = 7.2%). x/ratio/bn keys are
+     * stored raw (e.g. fpe1 = 19.2 not 0.192). */
+    var PCT_METRIC_RE=/^(fcfYld|divYld|payout|netDE|ltEPS|grMgn|netMgn|gpAss|npAss|opROE)[12]?$/;
     var affected={};
     var dropped=0;
     lines.forEach(function(line){
@@ -327,23 +332,29 @@ export function useImport(){
       var name=p[2];
       var w=parseFloat(p[3]);
       if(!bm||!name||isNaN(w)){dropped++;return;}
-      var bucket=type.indexOf("country")>=0?"countries":type.indexOf("sector")>=0?"sectors":null;
+      var bucket=type.indexOf("country")>=0?"countries"
+              :type.indexOf("sector") >=0?"sectors"
+              :type.indexOf("metric") >=0?"metrics"
+              :null;
       if(!bucket){dropped++;return;}
-      if(!affected[bm])affected[bm]={sectors:{},countries:{},asOf:benchmarkAsOf||""};
+      if(!affected[bm])affected[bm]={sectors:{},countries:{},metrics:{},asOf:benchmarkAsOf||""};
+      if(bucket==="metrics" && PCT_METRIC_RE.test(name)) w=w/100;
       affected[bm][bucket][name]=w;
     });
-    if(Object.keys(affected).length===0){alertFn("No valid rows parsed. Format: Benchmark, Type (Sector|Country), Name, Weight%");return;}
+    if(Object.keys(affected).length===0){alertFn("No valid rows parsed. Format: Benchmark, Type (Sector|Country|Metric), Name, Value. For metrics, Name is a metric key like fpe1, fcfYld1, mktCap.");return;}
     setBenchmarkWeights(function(prev){
       var next=Object.assign({},prev);
       Object.keys(affected).forEach(function(bm){
-        var cur=next[bm]||{sectors:{},countries:{},asOf:""};
-        /* Merge: incoming sectors/countries REPLACE existing for same bm
-         * (a full paste each quarter), but if user pasted only sectors
-         * then countries stay put, and vice versa. */
+        var cur=next[bm]||{sectors:{},countries:{},metrics:{},asOf:""};
+        /* Merge: for each bucket, incoming REPLACES existing when the
+         * paste included that bucket. Untouched buckets are preserved so
+         * you can upload sectors/countries one week and metrics the
+         * next without clobbering. */
         var inc=affected[bm];
         next[bm]={
-          sectors: Object.keys(inc.sectors).length>0 ? inc.sectors : (cur.sectors||{}),
+          sectors:   Object.keys(inc.sectors  ).length>0 ? inc.sectors   : (cur.sectors  ||{}),
           countries: Object.keys(inc.countries).length>0 ? inc.countries : (cur.countries||{}),
+          metrics:   Object.keys(inc.metrics  ).length>0 ? inc.metrics   : (cur.metrics  ||{}),
           asOf: inc.asOf || cur.asOf || "",
         };
       });
