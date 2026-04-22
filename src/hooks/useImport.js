@@ -130,7 +130,43 @@ export function useImport(){
     },100);
   }
   function applyRepImport(){if(!repText.trim())return;var lines=repText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});var data={};lines.forEach(function(line){var delim=line.indexOf("\t")>=0?"\t":",";var parts=line.split(delim).map(function(s){return s.trim();});if(parts.length>=3){var acct=parts[0].toUpperCase();var ticker=parts[1].toUpperCase();var shares=parseFloat(parts[2]);var avgCost=parts.length>=4?parseFloat(parts[3]):0;if(isNaN(avgCost))avgCost=0;if(!isNaN(shares)){var port=REP_ACCOUNTS[acct];if(port){if(!data[port])data[port]={};var prev=data[port][ticker];var prevShares=(prev&&typeof prev==="object")?(prev.shares||0):(prev||0);var prevCost=(prev&&typeof prev==="object")?(prev.avgCost||0):0;var newShares=prevShares+shares;/* Weighted average when the same ticker appears twice in one import */var newAvgCost=newShares>0?((prevShares*prevCost)+(shares*avgCost))/newShares:avgCost;data[port][ticker]={shares:newShares,avgCost:newAvgCost};}}}});setRepData(data);setRepLastUpdated(currentUser+" "+todayStr());setRepText("");supaUpsert("meta",{key:"repData",value:JSON.stringify(data)});}
-  function applyCalImport(){if(!calImportText||!calImportText.trim())return;var lines=calImportText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});var count=0;setCompanies(function(prev){return prev.map(function(c){var match=lines.find(function(l){var delim=l.indexOf("\t")>=0?"\t":",";var parts=l.split(delim).map(function(s){return s.trim();});var allTickers2=[(c.ticker||"")].concat((c.tickers||[]).map(function(t){return t.ticker||"";})).map(function(t){return t.toUpperCase();}).filter(Boolean);return allTickers2.indexOf(parts[0].toUpperCase())>=0;});if(!match)return c;var delim=match.indexOf("\t")>=0?"\t":",";var parts=match.split(delim).map(function(s){return s.trim();});var date=parts[1];if(!date)return c;var entries=(c.earningsEntries||[]).slice();var existing=entries.find(function(e){return e.reportDate===date;});if(!existing){entries.unshift(Object.assign(blankEarnings(),{reportDate:date,open:false}));}count++;return Object.assign({},c,{earningsEntries:entries});});});setTimeout(function(){alert("Updated earnings dates for "+count+" companies.");setCalImportText("");},100);supaUpsert("meta",{key:"calLastUpdated",value:currentUser+" at "+todayStr()});setCalLastUpdatedBy(currentUser);setCalLastUpdated(todayStr());}
+  /* Earnings Dates upload. 3 columns now:
+       Ticker, Next Rpt Date, Last Rpt Date (last optional)
+     The next date lands as a new/existing earningsEntries[].reportDate;
+     the last date is stashed on company.lastReportDate so the calendar's
+     "Recent Earnings — Last 30 Days" panel has data. */
+  function applyCalImport(){
+    if(!calImportText||!calImportText.trim())return;
+    var lines=calImportText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});
+    var count=0;
+    setCompanies(function(prev){return prev.map(function(c){
+      var match=lines.find(function(l){
+        var delim=l.indexOf("\t")>=0?"\t":",";
+        var parts=l.split(delim).map(function(s){return s.trim();});
+        var allTickers2=[(c.ticker||"")].concat((c.tickers||[]).map(function(t){return t.ticker||"";})).map(function(t){return t.toUpperCase();}).filter(Boolean);
+        return allTickers2.indexOf(parts[0].toUpperCase())>=0;
+      });
+      if(!match)return c;
+      var delim=match.indexOf("\t")>=0?"\t":",";
+      var parts=match.split(delim).map(function(s){return s.trim();});
+      var nextDate=parts[1];
+      var lastDate=parts[2];
+      var updated=Object.assign({},c);
+      if(nextDate){
+        var entries=(c.earningsEntries||[]).slice();
+        var existing=entries.find(function(e){return e.reportDate===nextDate;});
+        if(!existing){entries.unshift(Object.assign(blankEarnings(),{reportDate:nextDate,open:false}));}
+        updated.earningsEntries=entries;
+      }
+      if(lastDate){updated.lastReportDate=lastDate;}
+      if(nextDate||lastDate)count++;
+      return updated;
+    });});
+    setTimeout(function(){alert("Updated earnings dates for "+count+" companies.");setCalImportText("");},100);
+    supaUpsert("meta",{key:"calLastUpdated",value:currentUser+" at "+todayStr()});
+    setCalLastUpdatedBy(currentUser);
+    setCalLastUpdated(todayStr());
+  }
   function applyWeightsImport(){if(!weightsImportText.trim())return;var lines=weightsImportText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});var count=0;var newSpecial={};lines.forEach(function(l){var delim=l.indexOf("\t")>=0?"\t":",";var p=l.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});var nm=p[0].toUpperCase();if(nm==="CASH"||nm==="DIVACC"){newSpecial[nm]={GL:p[1]||"",FGL:p[2]||"",IV:p[3]||"",FIV:p[4]||"",EM:p[5]||"",SC:p[6]||""};}});if(Object.keys(newSpecial).length>0){setSpecialWeights(function(prev){var updated=Object.assign({},prev,newSpecial);supaUpsert("meta",{key:"specialWeights",value:JSON.stringify(updated)});return updated;});}setCompanies(function(prev){return prev.map(function(c){var cname=(c.name||"").toLowerCase().trim();var match=lines.find(function(l){var delim=l.indexOf("\t")>=0?"\t":",";var parts=l.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});return parts[0].toLowerCase().trim()===cname;});if(!match)return c;var delim=match.indexOf("\t")>=0?"\t":",";var p=match.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});var newWeights=Object.assign({},c.portWeights||{},{GL:p[1]||"",FGL:p[2]||"",IV:p[3]||"",FIV:p[4]||"",EM:p[5]||"",SC:p[6]||""});count++;return Object.assign({},c,{portWeights:newWeights});});});setTimeout(function(){alert("Updated weights for "+count+" companies.");setWeightsImportText("");},100);}
   function applyValImport(){if(!valImportText.trim())return;var lines=valImportText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});var count=0;setCompanies(function(prev){return prev.map(function(c){var cname=(c.name||"").toLowerCase().trim();var match=lines.find(function(l){var delim=l.indexOf("\t")>=0?"\t":",";var parts=l.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});return parts[0].toLowerCase().trim()===cname;});if(!match)return c;var delim=match.indexOf("\t")>=0?"\t":",";var p=match.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});var newVal=Object.assign({},c.valuation||{},{pe:p[1]||"",fyMonth:p[2]||"",currency:p[3]||"",fy1:p[4]||"",eps1:p[5]||"",w1:p[6]||"",fy2:p[7]||"",eps2:p[8]||"",w2:p[9]||""});count++;return Object.assign({},c,{valuation:newVal});});});setTimeout(function(){alert("Updated valuation for "+count+" companies.");setValImportText("");},100);}
   function applyEstImport(){if(!estImportText.trim())return;var lines=estImportText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});var count=0;setCompanies(function(prev){return prev.map(function(c){var cname=(c.name||"").toLowerCase().trim();var match=lines.find(function(l){var delim=l.indexOf("\t")>=0?"\t":",";var parts=l.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});return parts[0].toLowerCase().trim()===cname;});if(!match)return c;var delim=match.indexOf("\t")>=0?"\t":",";var p=match.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});var newVal=Object.assign({},c.valuation||{},{pe:p[1]||"",peCurrent:p[2]||"",peLow5:p[3]||"",peHigh5:p[4]||"",peAvg5:p[5]||"",peMed5:p[6]||"",fyMonth:p[7]||"",currency:p[8]||"",fy1:p[9]||"",eps1:p[10]||"",w1:p[11]||"",fy2:p[12]||"",eps2:p[13]||"",w2:p[14]||""});if(p[15]!==undefined&&p[15]!==""){newVal.tpFixed=p[15];newVal.tpFixedDate=todayStr();}count++;return Object.assign({},c,{valuation:newVal});});});setTimeout(function(){alert("Updated estimates for "+count+" companies.");setEstImportText("");},100);}

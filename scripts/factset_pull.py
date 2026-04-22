@@ -607,19 +607,19 @@ def _excel_serial_to_date(serial: float):
     return datetime(1899, 12, 30) + timedelta(days=int(serial))
 
 
-def read_earnings_dates(xl: ExcelSession) -> dict[str, str]:
-    """Returns { upper_ticker: 'YYYY-MM-DD' }. FactSet's JULIAN() return
-    lands in Excel as a formatted date, which pywin32 gives us as a
-    pywintypes.datetime (has .year/.month/.day). Older workbooks might
-    serve it as a YYYYMMDD int or an Excel serial day number — handle all."""
-    out: dict[str, str] = {}
+def read_earnings_dates(xl: ExcelSession) -> dict[str, dict]:
+    """Returns { upper_ticker: {next: 'YYYY-MM-DD', last: 'YYYY-MM-DD'} }.
+    Column D = Ticker, E = Next Rpt Date (from QTR_ROLL), F = Last Rpt Date
+    (from the most recent FE_ACTUAL_DATE)."""
+    out: dict[str, dict] = {}
     for r in range(2, MAX_COMPANY_ROW + 1):
         tk = xl.cell("Earnings Dates", r, 4)
         if not tk: continue
         tk = str(tk).strip().upper()
-        raw = xl.cell("Earnings Dates", r, 5)
-        iso = _any_date_to_iso(raw)
-        if iso: out[tk] = iso
+        nxt = _any_date_to_iso(xl.cell("Earnings Dates", r, 5))
+        last = _any_date_to_iso(xl.cell("Earnings Dates", r, 6))
+        if nxt or last:
+            out[tk] = {"next": nxt, "last": last}
     log(f"  Earnings dates: {len(out)} tickers")
     return out
 
@@ -870,27 +870,34 @@ def merge_companies(companies, prices, valuations, earnings):
                 n_v += 1
                 break
 
-        # Earnings date (add/update an entry for that date)
+        # Earnings dates: add/update an entry for the NEXT report date and
+        # stash the most recent LAST report date on the company so the
+        # calendar tab can show a "Recent Earnings" list.
         for tk in all_tks:
             if tk in earnings:
-                d = earnings[tk]
-                entries = c.setdefault("earningsEntries", [])
-                found = next((e for e in entries if _same_date(e.get("reportDate"), d)), None)
-                if found is None:
-                    placeholder = next((e for e in entries
-                                        if not e.get("eps") and not e.get("shortTakeaway")
-                                        and not e.get("reportDate")), None)
-                    if placeholder:
-                        placeholder["reportDate"] = d
-                    else:
-                        entries.append({
-                            "id": _new_uuid(),
-                            "quarter": "", "reportDate": d, "eps": "",
-                            "tpChange": "Unchanged", "newTP": "", "tpRationale": "",
-                            "bullets": ["", "", "", "", ""], "shortTakeaway": "",
-                            "extendedTakeaway": "", "thesisStatus": "On track",
-                            "thesisNote": "", "open": False,
-                        })
+                info = earnings[tk]
+                nxt = info.get("next")
+                last = info.get("last")
+                if nxt:
+                    entries = c.setdefault("earningsEntries", [])
+                    found = next((e for e in entries if _same_date(e.get("reportDate"), nxt)), None)
+                    if found is None:
+                        placeholder = next((e for e in entries
+                                            if not e.get("eps") and not e.get("shortTakeaway")
+                                            and not e.get("reportDate")), None)
+                        if placeholder:
+                            placeholder["reportDate"] = nxt
+                        else:
+                            entries.append({
+                                "id": _new_uuid(),
+                                "quarter": "", "reportDate": nxt, "eps": "",
+                                "tpChange": "Unchanged", "newTP": "", "tpRationale": "",
+                                "bullets": ["", "", "", "", ""], "shortTakeaway": "",
+                                "extendedTakeaway": "", "thesisStatus": "On track",
+                                "thesisNote": "", "open": False,
+                            })
+                if last:
+                    c["lastReportDate"] = last
                 n_e += 1
                 break
     return n_p, n_v, n_e
