@@ -389,7 +389,10 @@ export function useImport(){
     function pctize(raw){
       var n=parseFloat(raw);
       if(isNaN(n))return null;
-      return Math.abs(n)>1.5?n/100:n;
+      /* Upload is always in percent-form (2.3 for 2.3%, 0.5 for 0.5%).
+         Divide unconditionally to match how the script stores values
+         in marketsSnapshot (as decimals; UI multiplies by 100 on display). */
+      return n/100;
     }
 
     var i=0;
