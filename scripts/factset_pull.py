@@ -798,31 +798,49 @@ def read_metrics(xl: ExcelSession) -> dict[str, dict]:
     return out
 
 
-# Markets dashboard ranges
-MARKETS_RANGES = [
-    {"key": "indices",    "row_from": 2,   "row_to": 18,  "label_col": 2, "ticker_col": 1},
-    {"key": "sectors",    "row_from": 21,  "row_to": 33,  "label_col": 2, "ticker_col": 1},
-    {"key": "countries",  "row_from": 36,  "row_to": 58,  "label_col": 2, "ticker_col": 1},
-    {"key": "commodities","row_from": 61,  "row_to": 67,  "label_col": 2, "ticker_col": 1},
-    {"key": "bonds",      "row_from": 70,  "row_to": 84,  "label_col": 2, "ticker_col": 1},
-]
-MARKETS_PERIOD_COLS = [("1D",3),("5D",4),("MTD",5),("QTD",6),("YTD",7),("1Y",8),("3Y",9)]
+# Markets dashboard structure (new layout): row 1 headers, rows 2+ data.
+# Col A=Section, B=Label, C=Ticker, D..J=7 timeframe returns (1D..3Y).
+# Sections: Indices, Sectors, Countries, Commodities, Bonds.
+# FX matrix lives separately at K1:P16 and is read by the FX reader below.
+MARKETS_SECTIONS = {
+    "indices":     "Indices",
+    "sectors":     "Sectors",
+    "countries":   "Countries",
+    "commodities": "Commodities",
+    "bonds":       "Bonds",
+}
+MARKETS_SCAN_MAX_ROW = 200   # generous upper bound; scan stops at first blank Section run
+MARKETS_PERIOD_COLS = [("1D",4),("5D",5),("MTD",6),("QTD",7),("YTD",8),("1Y",9),("3Y",10)]
 
 
 def read_markets(xl: ExcelSession) -> dict:
     snap = {"asOf": datetime.now(timezone.utc).isoformat(timespec="seconds")}
-    for grp in MARKETS_RANGES:
-        rows = []
-        for r in range(grp["row_from"], grp["row_to"] + 1):
-            label = xl.cell("Dashboard", r, grp["label_col"])
-            if not label: continue
-            ticker = xl.cell("Dashboard", r, grp["ticker_col"])
-            row = {"label": str(label), "ticker": str(ticker) if ticker else None}
-            for period, c in MARKETS_PERIOD_COLS:
-                row[period] = _num(xl.cell("Dashboard", r, c))
-            rows.append(row)
-        snap[grp["key"]] = rows
-        log(f"  Markets/{grp['key']}: {len(rows)} rows")
+    # Initialize buckets for each section
+    buckets = {key: [] for key in MARKETS_SECTIONS.keys()}
+    # Map label (case-insensitive) -> key
+    section_lookup = {name.lower(): key for key, name in MARKETS_SECTIONS.items()}
+    blank_streak = 0
+    for r in range(2, MARKETS_SCAN_MAX_ROW + 1):
+        section_raw = xl.cell("Dashboard", r, 1)  # col A
+        if not section_raw:
+            blank_streak += 1
+            if blank_streak >= 10:
+                break  # probably past the last section
+            continue
+        blank_streak = 0
+        section_key = section_lookup.get(str(section_raw).lower().strip())
+        if not section_key:
+            continue  # unknown section — skip
+        label = xl.cell("Dashboard", r, 2)   # col B
+        if not label: continue
+        ticker = xl.cell("Dashboard", r, 3)  # col C
+        row = {"label": str(label), "ticker": str(ticker) if ticker else None}
+        for period, c in MARKETS_PERIOD_COLS:
+            row[period] = _num(xl.cell("Dashboard", r, c))
+        buckets[section_key].append(row)
+    for key, rows in buckets.items():
+        snap[key] = rows
+        log(f"  Markets/{key}: {len(rows)} rows")
 
     # FX matrix K1:P16. Each block (3M then 12M) has:
     #   row header N in K (rows 4-8 for 3M, 12-16 for 12M)

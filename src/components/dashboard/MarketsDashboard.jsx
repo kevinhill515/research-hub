@@ -105,6 +105,9 @@ function GroupTable({ title, rows }) {
 
 function FxMatrix({ label, matrix }) {
   if (!matrix || !matrix.rows || matrix.rows.length === 0) return null;
+  /* USD column (col L in the workbook) is the "vs USD" reading — DXY
+     for the USD row, USD-per-X for others. Relabel the column header
+     as DXY for clarity; keep row/currency labels as-is. */
   return (
     <div className="border border-slate-200 dark:border-slate-700 rounded-md p-2">
       <div className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 mb-1">{label}</div>
@@ -113,7 +116,8 @@ function FxMatrix({ label, matrix }) {
           <tr>
             <th className="px-1 py-0.5"></th>
             {matrix.cols.map(function (c, i) {
-              return <th key={i} className="px-1 py-0.5 text-right font-medium text-gray-500 dark:text-slate-400">{fxLabel(c)}</th>;
+              const colLabel = i === 0 ? "DXY / " + c : c;
+              return <th key={i} className="px-1 py-0.5 text-right font-medium text-gray-500 dark:text-slate-400">{colLabel}</th>;
             })}
           </tr>
         </thead>
@@ -121,13 +125,17 @@ function FxMatrix({ label, matrix }) {
           {matrix.rows.map(function (row, i) {
             return (
               <tr key={i} className="border-t border-slate-100 dark:border-slate-800">
-                <td className="px-1 py-0.5 font-medium text-gray-700 dark:text-slate-300">{fxLabel(row.label)}</td>
+                <td className="px-1 py-0.5 font-medium text-gray-700 dark:text-slate-300">{row.label}</td>
                 {row.values.map(function (v, j) {
                   const style = returnStyle(v);
+                  /* Diagonal (same-to-same) cells are intentionally blank in
+                     the workbook — show an em-dash instead of "--" % which
+                     would be misread. */
+                  const isDiagonal = (row.label || "").toUpperCase() === (matrix.cols[j] || "").toUpperCase();
                   return (
                     <td key={j} className="px-1 py-0.5 text-right font-mono whitespace-nowrap"
                         style={style || undefined}>
-                      {fmtPct(v)}
+                      {isDiagonal ? "—" : fmtPct(v)}
                     </td>
                   );
                 })}
