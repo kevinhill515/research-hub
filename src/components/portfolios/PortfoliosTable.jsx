@@ -167,8 +167,12 @@ export function PortfoliosTable(props) {
       const rw = calcRepWeight(mv, total);
       const tgt = parseFloat((c.portWeights || {})[portTab]) || 0;
 
-      /* Latest transaction in this portfolio (for Last Trade cell). */
-      const txs = (c.transactions || []).filter(function (t) { return t.portfolio === portTab; });
+      /* Latest discretionary transaction in this portfolio (for Last
+         Trade cell). Excludes cashFlow-marked trades since those are
+         forced by client deposits/withdrawals, not investment decisions. */
+      const txs = (c.transactions || []).filter(function (t) {
+        return t.portfolio === portTab && !t.cashFlow;
+      });
       const lastTx = txs.length === 0 ? null
         : txs.slice().sort(function (a, b) { return (b.date || "").localeCompare(a.date || ""); })[0];
 
