@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useCompanyContext } from '../context/CompanyContext.jsx';
 import { todayStr, blankEarnings, getCurrency, parseDate } from '../utils/index.js';
-import { supaUpsert } from '../api/index.js';
+import { supaUpsert, supaGet } from '../api/index.js';
 import { REP_ACCOUNTS } from '../constants/index.js';
 
 export function useImport(){
@@ -16,6 +16,7 @@ export function useImport(){
   const [metricsImportText,setMetricsImportText]=useState("");
   const [benchmarkImportText,setBenchmarkImportText]=useState("");
   const [benchmarkAsOf,setBenchmarkAsOf]=useState("");
+  const [dashboardImportText,setDashboardImportText]=useState("");
   const [weightsImportText,setWeightsImportText]=useState("");
   const [calImportText,setCalImportText]=useState("");
   const [repText,setRepText]=useState("");
@@ -349,6 +350,66 @@ export function useImport(){
     setTimeout(function(){alert(msg);setBenchmarkImportText("");},100);
   }
 
+  /* Markets dashboard upload — manual path equivalent to what the
+     daily FactSet script does. 10 columns, section-tagged:
+       Section, Label, Ticker, 1D, 5D, MTD, QTD, YTD, 1Y, 3Y
+     Where Section is one of: Indices, Sectors, Countries, Commodities,
+     Bonds (case-insensitive). Values are decimals (0.023 for 2.3%) or
+     percent-form (2.3 for 2.3%) — auto-detected by magnitude.
+     FX matrix is intentionally NOT handled here; it comes from the
+     script (or you can manually edit meta.marketsSnapshot via console).
+     Replaces the existing snapshot for the sections in the paste;
+     unaffected sections (and FX) are preserved. */
+  function applyDashboardImport(){
+    if(!dashboardImportText.trim())return;
+    var lines=dashboardImportText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});
+    if(lines.length===0)return;
+    /* Skip header row if first cell looks like "Section" or "Name". */
+    var first=lines[0];
+    var delim0=first.indexOf("\t")>=0?"\t":",";
+    var firstParts=first.split(delim0).map(function(s){return s.trim();});
+    if(/^section$|^name$|^label$/i.test(firstParts[0]||"")){lines.shift();}
+    var SECTION_ALIASES={indices:"indices",sectors:"sectors",countries:"countries",commodities:"commodities",bonds:"bonds"};
+    var PERIODS=["1D","5D","MTD","QTD","YTD","1Y","3Y"];
+    var bySection={indices:[],sectors:[],countries:[],commodities:[],bonds:[]};
+    var dropped=0;
+    lines.forEach(function(line){
+      var delim=line.indexOf("\t")>=0?"\t":",";
+      var p=line.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});
+      if(p.length<4){dropped++;return;}
+      var secKey=SECTION_ALIASES[(p[0]||"").toLowerCase().trim()];
+      if(!secKey){dropped++;return;}
+      var row={label:p[1]||"",ticker:p[2]||null};
+      for(var i=0;i<PERIODS.length;i++){
+        var raw=parseFloat(p[3+i]);
+        if(isNaN(raw)){row[PERIODS[i]]=null;continue;}
+        /* Percent vs decimal auto-detect: anything >1.5 in magnitude
+           is assumed percent-form and divided by 100. */
+        row[PERIODS[i]]=Math.abs(raw)>1.5?raw/100:raw;
+      }
+      bySection[secKey].push(row);
+    });
+    var hasData=Object.keys(bySection).some(function(k){return bySection[k].length>0;});
+    if(!hasData){alert("No valid rows parsed. Expected columns: Section, Label, Ticker, 1D, 5D, MTD, QTD, YTD, 1Y, 3Y.");return;}
+    /* Merge into existing marketsSnapshot; preserve FX and any sections
+       the user didn't paste. */
+    (async function(){
+      var existing={};
+      try{
+        var r=await supaGet("meta","key","marketsSnapshot");
+        if(r&&r.value)existing=JSON.parse(r.value);
+      }catch(e){/* no existing snapshot */}
+      var next=Object.assign({},existing,{asOf:new Date().toISOString()});
+      Object.keys(bySection).forEach(function(k){
+        if(bySection[k].length>0)next[k]=bySection[k];
+      });
+      supaUpsert("meta",{key:"marketsSnapshot",value:JSON.stringify(next)});
+      var msg="Updated "+Object.keys(bySection).filter(function(k){return bySection[k].length>0;}).map(function(k){return k+"("+bySection[k].length+")";}).join(", ");
+      if(dropped>0)msg+=" — skipped "+dropped+" invalid row(s)";
+      setTimeout(function(){alert(msg);setDashboardImportText("");},100);
+    })();
+  }
+
   function importAll(){
     setImportError("");
     try{var d=JSON.parse(importText);var cos=d.companies||(Array.isArray(d)?d:null),lib=d.library||null;if(!cos&&!lib){setImportError("No data found.");return;}if(cos&&Array.isArray(cos)){setCompanies(cos);supaUpsert("companies",{id:"shared",data:JSON.stringify(cos)});}if(lib&&Array.isArray(lib)){setSaved(lib);supaUpsert("library",{id:"shared",data:JSON.stringify(lib)});}setImportText("");setShowDataPanel(false);}
@@ -361,9 +422,10 @@ export function useImport(){
     dataHubTab,setDataHubTab,valImportText,setValImportText,estImportText,setEstImportText,
     metricsImportText,setMetricsImportText,
     benchmarkImportText,setBenchmarkImportText,benchmarkAsOf,setBenchmarkAsOf,
+    dashboardImportText,setDashboardImportText,
     weightsImportText,setWeightsImportText,calImportText,setCalImportText,
     repText,setRepText,fxText,setFxText,txText,setTxText,perfPortTargets,setPerfPortTargets,perfText,setPerfText,portTab,setPortTab,portSort,setPortSort,portSortDir,setPortSortDir,
-    applyFxImport,applyRepImport,applyTxImport,applyPerfImport,applyCalImport,applyWeightsImport,applyValImport,applyEstImport,applyMetricsImport,applyBenchmarkImport,
+    applyFxImport,applyRepImport,applyTxImport,applyPerfImport,applyCalImport,applyWeightsImport,applyValImport,applyEstImport,applyMetricsImport,applyBenchmarkImport,applyDashboardImport,
     importAll,exportAll
   };
 }
