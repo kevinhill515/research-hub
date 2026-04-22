@@ -1,0 +1,76 @@
+Section,Label,Ticker,1D,5D,MTD,QTD,YTD,1Y,3Y
+Indices,MSCI ACWI,ACWI-US,0.12,0.75,2.18,4.92,8.44,14.85,22.15
+Indices,MSCI World Value,IWVU-GB,0.08,0.51,1.92,4.33,7.61,13.20,19.80
+Indices,MSCI ACWI ex US,ACWX-US,0.15,0.82,2.05,4.12,7.98,12.75,16.40
+Indices,MSCI Intl Value,IVLU-US,0.11,0.64,1.84,3.95,7.15,11.85,15.30
+Indices,S&P 500,IVV-US,0.14,0.88,2.35,5.25,9.10,16.20,26.40
+Indices,Russell 3000,IWV-US,0.13,0.85,2.28,5.08,8.85,15.65,25.10
+Indices,Rusell 1000 Value,IWD-US,0.09,0.60,1.95,4.55,7.80,13.40,18.20
+Indices,Rusell 1000 Growth,IWF-US,0.18,1.15,2.78,6.10,10.50,19.80,34.50
+Indices,Russell 2000,IWM-US,0.22,1.30,2.95,6.45,10.80,18.20,22.40
+Indices,MSCI EAFE,EFA-US,0.12,0.72,2.02,4.18,7.85,12.90,16.85
+Indices,MSCI EAFE Value,EFV-US,0.10,0.58,1.88,4.02,7.35,12.10,15.50
+Indices,MSCI EAFE Growth,EFG-US,0.14,0.85,2.15,4.35,8.35,13.70,18.20
+Indices,MSCI EAFE Sm Cap,SCZ-US,0.18,1.08,2.65,5.42,9.20,14.80,17.60
+Indices,MSCI Eurozone,EZU-US,0.15,0.88,2.15,4.52,8.90,13.50,17.20
+Indices,MSCI EM,EEM-US,0.19,0.95,2.22,4.38,8.10,12.20,15.95
+Indices,MSCI EM ex China,EMXC-US,0.16,0.82,2.05,4.12,7.80,11.85,15.35
+Indices,MSCI AC Asia Pac,,0.17,0.90,2.18,4.28,7.95,12.45,16.20
+Sectors,Information Technology,IXN-US,0.28,1.45,3.20,7.15,12.50,22.40,38.20
+Sectors,Financials,IXG-US,0.15,0.85,2.35,5.22,9.18,16.40,24.30
+Sectors,Health Care,IXJ-US,0.08,0.45,1.65,3.85,6.80,10.20,11.80
+Sectors,Consumer Discretionary,RXI-US,0.20,1.10,2.70,6.25,10.90,19.30,26.50
+Sectors,Industrials,EXI-US,0.14,0.90,2.48,5.60,9.72,16.85,24.80
+Sectors,Consumer Staples,KXI-US,0.06,0.35,1.45,3.20,5.90,8.75,9.85
+Sectors,Communication Services,IXP-US,0.22,1.20,2.85,6.40,11.20,20.10,31.40
+Sectors,Energy,IXC-US,0.18,0.95,2.20,4.65,8.30,12.80,15.40
+Sectors,Materials,MXI-US,0.12,0.72,2.05,4.40,7.85,13.20,17.85
+Sectors,Utilities,JXI-US,0.05,0.30,1.35,3.10,5.70,8.40,9.60
+Sectors,Real Estate,REET-US,0.09,0.55,1.75,3.95,6.90,10.85,12.40
+Sectors,Gold,IAU-US,0.35,2.15,4.80,9.50,15.20,22.85,32.40
+Sectors,Semiconductor,SOXX-US,0.40,2.45,5.20,11.80,18.50,35.20,52.40
+Countries,United States,PBUS-US,0.14,0.88,2.35,5.25,9.10,16.20,26.40
+Countries,Japan,EWJ-US,0.12,0.72,1.95,4.15,7.80,12.90,16.85
+Countries,China,MCHI-US,0.22,1.15,2.45,4.80,8.50,13.40,14.20
+Countries,Hong Kong,EWH-US,0.15,0.85,2.10,4.30,7.95,12.50,13.80
+Countries,United Kingdom,EWU-US,0.10,0.62,1.88,4.02,7.45,12.30,15.90
+Countries,France,EWQ-US,0.13,0.80,2.05,4.38,8.50,13.10,16.75
+Countries,Canada,EWC-US,0.11,0.68,1.92,4.15,7.65,12.80,15.85
+Countries,Switzerland,EWL-US,0.08,0.48,1.70,3.75,6.85,10.50,12.40
+Countries,Germany,EWG-US,0.14,0.85,2.18,4.62,9.10,14.25,18.40
+Countries,Australia,EWA-US,0.10,0.65,1.85,3.98,7.40,12.20,15.10
+Countries,Taiwan,EWT-US,0.35,1.95,4.20,8.95,15.80,28.50,42.20
+Countries,India,INDA-US,0.18,1.05,2.55,5.40,10.20,18.50,22.80
+Countries,South Korea,EWY-US,0.25,1.30,3.10,6.50,12.40,20.80,25.40
+Countries,Netherlands,EWN-US,0.12,0.75,1.98,4.22,8.10,12.85,16.10
+Countries,Sweden,EWD-US,0.11,0.70,1.92,4.10,7.75,12.50,15.60
+Countries,Denmark,EDEN-US,0.13,0.78,2.02,4.30,8.20,12.90,16.00
+Countries,Spain,EWP-US,0.14,0.85,2.20,4.50,8.85,13.75,17.30
+Countries,Italy,EWI-US,0.13,0.82,2.12,4.42,8.55,13.45,16.90
+Countries,Brazil,EWZ-US,0.20,1.05,2.35,4.60,8.20,12.10,14.50
+Countries,Saudi Arabia,KSA-US,0.08,0.50,1.68,3.60,6.50,10.20,12.30
+Countries,South Africa,EZA-US,0.15,0.88,2.15,4.35,8.05,12.70,15.40
+Countries,Mexico,EWW-US,0.12,0.72,1.95,4.10,7.60,12.00,14.85
+Countries,Singapore,EWS-US,0.10,0.65,1.85,3.90,7.35,11.90,14.60
+Commodities,Silver,SLV-US,0.45,2.85,6.20,12.50,19.80,32.40,42.15
+Commodities,Agriculture Producers,VEGI-US,0.12,0.70,1.95,4.20,7.85,12.60,15.40
+Commodities,Gold,IAU-US,0.35,2.15,4.80,9.50,15.20,22.85,32.40
+Commodities,Silver & Metals Miners,SLVP-US,0.55,3.30,7.20,14.80,22.50,38.40,50.20
+Commodities,Gold Miners,RING-US,0.50,3.00,6.80,13.50,20.80,34.20,45.80
+Commodities,Metals & Mining,PICK-US,0.20,1.20,2.85,5.95,10.80,17.50,22.40
+Commodities,GSCI Commodity,GSG-US,0.18,1.05,2.40,5.10,9.20,14.80,19.60
+Bonds,Agg Bond,AGG-US,0.05,0.25,0.85,1.95,3.50,5.20,-2.40
+Bonds,IGB Corp,LQD-US,0.06,0.32,1.05,2.25,4.10,6.40,-1.80
+Bonds,Muni Bond,MUB-US,0.04,0.20,0.75,1.75,3.20,4.80,-1.20
+Bonds,High Yield Corp,HYG-US,0.08,0.48,1.45,3.20,5.80,8.90,4.20
+Bonds,EM Debt,EMB-US,0.07,0.42,1.35,2.95,5.40,8.20,3.40
+Bonds,Treasury Bond,GOVT-US,0.04,0.20,0.78,1.85,3.25,4.90,-2.80
+Bonds,20+Y Treasury,TLT-US,0.10,0.55,1.80,4.10,7.20,10.50,-12.40
+Bonds,10-20Y Treasury,TLH-US,0.08,0.45,1.50,3.40,6.00,8.80,-8.20
+Bonds,7-10Y Treasury,IEF-US,0.06,0.32,1.08,2.45,4.30,6.30,-4.80
+Bonds,3-7Y Treasury,IEI-US,0.04,0.22,0.75,1.70,3.00,4.40,-2.50
+Bonds,1-3Y Treasury,SHY-US,0.02,0.10,0.35,0.80,1.40,2.10,-0.40
+Bonds,Short Treasury,SHV-US,0.01,0.05,0.20,0.45,0.85,1.20,0.80
+Bonds,0-3M Treasury,SGOV-US,0.01,0.05,0.18,0.40,0.75,1.10,0.90
+Bonds,TIPS,TIP-US,0.05,0.28,0.92,2.10,3.75,5.60,-1.80
+Bonds,ST TIPS,STIP-US,0.03,0.15,0.55,1.25,2.30,3.40,0.20
