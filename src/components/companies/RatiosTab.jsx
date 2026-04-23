@@ -127,7 +127,7 @@ export default function RatiosTab({ company }) {
       <div className="mb-6">
         <div className="text-sm font-medium text-gray-900 dark:text-slate-100 mb-1">Ratio Analysis</div>
         <div className="text-xs text-gray-500 dark:text-slate-400 mb-2">
-          Paste the Ratio Analysis block from FactSet (company name and "Ratio Analysis" header rows OK; header row with Dec-YYYY columns must be present). Re-pasting replaces this company's ratio data — use it to refresh the 3-year estimates each period.
+          Paste the Ratio Analysis block from FactSet (company name and "Ratio Analysis" header rows OK; header row with Dec-YYYY columns must be present). Re-pasting replaces this company's ratio data — use it to refresh the estimate columns each period.
         </div>
         <textarea
           value={pasteText}
