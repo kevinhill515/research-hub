@@ -18,6 +18,7 @@ import {
 import { StatusPill, PortPicker, SectionBlock, DiffView, BarRow, PillEl, PriceAgeIndicator } from '../ui/index.js';
 import { useConfirm, useAlert } from '../ui/DialogProvider.jsx';
 import { SectionEditTab, EarningsEntry, NotesCell, ActionCell, FlagCell, DatePicker } from '../forms/index.js';
+import RatiosTab from './RatiosTab.jsx';
 
 const INP = "text-sm px-2 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:outline-none";
 const CARD = "bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 px-3.5 py-3 mb-2";
@@ -469,6 +470,11 @@ export function CompanyDetail(props){
               <SectionEditTab title={sectionName} content={selCo.sections&&selCo.sections[sectionName]} onSave={function(newContent){var ns=Object.assign({},selCo.sections,{[sectionName]:newContent});var u=Object.assign({},selCo,{sections:ns,lastUpdated:todayStr()});setSelCo(u);setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});});}}/>
             </div>);
           }())}
+
+          {/* RATIOS TAB — per-company Ratio Analysis grid with inline
+              sparkline charts. Data lives on selCo.ratios, uploaded
+              per-company via paste. See RatiosTab.jsx for details. */}
+          {coView==="ratios"&&<RatiosTab company={selCo}/>}
 
           {/* METRICS TAB — displays everything under selCo.metrics in a
               grouped layout. Read-only; populated by the daily FactSet

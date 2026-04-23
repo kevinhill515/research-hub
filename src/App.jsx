@@ -111,7 +111,7 @@ export default function App(){
   /* Metrics comes before the TEMPLATE_SECTIONS so the first subtab of a
      company is the quick-look Metrics dashboard (its Valuation section is
      the first TEMPLATE_SECTIONS item). */
-  var coTabs=[{id:"metrics",label:"Metrics"},...TEMPLATE_SECTIONS.map(function(s){return{id:"section:"+s,label:s};}),{id:"earnings",label:"Earnings & Thesis Check"},{id:"template",label:"Template"},
+  var coTabs=[{id:"ratios",label:"Ratios"+((selCo&&selCo.ratios&&selCo.ratios.ratioNames&&selCo.ratios.ratioNames.length>0)?" ("+selCo.ratios.ratioNames.length+")":"")},{id:"metrics",label:"Metrics"},...TEMPLATE_SECTIONS.map(function(s){return{id:"section:"+s,label:s};}),{id:"earnings",label:"Earnings & Thesis Check"},{id:"template",label:"Template"},
     {id:"weights",label:"Weights"+((selCo&&selCo.portWeightHistory&&selCo.portWeightHistory.length>0)?" ("+selCo.portWeightHistory.length+")":"")},
     {id:"transactions",label:"Transactions"+((selCo&&selCo.transactions&&selCo.transactions.length>0)?" ("+selCo.transactions.length+")":"")},
     {id:"linked",label:"Linked"+(linkedEntries.length>0?" ("+linkedEntries.length+")":"")},{id:"upload",label:"Upload"},{id:"history",label:"Log"+((selCo&&selCo.updateLog&&selCo.updateLog.length>0)?" ("+selCo.updateLog.length+")":"")}];
