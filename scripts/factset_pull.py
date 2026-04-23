@@ -28,6 +28,7 @@ from __future__ import annotations
 import sys
 import time
 import json
+import re
 import traceback
 import urllib.request
 import urllib.error
@@ -410,9 +411,37 @@ class ExcelSession:
         log("Running LoadPositions macro...")
         if not run_macro("LoadPositions"):
             log("  LoadPositions failed — continuing with cached Rep Holdings data")
-            return
-        log(f"Waiting {REP_WAIT_SECONDS}s for positions to populate...")
-        time.sleep(REP_WAIT_SECONDS)
+            # Still try LoadTransactions before closing — they're independent.
+        else:
+            log(f"Waiting {REP_WAIT_SECONDS}s for positions to populate...")
+            time.sleep(REP_WAIT_SECONDS)
+
+        # LoadTransactions writes into the Tx sheet (A:G). Like LoadPositions
+        # it targets ActiveSheet via Range("DATA_START").ClearContents so
+        # we activate the Tx sheet first. The transaction list is tiny
+        # (typically 0-20 rows of yesterday's trades) so a short wait is
+        # plenty.
+        try:
+            self.wb.Sheets("Tx").Activate()
+            log("  Activated Tx sheet for LoadTransactions")
+        except Exception as e:
+            log(f"  Could not activate Tx sheet: {e}")
+        log("Running LoadTransactions macro...")
+        if run_macro("LoadTransactions"):
+            log("  Waiting 10s for transactions to populate...")
+            time.sleep(10)
+            try:
+                self.wb.Sheets("Tx").Calculate()
+                log("  Tx sheet recalc done")
+            except Exception as e:
+                log(f"  Tx recalc failed: {e}")
+            try:
+                stamp = self.wb.Sheets("Tx").Cells(1, 4).Value
+                log(f"  Tx D1: {stamp}")
+            except Exception:
+                pass
+        else:
+            log("  LoadTransactions failed — skipping transaction pull")
 
         if opened and run_macro("CloseConnection"):
             log("  CloseConnection done")
@@ -797,6 +826,133 @@ def read_rep_holdings(xl: ExcelSession) -> dict[str, dict[str, dict]]:
     return out
 
 
+# Transactions — LoadTransactions macro writes raw recordset to Tx!A4:G<n>,
+# and the user has helper formulas in H:J and a final upload block in L:Q
+# with columns: Date, Security, Portfolio, Shares, Price, Amount. Portfolio
+# is a LW account code (e.g. LWSC0003) which we map to the short code (SC)
+# matching the app's REP_ACCOUNTS constant. Typically 0-20 rows of
+# yesterday's trades; bounded at 500 for safety.
+MAX_TX_ROW = 500
+
+def read_transactions(xl: "ExcelSession") -> list[dict]:
+    rep_accounts = {
+        "LWGA0013": "GL", "LWFOCGL1": "FGL", "LWIV0004": "IN",
+        "LWIF0001": "FIN", "LWEA0001": "EM", "LWSC0003": "SC",
+    }
+    rows = xl.read_range("Tx", f"L4:Q{MAX_TX_ROW}")
+    out: list[dict] = []
+    for row in rows:
+        while len(row) < 6: row.append(None)
+        date = _any_date_to_iso(row[0])
+        name = _str(row[1])
+        port_raw = _str(row[2])
+        shares = _num(row[3])
+        price  = _num(row[4])
+        amount = _num(row[5])
+        if not date or not name: continue
+        port = rep_accounts.get((port_raw or "").upper())
+        if not port: continue
+        if shares is None: continue
+        out.append({
+            "date": date,
+            "name": name.strip(),
+            "portfolio": port,
+            "shares": shares,
+            "price":  price  if price  is not None else 0.0,
+            "amount": amount if amount is not None else 0.0,
+        })
+    log(f"  Transactions: {len(out)} rows")
+    return out
+
+
+# Mirrors the JS normalize() in src/hooks/useImport.js applyTxImport. Strips
+# common corporate suffixes and punctuation so "Shell Plc" and "SHELL PLC"
+# and "Shell, PLC" all normalize to the same key.
+_TX_STOPWORDS_LONG = re.compile(
+    r"\b(corporation|incorporated|international|holdings|holding|company|"
+    r"limited|group|ordinary|preferred|shares|class|depositary|depository|"
+    r"receipts|receipt|common|stock)\b"
+)
+_TX_STOPWORDS_SHORT = re.compile(
+    r"\b(co\.|inc\.|ltd\.|llc|plc|sa|ag|nv|se|co|inc|ltd|corp|gmbh|kgaa|ab|"
+    r"asa|oyj|spa|srl|bv|ord|com|adr|ads|gdr|pref|reit|shs|npv|cdi|cva|"
+    r"units|unit|jsc|pjsc|ojsc|oao|sab|bhd|tbk)\b"
+)
+_TX_PUNCT = re.compile(r"[.,&'()\-\/]")
+
+def _normalize_tx_name(n: str | None) -> str:
+    s = (n or "").lower()
+    s = _TX_STOPWORDS_LONG.sub("", s)
+    s = _TX_STOPWORDS_SHORT.sub("", s)
+    s = _TX_PUNCT.sub(" ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _tx_key(t: dict) -> str:
+    """Composite dedupe key matching the JS importer. Uses default
+    number-to-string formatting so 0 -> "0" not "0.0", to match JS."""
+    def n(v):
+        if v is None or v == "": return "0"
+        try:
+            f = float(v)
+            return str(int(f)) if f == int(f) else str(f)
+        except Exception:
+            return "0"
+    return (t.get("date") or "") + "|" + (t.get("portfolio") or "") + \
+           "|" + n(t.get("shares")) + "|" + n(t.get("price")) + "|" + n(t.get("amount"))
+
+
+def merge_transactions(companies: list[dict], tx_rows: list[dict]) -> tuple[int, int, list[str]]:
+    """Append new transactions onto each company's transactions array,
+    deduping by composite key. Mirrors applyTxImport in useImport.js.
+    Returns (added_count, matched_companies_count, unmatched_names)."""
+    if not tx_rows:
+        return (0, 0, [])
+    by_name: dict[str, list[dict]] = {}
+    by_norm: dict[str, list[dict]] = {}
+    for r in tx_rows:
+        k = (r["name"] or "").lower().strip()
+        by_name.setdefault(k, []).append(r)
+        by_norm.setdefault(_normalize_tx_name(r["name"]), []).append(r)
+
+    matched_names: set[str] = set()
+    added = 0
+    matched_cos = 0
+    for c in companies:
+        cname = (c.get("name") or "").lower().strip()
+        cus   = (c.get("usTickerName") or "").lower().strip()
+        matches = (by_name.get(cname)
+                   or (cus and by_name.get(cus))
+                   or by_norm.get(_normalize_tx_name(c.get("name")))
+                   or (cus and by_norm.get(_normalize_tx_name(c.get("usTickerName")))))
+        if not matches: continue
+        for r in matches:
+            matched_names.add(r["name"])
+        existing = c.get("transactions") or []
+        exist_keys = { _tx_key(t) for t in existing }
+        new_tx = []
+        for r in matches:
+            if _tx_key(r) in exist_keys: continue
+            new_tx.append({
+                "id": _new_uuid(),
+                "date": r["date"],
+                "portfolio": r["portfolio"],
+                "shares": r["shares"],
+                "price":  r["price"],
+                "amount": r["amount"],
+                "type": "BUY" if r["shares"] >= 0 else "SELL",
+            })
+        if not new_tx: continue
+        added += len(new_tx)
+        matched_cos += 1
+        all_tx = existing + new_tx
+        all_tx.sort(key=lambda t: t.get("date") or "", reverse=True)
+        c["transactions"] = all_tx
+
+    unmatched = sorted({ r["name"] for r in tx_rows } - matched_names)
+    return (added, matched_cos, unmatched)
+
+
 # Metrics tab — new layout with "current" (LTM / no suffix) column before
 # each +1/+2 pair. 35 metric columns total (A=Company, B=Ord Ticker,
 # C=MktCap, D..AI=metrics, AJ..AO=trailing returns).
@@ -1174,6 +1330,7 @@ def main() -> int:
             rep_hold   = read_rep_holdings(xl)
             markets    = read_markets(xl)
             metrics    = read_metrics(xl)
+            tx_rows    = read_transactions(xl)
     except Exception as e:
         log(f"FATAL during Excel session: {e}\n{traceback.format_exc()}")
         return 2
@@ -1198,8 +1355,12 @@ def main() -> int:
             log(f"  Cleaned legacy error values: {n_cleaned_co} company fields, {n_cleaned_fx} fx rates")
         n_p, n_v, n_e = merge_companies(cos, prices, valuations, earnings)
         n_m = merge_metrics(cos, metrics)
+        n_tx, n_tx_cos, unmatched_tx = merge_transactions(cos, tx_rows)
         supa_put_companies(cos)
         log(f"  Companies: prices+={n_p}, valuations+={n_v}, earnings+={n_e}, metrics+={n_m}")
+        if tx_rows:
+            log(f"  Transactions: {n_tx} new across {n_tx_cos} companies"
+                + (f"; {len(unmatched_tx)} unmatched names: {unmatched_tx[:10]}" if unmatched_tx else ""))
 
         # fxRates: merge fresh good values over the already-cleaned existing map
         existing_fx.update(fx)
