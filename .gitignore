@@ -4,3 +4,5 @@ dist
 .env.local
 .env.*.local
 .claude/
+
+scripts/__pycache__/
