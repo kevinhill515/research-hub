@@ -271,8 +271,14 @@ export function PortfoliosTable(props) {
 
     const cashShares = repShares(portRep.CASH);
     const divShares  = repShares(portRep.DIVACC);
-    const cashTgt = parseFloat((specialWeights.CASH   || {})[portTab]) || 0;
     const divTgt  = parseFloat((specialWeights.DIVACC || {})[portTab]) || 0;
+    /* CASH target is DERIVED so the portfolio total always sums to 100%.
+       Earlier we stored CASH as independent state and auto-shifted it on
+       each edit, but the stored value could drift (e.g. after adding a
+       new holding through a path that bypasses updateTargetWeight). By
+       computing it as (100 - company targets - DIVACC), clamped to 0,
+       the sum is correct by construction. */
+    const cashTgt = Math.max(0, Math.round((100 - tgt - divTgt) * 10) / 10);
     tgt += cashTgt + divTgt;
     rawRep += cashShares + divShares;
     const rep = totalMV > 0 ? Math.round(rawRep / totalMV * 1000) / 10 : 0;
@@ -325,11 +331,16 @@ export function PortfoliosTable(props) {
     return !a.resolved && a.scope === "portfolio" && a.portfolio === portTab;
   });
 
-  /* ---- CASH / DIVACC special rows (only render when there's data) ---- */
+  /* ---- CASH / DIVACC special rows (only render when there's data) ----
+     CASH target is derived (100 - sum of company targets - DIVACC target),
+     so it's always consistent with the portfolio sum. */
   const cashShares = repShares(portRep.CASH);
   const divShares  = repShares(portRep.DIVACC);
-  const cashTgt = parseFloat((specialWeights.CASH   || {})[portTab]) || 0;
   const divTgt  = parseFloat((specialWeights.DIVACC || {})[portTab]) || 0;
+  const sumCoTargets = portCos.reduce(function (s, c) {
+    return s + (parseFloat((c.portWeights || {})[portTab]) || 0);
+  }, 0);
+  const cashTgt = Math.max(0, Math.round((100 - sumCoTargets - divTgt) * 10) / 10);
   const specialRows = [];
   if (cashShares > 0 || cashTgt > 0) specialRows.push({ label: "CASH",   shares: cashShares, target: cashTgt });
   if (divShares  > 0 || divTgt  > 0) specialRows.push({ label: "DIVACC", shares: divShares,  target: divTgt  });
