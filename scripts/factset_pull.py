@@ -45,7 +45,7 @@ from typing import Any
 # exit code 2 (file not found) and nothing even reaches the log.
 # UNC paths work in both interactive and scheduled-task contexts.
 WORKBOOK_PATH    = Path(r"\\FS01\USERS\khill\Research Hub\Research Hub Upload.xlsx")
-MASTER_LIST_PATH = Path(r"\\FS01\USERS\khill\Research Hub\Master List COPY.xlsm")
+MASTER_LIST_PATH = Path(r"\\FS01\USERS\khill\Research Hub\Master List.xlsm")
 LOG_PATH         = Path(r"\\FS01\USERS\khill\Research Hub\factset_pull.log")
 
 SUPA_URL = "https://vesnqbxswmggdfevqokt.supabase.co"
