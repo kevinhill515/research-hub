@@ -17,7 +17,35 @@ import { pickSeries, yoyGrowth, cagr, minMaxAcross, fmtPct } from './overviewCha
 const TILE = "rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3";
 const HIST_COLOR = "#2563eb"; /* blue-600 */
 const EST_COLOR  = "#ea580c"; /* orange-600 */
-const GRID_COLOR = "rgba(100,116,139,0.12)"; /* slate-500 @ 12% */
+const GRID_COLOR = "rgba(100,116,139,0.12)"; /* slate-500 @ 12% — frame */
+const TICK_COLOR = "rgba(100,116,139,0.18)"; /* gridlines (slightly darker) */
+
+/* Generate "nice" tick values in [min, max] — multiples of 1/2/2.5/5
+ * times a power of 10, targeting ~5 ticks. Returns an array of numbers
+ * that sit inside the range (may exclude the exact min/max). */
+function niceTicks(min, max, target) {
+  if (!isFinite(min) || !isFinite(max) || max <= min) return [];
+  const t = target || 5;
+  const range = max - min;
+  const rawStep = range / t;
+  const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const norm = rawStep / mag;
+  let step;
+  if (norm < 1.5) step = 1;
+  else if (norm < 3) step = 2;
+  else if (norm < 4) step = 2.5;
+  else if (norm < 7) step = 5;
+  else step = 10;
+  step *= mag;
+  const start = Math.ceil(min / step) * step;
+  const out = [];
+  for (let v = start; v <= max + 1e-9; v += step) {
+    /* Floating point tidy-up — trim near-zero noise */
+    const rounded = Math.abs(v) < step / 1e6 ? 0 : v;
+    out.push(rounded);
+  }
+  return out;
+}
 
 export default function CompanyDashboard({ company }) {
   const hasFin  = !!(company && company.financials && company.financials.years && company.financials.years.length > 0);
@@ -113,10 +141,30 @@ function GrowthEngine({ company }) {
   }
   const growthSegs = buildGrowthSegments();
 
+  const leftTicks = niceTicks(yBase, yTop, 5);
+  const rightTicks = niceTicks(gYBase, gYBase + gSpan, 4);
+
   return (
     <Tile title="Growth Engine" subtitle="Revenue + YoY growth">
       <svg width="100%" height={H} viewBox={"0 0 " + W + " " + H} role="img" aria-label="Revenue and growth">
         <rect x={PAD_L} y={PAD_T} width={innerW} height={innerH} fill="none" stroke={GRID_COLOR} />
+        {/* Left-axis gridlines + labels (revenue) */}
+        {leftTicks.map(function (t, i) {
+          const y = yOf(t);
+          return (
+            <g key={"lt-" + i}>
+              <line x1={PAD_L} y1={y} x2={PAD_L + innerW} y2={y} stroke={TICK_COLOR} />
+              <text x={PAD_L - 4} y={y + 3} fontSize="9" textAnchor="end" fill="#64748b">{fmtBn(t)}</text>
+            </g>
+          );
+        })}
+        {/* Right-axis labels (growth %) */}
+        {rightTicks.map(function (t, i) {
+          return (
+            <text key={"rt-" + i} x={PAD_L + innerW + 4} y={PAD_T + (1 - (t - gYBase) / gSpan) * innerH + 3}
+              fontSize="9" textAnchor="start" fill="#16a34a">{(t * 100).toFixed(0) + "%"}</text>
+          );
+        })}
         {/* Zero line if y range includes 0 */}
         {yBase < 0 && yTop > 0 && (
           <line x1={PAD_L} y1={yOf(0)} x2={PAD_L + innerW} y2={yOf(0)} stroke={GRID_COLOR} />
@@ -145,12 +193,6 @@ function GrowthEngine({ company }) {
           if (i % step !== 0 && i !== n - 1) return null;
           return <text key={i} x={xOf(i)} y={H - 12} fontSize="9" textAnchor="middle" fill="#64748b">{String(yr).slice(2)}</text>;
         })}
-        {/* Left axis: sales scale */}
-        <text x={PAD_L - 4} y={PAD_T + 10} fontSize="9" textAnchor="end" fill="#64748b">{fmtBn(yTop)}</text>
-        <text x={PAD_L - 4} y={PAD_T + innerH} fontSize="9" textAnchor="end" fill="#64748b">{fmtBn(yBase)}</text>
-        {/* Right axis: growth scale */}
-        <text x={PAD_L + innerW + 4} y={PAD_T + 10} fontSize="9" textAnchor="start" fill="#16a34a">{(gYBase * 100 + gSpan * 100).toFixed(0)}%</text>
-        <text x={PAD_L + innerW + 4} y={PAD_T + innerH} fontSize="9" textAnchor="start" fill="#16a34a">{(gYBase * 100).toFixed(0)}%</text>
       </svg>
       <Callouts
         items={[
@@ -420,9 +462,21 @@ function BalanceSheetHealth({ company }) {
           const est = base.estimate[i];
           return <text key={i} x={xOf(i)} y={H - 12} fontSize="9" textAnchor="middle" fill={est ? EST_COLOR : "#64748b"}>{String(yr).slice(2)}</text>;
         })}
-        {/* Y labels */}
-        <text x={PAD_L - 4} y={PAD_T + 10} fontSize="9" textAnchor="end" fill="#64748b">{yMax.toFixed(1) + "x"}</text>
-        <text x={PAD_L - 4} y={PAD_T + innerH} fontSize="9" textAnchor="end" fill="#64748b">{yMin.toFixed(1) + "x"}</text>
+        {/* Y labels at nice tick positions */}
+        {niceTicks(yMin, yMax, 5).map(function (t, i) {
+          const y = yOf(t);
+          /* Skip ticks at 1 and 3 — we render dashed threshold lines at
+             those values already, with their own styling. */
+          if (Math.abs(t - 1) < 1e-6 || Math.abs(t - 3) < 1e-6) {
+            return <text key={"t-" + i} x={PAD_L - 4} y={y + 3} fontSize="9" textAnchor="end" fill="#64748b">{t.toFixed(1) + "x"}</text>;
+          }
+          return (
+            <g key={"t-" + i}>
+              <line x1={PAD_L} y1={y} x2={PAD_L + innerW} y2={y} stroke={TICK_COLOR} />
+              <text x={PAD_L - 4} y={y + 3} fontSize="9" textAnchor="end" fill="#64748b">{t.toFixed(1) + "x"}</text>
+            </g>
+          );
+        })}
         {/* Band labels inside the plot area */}
         <text x={PAD_L + innerW - 4} y={yOf(0.5)} fontSize="8" textAnchor="end" fill="#16a34a" opacity="0.8">low leverage</text>
         {yMax > 3 && <text x={PAD_L + innerW - 4} y={yOf(2)} fontSize="8" textAnchor="end" fill="#ca8a04" opacity="0.8">moderate</text>}
@@ -557,9 +611,16 @@ function ValuationContext({ company }) {
           if (i % step !== 0 && i !== n - 1) return null;
           return <text key={i} x={xOf(i)} y={H - 12} fontSize="9" textAnchor="middle" fill="#64748b">{String(yr).slice(2)}</text>;
         })}
-        {/* Y labels */}
-        <text x={PAD_L - 4} y={PAD_T + 10} fontSize="9" textAnchor="end" fill="#64748b">{yMax.toFixed(0)}x</text>
-        <text x={PAD_L - 4} y={PAD_T + innerH} fontSize="9" textAnchor="end" fill="#64748b">{yMin.toFixed(0)}x</text>
+        {/* Y labels at nice tick positions with light gridlines */}
+        {niceTicks(yMin, yMax, 5).map(function (t, i) {
+          const y = yOf(t);
+          return (
+            <g key={"t-" + i}>
+              <line x1={PAD_L} y1={y} x2={PAD_L + innerW} y2={y} stroke={TICK_COLOR} />
+              <text x={PAD_L - 4} y={y + 3} fontSize="9" textAnchor="end" fill="#64748b">{t.toFixed(0) + "x"}</text>
+            </g>
+          );
+        })}
       </svg>
       <Callouts
         items={[
@@ -658,17 +719,28 @@ function MultiLineChart({ years, estimate, series, formatY, hlines }) {
   }
 
   function fmtLabel(v) { return formatY ? formatY(v) : v.toFixed(2); }
+  const ticks = niceTicks(yMin, yMax, 5);
 
   return (
     <svg width="100%" height={H} viewBox={"0 0 " + W + " " + H} role="img">
       <rect x={PAD_L} y={PAD_T} width={innerW} height={innerH} fill="none" stroke={GRID_COLOR} />
-      {/* Horizontal reference lines */}
+      {/* Horizontal gridlines + y labels at "nice" tick positions */}
+      {ticks.map(function (t, i) {
+        const y = yOf(t);
+        return (
+          <g key={"t-" + i}>
+            <line x1={PAD_L} y1={y} x2={PAD_L + innerW} y2={y} stroke={TICK_COLOR} />
+            <text x={PAD_L - 4} y={y + 3} fontSize="9" textAnchor="end" fill="#64748b">{fmtLabel(t)}</text>
+          </g>
+        );
+      })}
+      {/* Horizontal reference lines (user-supplied) */}
       {(hlines || []).map(function (h, i) {
         if (!isFinite(h.v) || h.v < yMin || h.v > yMax) return null;
         const y = yOf(h.v);
         return (
           <g key={i}>
-            <line x1={PAD_L} y1={y} x2={PAD_L + innerW} y2={y} stroke={h.color || "#64748b"} strokeDasharray="3 3" opacity="0.7" />
+            <line x1={PAD_L} y1={y} x2={PAD_L + innerW} y2={y} stroke={h.color || "#64748b"} strokeDasharray="3 3" opacity="0.8" />
             {h.label && <text x={PAD_L + innerW - 4} y={y - 3} fontSize="9" textAnchor="end" fill={h.color || "#64748b"}>{h.label}</text>}
           </g>
         );
@@ -689,9 +761,6 @@ function MultiLineChart({ years, estimate, series, formatY, hlines }) {
         const est = estimate[i];
         return <text key={i} x={xOf(i)} y={H - 12} fontSize="9" textAnchor="middle" fill={est ? EST_COLOR : "#64748b"}>{String(yr).slice(2)}</text>;
       })}
-      {/* Y labels */}
-      <text x={PAD_L - 4} y={PAD_T + 10} fontSize="9" textAnchor="end" fill="#64748b">{fmtLabel(yMax)}</text>
-      <text x={PAD_L - 4} y={PAD_T + innerH} fontSize="9" textAnchor="end" fill="#64748b">{fmtLabel(yMin)}</text>
     </svg>
   );
 }
