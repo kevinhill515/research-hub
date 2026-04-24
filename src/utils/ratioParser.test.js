@@ -138,6 +138,18 @@ describe("parseRatioPaste", function () {
     expect(r.values["Sales"]).toEqual([1000, 1100, 1200, 1300]);
   });
 
+  it("forward-fills estimate flag across blank FY labels", function () {
+    /* FactSet sometimes labels only +1FY and leaves +2FY..+5FY blank.
+       Everything after the first estimate marker should inherit it. */
+    const text = [
+      "\t12/31/2024\t12/31/2025\t12/31/2026\t12/31/2027\t12/31/2028",
+      "\t-1FY\t-0FY\t+1FY\t\t",
+      "Sales\t1000\t1100\t1200\t1300\t1400",
+    ].join("\n");
+    const r = parseRatioPaste(text);
+    expect(r.estimate).toEqual([false, false, true, true, true]);
+  });
+
   it("recognizes -0FY as current-year historical (not estimate)", function () {
     const text = [
       "\t12/31/2024\t12/31/2025\t12/31/2026",

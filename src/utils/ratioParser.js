@@ -165,10 +165,18 @@ export function parseRatioPaste(text) {
     const META_RE = /^(final|estimate|[-+]\d+FY)/i;
     const metaMatches = metaCells.filter(function (c) { return META_RE.test(c); }).length;
     if (metaMatches >= 2) {
+      /* Forward-fill: FactSet financial pastes sometimes only label the
+         first forward year (+1FY) and leave +2FY..+5FY blank. Once we
+         see any estimate marker, every column after it is also estimate.
+         Similarly a Final/historical marker resets the flag back to
+         historical for any prior blanks to the left (rare edge case). */
+      let inEstimate = false;
       years.forEach(function (_, i) {
         const v = metaCells[yearStartCol + i] || "";
-        if (/^estimate/i.test(v)) estimate[i] = true;
-        else if (/^\+\d+FY/i.test(v)) estimate[i] = true;
+        if (/^estimate/i.test(v) || /^\+\d+FY/i.test(v)) inEstimate = true;
+        else if (/^final/i.test(v) || /^-\d+FY/i.test(v)) inEstimate = false;
+        /* else (blank): inherit current state */
+        estimate[i] = inEstimate;
       });
       dataStartRow = yearRowIdx + 2;
     }
