@@ -21,7 +21,7 @@ export function useCompanies(){
     if(typeof v==="function")return; /* no-op: derived state auto-syncs with companies */
     if(v&&typeof v==="object"&&v.id!==undefined){setSelCoId(v.id);return;}
   },[]);
-  const [coView,setCoView]=useState("financials");
+  const [coView,setCoView]=useState("dashboard");
   const [coSort,setCoSort]=useState("Tier");
   const [coSortDir,setCoSortDir]=useState("asc");
   const [coFilter,setCoFilter]=useState("All");
