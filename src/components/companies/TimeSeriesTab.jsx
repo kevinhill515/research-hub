@@ -23,6 +23,7 @@ const BTN_SM = "text-xs px-2.5 py-1.5 font-medium rounded-md border border-slate
 
 const LABEL_W    = 340;
 const YEAR_W     = 64;
+const COMMENT_W  = 320;  /* px — team comment column on the right */
 const SPARK_W    = 48;
 const SPARK_H    = 16;
 const HIST_COLOR = "#2563eb";
@@ -105,7 +106,7 @@ function isSubMetric(name) {
  * @param {string} props.dataHubLabel — name of the corresponding Data Hub tab, shown in empty state
  */
 export default function TimeSeriesTab({ company, dataKey, title, dataHubLabel }) {
-  const { setCompanies } = useCompanyContext();
+  const { setCompanies, currentUser } = useCompanyContext();
   const confirm = useConfirm();
   const [openItems, setOpenItems] = useState(function () { return new Set(); });
   const containerRef = useRef(null);
@@ -134,6 +135,29 @@ export default function TimeSeriesTab({ company, dataKey, title, dataHubLabel })
     return function () { window.removeEventListener("resize", compute); };
   }, [hasData, data]);
 
+  /* Save a comment for a single item (line item / ratio name). Pass "" to
+     delete. Persists onto company[dataKey].comments and updates the
+     timestamp + author. */
+  function saveComment(itemName, text) {
+    const trimmed = (text || "").trim();
+    const nextData = Object.assign({}, data);
+    const nextComments = Object.assign({}, data.comments || {});
+    if (!trimmed) {
+      delete nextComments[itemName];
+    } else {
+      nextComments[itemName] = {
+        text: trimmed,
+        author: currentUser || "Unknown",
+        updatedAt: new Date().toISOString(),
+      };
+    }
+    nextData.comments = nextComments;
+    const updated = Object.assign({}, company, { [dataKey]: nextData });
+    setCompanies(function (cs) {
+      return cs.map(function (c) { return c.id === updated.id ? updated : c; });
+    });
+  }
+
   function clearData() {
     confirm("Clear all " + title.toLowerCase() + " data for " + (company.name || "this company") + "? You'll need to re-paste to restore it.").then(function (ok) {
       if (!ok) return;
@@ -157,8 +181,9 @@ export default function TimeSeriesTab({ company, dataKey, title, dataHubLabel })
     );
   }
 
-  const gridCols = LABEL_W + "px repeat(" + data.years.length + ", " + YEAR_W + "px)";
+  const gridCols = LABEL_W + "px repeat(" + data.years.length + ", " + YEAR_W + "px) " + COMMENT_W + "px";
   const nYears = data.years.length;
+  const comments = data.comments || {};
 
   return (
     <div className="mb-6" ref={containerRef}>
@@ -191,6 +216,9 @@ export default function TimeSeriesTab({ company, dataKey, title, dataHubLabel })
               </div>
             );
           })}
+          <div className="px-2 py-1.5 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-semibold">
+            Comments
+          </div>
           {/* Flag row */}
           <div className="px-2 py-1 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[9px] uppercase tracking-wide text-gray-400 dark:text-slate-500 sticky left-0 z-10" />
           {data.years.map(function (_, i) {
@@ -202,6 +230,9 @@ export default function TimeSeriesTab({ company, dataKey, title, dataHubLabel })
               </div>
             );
           })}
+          <div className="px-2 py-1 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[9px] italic text-gray-400 dark:text-slate-500">
+            click any cell to add/edit
+          </div>
 
           {data.sections.map(function (sec) {
             return (
@@ -214,6 +245,8 @@ export default function TimeSeriesTab({ company, dataKey, title, dataHubLabel })
                 onToggle={toggle}
                 chartWidth={chartWidth}
                 nYears={nYears}
+                comments={comments}
+                onSaveComment={saveComment}
               />
             );
           })}
@@ -233,7 +266,7 @@ export default function TimeSeriesTab({ company, dataKey, title, dataHubLabel })
   );
 }
 
-function SectionRows({ section, years, estimate, openItems, onToggle, chartWidth, nYears }) {
+function SectionRows({ section, years, estimate, openItems, onToggle, chartWidth, nYears, comments, onSaveComment }) {
   return (
     <>
       <div className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-700 dark:text-slate-200 bg-slate-100/70 dark:bg-slate-800/70 border-b border-slate-200 dark:border-slate-700"
@@ -252,6 +285,8 @@ function SectionRows({ section, years, estimate, openItems, onToggle, chartWidth
             onToggle={onToggle}
             chartWidth={chartWidth}
             nYears={nYears}
+            comment={comments[item.name]}
+            onSaveComment={onSaveComment}
           />
         );
       })}
@@ -259,7 +294,7 @@ function SectionRows({ section, years, estimate, openItems, onToggle, chartWidth
   );
 }
 
-function ItemRow({ item, years, estimate, isOpen, onToggle, chartWidth, nYears }) {
+function ItemRow({ item, years, estimate, isOpen, onToggle, chartWidth, nYears, comment, onSaveComment }) {
   const sub = isSubMetric(item.name);
   const cellBase = "px-1.5 py-1 text-[11px] text-right tabular-nums border-b border-slate-100 dark:border-slate-800";
   const labelCls = "px-2 py-1 text-[11px] cursor-pointer border-b border-slate-100 dark:border-slate-800 sticky left-0 z-[1] bg-white dark:bg-slate-950 hover:bg-blue-50 dark:hover:bg-blue-950/30 "
@@ -287,6 +322,7 @@ function ItemRow({ item, years, estimate, isOpen, onToggle, chartWidth, nYears }
           </div>
         );
       })}
+      <CommentCell itemName={item.name} comment={comment} onSave={onSaveComment} isOpen={isOpen} />
 
       {isOpen && (
         <div className="border-b border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50 overflow-x-auto"
@@ -306,5 +342,80 @@ function ItemRow({ item, years, estimate, isOpen, onToggle, chartWidth, nYears }
         </div>
       )}
     </>
+  );
+}
+
+/* Inline-editable comment cell. Starts as read-only view (or placeholder
+ * if empty); clicking opens a textarea that saves on blur / Ctrl+Enter
+ * and cancels on Esc. Author + relative timestamp rendered below the
+ * comment text. */
+function CommentCell({ itemName, comment, onSave, isOpen }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const hasComment = !!(comment && comment.text);
+
+  function startEdit(e) {
+    e.stopPropagation();
+    setDraft(hasComment ? comment.text : "");
+    setEditing(true);
+  }
+  function commit() {
+    setEditing(false);
+    onSave(itemName, draft);
+  }
+  function cancel() {
+    setEditing(false);
+    setDraft("");
+  }
+
+  const bgCls = isOpen ? "bg-blue-50/60 dark:bg-blue-950/30" : "";
+
+  if (editing) {
+    return (
+      <div className={"px-2 py-1 border-b border-slate-100 dark:border-slate-800 " + bgCls}
+        onClick={function (e) { e.stopPropagation(); }}>
+        <textarea
+          autoFocus
+          value={draft}
+          onChange={function (e) { setDraft(e.target.value); }}
+          onBlur={commit}
+          onKeyDown={function (e) {
+            if (e.key === "Escape") { e.preventDefault(); cancel(); }
+            if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); commit(); }
+          }}
+          placeholder="Comment on this line…"
+          className="w-full text-[11px] px-1.5 py-1 rounded border border-blue-400 dark:border-blue-500 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 resize-y focus:outline-none focus:ring-2 focus:ring-blue-500"
+          style={{ minHeight: 48 }}
+        />
+        <div className="flex items-center gap-2 mt-0.5 text-[9px] text-gray-500 dark:text-slate-400">
+          <span className="italic">Esc cancel · Ctrl+Enter save · blur saves</span>
+          {hasComment && (
+            <button type="button" onClick={function () { onSave(itemName, ""); setEditing(false); }}
+              className="ml-auto text-red-600 dark:text-red-400 hover:underline">Delete</button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={"px-2 py-1 text-[11px] cursor-text border-b border-slate-100 dark:border-slate-800 hover:bg-blue-50/40 dark:hover:bg-blue-950/20 " + bgCls}
+      onClick={startEdit}
+      title={hasComment ? "Click to edit — " + (comment.author || "") + (comment.updatedAt ? " • " + new Date(comment.updatedAt).toLocaleDateString() : "") : "Click to add a comment"}
+    >
+      {hasComment ? (
+        <>
+          <div className="text-gray-800 dark:text-slate-200 whitespace-pre-wrap leading-tight">{comment.text}</div>
+          {(comment.author || comment.updatedAt) && (
+            <div className="text-[9px] text-gray-400 dark:text-slate-500 mt-0.5 italic">
+              {comment.author || ""}{comment.author && comment.updatedAt ? " · " : ""}{comment.updatedAt ? new Date(comment.updatedAt).toLocaleDateString() : ""}
+            </div>
+          )}
+        </>
+      ) : (
+        <span className="text-gray-300 dark:text-slate-600 italic">+ comment</span>
+      )}
+    </div>
   );
 }
