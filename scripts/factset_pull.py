@@ -45,7 +45,7 @@ from typing import Any
 # exit code 2 (file not found) and nothing even reaches the log.
 # UNC paths work in both interactive and scheduled-task contexts.
 WORKBOOK_PATH    = Path(r"\\FS01\USERS\khill\Research Hub\Research Hub Upload.xlsx")
-MASTER_LIST_PATH = Path(r"\\FS01\USERS\khill\Research Hub\Master List.xlsm")
+MASTER_LIST_PATH = Path(r"\\FS01\USERS\khill\Research Hub\Master List COPY.xlsm")
 LOG_PATH         = Path(r"\\FS01\USERS\khill\Research Hub\factset_pull.log")
 
 SUPA_URL = "https://vesnqbxswmggdfevqokt.supabase.co"
@@ -289,36 +289,12 @@ class ExcelSession:
 
         # Find Master List. First look for any open workbook whose filename
         # starts with "Master List" — that's what the user has open, even
-        # if its full path differs from our config. Only fall back to
-        # opening our configured copy if none is already open.
-        #
-        # Guard: reject a Master List whose directory doesn't match the
-        # configured master_path's directory. A different "Master List"
-        # on the G: share (the real one IT uses) has happened at least
-        # once and caused LoadPositions to hang indefinitely waiting on
-        # a dialog we couldn't see. Abort with a clear message instead.
-        expected_dir = str(self.master_path.parent).lower()
-        def _matches_expected(wb) -> bool:
-            try:
-                return str(Path(wb.FullName).parent).lower() == expected_dir
-            except Exception:
-                return False
-
+        # if its full path differs from our config (the user's real one
+        # lives on a shared G: drive; the FS01 path is just a backup
+        # fallback we open ourselves if nothing's already open).
         self.master_wb = self._find_open_by_name(["master list"])
         if self.master_wb is not None:
-            if _matches_expected(self.master_wb):
-                log(f"  Master List: found open — {self.master_wb.Name}  ({self.master_wb.FullName})")
-            else:
-                log(f"  UNEXPECTED Master List attached — {self.master_wb.Name}  ({self.master_wb.FullName})")
-                log(f"  Expected directory: {self.master_path.parent}")
-                log(f"  This is usually a different Master List on a shared drive. The script")
-                log(f"  cannot run its macros against it (LoadPositions will hang). Close the")
-                log(f"  unexpected workbook in Excel, then re-run. Aborting.")
-                raise RuntimeError(
-                    f"Refusing to run against Master List at unexpected path "
-                    f"{self.master_wb.FullName!r} (expected directory {expected_dir!r}). "
-                    f"Close that workbook and re-run."
-                )
+            log(f"  Master List: found open — {self.master_wb.Name}  ({self.master_wb.FullName})")
         else:
             self.master_wb = self._find_or_open(self.master_path, "master")
             if self.master_wb is not None:
