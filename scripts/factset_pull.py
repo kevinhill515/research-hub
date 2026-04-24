@@ -580,16 +580,34 @@ class ExcelSession:
         # ("<unknown>.Worksheets"); re-fetch by name before iterating.
         master = self._refetch_wb(self.master_wb, self._master_name)
         if master is not None:
-            try:
-                for ws in master.Worksheets:
-                    try:
-                        ws.EnableCalculation = False
-                        ws.EnableCalculation = True
-                    except Exception:
+            # Retry the Worksheets iteration on RPC_E_CALL_REJECTED (-2147418111).
+            # Excel is often still busy settling after FactSet's full rebuild;
+            # it refuses COM calls for a few seconds, then recovers. Short
+            # backoff loop handles this without a false failure log.
+            RPC_REJECTED = -2147418111
+            ok = False
+            for attempt in range(5):
+                try:
+                    for ws in master.Worksheets:
+                        try:
+                            ws.EnableCalculation = False
+                            ws.EnableCalculation = True
+                        except Exception:
+                            continue
+                    log("  Resubscribed Master List FDSLIVE cells"
+                        + (f" (attempt {attempt+1})" if attempt > 0 else ""))
+                    ok = True
+                    break
+                except Exception as e:
+                    # If it's the rejected-call error, wait and retry; otherwise bail.
+                    is_rejected = getattr(e, "args", None) and RPC_REJECTED in e.args
+                    if attempt < 4 and (is_rejected or "rejected" in str(e).lower()):
+                        time.sleep(3 + attempt * 2)  # 3, 5, 7, 9 s
                         continue
-                log("  Resubscribed Master List FDSLIVE cells")
-            except Exception as e:
-                log(f"  FDSLIVE resume failed: {e}")
+                    log(f"  FDSLIVE resume failed: {e}")
+                    break
+            if not ok and attempt == 4:
+                log("  FDSLIVE resume gave up after 5 attempts; refresh streaming cells manually if stuck at #NUM")
         elif self._master_name:
             log(f"  FDSLIVE resume skipped — could not re-find {self._master_name}")
 
