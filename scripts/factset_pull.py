@@ -242,6 +242,11 @@ class ExcelSession:
         # Save/restore the user's global Calculation setting so we don't
         # leave their Excel in manual mode after we exit.
         self._saved_calc = None
+        # Workbook NAMES (as known to Excel.Workbooks(...)) — stashed so
+        # __exit__ can re-acquire the workbooks by name if the cached COM
+        # proxies have gone stale after a long session.
+        self._main_name = None
+        self._master_name = None
 
     def __enter__(self):
         import win32com.client
@@ -301,11 +306,17 @@ class ExcelSession:
                 log(f"  Master List: opened COPY — {self.master_wb.Name}  (macros may fail; real one isn't open)")
             else:
                 log(f"  Master List unavailable — rep-holdings refresh will be skipped")
+        # Stash the name so __exit__ can re-acquire by name if the cached
+        # proxy goes stale after a long session.
+        try: self._master_name = self.master_wb.Name if self.master_wb else None
+        except Exception: self._master_name = None
 
         # Find or open the main workbook
         self.wb = self._find_or_open(self.main_path, "main")
         if self.wb is None:
             raise RuntimeError(f"Could not open main workbook at {self.main_path}")
+        try: self._main_name = self.wb.Name
+        except Exception: self._main_name = None
         log(f"  Main workbook: {'found open' if not self._we_opened_main else 'opened'} — {self.wb.Name}")
         return self
 
@@ -525,6 +536,25 @@ class ExcelSession:
         log(f"  read_range({sheet_name} {range_str}) failed after retries: {last_err}")
         return [[None]]
 
+    def _refetch_wb(self, cached, name):
+        """Return a live COM proxy to the workbook, re-acquiring from the
+        Workbooks collection by name if the cached one has gone stale.
+        Returns None if we can't find it any more. """
+        # Probe the cached reference first — .Name is cheap and a stale
+        # proxy raises here.
+        if cached is not None:
+            try:
+                _ = cached.Name
+                return cached
+            except Exception:
+                pass
+        if not name or self.xl is None:
+            return None
+        try:
+            return self.xl.Workbooks(name)
+        except Exception:
+            return None
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         # IMPORTANT ordering: restore Calculation BEFORE closing workbooks,
         # and force Master List's FDSLIVE streaming cells to re-subscribe.
@@ -545,9 +575,13 @@ class ExcelSession:
         # EnableCalculation False→True marks the sheet dirty and re-evaluates
         # UDFs; this is the well-known Excel remedy for streaming cells
         # stuck after a manual-calc episode.
-        if self.master_wb is not None:
+        #
+        # After a long run the cached self.master_wb COM proxy can go stale
+        # ("<unknown>.Worksheets"); re-fetch by name before iterating.
+        master = self._refetch_wb(self.master_wb, self._master_name)
+        if master is not None:
             try:
-                for ws in self.master_wb.Worksheets:
+                for ws in master.Worksheets:
                     try:
                         ws.EnableCalculation = False
                         ws.EnableCalculation = True
@@ -556,15 +590,22 @@ class ExcelSession:
                 log("  Resubscribed Master List FDSLIVE cells")
             except Exception as e:
                 log(f"  FDSLIVE resume failed: {e}")
+        elif self._master_name:
+            log(f"  FDSLIVE resume skipped — could not re-find {self._master_name}")
 
         # Close only the workbooks we opened ourselves. Leave the user's
         # session + their open workbooks (Master List + anything else) alone.
-        if self._we_opened_main and self.wb is not None:
-            try: self.wb.Close(SaveChanges=False)
-            except Exception as e: log(f"Close main: {e}")
-        if self._we_opened_master and self.master_wb is not None:
-            try: self.master_wb.Close(SaveChanges=False)
-            except Exception as e: log(f"Close master: {e}")
+        # Re-fetch by name in case the cached proxy went stale.
+        if self._we_opened_main:
+            main = self._refetch_wb(self.wb, self._main_name)
+            if main is not None:
+                try: main.Close(SaveChanges=False)
+                except Exception as e: log(f"Close main: {e}")
+        if self._we_opened_master:
+            mx = self._refetch_wb(self.master_wb, self._master_name)
+            if mx is not None:
+                try: mx.Close(SaveChanges=False)
+                except Exception as e: log(f"Close master: {e}")
 
         # Final: restore user's ORIGINAL calculation setting (in case they
         # had Manual on purpose). We already toggled Automatic above to
