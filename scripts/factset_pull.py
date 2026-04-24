@@ -291,9 +291,34 @@ class ExcelSession:
         # starts with "Master List" — that's what the user has open, even
         # if its full path differs from our config. Only fall back to
         # opening our configured copy if none is already open.
+        #
+        # Guard: reject a Master List whose directory doesn't match the
+        # configured master_path's directory. A different "Master List"
+        # on the G: share (the real one IT uses) has happened at least
+        # once and caused LoadPositions to hang indefinitely waiting on
+        # a dialog we couldn't see. Abort with a clear message instead.
+        expected_dir = str(self.master_path.parent).lower()
+        def _matches_expected(wb) -> bool:
+            try:
+                return str(Path(wb.FullName).parent).lower() == expected_dir
+            except Exception:
+                return False
+
         self.master_wb = self._find_open_by_name(["master list"])
         if self.master_wb is not None:
-            log(f"  Master List: found open — {self.master_wb.Name}  ({self.master_wb.FullName})")
+            if _matches_expected(self.master_wb):
+                log(f"  Master List: found open — {self.master_wb.Name}  ({self.master_wb.FullName})")
+            else:
+                log(f"  UNEXPECTED Master List attached — {self.master_wb.Name}  ({self.master_wb.FullName})")
+                log(f"  Expected directory: {self.master_path.parent}")
+                log(f"  This is usually a different Master List on a shared drive. The script")
+                log(f"  cannot run its macros against it (LoadPositions will hang). Close the")
+                log(f"  unexpected workbook in Excel, then re-run. Aborting.")
+                raise RuntimeError(
+                    f"Refusing to run against Master List at unexpected path "
+                    f"{self.master_wb.FullName!r} (expected directory {expected_dir!r}). "
+                    f"Close that workbook and re-run."
+                )
         else:
             self.master_wb = self._find_or_open(self.master_path, "master")
             if self.master_wb is not None:
