@@ -41,6 +41,8 @@ export default function CompanyDashboard({ company }) {
         <GrowthEngine       company={company} />
         <MarginLadder       company={company} />
         <ReturnsOnCapital   company={company} />
+        <CashConversion     company={company} />
+        <BalanceSheetHealth company={company} />
         <ValuationContext   company={company} />
       </div>
     </div>
@@ -189,11 +191,11 @@ function MarginLadder({ company }) {
       />
       <div className="flex flex-wrap gap-3 text-[10px] text-gray-500 dark:text-slate-400 mt-1">
         {series.map(function (x) {
-          const last = lastFinite(toDecimalPct(x.s.values));
+          const last = lastHistorical(toDecimalPct(x.s.values), x.s.estimate);
           return (
             <span key={x.name} className="flex items-center gap-1">
               <span className="inline-block w-3 h-0.5" style={{ background: x.color }} />
-              {x.name}: <span className="tabular-nums font-medium text-gray-900 dark:text-slate-100">{last !== null ? (last * 100).toFixed(1) + "%" : "--"}</span>
+              {x.name}: <span className="tabular-nums font-semibold" style={{ color: x.color }}>{last !== null ? (last * 100).toFixed(1) + "%" : "--"}</span>
             </span>
           );
         })}
@@ -228,15 +230,15 @@ function ReturnsOnCapital({ company }) {
           return { label: x.name, values: toDecimalPct(alignToYears(x.s, base.years)), color: x.color };
         })}
         formatY={function (v) { return (v * 100).toFixed(0) + "%"; }}
-        hlines={[{ v: 0.10, label: "10% CoC", color: "#ef4444" }]}
+        hlines={[{ v: 0.10, label: "Cost of Capital (~10%)", color: "#ef4444" }]}
       />
       <div className="flex flex-wrap gap-3 text-[10px] text-gray-500 dark:text-slate-400 mt-1">
         {series.map(function (x) {
-          const last = lastFinite(toDecimalPct(x.s.values));
+          const last = lastHistorical(toDecimalPct(x.s.values), x.s.estimate);
           return (
             <span key={x.name} className="flex items-center gap-1">
               <span className="inline-block w-3 h-0.5" style={{ background: x.color }} />
-              {x.name}: <span className="tabular-nums font-medium text-gray-900 dark:text-slate-100">{last !== null ? (last * 100).toFixed(1) + "%" : "--"}</span>
+              {x.name}: <span className="tabular-nums font-semibold" style={{ color: x.color }}>{last !== null ? (last * 100).toFixed(1) + "%" : "--"}</span>
             </span>
           );
         })}
@@ -246,7 +248,203 @@ function ReturnsOnCapital({ company }) {
 }
 
 /* ========================================================================
- * TILE 4 — Valuation Context
+ * TILE 4 — Cash Conversion
+ * Dual lines: Net Income vs Free Cash Flow. Callout: FCF/NI ratio
+ * (>1 = cash-generative quality, <0.8 = red flag / working-capital drag).
+ * FCF computed as CFO - CapEx when not supplied directly.
+ * ====================================================================== */
+function CashConversion({ company }) {
+  const ni = pickSeries(company, "Net Income");
+  let fcf = pickSeries(company, "Free Cash Flow");
+  if (!fcf) {
+    const cfo = pickSeries(company, "Cash from Operating") || pickSeries(company, "Cash Flow from Operations");
+    const capex = pickSeries(company, "Capital Expenditures");
+    if (cfo && capex && cfo.years.length === capex.years.length) {
+      const derived = cfo.values.map(function (v, i) {
+        const cx = capex.values[i];
+        if (v === null || !isFinite(v) || cx === null || !isFinite(cx)) return null;
+        /* CapEx is often reported as a positive outflow — subtract it. */
+        return v - Math.abs(cx);
+      });
+      fcf = { values: derived, years: cfo.years, estimate: cfo.estimate, source: cfo.source };
+    }
+  }
+  if (!ni && !fcf) return <Tile title="Cash Conversion" empty="No Net Income / FCF series" />;
+
+  const base = ni || fcf;
+  const niAligned  = ni  ? alignToYears(ni,  base.years) : base.years.map(function () { return null; });
+  const fcfAligned = fcf ? alignToYears(fcf, base.years) : base.years.map(function () { return null; });
+
+  const series = [];
+  if (ni)  series.push({ name: "Net Income",      s: { values: niAligned,  years: base.years, estimate: base.estimate }, color: "#2563eb" });
+  if (fcf) series.push({ name: "Free Cash Flow",  s: { values: fcfAligned, years: base.years, estimate: base.estimate }, color: "#059669" });
+
+  /* FCF/NI ratio — quality-of-earnings signal. Skip years where either is
+     non-positive (ratio becomes meaningless). */
+  let lastRatio = null;
+  for (let i = base.years.length - 1; i >= 0; i--) {
+    if (base.estimate[i]) continue;
+    const n = niAligned[i], f = fcfAligned[i];
+    if (n !== null && f !== null && isFinite(n) && isFinite(f) && n > 0) {
+      lastRatio = f / n;
+      break;
+    }
+  }
+  const ratioColor = lastRatio === null ? "#64748b"
+    : lastRatio >= 0.9 ? "#16a34a"
+    : lastRatio >= 0.7 ? "#ca8a04"
+    : "#dc2626";
+
+  return (
+    <Tile title="Cash Conversion" subtitle="Net Income vs Free Cash Flow — is profit real?">
+      <MultiLineChart
+        years={base.years}
+        estimate={base.estimate}
+        series={series.map(function (x) { return { label: x.name, values: x.s.values, color: x.color }; })}
+        formatY={function (v) { return fmtBn(v); }}
+      />
+      <div className="flex flex-wrap gap-3 text-[10px] text-gray-500 dark:text-slate-400 mt-1">
+        {series.map(function (x) {
+          const last = lastHistorical(x.s.values, x.s.estimate);
+          return (
+            <span key={x.name} className="flex items-center gap-1">
+              <span className="inline-block w-3 h-0.5" style={{ background: x.color }} />
+              {x.name}: <span className="tabular-nums font-semibold" style={{ color: x.color }}>{last !== null ? fmtBn(last) : "--"}</span>
+            </span>
+          );
+        })}
+        <span className="ml-auto flex items-center gap-1">
+          FCF/NI: <span className="tabular-nums font-semibold" style={{ color: ratioColor }} title="Quality of earnings — closer to 1.0 is better. Sustained <0.7 suggests aggressive accruals or working-capital drag.">{lastRatio === null ? "--" : lastRatio.toFixed(2) + "x"}</span>
+        </span>
+      </div>
+    </Tile>
+  );
+}
+
+/* ========================================================================
+ * TILE 5 — Balance Sheet Health
+ * Net Debt/EBITDA over time with threshold bands (green <1, yellow 1-3,
+ * red >3). Interest Coverage as a separate callout since its scale is
+ * very different.
+ * ====================================================================== */
+function BalanceSheetHealth({ company }) {
+  const nde = pickSeries(company, "Net Debt/EBITDA", "ratios");
+  const intCov = pickSeries(company, "EBIT/Interest Expense (Int. Coverage)", "ratios")
+              || pickSeries(company, "EBIT/Interest Expense", "ratios")
+              || pickSeries(company, "Int Cov", "ratios");
+  if (!nde && !intCov) return <Tile title="Balance Sheet Health" empty="No leverage / coverage series" />;
+
+  const base = nde || intCov;
+  const W = 520, H = 220, PAD_T = 10, PAD_B = 30, PAD_L = 36, PAD_R = 10;
+  const innerW = W - PAD_L - PAD_R;
+  const innerH = H - PAD_T - PAD_B;
+  const n = base.years.length;
+
+  const ndeVals = nde ? alignToYears(nde, base.years) : base.years.map(function () { return null; });
+  const ndeFinite = ndeVals.filter(function (v) { return v !== null && isFinite(v); });
+  const vMax = ndeFinite.length ? Math.max.apply(null, ndeFinite.concat([3.5])) : 3.5;
+  const vMin = ndeFinite.length ? Math.min.apply(null, ndeFinite.concat([0]))   : 0;
+  const yMax = vMax * 1.1;
+  const yMin = Math.min(vMin, 0);
+
+  function xOf(i) { return n <= 1 ? PAD_L + innerW / 2 : PAD_L + (i / (n - 1)) * innerW; }
+  function yOf(v) { return PAD_T + (1 - (v - yMin) / (yMax - yMin)) * innerH; }
+
+  function segmentsFor(values) {
+    const segs = [];
+    let cur = null;
+    for (let i = 0; i < n; i++) {
+      const v = values[i];
+      if (v === null || !isFinite(v)) { if (cur) { segs.push(cur); cur = null; } continue; }
+      const est = !!base.estimate[i];
+      if (!cur) cur = { est: est, pts: [[xOf(i), yOf(v)]] };
+      else if (cur.est === est) cur.pts.push([xOf(i), yOf(v)]);
+      else {
+        segs.push(cur);
+        const last = cur.pts[cur.pts.length - 1], newPt = [xOf(i), yOf(v)];
+        segs.push({ isBridge: true, pts: [last, newPt] });
+        cur = { est: est, pts: [newPt] };
+      }
+    }
+    if (cur) segs.push(cur);
+    return segs;
+  }
+
+  const lastNde = nde ? lastHistorical(ndeVals, base.estimate) : null;
+  const lastCov = intCov ? lastHistorical(alignToYears(intCov, base.years), base.estimate) : null;
+  const ndeColor = lastNde === null ? "#64748b"
+    : lastNde < 1 ? "#16a34a"
+    : lastNde < 3 ? "#ca8a04"
+    : "#dc2626";
+  const covColor = lastCov === null ? "#64748b"
+    : lastCov > 10 ? "#16a34a"
+    : lastCov > 3  ? "#ca8a04"
+    : "#dc2626";
+
+  return (
+    <Tile title="Balance Sheet Health" subtitle="Net Debt / EBITDA with leverage bands">
+      <svg width="100%" height={H} viewBox={"0 0 " + W + " " + H} role="img">
+        <rect x={PAD_L} y={PAD_T} width={innerW} height={innerH} fill="none" stroke={GRID_COLOR} />
+        {/* Threshold bands */}
+        {yMax > 1 && (
+          <rect x={PAD_L} y={yOf(Math.min(1, yMax))} width={innerW}
+            height={Math.max(0, yOf(0) - yOf(Math.min(1, yMax)))}
+            fill="#16a34a" fillOpacity="0.06" />
+        )}
+        {yMax > 1 && (
+          <rect x={PAD_L} y={yOf(Math.min(3, yMax))} width={innerW}
+            height={Math.max(0, yOf(Math.min(1, yMax)) - yOf(Math.min(3, yMax)))}
+            fill="#ca8a04" fillOpacity="0.08" />
+        )}
+        {yMax > 3 && (
+          <rect x={PAD_L} y={yOf(yMax)} width={innerW}
+            height={Math.max(0, yOf(Math.min(3, yMax)) - yOf(yMax))}
+            fill="#dc2626" fillOpacity="0.08" />
+        )}
+        {/* Threshold lines */}
+        {[1, 3].map(function (t) {
+          if (t < yMin || t > yMax) return null;
+          return <line key={t} x1={PAD_L} y1={yOf(t)} x2={PAD_L + innerW} y2={yOf(t)}
+            stroke="#64748b" strokeDasharray="3 3" opacity="0.4" />;
+        })}
+        {/* Net Debt / EBITDA line */}
+        {nde && segmentsFor(ndeVals).map(function (s, i) {
+          const d = s.pts.map(function (p, j) { return (j === 0 ? "M" : "L") + p[0].toFixed(1) + "," + p[1].toFixed(1); }).join("");
+          const dash = (s.est || s.isBridge) ? "4 3" : undefined;
+          return <path key={i} d={d} fill="none" stroke="#7c3aed" strokeWidth="2" strokeDasharray={dash} opacity={s.isBridge ? 0.6 : 1} />;
+        })}
+        {/* X labels */}
+        {base.years.map(function (yr, i) {
+          const step = n > 10 ? 2 : 1;
+          if (i % step !== 0 && i !== n - 1) return null;
+          const est = base.estimate[i];
+          return <text key={i} x={xOf(i)} y={H - 12} fontSize="9" textAnchor="middle" fill={est ? EST_COLOR : "#64748b"}>{String(yr).slice(2)}</text>;
+        })}
+        {/* Y labels */}
+        <text x={PAD_L - 4} y={PAD_T + 10} fontSize="9" textAnchor="end" fill="#64748b">{yMax.toFixed(1) + "x"}</text>
+        <text x={PAD_L - 4} y={PAD_T + innerH} fontSize="9" textAnchor="end" fill="#64748b">{yMin.toFixed(1) + "x"}</text>
+        {/* Band labels inside the plot area */}
+        <text x={PAD_L + innerW - 4} y={yOf(0.5)} fontSize="8" textAnchor="end" fill="#16a34a" opacity="0.8">low leverage</text>
+        {yMax > 3 && <text x={PAD_L + innerW - 4} y={yOf(2)} fontSize="8" textAnchor="end" fill="#ca8a04" opacity="0.8">moderate</text>}
+        {yMax > 3 && <text x={PAD_L + innerW - 4} y={yOf(Math.min(3.5, yMax - 0.3))} fontSize="8" textAnchor="end" fill="#dc2626" opacity="0.8">stressed</text>}
+      </svg>
+      <div className="flex flex-wrap gap-3 text-[10px] text-gray-500 dark:text-slate-400 mt-1">
+        <span className="flex items-center gap-1">
+          <span className="inline-block w-3 h-0.5" style={{ background: "#7c3aed" }} />
+          Net Debt/EBITDA: <span className="tabular-nums font-semibold" style={{ color: ndeColor }}>{lastNde !== null ? lastNde.toFixed(2) + "x" : "--"}</span>
+        </span>
+        {intCov && (
+          <span className="flex items-center gap-1">
+            Int Coverage: <span className="tabular-nums font-semibold" style={{ color: covColor }} title="EBIT / Interest Expense. >10x = strong, 3-10x = OK, <3x = tight.">{lastCov !== null ? lastCov.toFixed(1) + "x" : "--"}</span>
+          </span>
+        )}
+      </div>
+    </Tile>
+  );
+}
+
+/* ========================================================================
+ * TILE 6 — Valuation Context
  * Line: P/E over time. Horizontal bands: 5Y low/high + avg/med markers.
  * ====================================================================== */
 function ValuationContext({ company }) {
@@ -522,6 +720,18 @@ function lastFinite(arr) {
     if (v !== null && v !== undefined && isFinite(v)) return v;
   }
   return null;
+}
+
+/* Like lastFinite but only considers historical (non-estimate) entries.
+ * Falls back to lastFinite if no historical value is found. */
+function lastHistorical(arr, estimate) {
+  if (!estimate) return lastFinite(arr);
+  for (let i = arr.length - 1; i >= 0; i--) {
+    if (estimate[i]) continue;
+    const v = arr[i];
+    if (v !== null && v !== undefined && isFinite(v)) return v;
+  }
+  return lastFinite(arr);
 }
 
 function alignToYears(series, years) {
