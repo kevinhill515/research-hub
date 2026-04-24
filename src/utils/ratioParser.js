@@ -51,7 +51,26 @@
  * couldn't place is counted in `dropped` so the UI can surface it.
  */
 
-const DEC_YEAR = /^(?:[A-Za-z]{3}[- ])?(\d{4})$/; /* "Dec-2016" or "2016" */
+/* Header-cell year detection. Accepts any of:
+ *   "Dec-2016"       — FactSet default display
+ *   "2016"           — bare year
+ *   "2016-12-31"     — ISO date (new preferred format)
+ *   "12/31/2016"     — US date
+ *   "Dec 2016"       — spaced
+ * Returns the 4-digit year (captured), or null. */
+function extractYear(s) {
+  const t = (s || "").trim();
+  if (!t) return null;
+  let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);       /* ISO */
+  if (m) return parseInt(m[1], 10);
+  m = t.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);   /* US */
+  if (m) return parseInt(m[3], 10);
+  m = t.match(/^[A-Za-z]{3}[- ](\d{4})$/);                /* Mon-YYYY */
+  if (m) return parseInt(m[1], 10);
+  m = t.match(/^(\d{4})$/);                                /* YYYY */
+  if (m) return parseInt(m[1], 10);
+  return null;
+}
 const ERR_TOKENS = new Set(["#N/A", "#NUM!", "#VALUE!", "#REF!", "#DIV/0!", "#NAME?", "--", "-", "—", "n/a", "N/A", ""]);
 
 function splitRow(line) {
@@ -75,12 +94,12 @@ function parseValue(raw) {
 }
 
 function looksLikeYearHeader(cells) {
-  /* Count cells that match the Dec-YYYY / YYYY pattern. If 3+ do,
-     treat this as the year header row. The first cell is usually
-     a label ("Ratio Analysis") so we skip it when counting. */
+  /* Count cells that parse as a year. If 3+ do, treat this as the
+     year header row. First cell is usually a label ("Ratio Analysis")
+     so it won't match and we skip it implicitly. */
   let hits = 0;
   cells.forEach(function (c) {
-    if (DEC_YEAR.test(c)) hits++;
+    if (extractYear(c) !== null) hits++;
   });
   return hits >= 3;
 }
@@ -104,18 +123,32 @@ export function parseRatioPaste(text) {
   }
 
   /* Year columns start at whichever column index yields the first
-     Dec-YYYY match — usually index 1 (index 0 is "Ratio Analysis"). */
+     year-parseable cell — usually index 1 (index 0 is "Ratio Analysis"). */
   let yearStartCol = -1;
   const years = [];
   yearCells.forEach(function (c, idx) {
-    const m = c.match(DEC_YEAR);
-    if (m) {
+    const y = extractYear(c);
+    if (y !== null) {
       if (yearStartCol < 0) yearStartCol = idx;
-      years.push(parseInt(m[1], 10));
+      years.push(y);
     }
   });
   if (years.length === 0) {
     return { error: "Year header row had no parseable years." };
+  }
+
+  /* Company name: first non-empty line above the year header that
+     isn't the "Ratio Analysis" label itself. Returned so the Data Hub
+     importer can match it to an existing company. */
+  let companyName = null;
+  for (let i = 0; i < yearRowIdx; i++) {
+    const line = (lines[i] || "").trim();
+    if (!line) continue;
+    const cells = splitRow(line);
+    const first = (cells[0] || "").trim();
+    if (!first || /^ratio analysis$/i.test(first)) continue;
+    companyName = first;
+    break;
   }
 
   /* 2. Estimate-flag row (immediately below year header). Column i
@@ -187,6 +220,7 @@ export function parseRatioPaste(text) {
   });
 
   return {
+    companyName: companyName,
     years: years,
     estimate: estimate,
     sections: cleanSections,

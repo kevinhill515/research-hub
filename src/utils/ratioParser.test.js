@@ -76,6 +76,49 @@ describe("parseRatioPaste", function () {
     expect(r.error).toBeDefined();
   });
 
+  it("returns the company name from the line above the year header", function () {
+    const r = parseRatioPaste(SAMPLE);
+    expect(r.companyName).toBe("Schneider Electric SE");
+  });
+
+  it("parses ISO yyyy-mm-dd date headers", function () {
+    const text = [
+      "Acme Corp",
+      "Ratio Analysis\t2020-12-31\t2021-12-31\t2022-12-31",
+      "\tFinal/\tFinal/\tEstimate",
+      "Profitability",
+      "Gross Margin\t40.0\t41.0\t42.0",
+    ].join("\n");
+    const r = parseRatioPaste(text);
+    expect(r.companyName).toBe("Acme Corp");
+    expect(r.years).toEqual([2020, 2021, 2022]);
+    expect(r.estimate).toEqual([false, false, true]);
+    expect(r.values["Gross Margin"]).toEqual([40.0, 41.0, 42.0]);
+  });
+
+  it("parses US m/d/yyyy date headers", function () {
+    const text = [
+      "Ratio Analysis\t12/31/2020\t12/31/2021\t12/31/2022",
+      "\tFinal/\tFinal/\tEstimate",
+      "Gross Margin\t40.0\t41.0\t42.0",
+    ].join("\n");
+    const r = parseRatioPaste(text);
+    expect(r.years).toEqual([2020, 2021, 2022]);
+  });
+
+  it("skips a 'Ratio Analysis' label row when looking for the company name", function () {
+    const text = [
+      "",
+      "Ratio Analysis",
+      "Acme Corp",
+      "Ratio Analysis\tDec-2020\tDec-2021\tDec-2022",
+      "\tFinal/\tFinal/\tEstimate",
+      "Gross Margin\t40.0\t41.0\t42.0",
+    ].join("\n");
+    const r = parseRatioPaste(text);
+    expect(r.companyName).toBe("Acme Corp");
+  });
+
   it("treats a name-only row as a section header", function () {
     const r = parseRatioPaste(SAMPLE);
     expect(r.sections[0].items.length).toBe(2); /* Profitability: Gross Margin + SG&A */

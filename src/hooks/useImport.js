@@ -4,6 +4,7 @@ import { todayStr, blankEarnings, getCurrency, parseDate } from '../utils/index.
 import { supaUpsert, supaGet } from '../api/index.js';
 import { pctToDecimal } from '../utils/format.js';
 import { parseDashboardUpload } from '../utils/dashboardParser.js';
+import { parseRatioPaste } from '../utils/ratioParser.js';
 import { useAlert } from '../components/ui/DialogProvider.jsx';
 import { REP_ACCOUNTS } from '../constants/index.js';
 
@@ -30,6 +31,7 @@ export function useImport(){
   const [repText,setRepText]=useState("");
   const [fxText,setFxText]=useState("");
   const [txText,setTxText]=useState("");
+  const [ratioImportText,setRatioImportText]=useState("");
   const [perfPortTargets,setPerfPortTargets]=useState(["FIN"]);
   const [perfText,setPerfText]=useState("");
   const [portTab,setPortTab]=useState("overlap");
@@ -439,6 +441,54 @@ export function useImport(){
     try{var d=JSON.parse(importText);var cos=d.companies||(Array.isArray(d)?d:null),lib=d.library||null;if(!cos&&!lib){setImportError("No data found.");return;}if(cos&&Array.isArray(cos)){setCompanies(cos);supaUpsert("companies",{id:"shared",data:JSON.stringify(cos)});}if(lib&&Array.isArray(lib)){setSaved(lib);supaUpsert("library",{id:"shared",data:JSON.stringify(lib)});}setImportText("");setShowDataPanel(false);}
     catch(e){setImportError("Invalid JSON: "+e.message);}
   }
+  /* Ratio Analysis import — paste a single company's FactSet Ratio Analysis
+     block. First non-empty line before the year header is the company name
+     (we fuzzy-match against company.name / usTickerName using the same
+     normalize() family as Tx import). Re-importing for a company replaces
+     its ratios wholesale. */
+  function applyRatioImport(){
+    if(!ratioImportText.trim())return;
+    var parsed = parseRatioPaste(ratioImportText);
+    if(parsed.error){ alertFn("Couldn't parse ratios: " + parsed.error); return; }
+    if(!parsed.companyName){ alertFn("Could not find a company name above the year header. The first non-empty line should be the company name (e.g. 'Schneider Electric SE')."); return; }
+    if(parsed.ratioNames.length===0){ alertFn("Parser found years but no ratio rows. Did the paste include the table body?"); return; }
+
+    function normalize(n){return(n||"").toLowerCase().replace(/\b(corporation|incorporated|international|holdings|holding|company|limited|group|ordinary|preferred|shares|class|depositary|depository|receipts|receipt|common|stock)\b/g,"").replace(/\b(co\.|inc\.|ltd\.|llc|plc|sa|ag|nv|se|co|inc|ltd|corp|gmbh|kgaa|ab|asa|oyj|spa|srl|bv|ord|com|adr|ads|gdr|pref|reit|shs|npv|cdi|cva|units|unit|jsc|pjsc|ojsc|oao|sab|bhd|tbk)\b/g,"").replace(/[.,&'()\-\/]/g," ").replace(/\s+/g," ").trim();}
+
+    var targetName = parsed.companyName;
+    var tLower = targetName.toLowerCase().trim();
+    var tNorm  = normalize(targetName);
+
+    var match = null;
+    companies.forEach(function(c){
+      if(match) return;
+      var cn = (c.name||"").toLowerCase().trim();
+      var un = (c.usTickerName||"").toLowerCase().trim();
+      if(cn===tLower || un===tLower) { match = c; return; }
+      if(normalize(c.name)===tNorm || (un && normalize(c.usTickerName)===tNorm)) { match = c; return; }
+    });
+
+    if(!match){
+      alertFn('No company matched "' + targetName + '". Add the company first (or check spelling), then re-import.');
+      return;
+    }
+
+    var next = {
+      years: parsed.years,
+      estimate: parsed.estimate,
+      sections: parsed.sections,
+      ratioNames: parsed.ratioNames,
+      values: parsed.values,
+      updatedAt: new Date().toISOString(),
+    };
+    var updated = Object.assign({}, match, { ratios: next });
+    setCompanies(function(cs){ return cs.map(function(c){ return c.id===updated.id ? updated : c; }); });
+    setTimeout(function(){
+      alertFn('Imported ' + parsed.ratioNames.length + ' ratios × ' + parsed.years.length + ' years for "' + match.name + '".' + (parsed.dropped>0 ? '  ('+parsed.dropped+' duplicate rows overwritten)' : ''));
+      setRatioImportText("");
+    }, 50);
+  }
+
   function exportAll(){var txt=JSON.stringify({companies,library:saved,exportedAt:new Date().toISOString()},null,2);try{var el=document.createElement("textarea");el.value=txt;el.style.position="fixed";el.style.opacity="0";document.body.appendChild(el);el.focus();el.select();document.execCommand("copy");document.body.removeChild(el);setCopied("exportall");setTimeout(function(){setCopied(null);},2000);}catch(e){setImportText(txt);setShowDataPanel(true);}}
 
   return {
@@ -449,7 +499,8 @@ export function useImport(){
     dashboardImportText,setDashboardImportText,
     weightsImportText,setWeightsImportText,calImportText,setCalImportText,
     repText,setRepText,fxText,setFxText,txText,setTxText,perfPortTargets,setPerfPortTargets,perfText,setPerfText,portTab,setPortTab,portSort,setPortSort,portSortDir,setPortSortDir,
-    applyFxImport,applyRepImport,applyTxImport,applyPerfImport,applyCalImport,applyWeightsImport,applyValImport,applyEstImport,applyMetricsImport,applyBenchmarkImport,applyDashboardImport,
+    ratioImportText,setRatioImportText,
+    applyFxImport,applyRepImport,applyTxImport,applyPerfImport,applyCalImport,applyWeightsImport,applyValImport,applyEstImport,applyMetricsImport,applyBenchmarkImport,applyDashboardImport,applyRatioImport,
     importAll,exportAll
   };
 }

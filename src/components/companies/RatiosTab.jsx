@@ -20,13 +20,11 @@
  *   }
  */
 
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
-import { parseRatioPaste } from '../../utils/ratioParser.js';
-import { useAlert, useConfirm } from '../ui/DialogProvider.jsx';
+import { useConfirm } from '../ui/DialogProvider.jsx';
 import RatioLineChart from '../ui/RatioLineChart.jsx';
 
-const TA = "w-full resize-y text-sm px-2.5 py-2 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 font-mono leading-relaxed focus:ring-2 focus:ring-blue-500 focus:outline-none";
 const BTN_SM = "text-xs px-2.5 py-1.5 font-medium rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
 
 const LABEL_W    = 210;  /* px — ratio name column */
@@ -45,11 +43,8 @@ function fmtCell(v) {
 
 export default function RatiosTab({ company }) {
   const { setCompanies } = useCompanyContext();
-  const alertFn = useAlert();
   const confirm = useConfirm();
-  const [pasteText, setPasteText] = useState("");
   const [openRatio, setOpenRatio] = useState(null);
-  const [importing, setImporting] = useState(false);
   const containerRef = useRef(null);
   const [chartWidth, setChartWidth] = useState(800);
 
@@ -75,40 +70,6 @@ export default function RatiosTab({ company }) {
     return function () { window.removeEventListener("resize", compute); };
   }, [hasData, ratios]);
 
-  function applyImport() {
-    if (!pasteText.trim()) return;
-    setImporting(true);
-    const parsed = parseRatioPaste(pasteText);
-    if (parsed.error) {
-      alertFn("Couldn't parse ratios: " + parsed.error);
-      setImporting(false);
-      return;
-    }
-    if (parsed.ratioNames.length === 0) {
-      alertFn("Parser found years but no ratio rows. Did the paste include the table body?");
-      setImporting(false);
-      return;
-    }
-    const next = {
-      years:    parsed.years,
-      estimate: parsed.estimate,
-      sections: parsed.sections,
-      ratioNames: parsed.ratioNames,
-      values:   parsed.values,
-      updatedAt: new Date().toISOString(),
-    };
-    const updated = Object.assign({}, company, { ratios: next });
-    setCompanies(function (cs) {
-      return cs.map(function (c) { return c.id === updated.id ? updated : c; });
-    });
-    setPasteText("");
-    setImporting(false);
-    setTimeout(function () {
-      alertFn("Imported " + parsed.ratioNames.length + " ratios × " + parsed.years.length + " years"
-        + (parsed.dropped > 0 ? "  (" + parsed.dropped + " duplicate rows overwritten)" : ""));
-    }, 50);
-  }
-
   function clearRatios() {
     confirm("Clear all ratio data for " + (company.name || "this company") + "? You'll need to re-paste to restore it.").then(function (ok) {
       if (!ok) return;
@@ -121,25 +82,14 @@ export default function RatiosTab({ company }) {
     });
   }
 
-  /* ---- Empty state: just the upload box ---- */
+  /* ---- Empty state: point user to Data Hub ---- */
   if (!hasData) {
     return (
       <div className="mb-6">
         <div className="text-sm font-medium text-gray-900 dark:text-slate-100 mb-1">Ratio Analysis</div>
-        <div className="text-xs text-gray-500 dark:text-slate-400 mb-2">
-          Paste the Ratio Analysis block from FactSet (company name and "Ratio Analysis" header rows OK; header row with Dec-YYYY columns must be present). Re-pasting replaces this company's ratio data — use it to refresh the estimate columns each period.
+        <div className="text-sm text-gray-500 dark:text-slate-400 py-6 italic">
+          No ratio data yet. Upload via <b>Data Hub → Ratio Analysis</b> — paste one company's FactSet Ratio Analysis block (with the company name on row 1) and it auto-matches to this company by name.
         </div>
-        <textarea
-          value={pasteText}
-          onChange={function (e) { setPasteText(e.target.value); }}
-          placeholder={"Ratio Analysis\tDec-2016\tDec-2017\t...\tDec-2028\n\tFinal/\tFinal/\t...\tEstimate\nProfitability\nGross Margin\t38.59\t38.85\t...\t41.54\n..."}
-          rows={10}
-          className={TA + " mb-2"}
-          style={{ minHeight: 160 }}
-        />
-        <button onClick={applyImport} disabled={importing || !pasteText.trim()} className={BTN_SM}>
-          {importing ? "Importing…" : "Import Ratios"}
-        </button>
       </div>
     );
   }
@@ -158,29 +108,11 @@ export default function RatiosTab({ company }) {
             Last updated {new Date(ratios.updatedAt).toLocaleDateString()}
           </span>
         )}
-        <div className="ml-auto flex gap-2">
-          <details className="relative">
-            <summary className={BTN_SM + " list-none"}>Re-upload</summary>
-            <div className="absolute right-0 top-full mt-1 z-20 w-[640px] max-w-[90vw] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg p-2">
-              <div className="text-[11px] text-gray-500 dark:text-slate-400 mb-1">
-                Re-pasting replaces all ratio data for this company.
-              </div>
-              <textarea
-                value={pasteText}
-                onChange={function (e) { setPasteText(e.target.value); }}
-                placeholder="Paste FactSet Ratio Analysis block…"
-                rows={8}
-                className={TA}
-                style={{ minHeight: 120 }}
-              />
-              <div className="flex gap-2 mt-2">
-                <button onClick={applyImport} disabled={importing || !pasteText.trim()} className={BTN_SM}>
-                  {importing ? "Importing…" : "Replace"}
-                </button>
-                <button onClick={clearRatios} className={BTN_SM}>Clear all</button>
-              </div>
-            </div>
-          </details>
+        <div className="ml-auto flex gap-2 items-center">
+          <span className="text-[11px] text-gray-400 dark:text-slate-500 italic">
+            Refresh via Data Hub → Ratio Analysis
+          </span>
+          <button onClick={clearRatios} className={BTN_SM}>Clear</button>
         </div>
       </div>
 
