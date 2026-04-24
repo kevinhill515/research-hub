@@ -106,6 +106,31 @@ describe("parseRatioPaste", function () {
     expect(r.years).toEqual([2020, 2021, 2022]);
   });
 
+  it("parses financials-style -NFY / +NFY metadata row", function () {
+    const text = [
+      "Acme Corp",
+      "\t12/31/2020\t12/31/2021\t12/31/2022\t12/31/2023",
+      "\t-3FY\t-2FY\t-1FY\t+1FY",
+      "Income Statement",
+      "Sales\t1000\t1100\t1200\t1300",
+    ].join("\n");
+    const r = parseRatioPaste(text);
+    expect(r.error).toBeUndefined();
+    expect(r.years).toEqual([2020, 2021, 2022, 2023]);
+    expect(r.estimate).toEqual([false, false, false, true]);
+    expect(r.values["Sales"]).toEqual([1000, 1100, 1200, 1300]);
+  });
+
+  it("recognizes -0FY as current-year historical (not estimate)", function () {
+    const text = [
+      "\t12/31/2024\t12/31/2025\t12/31/2026",
+      "\t-1FY\t-0FY\t+1FY",
+      "Sales\t1000\t1100\t1200",
+    ].join("\n");
+    const r = parseRatioPaste(text);
+    expect(r.estimate).toEqual([false, false, true]);
+  });
+
   it("skips a 'Ratio Analysis' label row when looking for the company name", function () {
     const text = [
       "",

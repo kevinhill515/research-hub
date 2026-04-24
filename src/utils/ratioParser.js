@@ -154,17 +154,21 @@ export function parseRatioPaste(text) {
   /* 2. Estimate-flag row (immediately below year header). Column i
         is an "Estimate" column if cell at yearStartCol+i says "Estimate"
         (case-insensitive). All-final is the default. */
+  /* Metadata row also accepts financials-style "-NFY" (historical) /
+   * "+NFY" (estimate) labels in addition to "Final" / "Estimate". That
+   * way both Ratio Analysis and Financials pastes from FactSet parse
+   * via the same code path. */
   const estimate = years.map(function () { return false; });
   let dataStartRow = yearRowIdx + 1;
   if (yearRowIdx + 1 < lines.length) {
     const metaCells = splitRow(lines[yearRowIdx + 1]);
-    const metaHasFinalOrEst = metaCells.some(function (c) {
-      return /^(final|estimate)/i.test(c);
-    });
-    if (metaHasFinalOrEst) {
+    const META_RE = /^(final|estimate|[-+]\d+FY)/i;
+    const metaMatches = metaCells.filter(function (c) { return META_RE.test(c); }).length;
+    if (metaMatches >= 2) {
       years.forEach(function (_, i) {
         const v = metaCells[yearStartCol + i] || "";
         if (/^estimate/i.test(v)) estimate[i] = true;
+        else if (/^\+\d+FY/i.test(v)) estimate[i] = true;
       });
       dataStartRow = yearRowIdx + 2;
     }

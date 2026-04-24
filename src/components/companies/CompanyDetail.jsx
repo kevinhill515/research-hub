@@ -19,6 +19,7 @@ import { StatusPill, PortPicker, SectionBlock, DiffView, BarRow, PillEl, PriceAg
 import { useConfirm, useAlert } from '../ui/DialogProvider.jsx';
 import { SectionEditTab, EarningsEntry, NotesCell, ActionCell, FlagCell, DatePicker } from '../forms/index.js';
 import RatiosTab from './RatiosTab.jsx';
+import FinancialsTab from './FinancialsTab.jsx';
 
 const INP = "text-sm px-2 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:outline-none";
 const CARD = "bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 px-3.5 py-3 mb-2";
@@ -475,6 +476,12 @@ export function CompanyDetail(props){
               sparkline charts. Data lives on selCo.ratios, uploaded
               per-company via paste. See RatiosTab.jsx for details. */}
           {coView==="ratios"&&<RatiosTab company={selCo}/>}
+
+          {/* FINANCIALS TAB — per-company Income Statement + Balance Sheet
+              + Cash Flow with 10y history + forward IS estimates.
+              Data lives on selCo.financials (same shape as selCo.ratios),
+              uploaded via Data Hub → Financials. */}
+          {coView==="financials"&&<FinancialsTab company={selCo}/>}
 
           {/* METRICS TAB — displays everything under selCo.metrics in a
               grouped layout. Read-only; populated by the daily FactSet
