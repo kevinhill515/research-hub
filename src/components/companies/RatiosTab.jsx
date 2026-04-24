@@ -27,7 +27,7 @@ import RatioLineChart from '../ui/RatioLineChart.jsx';
 
 const BTN_SM = "text-xs px-2.5 py-1.5 font-medium rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
 
-const LABEL_W    = 240;  /* px — ratio name column (room for sparkline) */
+const LABEL_W    = 340;  /* px — ratio name column (caret + sparkline + full name) */
 const YEAR_W     = 64;   /* px — each year column */
 const SPARK_W    = 48;   /* px — inline trend sparkline */
 const SPARK_H    = 16;
@@ -302,7 +302,7 @@ function RatioRow({ item, years, estimate, isOpen, onToggle, chartWidth, nYears 
         <div className="flex items-center gap-1.5">
           <span className="inline-block w-3 text-gray-400 dark:text-slate-500 shrink-0">{isOpen ? "▾" : "▸"}</span>
           <MiniSpark values={item.values} estimate={estimate} />
-          <span className="truncate">{item.name}</span>
+          <span>{item.name}</span>
         </div>
       </div>
       {years.map(function (_, i) {
