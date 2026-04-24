@@ -27,10 +27,72 @@ import RatioLineChart from '../ui/RatioLineChart.jsx';
 
 const BTN_SM = "text-xs px-2.5 py-1.5 font-medium rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
 
-const LABEL_W    = 210;  /* px — ratio name column */
+const LABEL_W    = 240;  /* px — ratio name column (room for sparkline) */
 const YEAR_W     = 64;   /* px — each year column */
+const SPARK_W    = 48;   /* px — inline trend sparkline */
+const SPARK_H    = 16;
+const HIST_COLOR = "#2563eb"; /* blue-600 */
+const EST_COLOR  = "#ea580c"; /* orange-600 */
 const EST_BG     = "rgba(234,88,12,0.05)";   /* orange-600 @ 5% */
 const EST_BG_DK  = "rgba(234,88,12,0.12)";
+
+/* Tiny trend-only sparkline for the label column — historical values in
+ * blue, estimate tail in orange, no annotations, no axis. Null values
+ * break the line. Returns null if there's < 2 points to draw. */
+function MiniSpark({ values, estimate }) {
+  const n = values.length;
+  if (!n) return null;
+  const finite = values.filter(function (v) { return v !== null && isFinite(v); });
+  if (finite.length < 2) return null;
+
+  const vMin = Math.min.apply(null, finite);
+  const vMax = Math.max.apply(null, finite);
+  const span = (vMax - vMin) || Math.max(1, Math.abs(vMax));
+  const yMin = vMin - span * 0.05;
+  const yMax = vMax + span * 0.05;
+
+  function xOf(i) { return (i / (n - 1)) * (SPARK_W - 2) + 1; }
+  function yOf(v) { return (1 - (v - yMin) / (yMax - yMin)) * (SPARK_H - 2) + 1; }
+
+  /* Build segments just like the main chart — break on null, switch
+     color at the historical/estimate boundary with a dashed bridge. */
+  const segments = [];
+  let current = null;
+  for (let i = 0; i < n; i++) {
+    const v = values[i];
+    if (v === null || !isFinite(v)) {
+      if (current) { segments.push(current); current = null; }
+      continue;
+    }
+    if (!current) {
+      current = { isEstimate: estimate[i], points: [[xOf(i), yOf(v)]] };
+    } else if (current.isEstimate === estimate[i]) {
+      current.points.push([xOf(i), yOf(v)]);
+    } else {
+      segments.push(current);
+      const last = current.points[current.points.length - 1];
+      const newPt = [xOf(i), yOf(v)];
+      segments.push({ isBridge: true, points: [last, newPt] });
+      current = { isEstimate: estimate[i], points: [newPt] };
+    }
+  }
+  if (current) segments.push(current);
+
+  function toD(pts) {
+    return pts.map(function (p, i) { return (i === 0 ? "M" : "L") + p[0].toFixed(1) + "," + p[1].toFixed(1); }).join("");
+  }
+
+  return (
+    <svg width={SPARK_W} height={SPARK_H} aria-hidden="true" style={{ flexShrink: 0 }}>
+      {segments.map(function (s, idx) {
+        if (s.isBridge) {
+          return <path key={idx} d={toD(s.points)} fill="none" stroke={EST_COLOR} strokeWidth="1" strokeDasharray="2 2" strokeOpacity="0.6" />;
+        }
+        return <path key={idx} d={toD(s.points)} fill="none" stroke={s.isEstimate ? EST_COLOR : HIST_COLOR} strokeWidth="1.25" />;
+      })}
+    </svg>
+  );
+}
 
 function fmtCell(v) {
   if (v === null || v === undefined || !isFinite(v)) return "";
@@ -44,7 +106,10 @@ function fmtCell(v) {
 export default function RatiosTab({ company }) {
   const { setCompanies } = useCompanyContext();
   const confirm = useConfirm();
-  const [openRatio, setOpenRatio] = useState(null);
+  /* Set of open ratio names. Clicking an already-open ratio removes
+     it from the set; clicking a new one adds it. Multiple charts can
+     be open simultaneously. */
+  const [openRatios, setOpenRatios] = useState(function () { return new Set(); });
   const containerRef = useRef(null);
   const [chartWidth, setChartWidth] = useState(800);
 
@@ -53,7 +118,12 @@ export default function RatiosTab({ company }) {
 
   /* Toggle a ratio open/closed. */
   function toggleRatio(name) {
-    setOpenRatio(function (prev) { return prev === name ? null : name; });
+    setOpenRatios(function (prev) {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
   }
 
   /* Width of the data (year) columns combined — chart aligns to that.
@@ -78,7 +148,7 @@ export default function RatiosTab({ company }) {
       setCompanies(function (cs) {
         return cs.map(function (c) { return c.id === updated.id ? updated : c; });
       });
-      setOpenRatio(null);
+      setOpenRatios(new Set());
     });
   }
 
@@ -164,7 +234,7 @@ export default function RatiosTab({ company }) {
                 section={sec}
                 years={ratios.years}
                 estimate={ratios.estimate}
-                openRatio={openRatio}
+                openRatios={openRatios}
                 onToggle={toggleRatio}
                 chartWidth={chartWidth}
                 nYears={nYears}
@@ -192,7 +262,7 @@ export default function RatiosTab({ company }) {
 
 /* Renders one section: a full-width header row, then one row per ratio.
  * When a ratio is selected, its chart row is injected directly beneath it. */
-function SectionRows({ section, years, estimate, openRatio, onToggle, chartWidth, nYears }) {
+function SectionRows({ section, years, estimate, openRatios, onToggle, chartWidth, nYears }) {
   return (
     <>
       {/* Section header — spans all columns */}
@@ -204,7 +274,7 @@ function SectionRows({ section, years, estimate, openRatio, onToggle, chartWidth
       </div>
 
       {section.items.map(function (item) {
-        const isOpen = openRatio === item.name;
+        const isOpen = openRatios.has(item.name);
         return (
           <RatioRow
             key={item.name}
@@ -229,7 +299,11 @@ function RatioRow({ item, years, estimate, isOpen, onToggle, chartWidth, nYears 
   return (
     <>
       <div className={labelCls} onClick={function () { onToggle(item.name); }} title="Click to toggle chart">
-        <span className="inline-block w-3 text-gray-400 dark:text-slate-500">{isOpen ? "▾" : "▸"}</span> {item.name}
+        <div className="flex items-center gap-1.5">
+          <span className="inline-block w-3 text-gray-400 dark:text-slate-500 shrink-0">{isOpen ? "▾" : "▸"}</span>
+          <MiniSpark values={item.values} estimate={estimate} />
+          <span className="truncate">{item.name}</span>
+        </div>
       </div>
       {years.map(function (_, i) {
         const v = item.values[i];
