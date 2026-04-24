@@ -37,7 +37,7 @@ export default function CompanyDashboard({ company }) {
   return (
     <div className="mb-6">
       <div className="text-sm font-medium text-gray-900 dark:text-slate-100 mb-3">Overview Dashboard</div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         <GrowthEngine       company={company} />
         <MarginLadder       company={company} />
         <ReturnsOnCapital   company={company} />
@@ -85,11 +85,31 @@ function GrowthEngine({ company }) {
     return PAD_T + (1 - (g - gYBase) / gSpan) * innerH;
   }
 
-  const growthPath = growth.map(function (g, i) {
-    const y = yOfGrowth(g);
-    if (y === null) return null;
-    return [xOf(i), y];
-  }).filter(Boolean);
+  /* Split growth line into (historical, estimate) segments so we can
+     style the estimate portion with a dashed stroke. Includes a dashed
+     bridge across the historical→estimate boundary. */
+  function buildGrowthSegments() {
+    const segs = [];
+    let cur = null;
+    for (let i = 0; i < growth.length; i++) {
+      const g = growth[i];
+      const y = yOfGrowth(g);
+      if (y === null) { if (cur) { segs.push(cur); cur = null; } continue; }
+      const est = !!sales.estimate[i];
+      if (!cur) { cur = { est: est, pts: [[xOf(i), y]] }; }
+      else if (cur.est === est) { cur.pts.push([xOf(i), y]); }
+      else {
+        segs.push(cur);
+        const last = cur.pts[cur.pts.length - 1];
+        const newPt = [xOf(i), y];
+        segs.push({ isBridge: true, pts: [last, newPt] });
+        cur = { est: est, pts: [newPt] };
+      }
+    }
+    if (cur) segs.push(cur);
+    return segs;
+  }
+  const growthSegs = buildGrowthSegments();
 
   return (
     <Tile title="Growth Engine" subtitle="Revenue + YoY growth">
@@ -108,12 +128,15 @@ function GrowthEngine({ company }) {
           const color = sales.estimate[i] ? EST_COLOR : HIST_COLOR;
           return <rect key={i} x={x} y={y} width={bw} height={h} fill={color} opacity="0.75" />;
         })}
-        {/* Growth line */}
-        <polyline
-          points={growthPath.map(function (p) { return p[0].toFixed(1) + "," + p[1].toFixed(1); }).join(" ")}
-          fill="none" stroke="#16a34a" strokeWidth="1.75"
-        />
-        {growthPath.map(function (p, i) { return <circle key={i} cx={p[0]} cy={p[1]} r="2" fill="#16a34a" />; })}
+        {/* Growth line — solid for historical, dashed for estimate, dashed bridge between */}
+        {growthSegs.map(function (s, i) {
+          const d = s.pts.map(function (p, j) { return (j === 0 ? "M" : "L") + p[0].toFixed(1) + "," + p[1].toFixed(1); }).join("");
+          const dash = (s.est || s.isBridge) ? "4 3" : undefined;
+          return <path key={i} d={d} fill="none" stroke="#16a34a" strokeWidth="1.75" strokeDasharray={dash} />;
+        })}
+        {growthSegs.filter(function (s) { return !s.isBridge; }).map(function (s, i) {
+          return s.pts.map(function (p, j) { return <circle key={i + "-" + j} cx={p[0]} cy={p[1]} r="2" fill="#16a34a" />; });
+        })}
         {/* X labels — every other year to avoid crowding */}
         {sales.years.map(function (yr, i) {
           const step = n > 10 ? 2 : 1;
@@ -129,8 +152,8 @@ function GrowthEngine({ company }) {
       </svg>
       <Callouts
         items={[
-          { label: "Hist CAGR", value: fmtPct(histGrowth) },
-          { label: "Fwd CAGR",  value: fmtPct(fwdGrowth), color: EST_COLOR },
+          { label: "Hist CAGR", value: fmtPct(histGrowth), color: HIST_COLOR },
+          { label: "Fwd CAGR",  value: fmtPct(fwdGrowth),  color: EST_COLOR },
         ]}
       />
     </Tile>
@@ -147,12 +170,11 @@ function MarginLadder({ company }) {
   const nm = pickSeries(company, "Net Margin");
   if (!gm && !om && !nm) return <Tile title="Margin Ladder" empty="No margin series" />;
 
-  /* Use whichever series has the widest year range as the x-axis. */
   const base = gm || om || nm;
   const series = [
-    { name: "Gross",     s: gm, color: "#059669" },  /* emerald-600 */
-    { name: "Operating", s: om, color: "#2563eb" },  /* blue-600 */
-    { name: "Net",       s: nm, color: "#7c3aed" },  /* violet-600 */
+    { name: "Gross",     s: gm, color: "#059669" },
+    { name: "Operating", s: om, color: "#2563eb" },
+    { name: "Net",       s: nm, color: "#7c3aed" },
   ].filter(function (x) { return x.s; });
 
   return (
@@ -160,13 +182,14 @@ function MarginLadder({ company }) {
       <MultiLineChart
         years={base.years}
         estimate={base.estimate}
-        series={series.map(function (x) { return { label: x.name, values: alignToYears(x.s, base.years), color: x.color }; })}
+        series={series.map(function (x) {
+          return { label: x.name, values: toDecimalPct(alignToYears(x.s, base.years)), color: x.color };
+        })}
         formatY={function (v) { return (v * 100).toFixed(0) + "%"; }}
-        isPct
       />
       <div className="flex flex-wrap gap-3 text-[10px] text-gray-500 dark:text-slate-400 mt-1">
         {series.map(function (x) {
-          const last = lastFinite(x.s.values);
+          const last = lastFinite(toDecimalPct(x.s.values));
           return (
             <span key={x.name} className="flex items-center gap-1">
               <span className="inline-block w-3 h-0.5" style={{ background: x.color }} />
@@ -191,7 +214,7 @@ function ReturnsOnCapital({ company }) {
 
   const base = roe || roa || roic;
   const series = [
-    { name: "ROIC", s: roic, color: "#0891b2" },  /* cyan-600 */
+    { name: "ROIC", s: roic, color: "#0891b2" },
     { name: "ROE",  s: roe,  color: "#2563eb" },
     { name: "ROA",  s: roa,  color: "#64748b" },
   ].filter(function (x) { return x.s; });
@@ -201,17 +224,19 @@ function ReturnsOnCapital({ company }) {
       <MultiLineChart
         years={base.years}
         estimate={base.estimate}
-        series={series.map(function (x) { return { label: x.name, values: alignToYears(x.s, base.years), color: x.color }; })}
-        formatY={function (v) { return v.toFixed(0) + "%"; }}
-        hlines={[{ v: 10, label: "10% CoC", color: "#ef4444" }]}
+        series={series.map(function (x) {
+          return { label: x.name, values: toDecimalPct(alignToYears(x.s, base.years)), color: x.color };
+        })}
+        formatY={function (v) { return (v * 100).toFixed(0) + "%"; }}
+        hlines={[{ v: 0.10, label: "10% CoC", color: "#ef4444" }]}
       />
       <div className="flex flex-wrap gap-3 text-[10px] text-gray-500 dark:text-slate-400 mt-1">
         {series.map(function (x) {
-          const last = lastFinite(x.s.values);
+          const last = lastFinite(toDecimalPct(x.s.values));
           return (
             <span key={x.name} className="flex items-center gap-1">
               <span className="inline-block w-3 h-0.5" style={{ background: x.color }} />
-              {x.name}: <span className="tabular-nums font-medium text-gray-900 dark:text-slate-100">{last !== null ? last.toFixed(1) + "%" : "--"}</span>
+              {x.name}: <span className="tabular-nums font-medium text-gray-900 dark:text-slate-100">{last !== null ? (last * 100).toFixed(1) + "%" : "--"}</span>
             </span>
           );
         })}
@@ -301,14 +326,33 @@ function ValuationContext({ company }) {
           const d = s.pts.map(function (p, j) { return (j === 0 ? "M" : "L") + p[0].toFixed(1) + "," + p[1].toFixed(1); }).join("");
           return <path key={i} d={d} fill="none" stroke={s.e ? EST_COLOR : HIST_COLOR} strokeWidth="1.75" />;
         })}
-        {/* Current P/E marker */}
-        {isFinite(peCur) && rangeValid && (
-          <g>
-            <line x1={PAD_L} y1={yOf(peCur)} x2={PAD_L + innerW} y2={yOf(peCur)} stroke={curColor} strokeWidth="1" strokeDasharray="2 2" opacity="0.6" />
-            <circle cx={PAD_L + innerW - 6} cy={yOf(peCur)} r="4" fill={curColor} stroke="white" strokeWidth="1.5" />
-            <text x={PAD_L + innerW - 14} y={yOf(peCur) + 3} fontSize="10" textAnchor="end" fill={curColor} fontWeight="600">Now {peCur.toFixed(1)}</text>
-          </g>
-        )}
+        {/* Current P/E marker — positioned at the historical/estimate boundary
+           on the x-axis, so it sits "between" the solid historical line and
+           the dashed forward estimate line. */}
+        {isFinite(peCur) && rangeValid && (function () {
+          let transX = PAD_L + innerW;
+          /* Find the last historical year and first estimate year;
+             center the dot between them. */
+          let lastHistIdx = -1, firstEstIdx = -1;
+          for (let i = 0; i < n; i++) {
+            if (pe && pe.estimate[i]) { firstEstIdx = i; break; }
+            lastHistIdx = i;
+          }
+          if (lastHistIdx >= 0 && firstEstIdx >= 0) {
+            transX = (xOf(lastHistIdx) + xOf(firstEstIdx)) / 2;
+          } else if (lastHistIdx >= 0) {
+            transX = xOf(lastHistIdx);
+          } else if (firstEstIdx >= 0) {
+            transX = xOf(firstEstIdx);
+          }
+          return (
+            <g>
+              <line x1={PAD_L} y1={yOf(peCur)} x2={PAD_L + innerW} y2={yOf(peCur)} stroke={curColor} strokeWidth="1" strokeDasharray="2 2" opacity="0.6" />
+              <circle cx={transX} cy={yOf(peCur)} r="4.5" fill={curColor} stroke="white" strokeWidth="1.5" />
+              <text x={transX + 8} y={yOf(peCur) + 3} fontSize="10" fill={curColor} fontWeight="600">Now {peCur.toFixed(1)}x</text>
+            </g>
+          );
+        })()}
         {/* X labels */}
         {years.map(function (yr, i) {
           const step = n > 10 ? 2 : 1;
@@ -372,62 +416,57 @@ function Callouts({ items }) {
 }
 
 /* Multi-series line chart. Series format: [{ label, values, color }].
- * All series must have values aligned to `years`. Null values break lines.
- * Options: formatY for left-axis labels, hlines for horizontal reference
- * lines (e.g. cost of capital at 10%). */
-function MultiLineChart({ years, estimate, series, formatY, hlines, isPct }) {
-  const W = 520, H = 220, PAD_T = 10, PAD_B = 30, PAD_L = 36, PAD_R = 10;
+ * Values must already be normalized (decimal for percents: 0.385 = 38.5%).
+ * Null values break lines. hlines: [{ v, label, color }] with v in same
+ * units as series values. estimate[] drives dashing — segments crossing
+ * the historical/estimate boundary render dashed. */
+function MultiLineChart({ years, estimate, series, formatY, hlines }) {
+  const W = 520, H = 220, PAD_T = 10, PAD_B = 30, PAD_L = 42, PAD_R = 10;
   const innerW = W - PAD_L - PAD_R;
   const innerH = H - PAD_T - PAD_B;
   const n = years.length;
 
-  const allValues = series.map(function (s) { return s.values; });
+  const allVals = series.map(function (s) { return s.values; });
   const hlineVals = (hlines || []).map(function (h) { return [h.v]; });
-  /* If the data is percent-form but stored as 0.123 (decimal), convert
-     for scaling; many of our inputs come in as 38.5 (raw percent) rather
-     than 0.385 — check magnitude. */
-  const sample = allValues.flat().find(function (v) { return v !== null && isFinite(v); });
-  const rawAsPct = sample !== undefined && Math.abs(sample) > 1.5;
-  const scale = rawAsPct ? 0.01 : 1;
-  /* hlines are passed as percent numbers (e.g. 10 for 10%); keep them
-     in the same "raw percent" space if source data is raw percent. */
-  const hlineScaled = (hlines || []).map(function (h) { return { v: h.v * (rawAsPct ? 1 : 0.01), label: h.label, color: h.color }; });
-
-  function scaleSeries(arr) { return arr.map(function (v) { return v === null || !isFinite(v) ? null : v * (rawAsPct ? 0.01 : 1) ; }); }
-  const scaledSeries = series.map(function (s) { return { label: s.label, color: s.color, values: scaleSeries(s.values) }; });
-
-  const [vMin, vMax] = minMaxAcross(scaledSeries.map(function (s) { return s.values; }).concat([hlineScaled.map(function (h) { return h.v; })]));
+  const [vMin, vMax] = minMaxAcross(allVals.concat(hlineVals));
   const yPad = (vMax - vMin) * 0.1 || 0.01;
   const yMin = vMin - yPad, yMax = vMax + yPad;
 
   function xOf(i) { return n <= 1 ? PAD_L + innerW / 2 : PAD_L + (i / (n - 1)) * innerW; }
   function yOf(v) { return PAD_T + (1 - (v - yMin) / (yMax - yMin)) * innerH; }
 
-  function paths(values) {
+  /* Walk a values array and emit segments labeled by estimate flag.
+     Bridge segments between historical and estimate are also emitted
+     so the line is continuous across the boundary (rendered dashed). */
+  function segmentsFor(values) {
     const segs = [];
     let cur = null;
     for (let i = 0; i < n; i++) {
       const v = values[i];
       if (v === null || !isFinite(v)) { if (cur) { segs.push(cur); cur = null; } continue; }
-      if (!cur) cur = { pts: [[xOf(i), yOf(v)]] };
-      else cur.pts.push([xOf(i), yOf(v)]);
+      const est = !!estimate[i];
+      if (!cur) { cur = { est: est, pts: [[xOf(i), yOf(v)]] }; }
+      else if (cur.est === est) { cur.pts.push([xOf(i), yOf(v)]); }
+      else {
+        segs.push(cur);
+        const last = cur.pts[cur.pts.length - 1];
+        const newPt = [xOf(i), yOf(v)];
+        segs.push({ isBridge: true, pts: [last, newPt] });
+        cur = { est: est, pts: [newPt] };
+      }
     }
     if (cur) segs.push(cur);
     return segs;
   }
 
-  function fmtLabel(v) {
-    if (formatY) {
-      return formatY(rawAsPct ? v * 100 : v);
-    }
-    return v.toFixed(1);
-  }
+  function fmtLabel(v) { return formatY ? formatY(v) : v.toFixed(2); }
 
   return (
     <svg width="100%" height={H} viewBox={"0 0 " + W + " " + H} role="img">
       <rect x={PAD_L} y={PAD_T} width={innerW} height={innerH} fill="none" stroke={GRID_COLOR} />
       {/* Horizontal reference lines */}
-      {hlineScaled.map(function (h, i) {
+      {(hlines || []).map(function (h, i) {
+        if (!isFinite(h.v) || h.v < yMin || h.v > yMax) return null;
         const y = yOf(h.v);
         return (
           <g key={i}>
@@ -436,16 +475,15 @@ function MultiLineChart({ years, estimate, series, formatY, hlines, isPct }) {
           </g>
         );
       })}
-      {/* Series lines */}
-      {scaledSeries.map(function (s, si) {
-        return paths(s.values).map(function (seg, i) {
+      {/* Series lines — solid for historical, dashed for estimate + bridge */}
+      {series.map(function (s, si) {
+        return segmentsFor(s.values).map(function (seg, i) {
           const d = seg.pts.map(function (p, j) { return (j === 0 ? "M" : "L") + p[0].toFixed(1) + "," + p[1].toFixed(1); }).join("");
-          return <path key={si + "-" + i} d={d} fill="none" stroke={s.color} strokeWidth="1.75" />;
+          const dash = (seg.est || seg.isBridge) ? "4 3" : undefined;
+          const opacity = seg.isBridge ? 0.6 : 1;
+          return <path key={si + "-" + i} d={d} fill="none" stroke={s.color} strokeWidth="1.75" strokeDasharray={dash} opacity={opacity} />;
         });
       })}
-      {/* Estimate segment markers: dashed overlay where estimate is true */}
-      {/* (intentionally left simple — consumer can visually identify via
-          x-axis; keeping tile clean) */}
       {/* X labels */}
       {years.map(function (yr, i) {
         const step = n > 10 ? 2 : 1;
@@ -463,6 +501,20 @@ function MultiLineChart({ years, estimate, series, formatY, hlines, isPct }) {
 /* ------------------------------------------------------------------------
  * helpers local to this file
  * ---------------------------------------------------------------------- */
+
+/* Normalize a percent-valued series to decimal form. FactSet pastes
+ * margins/returns as raw percent (e.g. 38.59 for 38.59%). If the first
+ * finite sample has |v| > 1.5 we assume raw percent and divide by 100.
+ * Otherwise we leave the array alone (already decimal). Null/NaN pass
+ * through untouched. */
+function toDecimalPct(values) {
+  if (!values) return [];
+  const sample = values.find(function (v) { return v !== null && v !== undefined && isFinite(v); });
+  if (sample === undefined) return values;
+  const rawAsPct = Math.abs(sample) > 1.5;
+  if (!rawAsPct) return values;
+  return values.map(function (v) { return v === null || !isFinite(v) ? null : v * 0.01; });
+}
 
 function lastFinite(arr) {
   for (let i = arr.length - 1; i >= 0; i--) {
