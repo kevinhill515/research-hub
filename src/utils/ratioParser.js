@@ -188,7 +188,16 @@ export function parseRatioPaste(text) {
     const raw = lines[i];
     if (!raw || !raw.trim()) continue;
     const cells = splitRow(raw);
-    const name = cells[0];
+    /* Name = first non-empty cell before the year columns. Financials
+       pastes often have two leading label columns (A empty for indent,
+       B with the line-item name); ratio pastes have one. This handles
+       both without forcing the user to clean up the paste. */
+    let name = "";
+    const nameSearchLimit = Math.max(1, yearStartCol);
+    for (let c = 0; c < nameSearchLimit; c++) {
+      const cv = ((cells[c] || "") + "").trim();
+      if (cv) { name = cv; break; }
+    }
     if (!name) continue;
 
     /* Skip obvious non-data rows — the "Ratio Analysis" label row

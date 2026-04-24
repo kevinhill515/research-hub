@@ -263,7 +263,7 @@ function ItemRow({ item, years, estimate, isOpen, onToggle, chartWidth, nYears }
   const sub = isSubMetric(item.name);
   const cellBase = "px-1.5 py-1 text-[11px] text-right tabular-nums border-b border-slate-100 dark:border-slate-800";
   const labelCls = "px-2 py-1 text-[11px] cursor-pointer border-b border-slate-100 dark:border-slate-800 sticky left-0 z-[1] bg-white dark:bg-slate-950 hover:bg-blue-50 dark:hover:bg-blue-950/30 "
-    + (sub ? "italic text-red-700 dark:text-red-400 " : "font-medium text-gray-900 dark:text-slate-100 ")
+    + (sub ? "italic text-blue-900 dark:text-blue-300 " : "font-medium text-gray-900 dark:text-slate-100 ")
     + (isOpen ? "bg-blue-50 dark:bg-blue-950/40" : "");
 
   return (
@@ -280,7 +280,7 @@ function ItemRow({ item, years, estimate, isOpen, onToggle, chartWidth, nYears }
         const est = estimate[i];
         return (
           <div key={i}
-            className={cellBase + " cursor-pointer " + (sub ? "italic text-red-600 dark:text-red-400 " : "text-gray-900 dark:text-slate-100 ") + (isOpen ? "bg-blue-50/60 dark:bg-blue-950/30" : "")}
+            className={cellBase + " cursor-pointer " + (sub ? "italic text-blue-900 dark:text-blue-300 " : "text-gray-900 dark:text-slate-100 ") + (isOpen ? "bg-blue-50/60 dark:bg-blue-950/30" : "")}
             style={{ background: !isOpen && est ? EST_BG : undefined, color: est && !sub ? "#9a3412" : undefined }}
             onClick={function () { onToggle(item.name); }}>
             {v === null || v === undefined || !isFinite(v) ? <span className="text-gray-300 dark:text-slate-600">–</span> : fmtCell(v)}

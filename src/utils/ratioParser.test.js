@@ -106,6 +106,23 @@ describe("parseRatioPaste", function () {
     expect(r.years).toEqual([2020, 2021, 2022]);
   });
 
+  it("handles two leading label columns (Financials paste)", function () {
+    /* Column A empty (or used for sub-metric indent), Column B has the
+       line-item name, values start at yearStartCol. */
+    const text = [
+      "Acme Corp",
+      "\t\t12/31/2020\t12/31/2021\t12/31/2022",
+      "\t\t-2FY\t-1FY\t+1FY",
+      "\tSales\t1000\t1100\t1200",
+      "Rev Growth\t\t10.0\t9.1\t#N/A",
+    ].join("\n");
+    const r = parseRatioPaste(text);
+    expect(r.error).toBeUndefined();
+    expect(r.values["Sales"]).toEqual([1000, 1100, 1200]);
+    expect(r.values["Rev Growth"]).toEqual([10.0, 9.1, null]);
+    expect(r.estimate).toEqual([false, false, true]);
+  });
+
   it("parses financials-style -NFY / +NFY metadata row", function () {
     const text = [
       "Acme Corp",
