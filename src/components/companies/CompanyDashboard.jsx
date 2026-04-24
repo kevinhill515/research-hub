@@ -770,15 +770,21 @@ function MultiLineChart({ years, estimate, series, formatY, hlines }) {
  * ---------------------------------------------------------------------- */
 
 /* Normalize a percent-valued series to decimal form. FactSet pastes
- * margins/returns as raw percent (e.g. 38.59 for 38.59%). If the first
- * finite sample has |v| > 1.5 we assume raw percent and divide by 100.
- * Otherwise we leave the array alone (already decimal). Null/NaN pass
- * through untouched. */
+ * margins/returns as raw percent (e.g. 38.59 for 38.59%). If ANY year
+ * has |v| > 1.5 we assume the whole series is raw percent and divide
+ * by 100; otherwise we leave it alone (already decimal). Using `some`
+ * rather than the first finite sample handles companies whose first
+ * data year happens to be small — e.g. TotalEnergies' early Gross
+ * Margin can dip near 1% but later years are 20%+; looking at only
+ * the first value would misclassify the whole series as decimal and
+ * scale the chart 100× too high.
+ *
+ * Null/NaN pass through untouched. */
 function toDecimalPct(values) {
   if (!values) return [];
-  const sample = values.find(function (v) { return v !== null && v !== undefined && isFinite(v); });
-  if (sample === undefined) return values;
-  const rawAsPct = Math.abs(sample) > 1.5;
+  const rawAsPct = values.some(function (v) {
+    return v !== null && v !== undefined && isFinite(v) && Math.abs(v) > 1.5;
+  });
   if (!rawAsPct) return values;
   return values.map(function (v) { return v === null || !isFinite(v) ? null : v * 0.01; });
 }
