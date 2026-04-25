@@ -124,7 +124,9 @@ export default function SegmentsTab({ company }) {
     );
   }
 
-  const ccy = getCurrency(company) || "";
+  /* Reporting currency derives from the company's country, not the
+     company object directly — getCurrency() takes a country string. */
+  const ccy = getCurrency(company && company.country) || "USD";
   /* Operating segments only (cost centers handled separately). */
   const opSegs = data.segments.filter(function (s) { return !s.isCostCenter; });
   const costCenters = data.segments.filter(function (s) { return s.isCostCenter; });
@@ -147,11 +149,9 @@ export default function SegmentsTab({ company }) {
         </div>
       </div>
 
-      {/* SECTION 1 — Revenue Mix */}
-      <RevenueMix years={data.years} segments={opSegs} ccy={ccy} />
-
-      {/* SECTION 2 — Margin Ladder */}
-      <div className="mt-3">
+      {/* SECTIONS 1 + 2 — Revenue Mix and Profitability Ladder side by side */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <RevenueMix years={data.years} segments={opSegs} ccy={ccy} />
         <MarginLadder years={data.years} segments={opSegs} />
       </div>
 
@@ -183,13 +183,13 @@ export default function SegmentsTab({ company }) {
 /* ============================ Section 1 ================================ */
 
 function RevenueMix({ years, segments, ccy }) {
-  const [mode, setMode] = useState("abs"); /* "abs" | "pct" */
-  const W = 1000, H = 280, PAD_T = 16, PAD_B = 30, PAD_L = 56, PAD_R = 16;
+  const W = 600, H = 260, PAD_T = 16, PAD_B = 30, PAD_L = 60, PAD_R = 16;
   const innerW = W - PAD_L - PAD_R;
   const innerH = H - PAD_T - PAD_B;
   const n = years.length;
 
-  /* Per-year segment totals (positive only — cost centers excluded already). */
+  /* Per-year totals across operating segments (cost centers already
+     excluded by caller). */
   const yearTotals = years.map(function (_, i) {
     return segments.reduce(function (sum, s) {
       const v = s.sales[i];
@@ -197,27 +197,28 @@ function RevenueMix({ years, segments, ccy }) {
     }, 0);
   });
 
-  const yMax = mode === "pct" ? 1.0 : Math.max.apply(null, yearTotals.concat([1])) * 1.05;
+  const yMax = Math.max.apply(null, yearTotals.concat([1])) * 1.05;
   const yMin = 0;
 
   function xOf(i) { return PAD_L + (i + 0.5) * (innerW / n); }
   function yOf(v) { return PAD_T + (1 - (v - yMin) / (yMax - yMin)) * innerH; }
-  const bw = (innerW / n) * 0.7;
+  const bw = (innerW / n) * 0.72;
+
+  /* Latest year with non-zero total, used for legend percent shares. */
+  const latestIdx = (function () {
+    for (let i = years.length - 1; i >= 0; i--) {
+      if (yearTotals[i] > 0) return i;
+    }
+    return -1;
+  })();
+  const latestTotal = latestIdx >= 0 ? yearTotals[latestIdx] : 0;
 
   return (
     <div className={TILE}>
-      <div className="flex items-baseline gap-3 mb-2">
+      <div className="flex items-baseline gap-2 mb-2">
         <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">Revenue Mix</div>
-        <div className="text-[10px] text-gray-500 dark:text-slate-400">Sales by segment over time</div>
-        <div className="ml-auto flex gap-1 text-[11px]">
-          <button
-            onClick={function () { setMode("abs"); }}
-            className={"px-2 py-0.5 rounded-full border " + (mode === "abs" ? "bg-blue-700 text-white border-blue-700" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-gray-700 dark:text-slate-300")}
-          >Absolute</button>
-          <button
-            onClick={function () { setMode("pct"); }}
-            className={"px-2 py-0.5 rounded-full border " + (mode === "pct" ? "bg-blue-700 text-white border-blue-700" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-gray-700 dark:text-slate-300")}
-          >% of total</button>
+        <div className="text-[10px] text-gray-500 dark:text-slate-400">
+          Sales by segment over time {ccy ? "(M " + ccy + ")" : ""}
         </div>
       </div>
 
@@ -225,35 +226,31 @@ function RevenueMix({ years, segments, ccy }) {
         <rect x={PAD_L} y={PAD_T} width={innerW} height={innerH} fill="none" stroke={GRID_COLOR} />
         {niceTicks(yMin, yMax, 5).map(function (t, i) {
           const y = yOf(t);
-          const lbl = mode === "pct" ? (t * 100).toFixed(0) + "%" : fmtMoneyShort(t) + (ccy ? " M" + ccy : "");
           return (
             <g key={"t-" + i}>
               <line x1={PAD_L} y1={y} x2={PAD_L + innerW} y2={y} stroke={TICK_COLOR} />
-              <text x={PAD_L - 6} y={y + 3} fontSize="9" textAnchor="end" fill="#64748b">{lbl}</text>
+              <text x={PAD_L - 6} y={y + 3} fontSize="9" textAnchor="end" fill="#64748b">{fmtMoneyShort(t)}</text>
             </g>
           );
         })}
-        {/* Stacked bars */}
+        {/* Stacked bars (absolute) */}
         {years.map(function (yr, i) {
           const total = yearTotals[i] || 0;
           if (total === 0) return null;
-          let cumY = yOf(0);
+          let runningTop = yOf(total); /* top of the current segment block */
           return (
             <g key={i}>
               {segments.map(function (s, si) {
                 const v = s.sales[i];
                 if (!isFinite(v) || v <= 0) return null;
-                const display = mode === "pct" ? v / total : v;
-                const top = yOf(cumValOf(cumY, display, yMax, innerH));
-                const segH = (display / yMax) * innerH;
+                const segH = (v / yMax) * innerH;
                 const x = xOf(i) - bw / 2;
-                cumY -= segH;
+                const y = runningTop;
+                runningTop += segH;
                 return (
-                  <rect key={si} x={x} y={cumY + segH - segH} width={bw} height={segH}
-                    fill={colorFor(si)} opacity="0.85"
-                    style={{ /* hover bump */ }}
-                  >
-                    <title>{s.name + ": " + (mode === "pct" ? ((display) * 100).toFixed(1) + "%" : fmtMoney(v, ccy))}</title>
+                  <rect key={si} x={x} y={y} width={bw} height={segH}
+                    fill={colorFor(si)} opacity="0.85">
+                    <title>{s.name + ": " + fmtMoney(v, ccy) + "  (" + ((v / total) * 100).toFixed(1) + "%)"}</title>
                   </rect>
                 );
               })}
@@ -268,31 +265,35 @@ function RevenueMix({ years, segments, ccy }) {
         })}
       </svg>
 
-      {/* Legend */}
-      <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-[10px] text-gray-600 dark:text-slate-300">
+      {/* Legend with latest absolute + % share */}
+      <div className="flex flex-col gap-0.5 mt-2 text-[10px] text-gray-600 dark:text-slate-300">
         {segments.map(function (s, si) {
+          const v = latestIdx >= 0 ? s.sales[latestIdx] : null;
+          const abs = v !== null && isFinite(v) ? fmtMoney(v, ccy) : "--";
+          const pct = (v !== null && isFinite(v) && latestTotal > 0) ? ((v / latestTotal) * 100).toFixed(1) + "%" : "--";
           return (
-            <span key={s.name} className="flex items-center gap-1">
-              <span className="inline-block w-3 h-3 rounded-sm" style={{ background: colorFor(si) }} />
-              {s.name}
-            </span>
+            <div key={s.name} className="flex items-center gap-1.5">
+              <span className="inline-block w-3 h-3 rounded-sm shrink-0" style={{ background: colorFor(si) }} />
+              <span className="flex-1 truncate">{s.name}</span>
+              <span className="tabular-nums font-semibold text-gray-900 dark:text-slate-100 w-20 text-right">{abs}</span>
+              <span className="tabular-nums text-gray-500 dark:text-slate-400 w-12 text-right">{pct}</span>
+            </div>
           );
         })}
+        {latestIdx >= 0 && (
+          <div className="text-[9px] text-gray-400 dark:text-slate-500 italic mt-1">
+            Latest year: {years[latestIdx]} · Total {fmtMoney(latestTotal, ccy)}
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-/* helper for stacked-bar y math — kept inline to avoid extra refs */
-function cumValOf(cumY, display, yMax, innerH) {
-  /* not actually used after refactor — left for clarity */
-  return display;
-}
-
 /* ============================ Section 2 ================================ */
 
 function MarginLadder({ years, segments }) {
-  const W = 1000, H = 220, PAD_T = 14, PAD_B = 30, PAD_L = 50, PAD_R = 16;
+  const W = 600, H = 260, PAD_T = 16, PAD_B = 30, PAD_L = 50, PAD_R = 16;
   const innerW = W - PAD_L - PAD_R;
   const innerH = H - PAD_T - PAD_B;
   const n = years.length;

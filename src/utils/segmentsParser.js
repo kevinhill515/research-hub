@@ -200,19 +200,35 @@ export function parseSegmentsPaste(text) {
     const name = rowName(cells, yearStartCol);
     if (!name) continue;
 
-    /* Geography section header — switch mode. */
-    if (/^revenue\s+by\s+geography$/i.test(name)) {
+    const { values: vals, anyPct } = readValues(cells);
+    const hasNumber = vals.some(isFiniteV);
+
+    /* Geography section header — switch mode. The FactSet template
+       splits the title across two rows ("Revenue" then "by Geography"
+       below). To handle both single-line ("Revenue by Geography") and
+       split-line forms, we look ahead one row when we see a bare
+       "Revenue" with no numbers. */
+    if (/^revenue\s+by\s+geography$/i.test(name) || /^by\s+geography$/i.test(name)) {
       endCurrentSegment();
       mode = "geo";
       continue;
     }
-
-    /* Detect end-of-segments — a "Total" segment header (we still capture
-       its rows so the user can sanity-check, but mark isCostCenter=false
-       and let the view decide whether to render). */
-
-    const { values: vals, anyPct } = readValues(cells);
-    const hasNumber = vals.some(isFiniteV);
+    if (mode === "segments" && /^revenue$/i.test(name) && !hasNumber) {
+      /* Bare "Revenue" header with empty value cells — peek next non-blank
+         row; if it's "by Geography" we're entering the geography section. */
+      let j = i + 1;
+      while (j < lines.length && !lines[j].trim()) j++;
+      if (j < lines.length) {
+        const nextCells = splitRow(lines[j]);
+        const nextName  = rowName(nextCells, yearStartCol);
+        if (/^by\s+geography$/i.test(nextName)) {
+          endCurrentSegment();
+          mode = "geo";
+          i = j; /* skip the "by Geography" sub-header on the next iteration */
+          continue;
+        }
+      }
+    }
 
     if (mode === "segments") {
       /* Recognized sub-rows under the current segment. */

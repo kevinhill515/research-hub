@@ -114,6 +114,35 @@ describe("parseSegmentsPaste", function () {
     expect(cc.ebit[0]).toBe(-670.9);
   });
 
+  it('handles "Revenue / by Geography" split across two rows', function () {
+    /* FactSet template puts "Revenue" on one row and "by Geography" on
+       the next, both with empty value cells. Should switch to geo mode
+       without treating either as a segment. */
+    const text = [
+      "Acme Corp",
+      "\tFY 2020\tFY 2021\tFY 2022",
+      "Segment A",
+      "Sales\t100\t110\t120",
+      "EBIT\t10\t11\t12",
+      "Margin\t10.0%\t10.0%\t10.0%",
+      "ROA",
+      "Total",
+      "Sales\t100\t110\t120",
+      "EBIT\t10\t11\t12",
+      "Revenue",
+      "by Geography",
+      "Revenue\t100\t110\t120",
+      "France\t60.0%\t62.0%\t64.0%",
+      "Germany\t40.0%\t38.0%\t36.0%",
+    ].join("\n");
+    const r = parseSegmentsPaste(text);
+    expect(r.error).toBeUndefined();
+    /* Only one operating segment, no spurious "by Geography" */
+    expect(r.segments.map(function (s) { return s.name; })).toEqual(["Segment A"]);
+    expect(r.geography.regions.map(function (g) { return g.name; })).toEqual(["France", "Germany"]);
+    expect(r.geography.revenue).toEqual([100, 110, 120]);
+  });
+
   it("returns an error when no year header is present", function () {
     const r = parseSegmentsPaste("just a company name\nand some text");
     expect(r.error).toBeDefined();
