@@ -213,7 +213,7 @@ export default function SegmentsTab({ company }) {
 
 function RevenueMix({ years, segments, ccy }) {
   const [mode, setMode] = useState("abs"); /* "abs" | "pct" */
-  const W = 600, H = 260, PAD_T = 16, PAD_B = 30, PAD_L = 60, PAD_R = 16;
+  const W = 600, H = 340, PAD_T = 16, PAD_B = 30, PAD_L = 60, PAD_R = 16;
   const innerW = W - PAD_L - PAD_R;
   const innerH = H - PAD_T - PAD_B;
   const n = years.length;
@@ -307,28 +307,27 @@ function RevenueMix({ years, segments, ccy }) {
         })}
       </svg>
 
-      {/* Legend with latest absolute + % share — values sit right next
-          to the segment name for easy scanning. */}
-      <div className="flex flex-col gap-0.5 mt-2 text-[10px] text-gray-600 dark:text-slate-300">
+      {/* Horizontal wrapping legend — color · name · abs · (% of total). */}
+      <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-[10px] text-gray-600 dark:text-slate-300">
         {segments.map(function (s, si) {
           const v = latestIdx >= 0 ? s.sales[latestIdx] : null;
           const abs = v !== null && isFinite(v) ? fmtMoney(v, ccy) : "--";
           const pct = (v !== null && isFinite(v) && latestTotal > 0) ? ((v / latestTotal) * 100).toFixed(1) + "%" : "--";
           return (
-            <div key={s.name} className="flex items-baseline gap-1.5 flex-wrap">
+            <span key={s.name} className="flex items-baseline gap-1">
               <span className="inline-block w-3 h-3 rounded-sm shrink-0 self-center" style={{ background: colorFor(si) }} />
-              <span className="text-gray-700 dark:text-slate-200">{s.name}</span>
+              <span className="text-gray-700 dark:text-slate-200">{s.name}:</span>
               <span className="tabular-nums font-semibold text-gray-900 dark:text-slate-100">{abs}</span>
               <span className="tabular-nums text-gray-500 dark:text-slate-400">({pct})</span>
-            </div>
+            </span>
           );
         })}
-        {latestIdx >= 0 && (
-          <div className="text-[9px] text-gray-400 dark:text-slate-500 italic mt-1">
-            Latest year: {years[latestIdx]} · Total {fmtMoney(latestTotal, ccy)}
-          </div>
-        )}
       </div>
+      {latestIdx >= 0 && (
+        <div className="text-[9px] text-gray-400 dark:text-slate-500 italic mt-1">
+          Latest year: {years[latestIdx]} · Total {fmtMoney(latestTotal, ccy)}
+        </div>
+      )}
     </div>
   );
 }
@@ -336,7 +335,7 @@ function RevenueMix({ years, segments, ccy }) {
 /* ============================ Section 2 ================================ */
 
 function MarginLadder({ years, segments }) {
-  const W = 600, H = 260, PAD_T = 16, PAD_B = 30, PAD_L = 50, PAD_R = 16;
+  const W = 600, H = 340, PAD_T = 16, PAD_B = 30, PAD_L = 50, PAD_R = 16;
   const innerW = W - PAD_L - PAD_R;
   const innerH = H - PAD_T - PAD_B;
   const n = years.length;
