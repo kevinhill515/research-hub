@@ -1,0 +1,649 @@
+/* Company Segments tab — rich, chart-first view of business segments
+ * and geography, replacing the legacy template "Segments" section.
+ *
+ * Layout (top-to-bottom):
+ *   1. Revenue Mix   — stacked bar chart of Sales by segment over time
+ *                      (toggle: absolute $ ↔ % of total)
+ *   2. Margin Ladder — multi-line of operating margin per segment
+ *   3. Per-segment cards (grid of clickable tiles with sparklines)
+ *   4. Geography     — stacked area (mix evolution) + ranked bar (current)
+ *
+ * Data shape on the company:
+ *   company.segments = {
+ *     currency, years[], segments[], geography{revenue[], regions[]},
+ *     parsedTotal{?}, updatedAt
+ *   }
+ *
+ * Currency: pulled from the company's reporting currency (getCurrency()),
+ * rendered as "M{CCY}" alongside Sales/EBIT figures.
+ */
+
+import { useState } from 'react';
+import { useCompanyContext } from '../../context/CompanyContext.jsx';
+import { useConfirm } from '../ui/DialogProvider.jsx';
+import { getCurrency } from '../../utils/index.js';
+
+const TILE = "rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3";
+const HIST_COLOR = "#2563eb";
+const EST_COLOR  = "#ea580c";
+const GRID_COLOR = "rgba(100,116,139,0.12)";
+const TICK_COLOR = "rgba(100,116,139,0.18)";
+
+/* Distinct, accessible-ish palette for segment colors. Cycled if there
+ * are more segments than entries. */
+const PALETTE = [
+  "#2563eb", "#059669", "#7c3aed", "#dc2626", "#ea580c",
+  "#0891b2", "#ca8a04", "#be185d", "#475569", "#65a30d",
+];
+
+function colorFor(idx) { return PALETTE[idx % PALETTE.length]; }
+
+function niceTicks(min, max, target) {
+  if (!isFinite(min) || !isFinite(max) || max <= min) return [];
+  const t = target || 5;
+  const range = max - min;
+  const rawStep = range / t;
+  const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const norm = rawStep / mag;
+  let step;
+  if (norm < 1.5) step = 1;
+  else if (norm < 3) step = 2;
+  else if (norm < 4) step = 2.5;
+  else if (norm < 7) step = 5;
+  else step = 10;
+  step *= mag;
+  const start = Math.ceil(min / step) * step;
+  const out = [];
+  for (let v = start; v <= max + 1e-9; v += step) {
+    out.push(Math.abs(v) < step / 1e6 ? 0 : v);
+  }
+  return out;
+}
+
+function fmtMoney(v, ccy) {
+  if (v === null || v === undefined || !isFinite(v)) return "--";
+  const a = Math.abs(v);
+  const suffix = ccy ? "M" + ccy : "M";
+  if (a >= 1000) return (v / 1000).toFixed(1) + "B" + (ccy || "");
+  return v.toFixed(0) + " " + suffix;
+}
+
+function fmtMoneyShort(v) {
+  if (v === null || v === undefined || !isFinite(v)) return "--";
+  const a = Math.abs(v);
+  if (a >= 1000) return (v / 1000).toFixed(1) + "k";
+  return v.toFixed(0);
+}
+
+function fmtPct(v, dp) {
+  if (v === null || v === undefined || !isFinite(v)) return "--";
+  return (v * 100).toFixed(dp == null ? 1 : dp) + "%";
+}
+
+function lastFinite(arr) {
+  if (!arr) return null;
+  for (let i = arr.length - 1; i >= 0; i--) {
+    if (arr[i] !== null && isFinite(arr[i])) return arr[i];
+  }
+  return null;
+}
+
+function lastFiniteIndex(arr) {
+  if (!arr) return -1;
+  for (let i = arr.length - 1; i >= 0; i--) {
+    if (arr[i] !== null && isFinite(arr[i])) return i;
+  }
+  return -1;
+}
+
+/* ======================================================================== */
+
+export default function SegmentsTab({ company }) {
+  const { setCompanies } = useCompanyContext();
+  const confirm = useConfirm();
+  const data = company && company.segments;
+  const hasData = !!(data && data.years && data.years.length > 0);
+
+  function clearSegments() {
+    confirm("Clear all segment data for " + (company.name || "this company") + "?").then(function (ok) {
+      if (!ok) return;
+      const updated = Object.assign({}, company);
+      delete updated.segments;
+      setCompanies(function (cs) { return cs.map(function (c) { return c.id === updated.id ? updated : c; }); });
+    });
+  }
+
+  if (!hasData) {
+    return (
+      <div className="mb-6">
+        <div className="text-sm font-medium text-gray-900 dark:text-slate-100 mb-1">Segments</div>
+        <div className="text-sm text-gray-500 dark:text-slate-400 py-6 italic">
+          No segment data yet. Upload via <b>Data Hub → Segments</b> — paste the segments + geography block (with the company name on row 1) and it auto-matches to this company by name.
+        </div>
+      </div>
+    );
+  }
+
+  const ccy = getCurrency(company) || "";
+  /* Operating segments only (cost centers handled separately). */
+  const opSegs = data.segments.filter(function (s) { return !s.isCostCenter; });
+  const costCenters = data.segments.filter(function (s) { return s.isCostCenter; });
+
+  return (
+    <div className="mb-6">
+      <div className="flex items-center gap-3 flex-wrap mb-3">
+        <div className="text-sm font-medium text-gray-900 dark:text-slate-100">Segments</div>
+        {data.updatedAt && (
+          <span className="text-[10px] text-gray-400 dark:text-slate-500 italic">
+            Last updated {new Date(data.updatedAt).toLocaleDateString()}
+          </span>
+        )}
+        <span className="text-[10px] text-gray-400 dark:text-slate-500 italic">Reporting currency: {ccy || "—"}</span>
+        <div className="ml-auto flex gap-2 items-center">
+          <span className="text-[11px] text-gray-400 dark:text-slate-500 italic">
+            Refresh via Data Hub → Segments
+          </span>
+          <button onClick={clearSegments} className="text-xs px-2.5 py-1.5 font-medium rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">Clear</button>
+        </div>
+      </div>
+
+      {/* SECTION 1 — Revenue Mix */}
+      <RevenueMix years={data.years} segments={opSegs} ccy={ccy} />
+
+      {/* SECTION 2 — Margin Ladder */}
+      <div className="mt-3">
+        <MarginLadder years={data.years} segments={opSegs} />
+      </div>
+
+      {/* SECTION 3 — Per-segment cards */}
+      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        {opSegs.map(function (s, i) {
+          return <SegmentCard key={s.name} segment={s} years={data.years} color={colorFor(i)} ccy={ccy} totalSales={data.parsedTotal && data.parsedTotal.sales} />;
+        })}
+        {costCenters.map(function (s, i) {
+          return <SegmentCard key={s.name} segment={s} years={data.years} color="#64748b" ccy={ccy} totalSales={data.parsedTotal && data.parsedTotal.sales} />;
+        })}
+      </div>
+
+      {/* SECTION 4 — Geography */}
+      {data.geography && data.geography.regions && data.geography.regions.length > 0 && (
+        <div className="mt-3 grid grid-cols-1 lg:grid-cols-3 gap-3">
+          <div className="lg:col-span-2">
+            <GeographyMix years={data.years} geography={data.geography} />
+          </div>
+          <div>
+            <GeographySnapshot years={data.years} geography={data.geography} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================ Section 1 ================================ */
+
+function RevenueMix({ years, segments, ccy }) {
+  const [mode, setMode] = useState("abs"); /* "abs" | "pct" */
+  const W = 1000, H = 280, PAD_T = 16, PAD_B = 30, PAD_L = 56, PAD_R = 16;
+  const innerW = W - PAD_L - PAD_R;
+  const innerH = H - PAD_T - PAD_B;
+  const n = years.length;
+
+  /* Per-year segment totals (positive only — cost centers excluded already). */
+  const yearTotals = years.map(function (_, i) {
+    return segments.reduce(function (sum, s) {
+      const v = s.sales[i];
+      return sum + (v !== null && isFinite(v) && v > 0 ? v : 0);
+    }, 0);
+  });
+
+  const yMax = mode === "pct" ? 1.0 : Math.max.apply(null, yearTotals.concat([1])) * 1.05;
+  const yMin = 0;
+
+  function xOf(i) { return PAD_L + (i + 0.5) * (innerW / n); }
+  function yOf(v) { return PAD_T + (1 - (v - yMin) / (yMax - yMin)) * innerH; }
+  const bw = (innerW / n) * 0.7;
+
+  return (
+    <div className={TILE}>
+      <div className="flex items-baseline gap-3 mb-2">
+        <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">Revenue Mix</div>
+        <div className="text-[10px] text-gray-500 dark:text-slate-400">Sales by segment over time</div>
+        <div className="ml-auto flex gap-1 text-[11px]">
+          <button
+            onClick={function () { setMode("abs"); }}
+            className={"px-2 py-0.5 rounded-full border " + (mode === "abs" ? "bg-blue-700 text-white border-blue-700" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-gray-700 dark:text-slate-300")}
+          >Absolute</button>
+          <button
+            onClick={function () { setMode("pct"); }}
+            className={"px-2 py-0.5 rounded-full border " + (mode === "pct" ? "bg-blue-700 text-white border-blue-700" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-gray-700 dark:text-slate-300")}
+          >% of total</button>
+        </div>
+      </div>
+
+      <svg width="100%" height={H} viewBox={"0 0 " + W + " " + H} role="img" aria-label="Revenue mix">
+        <rect x={PAD_L} y={PAD_T} width={innerW} height={innerH} fill="none" stroke={GRID_COLOR} />
+        {niceTicks(yMin, yMax, 5).map(function (t, i) {
+          const y = yOf(t);
+          const lbl = mode === "pct" ? (t * 100).toFixed(0) + "%" : fmtMoneyShort(t) + (ccy ? " M" + ccy : "");
+          return (
+            <g key={"t-" + i}>
+              <line x1={PAD_L} y1={y} x2={PAD_L + innerW} y2={y} stroke={TICK_COLOR} />
+              <text x={PAD_L - 6} y={y + 3} fontSize="9" textAnchor="end" fill="#64748b">{lbl}</text>
+            </g>
+          );
+        })}
+        {/* Stacked bars */}
+        {years.map(function (yr, i) {
+          const total = yearTotals[i] || 0;
+          if (total === 0) return null;
+          let cumY = yOf(0);
+          return (
+            <g key={i}>
+              {segments.map(function (s, si) {
+                const v = s.sales[i];
+                if (!isFinite(v) || v <= 0) return null;
+                const display = mode === "pct" ? v / total : v;
+                const top = yOf(cumValOf(cumY, display, yMax, innerH));
+                const segH = (display / yMax) * innerH;
+                const x = xOf(i) - bw / 2;
+                cumY -= segH;
+                return (
+                  <rect key={si} x={x} y={cumY + segH - segH} width={bw} height={segH}
+                    fill={colorFor(si)} opacity="0.85"
+                    style={{ /* hover bump */ }}
+                  >
+                    <title>{s.name + ": " + (mode === "pct" ? ((display) * 100).toFixed(1) + "%" : fmtMoney(v, ccy))}</title>
+                  </rect>
+                );
+              })}
+            </g>
+          );
+        })}
+        {/* X labels */}
+        {years.map(function (yr, i) {
+          const step = n > 10 ? 2 : 1;
+          if (i % step !== 0 && i !== n - 1) return null;
+          return <text key={i} x={xOf(i)} y={H - 12} fontSize="9" textAnchor="middle" fill="#64748b">{String(yr).slice(2)}</text>;
+        })}
+      </svg>
+
+      {/* Legend */}
+      <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-[10px] text-gray-600 dark:text-slate-300">
+        {segments.map(function (s, si) {
+          return (
+            <span key={s.name} className="flex items-center gap-1">
+              <span className="inline-block w-3 h-3 rounded-sm" style={{ background: colorFor(si) }} />
+              {s.name}
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* helper for stacked-bar y math — kept inline to avoid extra refs */
+function cumValOf(cumY, display, yMax, innerH) {
+  /* not actually used after refactor — left for clarity */
+  return display;
+}
+
+/* ============================ Section 2 ================================ */
+
+function MarginLadder({ years, segments }) {
+  const W = 1000, H = 220, PAD_T = 14, PAD_B = 30, PAD_L = 50, PAD_R = 16;
+  const innerW = W - PAD_L - PAD_R;
+  const innerH = H - PAD_T - PAD_B;
+  const n = years.length;
+
+  /* Y-range covers all segment margins. */
+  const allVals = [];
+  segments.forEach(function (s) { s.margin.forEach(function (v) { if (isFinite(v)) allVals.push(v); }); });
+  if (allVals.length === 0) {
+    return (
+      <div className={TILE}>
+        <div className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-1">Margin Ladder</div>
+        <div className="text-xs text-gray-400 dark:text-slate-500 italic py-6 text-center">No margin data</div>
+      </div>
+    );
+  }
+  const vMax = Math.max.apply(null, allVals);
+  const vMin = Math.min.apply(null, allVals);
+  const pad = (vMax - vMin) * 0.1 || 0.01;
+  const yMin = vMin - pad;
+  const yMax = vMax + pad;
+
+  function xOf(i) { return n <= 1 ? PAD_L + innerW / 2 : PAD_L + (i / (n - 1)) * innerW; }
+  function yOf(v) { return PAD_T + (1 - (v - yMin) / (yMax - yMin)) * innerH; }
+
+  return (
+    <div className={TILE}>
+      <div className="flex items-baseline gap-2 mb-1">
+        <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">Profitability Ladder</div>
+        <div className="text-[10px] text-gray-500 dark:text-slate-400">Operating margin per segment</div>
+      </div>
+      <svg width="100%" height={H} viewBox={"0 0 " + W + " " + H} role="img" aria-label="Segment margins">
+        <rect x={PAD_L} y={PAD_T} width={innerW} height={innerH} fill="none" stroke={GRID_COLOR} />
+        {niceTicks(yMin, yMax, 5).map(function (t, i) {
+          const y = yOf(t);
+          return (
+            <g key={"t-" + i}>
+              <line x1={PAD_L} y1={y} x2={PAD_L + innerW} y2={y} stroke={TICK_COLOR} />
+              <text x={PAD_L - 6} y={y + 3} fontSize="9" textAnchor="end" fill="#64748b">{(t * 100).toFixed(0) + "%"}</text>
+            </g>
+          );
+        })}
+        {/* Lines per segment */}
+        {segments.map(function (s, si) {
+          const segs = [];
+          let cur = null;
+          for (let i = 0; i < n; i++) {
+            const v = s.margin[i];
+            if (!isFinite(v)) { if (cur) { segs.push(cur); cur = null; } continue; }
+            const pt = [xOf(i), yOf(v)];
+            if (!cur) cur = { pts: [pt] };
+            else cur.pts.push(pt);
+          }
+          if (cur) segs.push(cur);
+          return segs.map(function (sg, idx) {
+            const d = sg.pts.map(function (p, j) { return (j === 0 ? "M" : "L") + p[0].toFixed(1) + "," + p[1].toFixed(1); }).join("");
+            return <path key={si + "-" + idx} d={d} fill="none" stroke={colorFor(si)} strokeWidth="1.75" />;
+          });
+        })}
+        {/* X labels */}
+        {years.map(function (yr, i) {
+          const step = n > 10 ? 2 : 1;
+          if (i % step !== 0 && i !== n - 1) return null;
+          return <text key={i} x={xOf(i)} y={H - 12} fontSize="9" textAnchor="middle" fill="#64748b">{String(yr).slice(2)}</text>;
+        })}
+      </svg>
+      {/* Legend with last value per segment */}
+      <div className="flex flex-wrap gap-3 mt-1 text-[10px] text-gray-600 dark:text-slate-300">
+        {segments.map(function (s, si) {
+          const last = lastFinite(s.margin);
+          return (
+            <span key={s.name} className="flex items-center gap-1">
+              <span className="inline-block w-3 h-0.5" style={{ background: colorFor(si) }} />
+              {s.name}: <span className="tabular-nums font-semibold" style={{ color: colorFor(si) }}>{last !== null ? fmtPct(last, 1) : "--"}</span>
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ============================ Section 3 ================================ */
+
+function SegmentCard({ segment, years, color, ccy, totalSales }) {
+  const [chartOpen, setChartOpen] = useState(null); /* null | "sales" | "ebit" | "margin" | "roa" */
+  const lastSalesIdx = lastFiniteIndex(segment.sales);
+  const lastEbitIdx  = lastFiniteIndex(segment.ebit);
+  const lastSales = lastFinite(segment.sales);
+  const lastEbit  = lastFinite(segment.ebit);
+  const lastMgn   = lastFinite(segment.margin);
+  const lastRoa   = lastFinite(segment.roa);
+  /* Share of total revenue for the latest year where we have data. */
+  let pctOfTotal = null;
+  if (lastSales !== null && totalSales && lastSalesIdx >= 0 && totalSales[lastSalesIdx]) {
+    pctOfTotal = lastSales / totalSales[lastSalesIdx];
+  }
+
+  function chartFor(kind) {
+    if (kind === "sales")  return { values: segment.sales,  fmt: function (v) { return fmtMoney(v, ccy); } };
+    if (kind === "ebit")   return { values: segment.ebit,   fmt: function (v) { return fmtMoney(v, ccy); } };
+    if (kind === "margin") return { values: segment.margin, fmt: function (v) { return fmtPct(v, 1); } };
+    if (kind === "roa")    return { values: segment.roa,    fmt: function (v) { return fmtPct(v, 1); } };
+    return null;
+  }
+
+  function toggle(kind) { setChartOpen(function (prev) { return prev === kind ? null : kind; }); }
+
+  return (
+    <div className={TILE}>
+      <div className="flex items-center gap-2 mb-2">
+        <span className="inline-block w-3 h-3 rounded-sm" style={{ background: color }} />
+        <span className="text-sm font-semibold text-gray-900 dark:text-slate-100">{segment.name}</span>
+        {segment.isCostCenter && (
+          <span className="text-[9px] uppercase tracking-wide text-gray-400 dark:text-slate-500 ml-1">cost center</span>
+        )}
+        {pctOfTotal !== null && !segment.isCostCenter && (
+          <span className="ml-auto text-[10px] text-gray-500 dark:text-slate-400">{fmtPct(pctOfTotal, 1)} of total</span>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-1 text-[11px]">
+        {!segment.isCostCenter && (
+          <KpiRow label="Sales"  value={fmtMoney(lastSales, ccy)} active={chartOpen === "sales"}  onClick={function () { toggle("sales"); }} />
+        )}
+        <KpiRow label="EBIT"   value={fmtMoney(lastEbit, ccy)}   active={chartOpen === "ebit"}   onClick={function () { toggle("ebit"); }} />
+        {!segment.isCostCenter && (
+          <KpiRow label="Margin" value={lastMgn !== null ? fmtPct(lastMgn, 1) : "--"} active={chartOpen === "margin"} onClick={function () { toggle("margin"); }} />
+        )}
+        {!segment.isCostCenter && (
+          <KpiRow label="ROA"    value={lastRoa !== null ? fmtPct(lastRoa, 1) : "--"} active={chartOpen === "roa"}    onClick={function () { toggle("roa"); }} />
+        )}
+      </div>
+
+      {chartOpen && chartFor(chartOpen) && (
+        <div className="mt-2 border-t border-slate-100 dark:border-slate-800 pt-2">
+          <SegmentMiniChart
+            years={years}
+            values={chartFor(chartOpen).values}
+            color={color}
+            formatY={chartFor(chartOpen).fmt}
+            kind={chartOpen}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function KpiRow({ label, value, active, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={"flex items-center justify-between px-2 py-1 rounded text-left transition-colors " +
+        (active ? "bg-blue-50 dark:bg-blue-950/40 text-gray-900 dark:text-slate-100" : "hover:bg-slate-50 dark:hover:bg-slate-800 text-gray-700 dark:text-slate-300")}
+    >
+      <span className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400">{label}</span>
+      <span className="tabular-nums font-semibold">{value}</span>
+    </button>
+  );
+}
+
+function SegmentMiniChart({ years, values, color, formatY, kind }) {
+  const finite = values.filter(function (v) { return v !== null && isFinite(v); });
+  if (finite.length < 2) {
+    return <div className="text-[10px] text-gray-400 dark:text-slate-500 italic py-2 text-center">Not enough data</div>;
+  }
+  const W = 320, H = 90, PAD_T = 8, PAD_B = 18, PAD_L = 36, PAD_R = 8;
+  const innerW = W - PAD_L - PAD_R;
+  const innerH = H - PAD_T - PAD_B;
+  const n = years.length;
+  const vMin = Math.min.apply(null, finite);
+  const vMax = Math.max.apply(null, finite);
+  const pad = (vMax - vMin) * 0.1 || Math.max(0.01, Math.abs(vMax) * 0.1);
+  const yMin = vMin - pad;
+  const yMax = vMax + pad;
+
+  function xOf(i) { return n <= 1 ? PAD_L + innerW / 2 : PAD_L + (i / (n - 1)) * innerW; }
+  function yOf(v) { return PAD_T + (1 - (v - yMin) / (yMax - yMin)) * innerH; }
+
+  const segs = [];
+  let cur = null;
+  for (let i = 0; i < n; i++) {
+    const v = values[i];
+    if (!isFinite(v)) { if (cur) { segs.push(cur); cur = null; } continue; }
+    const pt = [xOf(i), yOf(v)];
+    if (!cur) cur = { pts: [pt] };
+    else cur.pts.push(pt);
+  }
+  if (cur) segs.push(cur);
+
+  const ticks = niceTicks(yMin, yMax, 3);
+
+  return (
+    <svg width="100%" height={H} viewBox={"0 0 " + W + " " + H} role="img">
+      <rect x={PAD_L} y={PAD_T} width={innerW} height={innerH} fill="none" stroke={GRID_COLOR} />
+      {ticks.map(function (t, i) {
+        const y = yOf(t);
+        return (
+          <g key={i}>
+            <line x1={PAD_L} y1={y} x2={PAD_L + innerW} y2={y} stroke={TICK_COLOR} />
+            <text x={PAD_L - 4} y={y + 3} fontSize="8" textAnchor="end" fill="#64748b">{formatY(t)}</text>
+          </g>
+        );
+      })}
+      {segs.map(function (s, idx) {
+        const d = s.pts.map(function (p, j) { return (j === 0 ? "M" : "L") + p[0].toFixed(1) + "," + p[1].toFixed(1); }).join("");
+        return (
+          <g key={idx}>
+            <path d={d} fill="none" stroke={color} strokeWidth="1.75" />
+            {s.pts.map(function (p, j) { return <circle key={j} cx={p[0]} cy={p[1]} r="2" fill={color} />; })}
+          </g>
+        );
+      })}
+      {years.map(function (yr, i) {
+        const step = n > 8 ? 3 : (n > 5 ? 2 : 1);
+        if (i % step !== 0 && i !== n - 1) return null;
+        return <text key={i} x={xOf(i)} y={H - 6} fontSize="8" textAnchor="middle" fill="#64748b">{String(yr).slice(2)}</text>;
+      })}
+    </svg>
+  );
+}
+
+/* ============================ Section 4 ================================ */
+
+function GeographyMix({ years, geography }) {
+  const W = 760, H = 240, PAD_T = 10, PAD_B = 28, PAD_L = 36, PAD_R = 10;
+  const innerW = W - PAD_L - PAD_R;
+  const innerH = H - PAD_T - PAD_B;
+  const n = years.length;
+
+  /* Order regions by latest size, descending. */
+  const ranked = geography.regions.slice().sort(function (a, b) {
+    return (lastFinite(b.values) || 0) - (lastFinite(a.values) || 0);
+  });
+
+  function xOf(i) { return n <= 1 ? PAD_L + innerW / 2 : PAD_L + (i / (n - 1)) * innerW; }
+  function yOf(v) { return PAD_T + (1 - v) * innerH; }
+
+  /* Build cumulative areas. For each year, we sum regions in rank order
+     to get the y stacking. */
+  const cumByYear = years.map(function () { return new Array(ranked.length + 1).fill(0); });
+  ranked.forEach(function (r, ri) {
+    for (let i = 0; i < n; i++) {
+      const v = r.values[i];
+      cumByYear[i][ri + 1] = cumByYear[i][ri] + (isFinite(v) ? v : 0);
+    }
+  });
+
+  function areaPath(ri) {
+    const top = [];
+    const bot = [];
+    for (let i = 0; i < n; i++) {
+      top.push([xOf(i), yOf(cumByYear[i][ri + 1])]);
+      bot.push([xOf(i), yOf(cumByYear[i][ri])]);
+    }
+    const d = "M" + top.map(function (p) { return p[0].toFixed(1) + "," + p[1].toFixed(1); }).join(" L")
+            + " L" + bot.reverse().map(function (p) { return p[0].toFixed(1) + "," + p[1].toFixed(1); }).join(" L")
+            + " Z";
+    return d;
+  }
+
+  return (
+    <div className={TILE}>
+      <div className="flex items-baseline gap-2 mb-1">
+        <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">Geographic Mix</div>
+        <div className="text-[10px] text-gray-500 dark:text-slate-400">Revenue share by region over time</div>
+      </div>
+      <svg width="100%" height={H} viewBox={"0 0 " + W + " " + H} role="img">
+        <rect x={PAD_L} y={PAD_T} width={innerW} height={innerH} fill="none" stroke={GRID_COLOR} />
+        {[0, 0.25, 0.5, 0.75, 1].map(function (t, i) {
+          const y = yOf(t);
+          return (
+            <g key={i}>
+              <line x1={PAD_L} y1={y} x2={PAD_L + innerW} y2={y} stroke={TICK_COLOR} />
+              <text x={PAD_L - 4} y={y + 3} fontSize="9" textAnchor="end" fill="#64748b">{(t * 100).toFixed(0) + "%"}</text>
+            </g>
+          );
+        })}
+        {ranked.map(function (r, ri) {
+          return <path key={r.name} d={areaPath(ri)} fill={colorFor(ri)} fillOpacity="0.85"><title>{r.name}</title></path>;
+        })}
+        {years.map(function (yr, i) {
+          const step = n > 10 ? 2 : 1;
+          if (i % step !== 0 && i !== n - 1) return null;
+          return <text key={i} x={xOf(i)} y={H - 10} fontSize="9" textAnchor="middle" fill="#64748b">{String(yr).slice(2)}</text>;
+        })}
+      </svg>
+      <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-[10px] text-gray-600 dark:text-slate-300">
+        {ranked.map(function (r, ri) {
+          return (
+            <span key={r.name} className="flex items-center gap-1">
+              <span className="inline-block w-3 h-3 rounded-sm" style={{ background: colorFor(ri) }} />
+              {r.name}
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function GeographySnapshot({ years, geography }) {
+  /* Latest year, sorted by size desc, with 5Y delta. */
+  const lastIdx = lastFiniteIndex(geography.revenue || []);
+  const refIdx = lastIdx > 0 ? Math.max(0, lastIdx - 5) : 0;
+  const ranked = geography.regions.slice().map(function (r) {
+    const cur = lastIdx >= 0 ? r.values[lastIdx] : null;
+    const ref = refIdx >= 0 ? r.values[refIdx] : null;
+    return {
+      name: r.name,
+      cur: cur,
+      ref: ref,
+      delta: (cur !== null && ref !== null && isFinite(cur) && isFinite(ref)) ? cur - ref : null,
+    };
+  }).filter(function (r) { return r.cur !== null; });
+  ranked.sort(function (a, b) { return (b.cur || 0) - (a.cur || 0); });
+
+  const max = ranked.length > 0 ? ranked[0].cur : 1;
+
+  return (
+    <div className={TILE}>
+      <div className="flex items-baseline gap-2 mb-2">
+        <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">Latest Snapshot</div>
+        <div className="text-[10px] text-gray-500 dark:text-slate-400">{lastIdx >= 0 ? years[lastIdx] : ""}</div>
+      </div>
+      <div className="space-y-1.5">
+        {ranked.map(function (r, ri) {
+          const w = (r.cur / max) * 100;
+          const dColor = r.delta === null ? "#94a3b8" : r.delta >= 0.005 ? "#16a34a" : r.delta <= -0.005 ? "#dc2626" : "#94a3b8";
+          return (
+            <div key={r.name} className="flex items-center gap-2 text-[11px]">
+              <span className="w-32 truncate text-gray-700 dark:text-slate-300">{r.name}</span>
+              <div className="flex-1 h-3 bg-slate-100 dark:bg-slate-800 rounded relative overflow-hidden">
+                <div className="absolute left-0 top-0 bottom-0 rounded" style={{ width: w + "%", background: colorFor(ri), opacity: 0.85 }} />
+              </div>
+              <span className="tabular-nums font-semibold w-14 text-right text-gray-900 dark:text-slate-100">{(r.cur * 100).toFixed(1) + "%"}</span>
+              {r.delta !== null && (
+                <span className="tabular-nums w-12 text-right text-[10px]" style={{ color: dColor }}>
+                  {(r.delta >= 0 ? "+" : "") + (r.delta * 100).toFixed(1) + "pp"}
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {ranked.length > 0 && (
+        <div className="mt-2 text-[10px] text-gray-400 dark:text-slate-500 italic">
+          Δ vs {refIdx >= 0 ? years[refIdx] : ""}
+        </div>
+      )}
+    </div>
+  );
+}

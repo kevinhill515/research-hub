@@ -5,6 +5,7 @@ import { supaUpsert, supaGet } from '../api/index.js';
 import { pctToDecimal } from '../utils/format.js';
 import { parseDashboardUpload } from '../utils/dashboardParser.js';
 import { parseRatioPaste } from '../utils/ratioParser.js';
+import { parseSegmentsPaste } from '../utils/segmentsParser.js';
 import { useAlert } from '../components/ui/DialogProvider.jsx';
 import { REP_ACCOUNTS } from '../constants/index.js';
 
@@ -33,6 +34,7 @@ export function useImport(){
   const [txText,setTxText]=useState("");
   const [ratioImportText,setRatioImportText]=useState("");
   const [financialsImportText,setFinancialsImportText]=useState("");
+  const [segmentsImportText,setSegmentsImportText]=useState("");
   const [perfPortTargets,setPerfPortTargets]=useState(["FIN"]);
   const [perfText,setPerfText]=useState("");
   const [portTab,setPortTab]=useState("overlap");
@@ -494,6 +496,52 @@ export function useImport(){
   function applyRatioImport()      { _applyTimeSeriesImport(ratioImportText,     "ratios",     "ratios",     setRatioImportText); }
   function applyFinancialsImport() { _applyTimeSeriesImport(financialsImportText, "financials", "line items", setFinancialsImportText); }
 
+  /* Segments + Geography import. Same fuzzy-name matching as the time-series
+     imports; replaces company.segments wholesale on each upload. */
+  function applySegmentsImport(){
+    if(!segmentsImportText.trim())return;
+    var parsed = parseSegmentsPaste(segmentsImportText);
+    if(parsed.error){ alertFn("Couldn't parse segments: " + parsed.error); return; }
+    if(!parsed.companyName){ alertFn("Could not find a company name above the year header. The first non-empty line should be the company name."); return; }
+    if(!parsed.segments || parsed.segments.length === 0){ alertFn("Parser found years but no segment rows. Did the paste include the segment table?"); return; }
+
+    function normalize(n){return(n||"").toLowerCase().replace(/\b(corporation|incorporated|international|holdings|holding|company|limited|group|ordinary|preferred|shares|class|depositary|depository|receipts|receipt|common|stock)\b/g,"").replace(/\b(co\.|inc\.|ltd\.|llc|plc|sa|ag|nv|se|co|inc|ltd|corp|gmbh|kgaa|ab|asa|oyj|spa|srl|bv|ord|com|adr|ads|gdr|pref|reit|shs|npv|cdi|cva|units|unit|jsc|pjsc|ojsc|oao|sab|bhd|tbk)\b/g,"").replace(/[.,&'()\-\/]/g," ").replace(/\s+/g," ").trim();}
+
+    var targetName = parsed.companyName;
+    var tLower = targetName.toLowerCase().trim();
+    var tNorm  = normalize(targetName);
+
+    var match = null;
+    companies.forEach(function(c){
+      if(match) return;
+      var cn = (c.name||"").toLowerCase().trim();
+      var un = (c.usTickerName||"").toLowerCase().trim();
+      if(cn===tLower || un===tLower) { match = c; return; }
+      if(normalize(c.name)===tNorm || (un && normalize(c.usTickerName)===tNorm)) { match = c; return; }
+    });
+
+    if(!match){
+      alertFn('No company matched "' + targetName + '". Add the company first, then re-import.');
+      return;
+    }
+
+    var next = {
+      years: parsed.years,
+      segments: parsed.segments,
+      geography: parsed.geography,
+      parsedTotal: parsed.parsedTotal,
+      updatedAt: new Date().toISOString(),
+    };
+    var updated = Object.assign({}, match, { segments: next });
+    setCompanies(function(cs){ return cs.map(function(c){ return c.id===updated.id ? updated : c; }); });
+    setTimeout(function(){
+      var n = parsed.segments.length;
+      var g = parsed.geography && parsed.geography.regions ? parsed.geography.regions.length : 0;
+      alertFn('Imported ' + n + ' segments + ' + g + ' regions × ' + parsed.years.length + ' years for "' + match.name + '".');
+      setSegmentsImportText("");
+    }, 50);
+  }
+
   function exportAll(){var txt=JSON.stringify({companies,library:saved,exportedAt:new Date().toISOString()},null,2);try{var el=document.createElement("textarea");el.value=txt;el.style.position="fixed";el.style.opacity="0";document.body.appendChild(el);el.focus();el.select();document.execCommand("copy");document.body.removeChild(el);setCopied("exportall");setTimeout(function(){setCopied(null);},2000);}catch(e){setImportText(txt);setShowDataPanel(true);}}
 
   return {
@@ -506,7 +554,8 @@ export function useImport(){
     repText,setRepText,fxText,setFxText,txText,setTxText,perfPortTargets,setPerfPortTargets,perfText,setPerfText,portTab,setPortTab,portSort,setPortSort,portSortDir,setPortSortDir,
     ratioImportText,setRatioImportText,
     financialsImportText,setFinancialsImportText,
-    applyFxImport,applyRepImport,applyTxImport,applyPerfImport,applyCalImport,applyWeightsImport,applyValImport,applyEstImport,applyMetricsImport,applyBenchmarkImport,applyDashboardImport,applyRatioImport,applyFinancialsImport,
+    segmentsImportText,setSegmentsImportText,
+    applyFxImport,applyRepImport,applyTxImport,applyPerfImport,applyCalImport,applyWeightsImport,applyValImport,applyEstImport,applyMetricsImport,applyBenchmarkImport,applyDashboardImport,applyRatioImport,applyFinancialsImport,applySegmentsImport,
     importAll,exportAll
   };
 }

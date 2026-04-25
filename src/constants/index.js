@@ -18,7 +18,7 @@ export const TONES=["Academic","Professional","Plain English"];
 export const LIB_SORTS=["Pinned first","Newest","Oldest","Format","Tag"];
 export const PRESET_TAGS=["Company Template","Macro","FIN","IN","FGL","GL","EM","SC"];
 export const UPLOAD_TYPES=["Earnings Report","Sell Side Research","Company Release","News Article","Analyst Note","Other"];
-export const TEMPLATE_SECTIONS=["Valuation","Overview","Thesis","Segments","Guidance / KPIs","Key Challenges"];
+export const TEMPLATE_SECTIONS=["Valuation","Overview","Thesis","Guidance / KPIs","Key Challenges"];
 export const SECTION_SUBHEADINGS={
   "Valuation":["Method:","Multiple:","Target EPS:","Target Price:","Key Assumptions:"],
   "Overview":["Business:","Geography:","Market Position:","Key Products/Segments:"],
