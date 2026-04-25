@@ -88,6 +88,22 @@ function lastFinite(arr) {
   return null;
 }
 
+/* Sum a given key (e.g. "sales") across an array of segments at every
+ * year index. Returns an array of length nYears with totals or null if
+ * no segment had a value for that year. */
+function perYearSum(segments, key, n) {
+  const out = new Array(n).fill(null);
+  for (let i = 0; i < n; i++) {
+    let s = 0, any = false;
+    for (let j = 0; j < segments.length; j++) {
+      const v = segments[j][key][i];
+      if (v !== null && v !== undefined && isFinite(v)) { s += v; any = true; }
+    }
+    out[i] = any ? s : null;
+  }
+  return out;
+}
+
 function lastFiniteIndex(arr) {
   if (!arr) return -1;
   for (let i = arr.length - 1; i >= 0; i--) {
@@ -155,23 +171,36 @@ export default function SegmentsTab({ company }) {
         <MarginLadder years={data.years} segments={opSegs} />
       </div>
 
-      {/* SECTION 3 — Per-segment cards */}
-      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-        {opSegs.map(function (s, i) {
-          return <SegmentCard key={s.name} segment={s} years={data.years} color={colorFor(i)} ccy={ccy} totalSales={data.parsedTotal && data.parsedTotal.sales} />;
-        })}
-        {costCenters.map(function (s, i) {
-          return <SegmentCard key={s.name} segment={s} years={data.years} color="#64748b" ccy={ccy} totalSales={data.parsedTotal && data.parsedTotal.sales} />;
-        })}
-      </div>
+      {/* SECTION 3 — Per-segment cards. Pass per-year totals so each
+          card can compute its share of total Sales / EBIT. */}
+      {(function () {
+        const totSales = perYearSum(opSegs, "sales", data.years.length);
+        const totEbit  = perYearSum(opSegs, "ebit",  data.years.length);
+        return (
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {opSegs.map(function (s, i) {
+              return <SegmentCard key={s.name} segment={s} years={data.years} color={colorFor(i)} ccy={ccy}
+                totalSales={totSales} totalEbit={totEbit} />;
+            })}
+            {costCenters.map(function (s) {
+              return <SegmentCard key={s.name} segment={s} years={data.years} color="#64748b" ccy={ccy}
+                totalSales={totSales} totalEbit={totEbit} />;
+            })}
+          </div>
+        );
+      })()}
 
-      {/* SECTION 4 — Geography */}
+      {/* SECTION 4 — Geography. HQ country is filtered out of the stacked
+          area to avoid double-counting (it's already inside its parent
+          region — e.g. France inside Western Europe). HQ gets its own
+          dedicated tile + the existing All-regions snapshot keeps it. */}
       {data.geography && data.geography.regions && data.geography.regions.length > 0 && (
         <div className="mt-3 grid grid-cols-1 lg:grid-cols-3 gap-3">
           <div className="lg:col-span-2">
-            <GeographyMix years={data.years} geography={data.geography} />
+            <GeographyMix years={data.years} geography={data.geography} hqCountry={company && company.country} />
           </div>
-          <div>
+          <div className="flex flex-col gap-3">
+            <HomeMarketTile years={data.years} geography={data.geography} hqCountry={company && company.country} />
             <GeographySnapshot years={data.years} geography={data.geography} />
           </div>
         </div>
@@ -183,6 +212,7 @@ export default function SegmentsTab({ company }) {
 /* ============================ Section 1 ================================ */
 
 function RevenueMix({ years, segments, ccy }) {
+  const [mode, setMode] = useState("abs"); /* "abs" | "pct" */
   const W = 600, H = 260, PAD_T = 16, PAD_B = 30, PAD_L = 60, PAD_R = 16;
   const innerW = W - PAD_L - PAD_R;
   const innerH = H - PAD_T - PAD_B;
@@ -197,7 +227,7 @@ function RevenueMix({ years, segments, ccy }) {
     }, 0);
   });
 
-  const yMax = Math.max.apply(null, yearTotals.concat([1])) * 1.05;
+  const yMax = mode === "pct" ? 1.0 : Math.max.apply(null, yearTotals.concat([1])) * 1.05;
   const yMin = 0;
 
   function xOf(i) { return PAD_L + (i + 0.5) * (innerW / n); }
@@ -220,30 +250,42 @@ function RevenueMix({ years, segments, ccy }) {
         <div className="text-[10px] text-gray-500 dark:text-slate-400">
           Sales by segment over time {ccy ? "(M " + ccy + ")" : ""}
         </div>
+        <div className="ml-auto flex gap-1 text-[11px]">
+          <button
+            onClick={function () { setMode("abs"); }}
+            className={"px-2 py-0.5 rounded-full border " + (mode === "abs" ? "bg-blue-700 text-white border-blue-700" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-gray-700 dark:text-slate-300")}
+          >Absolute</button>
+          <button
+            onClick={function () { setMode("pct"); }}
+            className={"px-2 py-0.5 rounded-full border " + (mode === "pct" ? "bg-blue-700 text-white border-blue-700" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-gray-700 dark:text-slate-300")}
+          >% of total</button>
+        </div>
       </div>
 
       <svg width="100%" height={H} viewBox={"0 0 " + W + " " + H} role="img" aria-label="Revenue mix">
         <rect x={PAD_L} y={PAD_T} width={innerW} height={innerH} fill="none" stroke={GRID_COLOR} />
         {niceTicks(yMin, yMax, 5).map(function (t, i) {
           const y = yOf(t);
+          const lbl = mode === "pct" ? (t * 100).toFixed(0) + "%" : fmtMoneyShort(t);
           return (
             <g key={"t-" + i}>
               <line x1={PAD_L} y1={y} x2={PAD_L + innerW} y2={y} stroke={TICK_COLOR} />
-              <text x={PAD_L - 6} y={y + 3} fontSize="9" textAnchor="end" fill="#64748b">{fmtMoneyShort(t)}</text>
+              <text x={PAD_L - 6} y={y + 3} fontSize="9" textAnchor="end" fill="#64748b">{lbl}</text>
             </g>
           );
         })}
-        {/* Stacked bars (absolute) */}
+        {/* Stacked bars */}
         {years.map(function (yr, i) {
           const total = yearTotals[i] || 0;
           if (total === 0) return null;
-          let runningTop = yOf(total); /* top of the current segment block */
+          let runningTop = yOf(mode === "pct" ? 1 : total); /* top of stack at this year */
           return (
             <g key={i}>
               {segments.map(function (s, si) {
                 const v = s.sales[i];
                 if (!isFinite(v) || v <= 0) return null;
-                const segH = (v / yMax) * innerH;
+                const display = mode === "pct" ? v / total : v;
+                const segH = (display / yMax) * innerH;
                 const x = xOf(i) - bw / 2;
                 const y = runningTop;
                 runningTop += segH;
@@ -265,18 +307,19 @@ function RevenueMix({ years, segments, ccy }) {
         })}
       </svg>
 
-      {/* Legend with latest absolute + % share */}
+      {/* Legend with latest absolute + % share — values sit right next
+          to the segment name for easy scanning. */}
       <div className="flex flex-col gap-0.5 mt-2 text-[10px] text-gray-600 dark:text-slate-300">
         {segments.map(function (s, si) {
           const v = latestIdx >= 0 ? s.sales[latestIdx] : null;
           const abs = v !== null && isFinite(v) ? fmtMoney(v, ccy) : "--";
           const pct = (v !== null && isFinite(v) && latestTotal > 0) ? ((v / latestTotal) * 100).toFixed(1) + "%" : "--";
           return (
-            <div key={s.name} className="flex items-center gap-1.5">
-              <span className="inline-block w-3 h-3 rounded-sm shrink-0" style={{ background: colorFor(si) }} />
-              <span className="flex-1 truncate">{s.name}</span>
-              <span className="tabular-nums font-semibold text-gray-900 dark:text-slate-100 w-20 text-right">{abs}</span>
-              <span className="tabular-nums text-gray-500 dark:text-slate-400 w-12 text-right">{pct}</span>
+            <div key={s.name} className="flex items-baseline gap-1.5 flex-wrap">
+              <span className="inline-block w-3 h-3 rounded-sm shrink-0 self-center" style={{ background: colorFor(si) }} />
+              <span className="text-gray-700 dark:text-slate-200">{s.name}</span>
+              <span className="tabular-nums font-semibold text-gray-900 dark:text-slate-100">{abs}</span>
+              <span className="tabular-nums text-gray-500 dark:text-slate-400">({pct})</span>
             </div>
           );
         })}
@@ -298,9 +341,10 @@ function MarginLadder({ years, segments }) {
   const innerH = H - PAD_T - PAD_B;
   const n = years.length;
 
-  /* Y-range covers all segment margins. */
+  /* Y-range covers all segment margins. Note: `isFinite(null) === true`
+     in JS (Number(null) === 0), so we explicitly null-check first. */
   const allVals = [];
-  segments.forEach(function (s) { s.margin.forEach(function (v) { if (isFinite(v)) allVals.push(v); }); });
+  segments.forEach(function (s) { s.margin.forEach(function (v) { if (v !== null && v !== undefined && isFinite(v)) allVals.push(v); }); });
   if (allVals.length === 0) {
     return (
       <div className={TILE}>
@@ -335,13 +379,18 @@ function MarginLadder({ years, segments }) {
             </g>
           );
         })}
-        {/* Lines per segment */}
+        {/* Lines per segment. Strict null check — isFinite(null) === true
+           because Number(null) === 0, which would draw the line down to 0%
+           when a segment is discontinued instead of just stopping it. */}
         {segments.map(function (s, si) {
           const segs = [];
           let cur = null;
           for (let i = 0; i < n; i++) {
             const v = s.margin[i];
-            if (!isFinite(v)) { if (cur) { segs.push(cur); cur = null; } continue; }
+            if (v === null || v === undefined || !isFinite(v)) {
+              if (cur) { segs.push(cur); cur = null; }
+              continue;
+            }
             const pt = [xOf(i), yOf(v)];
             if (!cur) cur = { pts: [pt] };
             else cur.pts.push(pt);
@@ -377,7 +426,7 @@ function MarginLadder({ years, segments }) {
 
 /* ============================ Section 3 ================================ */
 
-function SegmentCard({ segment, years, color, ccy, totalSales }) {
+function SegmentCard({ segment, years, color, ccy, totalSales, totalEbit }) {
   const [chartOpen, setChartOpen] = useState(null); /* null | "sales" | "ebit" | "margin" | "roa" */
   const lastSalesIdx = lastFiniteIndex(segment.sales);
   const lastEbitIdx  = lastFiniteIndex(segment.ebit);
@@ -385,11 +434,16 @@ function SegmentCard({ segment, years, color, ccy, totalSales }) {
   const lastEbit  = lastFinite(segment.ebit);
   const lastMgn   = lastFinite(segment.margin);
   const lastRoa   = lastFinite(segment.roa);
-  /* Share of total revenue for the latest year where we have data. */
-  let pctOfTotal = null;
-  if (lastSales !== null && totalSales && lastSalesIdx >= 0 && totalSales[lastSalesIdx]) {
-    pctOfTotal = lastSales / totalSales[lastSalesIdx];
+
+  /* % of total per KPI — total comes from the sum across operating
+     segments at the same year index, computed by the parent. */
+  function pctOf(value, idx, totals) {
+    if (value === null || !isFinite(value) || !totals || idx < 0) return null;
+    const t = totals[idx];
+    return (t && isFinite(t) && t !== 0) ? value / t : null;
   }
+  const salesPct = pctOf(lastSales, lastSalesIdx, totalSales);
+  const ebitPct  = pctOf(lastEbit,  lastEbitIdx,  totalEbit);
 
   function chartFor(kind) {
     if (kind === "sales")  return { values: segment.sales,  fmt: function (v) { return fmtMoney(v, ccy); } };
@@ -409,16 +463,15 @@ function SegmentCard({ segment, years, color, ccy, totalSales }) {
         {segment.isCostCenter && (
           <span className="text-[9px] uppercase tracking-wide text-gray-400 dark:text-slate-500 ml-1">cost center</span>
         )}
-        {pctOfTotal !== null && !segment.isCostCenter && (
-          <span className="ml-auto text-[10px] text-gray-500 dark:text-slate-400">{fmtPct(pctOfTotal, 1)} of total</span>
-        )}
       </div>
 
       <div className="grid grid-cols-2 gap-1 text-[11px]">
         {!segment.isCostCenter && (
-          <KpiRow label="Sales"  value={fmtMoney(lastSales, ccy)} active={chartOpen === "sales"}  onClick={function () { toggle("sales"); }} />
+          <KpiRow label="Sales" value={fmtMoney(lastSales, ccy)} sub={salesPct !== null ? fmtPct(salesPct, 1) + " of total" : null}
+            active={chartOpen === "sales"}  onClick={function () { toggle("sales"); }} />
         )}
-        <KpiRow label="EBIT"   value={fmtMoney(lastEbit, ccy)}   active={chartOpen === "ebit"}   onClick={function () { toggle("ebit"); }} />
+        <KpiRow label="EBIT" value={fmtMoney(lastEbit, ccy)} sub={ebitPct !== null ? fmtPct(ebitPct, 1) + " of total" : null}
+          active={chartOpen === "ebit"} onClick={function () { toggle("ebit"); }} />
         {!segment.isCostCenter && (
           <KpiRow label="Margin" value={lastMgn !== null ? fmtPct(lastMgn, 1) : "--"} active={chartOpen === "margin"} onClick={function () { toggle("margin"); }} />
         )}
@@ -442,16 +495,21 @@ function SegmentCard({ segment, years, color, ccy, totalSales }) {
   );
 }
 
-function KpiRow({ label, value, active, onClick }) {
+function KpiRow({ label, value, sub, active, onClick }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={"flex items-center justify-between px-2 py-1 rounded text-left transition-colors " +
+      className={"flex flex-col px-2 py-1 rounded text-left transition-colors " +
         (active ? "bg-blue-50 dark:bg-blue-950/40 text-gray-900 dark:text-slate-100" : "hover:bg-slate-50 dark:hover:bg-slate-800 text-gray-700 dark:text-slate-300")}
     >
-      <span className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400">{label}</span>
-      <span className="tabular-nums font-semibold">{value}</span>
+      <div className="flex items-center justify-between gap-1">
+        <span className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400">{label}</span>
+        <span className="tabular-nums font-semibold">{value}</span>
+      </div>
+      {sub && (
+        <div className="text-[9px] text-gray-500 dark:text-slate-400 text-right">{sub}</div>
+      )}
     </button>
   );
 }
@@ -478,7 +536,7 @@ function SegmentMiniChart({ years, values, color, formatY, kind }) {
   let cur = null;
   for (let i = 0; i < n; i++) {
     const v = values[i];
-    if (!isFinite(v)) { if (cur) { segs.push(cur); cur = null; } continue; }
+    if (v === null || v === undefined || !isFinite(v)) { if (cur) { segs.push(cur); cur = null; } continue; }
     const pt = [xOf(i), yOf(v)];
     if (!cur) cur = { pts: [pt] };
     else cur.pts.push(pt);
@@ -519,14 +577,23 @@ function SegmentMiniChart({ years, values, color, formatY, kind }) {
 
 /* ============================ Section 4 ================================ */
 
-function GeographyMix({ years, geography }) {
+function GeographyMix({ years, geography, hqCountry }) {
   const W = 760, H = 240, PAD_T = 10, PAD_B = 28, PAD_L = 36, PAD_R = 10;
   const innerW = W - PAD_L - PAD_R;
   const innerH = H - PAD_T - PAD_B;
   const n = years.length;
 
+  /* Filter out the HQ country (e.g. France for Schneider) — it's a
+     subset of its parent region (Western Europe) in most company
+     reporting and would double-count in the stack. The HQ gets its
+     own dedicated tile. Case-insensitive comparison. */
+  const hqLower = (hqCountry || "").toLowerCase().trim();
+  const filtered = geography.regions.filter(function (r) {
+    return !hqLower || (r.name || "").toLowerCase().trim() !== hqLower;
+  });
+
   /* Order regions by latest size, descending. */
-  const ranked = geography.regions.slice().sort(function (a, b) {
+  const ranked = filtered.slice().sort(function (a, b) {
     return (lastFinite(b.values) || 0) - (lastFinite(a.values) || 0);
   });
 
@@ -591,6 +658,56 @@ function GeographyMix({ years, geography }) {
             </span>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+/* Compact tile showing the company's home country share — both the
+ * latest value and a sparkline of how it has trended. Pulled out from
+ * the stacked area chart since it's typically a subset of its parent
+ * region (e.g. France inside Western Europe) and double-counts there. */
+function HomeMarketTile({ years, geography, hqCountry }) {
+  const hqLower = (hqCountry || "").toLowerCase().trim();
+  const region = hqLower ? geography.regions.find(function (r) { return (r.name || "").toLowerCase().trim() === hqLower; }) : null;
+  if (!region) {
+    return (
+      <div className={TILE}>
+        <div className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-1">Home Market</div>
+        <div className="text-[11px] text-gray-400 dark:text-slate-500 italic">
+          {hqCountry ? "No '" + hqCountry + "' line in geography paste." : "Country not set on company."}
+        </div>
+      </div>
+    );
+  }
+  const lastIdx = lastFiniteIndex(region.values);
+  const refIdx = lastIdx > 0 ? Math.max(0, lastIdx - 5) : 0;
+  const cur = lastIdx >= 0 ? region.values[lastIdx] : null;
+  const ref = refIdx >= 0 ? region.values[refIdx] : null;
+  const delta = (cur !== null && ref !== null && isFinite(cur) && isFinite(ref)) ? cur - ref : null;
+  const dColor = delta === null ? "#94a3b8" : delta >= 0.005 ? "#16a34a" : delta <= -0.005 ? "#dc2626" : "#94a3b8";
+
+  return (
+    <div className={TILE}>
+      <div className="flex items-baseline gap-2 mb-2">
+        <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">Home Market</div>
+        <div className="text-[10px] text-gray-500 dark:text-slate-400">{region.name}</div>
+      </div>
+      <div className="flex items-baseline gap-3">
+        <div className="text-2xl font-bold tabular-nums text-gray-900 dark:text-slate-100">
+          {cur !== null ? (cur * 100).toFixed(1) + "%" : "--"}
+        </div>
+        {delta !== null && (
+          <div className="text-[11px] tabular-nums" style={{ color: dColor }}>
+            {(delta >= 0 ? "+" : "") + (delta * 100).toFixed(1) + "pp"}
+            <span className="text-[9px] text-gray-400 dark:text-slate-500 ml-1 italic">
+              vs {refIdx >= 0 ? years[refIdx] : ""}
+            </span>
+          </div>
+        )}
+      </div>
+      <div className="text-[9px] text-gray-400 dark:text-slate-500 italic mt-0.5">
+        of total revenue · {lastIdx >= 0 ? years[lastIdx] : ""}
       </div>
     </div>
   );
