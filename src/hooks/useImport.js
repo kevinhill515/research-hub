@@ -6,6 +6,7 @@ import { pctToDecimal } from '../utils/format.js';
 import { parseDashboardUpload } from '../utils/dashboardParser.js';
 import { parseRatioPaste } from '../utils/ratioParser.js';
 import { parseSegmentsPaste } from '../utils/segmentsParser.js';
+import { parseEpsRevisionsPaste } from '../utils/epsRevisionsParser.js';
 import { useAlert } from '../components/ui/DialogProvider.jsx';
 import { REP_ACCOUNTS } from '../constants/index.js';
 
@@ -35,6 +36,7 @@ export function useImport(){
   const [ratioImportText,setRatioImportText]=useState("");
   const [financialsImportText,setFinancialsImportText]=useState("");
   const [segmentsImportText,setSegmentsImportText]=useState("");
+  const [epsRevImportText,setEpsRevImportText]=useState("");
   const [perfPortTargets,setPerfPortTargets]=useState(["FIN"]);
   const [perfText,setPerfText]=useState("");
   const [portTab,setPortTab]=useState("overlap");
@@ -560,6 +562,87 @@ export function useImport(){
     }, 50);
   }
 
+  /* Bulk EPS Revisions import — paste a sheet with one row per company.
+     Header row 1 has dates in E1:Q1; each data row has ticker, name,
+     and 56 monthly EPS estimate values across 4 horizons. Matches
+     companies by ticker first (uppercase exact), then falls back to
+     the same fuzzy-name match used by the Tx import. */
+  function applyEpsRevImport(){
+    if(!epsRevImportText.trim())return;
+    var parsed = parseEpsRevisionsPaste(epsRevImportText);
+    if(parsed.error){ alertFn("Couldn't parse EPS revisions: " + parsed.error); return; }
+    if(!parsed.rows || parsed.rows.length === 0){ alertFn("No data rows found in the paste."); return; }
+
+    function normalize(n){return(n||"").toLowerCase().replace(/\b(corporation|incorporated|international|holdings|holding|company|limited|group|ordinary|preferred|shares|class|depositary|depository|receipts|receipt|common|stock)\b/g,"").replace(/\b(co\.|inc\.|ltd\.|llc|plc|sa|ag|nv|se|co|inc|ltd|corp|gmbh|kgaa|ab|asa|oyj|spa|srl|bv|ord|com|adr|ads|gdr|pref|reit|shs|npv|cdi|cva|units|unit|jsc|pjsc|ojsc|oao|sab|bhd|tbk)\b/g,"").replace(/[.,&'()\-\/]/g," ").replace(/\s+/g," ").trim();}
+
+    /* Build a single map by id of new epsRevisions to apply. */
+    var updatesById = {};
+    var matchedCount = 0;
+    var unmatched = [];
+    var asOf = new Date().toISOString();
+
+    parsed.rows.forEach(function(row){
+      var tk = (row.ticker || "").toUpperCase().trim();
+      var nm = (row.name || "").toLowerCase().trim();
+      var nmNorm = normalize(row.name);
+      var match = null;
+      if(tk){
+        companies.forEach(function(c){
+          if(match) return;
+          (c.tickers || []).forEach(function(t){
+            if(match) return;
+            if((t.ticker||"").toUpperCase().trim() === tk) match = c;
+          });
+        });
+      }
+      if(!match && nm){
+        companies.forEach(function(c){
+          if(match) return;
+          var cn = (c.name||"").toLowerCase().trim();
+          var un = (c.usTickerName||"").toLowerCase().trim();
+          if(cn===nm || un===nm) { match = c; return; }
+          if(normalize(c.name)===nmNorm || (un && normalize(c.usTickerName)===nmNorm)) { match = c; return; }
+        });
+      }
+      if(!match){
+        unmatched.push(row.ticker || row.name || "(unknown)");
+        return;
+      }
+      updatesById[match.id] = {
+        asOf: asOf,
+        dates: parsed.dates,
+        series: row.series,
+      };
+      matchedCount++;
+    });
+
+    if(matchedCount === 0){
+      alertFn("No companies matched. Check ticker spellings or company names. Unmatched: " + unmatched.slice(0,10).join(", "));
+      return;
+    }
+
+    setCompanies(function(cs){
+      return cs.map(function(c){
+        var u = updatesById[c.id];
+        if(!u) return c;
+        return Object.assign({}, c, { epsRevisions: u });
+      });
+    });
+
+    setTimeout(function(){
+      var msg = "Imported EPS revisions for " + matchedCount + " companies.";
+      if(unmatched.length > 0){
+        msg += " Unmatched (" + unmatched.length + "): " + unmatched.slice(0,10).join(", ");
+        if(unmatched.length > 10) msg += " …";
+      }
+      if(parsed.dropped > 0){
+        msg += "  (" + parsed.dropped + " row(s) skipped — no ticker or name)";
+      }
+      alertFn(msg);
+      setEpsRevImportText("");
+    }, 50);
+  }
+
   function exportAll(){var txt=JSON.stringify({companies,library:saved,exportedAt:new Date().toISOString()},null,2);try{var el=document.createElement("textarea");el.value=txt;el.style.position="fixed";el.style.opacity="0";document.body.appendChild(el);el.focus();el.select();document.execCommand("copy");document.body.removeChild(el);setCopied("exportall");setTimeout(function(){setCopied(null);},2000);}catch(e){setImportText(txt);setShowDataPanel(true);}}
 
   return {
@@ -573,7 +656,8 @@ export function useImport(){
     ratioImportText,setRatioImportText,
     financialsImportText,setFinancialsImportText,
     segmentsImportText,setSegmentsImportText,
-    applyFxImport,applyRepImport,applyTxImport,applyPerfImport,applyCalImport,applyWeightsImport,applyValImport,applyEstImport,applyMetricsImport,applyBenchmarkImport,applyDashboardImport,applyRatioImport,applyFinancialsImport,applySegmentsImport,
+    epsRevImportText,setEpsRevImportText,
+    applyFxImport,applyRepImport,applyTxImport,applyPerfImport,applyCalImport,applyWeightsImport,applyValImport,applyEstImport,applyMetricsImport,applyBenchmarkImport,applyDashboardImport,applyRatioImport,applyFinancialsImport,applySegmentsImport,applyEpsRevImport,
     importAll,exportAll
   };
 }

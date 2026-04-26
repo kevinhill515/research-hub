@@ -22,6 +22,7 @@ import RatiosTab from './RatiosTab.jsx';
 import FinancialsTab from './FinancialsTab.jsx';
 import CompanyDashboard from './CompanyDashboard.jsx';
 import SegmentsTab from './SegmentsTab.jsx';
+import EpsRevisionsTab from './EpsRevisionsTab.jsx';
 
 const INP = "text-sm px-2 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:outline-none";
 const CARD = "bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 px-3.5 py-3 mb-2";
@@ -493,6 +494,10 @@ export function CompanyDetail(props){
           {/* SEGMENTS TAB — chart-first view of business segments and
               geography from a one-time uploaded template. */}
           {coView==="segments"&&<SegmentsTab company={selCo}/>}
+
+          {/* E[EPS] REVISIONS TAB — monthly EPS estimate revisions
+              charted as line trend + % change bar comparison. */}
+          {coView==="epsrev"&&<EpsRevisionsTab company={selCo}/>}
 
           {/* METRICS TAB — displays everything under selCo.metrics in a
               grouped layout. Read-only; populated by the daily FactSet
