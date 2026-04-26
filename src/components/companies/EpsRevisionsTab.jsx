@@ -228,17 +228,42 @@ function RevisionsLineChart({ dates, series }) {
             return <text key={i} x={xOf(i)} y={H - 10} fontSize="9" textAnchor="middle" fill="#64748b">{fmtDateShort(d)}</text>;
           })}
         </svg>
-        {/* Latest values panel — vertical list to the right of the chart */}
-        <div className="shrink-0 flex flex-col justify-center gap-1.5 pl-2 pr-1 border-l border-slate-100 dark:border-slate-800" style={{ minWidth: 100 }}>
-          <div className="text-[9px] uppercase tracking-wide text-gray-400 dark:text-slate-500">Latest</div>
-          {series.map(function (s) {
+        {/* Latest values panel — vertical list to the right of the chart.
+            Each forward FY also shows year-over-year EPS growth vs the
+            prior FY's latest estimate. FY0 has no prior so no y/y. */}
+        <div className="shrink-0 flex flex-col justify-center gap-1.5 pl-2 pr-1 border-l border-slate-100 dark:border-slate-800" style={{ minWidth: 170 }}>
+          <div className="grid grid-cols-[auto_auto_auto_auto] gap-x-2 items-baseline text-[9px] uppercase tracking-wide text-gray-400 dark:text-slate-500">
+            <span></span>
+            <span></span>
+            <span className="text-right">Latest</span>
+            <span className="text-right">y/y</span>
+          </div>
+          {series.map(function (s, idx) {
             const last = s.monthly[s.monthly.length - 1];
             const color = HORIZON_COLORS[s.horizon] || "#64748b";
+            /* y/y growth = (this FY latest − prior FY latest) / prior FY latest.
+               Only meaningful for forward horizons (FY+1, +2, +3). */
+            let yoy = null;
+            if (idx > 0) {
+              const prev = series[idx - 1];
+              const prevLast = prev.monthly[prev.monthly.length - 1];
+              if (last !== null && isFinite(last) &&
+                  prevLast !== null && isFinite(prevLast) && prevLast !== 0) {
+                yoy = (last - prevLast) / Math.abs(prevLast);
+              }
+            }
+            const yoyColor = yoy === null ? "#94a3b8"
+              : yoy > 0.0025 ? "#16a34a"
+              : yoy < -0.0025 ? "#dc2626"
+              : "#64748b";
             return (
-              <div key={s.horizon} className="flex items-baseline gap-1.5 text-[11px]">
+              <div key={s.horizon} className="grid grid-cols-[auto_auto_auto_auto] gap-x-2 items-baseline text-[11px]">
                 <span className="inline-block w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: color }} />
                 <span className="text-gray-600 dark:text-slate-400">{s.label}</span>
-                <span className="tabular-nums font-semibold ml-auto" style={{ color: color }}>{fmtVal(last, 2)}</span>
+                <span className="tabular-nums font-semibold text-right" style={{ color: color }}>{fmtVal(last, 2)}</span>
+                <span className="tabular-nums text-right text-[10px]" style={{ color: yoyColor }}>
+                  {yoy === null ? "" : (yoy >= 0 ? "+" : "") + (yoy * 100).toFixed(1) + "%"}
+                </span>
               </div>
             );
           })}
