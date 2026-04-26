@@ -195,6 +195,50 @@ describe("parseSegmentsPaste", function () {
     expect(r.segments[1].roa).toEqual([0.08, 0.085, 0.09]);
   });
 
+  it("parses standardized geography section (Americas/Europe/Asia-Pac/Africa-ME)", function () {
+    const text = [
+      "Schneider Electric SE",
+      "\tFY 2023\tFY 2024\tFY 2025",
+      "\t12/31/2023\t12/31/2024\t12/31/2025",
+      "Revenue by Geography",
+      "Revenue\t1000\t1100\t1200",
+      "France\t6.0%\t5.8%\t5.6%",
+      "United States\t27.9%\t29.4%\t34.4%",
+      ">",
+      "Americas\t34.8%\t36.8%\t41.1%",
+      "U.S.\t27.9%\t29.4%\t34.4%",
+      "Canada\t2.7%\t2.6%\t2.3%",
+      "Europe\t27.3%\t27.9%\t26.2%",
+      "U.K.\t4.1%\t3.9%\t3.9%",
+      "France\t5.8%\t5.8%\t5.6%",
+      "Asia/Pac\t30.3%\t28.5%\t26.1%",
+      "Japan\t4.3%\t3.8%\t3.4%",
+      "China\t14.8%\t13.3%\t11.2%",
+      "Africa/M.E.\t7.7%\t6.7%\t6.5%",
+    ].join("\n");
+    const r = parseSegmentsPaste(text);
+    expect(r.error).toBeUndefined();
+    /* FactSet geo still parsed normally */
+    expect(r.geography.regions.map(function (g) { return g.name; }))
+      .toContain("France");
+    expect(r.geography.regions.map(function (g) { return g.name; }))
+      .toContain("United States");
+    /* Standardized geo now also populated */
+    expect(r.geography.standardized).toBeDefined();
+    const stdRegions = r.geography.standardized.regions;
+    expect(stdRegions.map(function (rg) { return rg.name; }))
+      .toEqual(["Americas", "Europe", "Asia/Pac", "Africa/M.E."]);
+    /* Children attached to the right region */
+    const americas = stdRegions[0];
+    expect(americas.values[2]).toBeCloseTo(0.411, 4);
+    expect(americas.countries.map(function (c) { return c.name; }))
+      .toEqual(["U.S.", "Canada"]);
+    expect(americas.countries[0].values[2]).toBeCloseTo(0.344, 4);
+    /* Africa/M.E. has no countries listed — empty array, not error */
+    const africa = stdRegions[3];
+    expect(africa.countries).toEqual([]);
+  });
+
   it("ignores empty placeholder sub-rows below a populated segment (Landis+Gyr)", function () {
     /* Single-segment company template: one populated segment followed
        by empty Sales/EBIT/Margin/ROA placeholder rows for a phantom

@@ -265,6 +265,16 @@ export default function SegmentsTab({ company }) {
           </div>
         </div>
       )}
+
+      {/* SECTION 5 — Standardized Geography. Canonical 4-region rollup
+          (Americas / Europe / Asia-Pac / Africa-ME) with sub-country
+          detail. Same buckets across companies → enables portfolio-
+          weighted regional aggregation. */}
+      {data.geography && data.geography.standardized && data.geography.standardized.regions && data.geography.standardized.regions.length > 0 && (
+        <div className="mt-3">
+          <StandardizedGeography years={data.years} stdGeo={data.geography.standardized} endDates={data.endDates} />
+        </div>
+      )}
     </div>
   );
 }
@@ -828,6 +838,140 @@ function GeographyMix({ years, geography }) {
  * latest value and a sparkline of how it has trended. Pulled out from
  * the stacked area chart since it's typically a subset of its parent
  * region (e.g. France inside Western Europe) and double-counts there. */
+/* Standardized geography tile — region rows with click-to-expand
+ * country detail. Same buckets across companies, so this is the view
+ * to use for portfolio-weighted regional aggregation. Bars at left;
+ * latest value + 5Y delta at right. Region rows are bold; expanded
+ * country rows are indented and lighter. */
+function StandardizedGeography({ years, stdGeo, endDates }) {
+  const [expanded, setExpanded] = useState(function () { return new Set(); });
+
+  /* Latest year across regions (may differ from FactSet revenue's last
+     year if user's standardized section was added later than the
+     FactSet section). */
+  let lastIdx = -1;
+  stdGeo.regions.forEach(function (r) {
+    const i = lastFiniteIndex(r.values || []);
+    if (i > lastIdx) lastIdx = i;
+  });
+  const refIdx = lastIdx > 0 ? Math.max(0, lastIdx - 5) : 0;
+
+  /* Sum of region shares for latest year — useful sanity check (should
+     be ~100% for clean reporting; some companies have incomplete data). */
+  let sum = 0;
+  stdGeo.regions.forEach(function (r) {
+    const v = lastIdx >= 0 ? r.values[lastIdx] : null;
+    if (v !== null && v !== undefined && isFinite(v)) sum += v;
+  });
+
+  function toggle(name) {
+    setExpanded(function (prev) {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }
+
+  return (
+    <div className={TILE}>
+      <div className="flex items-baseline gap-2 mb-2 flex-wrap">
+        <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">Standardized Geography</div>
+        <div className="text-[10px] text-gray-500 dark:text-slate-400">
+          Canonical regions for portfolio-weighted comparison · {yearLabel(years, endDates, lastIdx)}
+        </div>
+        {sum > 0 && (
+          <div className="ml-auto text-[10px] text-gray-400 dark:text-slate-500 italic">
+            Σ regions = <span className="tabular-nums font-semibold text-gray-700 dark:text-slate-300">{(sum * 100).toFixed(1) + "%"}</span>
+            {sum < 0.99 && <span className="ml-1 text-amber-600 dark:text-amber-400">(incomplete)</span>}
+          </div>
+        )}
+      </div>
+
+      {/* Header for the rows */}
+      <div className="grid gap-2 px-1 pb-1 border-b border-slate-200 dark:border-slate-700 text-[9px] uppercase tracking-wide text-gray-400 dark:text-slate-500"
+        style={{ gridTemplateColumns: "minmax(140px, 1.5fr) 2fr 70px 60px" }}>
+        <div>Region</div>
+        <div></div>
+        <div className="text-right">{yearLabel(years, endDates, lastIdx)}</div>
+        <div className="text-right">vs {yearLabel(years, endDates, refIdx)}</div>
+      </div>
+
+      {/* Region rows + expandable countries. Bar widths scale to 100%
+         (the conceptual whole) so visual size compares directly across
+         regions. */}
+      <div className="space-y-0.5 mt-1">
+        {stdGeo.regions.map(function (r, ri) {
+          const cur = lastIdx >= 0 ? r.values[lastIdx] : null;
+          const ref = refIdx >= 0 ? r.values[refIdx] : null;
+          const curOk = cur !== null && cur !== undefined && isFinite(cur);
+          const refOk = ref !== null && ref !== undefined && isFinite(ref);
+          const delta = curOk && refOk ? cur - ref : null;
+          const dColor = delta === null ? "#94a3b8" : delta >= 0.005 ? "#16a34a" : delta <= -0.005 ? "#dc2626" : "#94a3b8";
+          const isOpen = expanded.has(r.name);
+          const hasCountries = r.countries && r.countries.length > 0;
+          const w = curOk ? cur * 100 : 0;
+          return (
+            <div key={r.name}>
+              <div className={"grid gap-2 px-1 py-1 text-[11px] items-center rounded " +
+                  (hasCountries ? "cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800" : "")}
+                style={{ gridTemplateColumns: "minmax(140px, 1.5fr) 2fr 70px 60px" }}
+                onClick={hasCountries ? function () { toggle(r.name); } : undefined}>
+                <span className="font-semibold text-gray-900 dark:text-slate-100 flex items-center gap-1">
+                  {hasCountries && (
+                    <span className="inline-block w-3 text-gray-400 dark:text-slate-500">{isOpen ? "▾" : "▸"}</span>
+                  )}
+                  {!hasCountries && <span className="inline-block w-3" />}
+                  <span className="inline-block w-3 h-3 rounded-sm shrink-0" style={{ background: colorFor(ri) }} />
+                  {r.name}
+                </span>
+                <div className="h-3 bg-slate-100 dark:bg-slate-800 rounded relative overflow-hidden">
+                  <div className="absolute left-0 top-0 bottom-0 rounded" style={{ width: w + "%", background: colorFor(ri), opacity: 0.85 }} />
+                </div>
+                <span className="tabular-nums font-semibold text-right text-gray-900 dark:text-slate-100">
+                  {curOk ? (cur * 100).toFixed(1) + "%" : "--"}
+                </span>
+                <span className="tabular-nums text-right text-[10px]" style={{ color: dColor }}>
+                  {delta !== null ? (delta >= 0 ? "+" : "") + (delta * 100).toFixed(1) + "pp" : ""}
+                </span>
+              </div>
+              {isOpen && hasCountries && (
+                <div className="ml-6 space-y-0.5 mb-1">
+                  {r.countries.map(function (c) {
+                    const ccur = lastIdx >= 0 ? c.values[lastIdx] : null;
+                    const cref = refIdx >= 0 ? c.values[refIdx] : null;
+                    const ccurOk = ccur !== null && ccur !== undefined && isFinite(ccur);
+                    const crefOk = cref !== null && cref !== undefined && isFinite(cref);
+                    const cdelta = ccurOk && crefOk ? ccur - cref : null;
+                    const cdColor = cdelta === null ? "#94a3b8" : cdelta >= 0.0025 ? "#16a34a" : cdelta <= -0.0025 ? "#dc2626" : "#94a3b8";
+                    /* Country bars use the region's color at lower opacity */
+                    const cw = ccurOk ? ccur * 100 : 0;
+                    return (
+                      <div key={c.name} className="grid gap-2 px-1 py-0.5 text-[10px] items-center"
+                        style={{ gridTemplateColumns: "minmax(140px, 1.5fr) 2fr 70px 60px" }}>
+                        <span className="text-gray-600 dark:text-slate-400 pl-3">{c.name}</span>
+                        <div className="h-2 bg-slate-50 dark:bg-slate-900 rounded relative overflow-hidden">
+                          <div className="absolute left-0 top-0 bottom-0 rounded" style={{ width: cw + "%", background: colorFor(ri), opacity: 0.5 }} />
+                        </div>
+                        <span className="tabular-nums text-right text-gray-700 dark:text-slate-300">
+                          {ccurOk ? (ccur * 100).toFixed(1) + "%" : "--"}
+                        </span>
+                        <span className="tabular-nums text-right" style={{ color: cdColor }}>
+                          {cdelta !== null ? (cdelta >= 0 ? "+" : "") + (cdelta * 100).toFixed(1) + "pp" : ""}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /* Pick the best year-label for column index `i`: the actual end date
  * (e.g. "Mar 2025") if endDates is populated, else the bare year. */
 function yearLabel(years, endDates, i) {

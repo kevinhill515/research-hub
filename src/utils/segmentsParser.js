@@ -303,6 +303,40 @@ export function parseSegmentsPaste(text) {
       continue;
     }
 
+    /* Standardized geography section: a row whose name is one of the
+       UNIQUE standardized region names ("Americas", "Asia/Pac",
+       "Africa/M.E.") with values transitions us into stdgeo mode.
+       Once in stdgeo, all known std region names (including the
+       ambiguous "Europe" and slash-less "Asia Pacific") count as a
+       new region grouping. Templates put this section AFTER the
+       FactSet-reported geography, often separated by a ">" row. */
+    if ((mode === "geo" || mode === "stdgeo") && hasNumber &&
+        (isStdTrigger(name) || (mode === "stdgeo" && isStdRegion(name)))) {
+      mode = "stdgeo";
+      if (!geography.standardized) geography.standardized = { regions: [] };
+      geography.standardized.regions.push({
+        name: name,
+        values: normalizePctSeries(vals, anyPct),
+        countries: [],
+      });
+      continue;
+    }
+
+    if (mode === "stdgeo") {
+      /* In stdgeo mode, any row with values that wasn't classified as a
+         std region is a country attached to the most recent region. */
+      if (!hasNumber) continue;
+      const regs = geography.standardized && geography.standardized.regions;
+      const last = regs && regs.length > 0 ? regs[regs.length - 1] : null;
+      if (last) {
+        last.countries.push({
+          name: name,
+          values: normalizePctSeries(vals, anyPct),
+        });
+      }
+      continue;
+    }
+
     /* mode === "geo" */
     if (/^revenue$/i.test(name)) {
       geography.revenue = vals;
@@ -409,6 +443,39 @@ function subRowKind(name) {
 }
 
 function isFiniteV(v) { return v !== null && v !== undefined && isFinite(v); }
+
+/* Standardized region names — the canonical buckets in the standardized
+ * geography section. Two tiers:
+ *
+ *   STD_TRIGGER: names that ONLY appear in the standardized section,
+ *     never in FactSet's company-reported geo (e.g. "Americas",
+ *     "Asia/Pac" with the slash, "Africa/M.E." with the punctuation).
+ *     Seeing one of these in geo mode switches us to stdgeo.
+ *
+ *   STD_REGION: all standardized region names including ambiguous ones
+ *     ("Europe", "Asia Pacific" without slash). Used INSIDE stdgeo mode
+ *     to decide whether a row starts a new region grouping or is a
+ *     country attached to the most recent region.
+ */
+const STD_TRIGGER = [
+  "americas",
+  "asia/pac", "asia/pacific",
+  "africa/m.e.", "africa/me", "africa-me",
+];
+const STD_REGION = STD_TRIGGER.concat([
+  "europe",
+  "asia pac", "asia pacific", "asia-pac", "asiapac",
+  "africa m.e.", "africa me", "middle east", "africa", "emea",
+]);
+
+function isStdTrigger(name) {
+  const t = (name || "").toLowerCase().replace(/\s+/g, " ").trim();
+  return STD_TRIGGER.indexOf(t) >= 0;
+}
+function isStdRegion(name) {
+  const t = (name || "").toLowerCase().replace(/\s+/g, " ").trim();
+  return STD_REGION.indexOf(t) >= 0;
+}
 
 /* Normalize a margin/ROA series so the stored values are always decimal
  * (0.21 = 21%). If the paste row had a % suffix anywhere it's already
