@@ -444,29 +444,19 @@ function subRowKind(name) {
 
 function isFiniteV(v) { return v !== null && v !== undefined && isFinite(v); }
 
-/* Standardized region names — the canonical buckets in the standardized
- * geography section. Two tiers:
+/* Standardized region names — must match the EXACT canonical names the
+ * upload template uses. Variants (e.g. FactSet's "Asia/Pacific" or
+ * "Asia Pacific") deliberately do NOT match, so the FactSet-reported
+ * geo doesn't accidentally get pulled into the standardized section
+ * with a different name key (which would then sum twice when paired
+ * with the actual standardized "Asia/Pac" row).
  *
- *   STD_TRIGGER: names that ONLY appear in the standardized section,
- *     never in FactSet's company-reported geo (e.g. "Americas",
- *     "Asia/Pac" with the slash, "Africa/M.E." with the punctuation).
- *     Seeing one of these in geo mode switches us to stdgeo.
- *
- *   STD_REGION: all standardized region names including ambiguous ones
- *     ("Europe", "Asia Pacific" without slash). Used INSIDE stdgeo mode
- *     to decide whether a row starts a new region grouping or is a
- *     country attached to the most recent region.
- */
-const STD_TRIGGER = [
-  "americas",
-  "asia/pac", "asia/pacific",
-  "africa/m.e.", "africa/me", "africa-me",
-];
-const STD_REGION = STD_TRIGGER.concat([
-  "europe",
-  "asia pac", "asia pacific", "asia-pac", "asiapac",
-  "africa m.e.", "africa me", "middle east", "africa", "emea",
-]);
+ * STD_TRIGGER: any of these in geo mode switches us to stdgeo.
+ * STD_REGION: the full set of names that count as a new region row
+ * once we're already in stdgeo (adds "Europe" since it's ambiguous
+ * from FactSet but unique once we know we're in std-section). */
+const STD_TRIGGER = ["americas", "asia/pac", "africa/m.e."];
+const STD_REGION = STD_TRIGGER.concat(["europe"]);
 
 function isStdTrigger(name) {
   const t = (name || "").toLowerCase().replace(/\s+/g, " ").trim();
