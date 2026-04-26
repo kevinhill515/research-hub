@@ -832,22 +832,43 @@ function HomeMarketTile({ years, geography, hqCountry }) {
 }
 
 function GeographySnapshot({ years, geography }) {
-  /* Latest year, sorted by size desc, with 5Y delta. */
-  const lastIdx = lastFiniteIndex(geography.revenue || []);
+  /* Latest year, sorted by size desc, with 5Y delta. We use the latest
+     year for which ANY region has a value (not just the revenue total)
+     so a region that started reporting recently (e.g. Hitachi's
+     "Other Regions" appearing in 2022+) still shows up at its current
+     share, even if the revenue total is computed from earlier years. */
+  let lastIdx = lastFiniteIndex(geography.revenue || []);
+  /* Fallback / extension: walk forward across all regions to find the
+     true latest year any region has data. */
+  geography.regions.forEach(function (r) {
+    const idx = lastFiniteIndex(r.values || []);
+    if (idx > lastIdx) lastIdx = idx;
+  });
   const refIdx = lastIdx > 0 ? Math.max(0, lastIdx - 5) : 0;
+
+  /* Show every parsed region (don't filter on null cur) — if a region
+     was reported but doesn't have a value for the latest year, render
+     it with "--" so the user can still see it was parsed. Sort by cur
+     desc, with null cur regions last. */
   const ranked = geography.regions.slice().map(function (r) {
     const cur = lastIdx >= 0 ? r.values[lastIdx] : null;
     const ref = refIdx >= 0 ? r.values[refIdx] : null;
+    const curIsFinite = cur !== null && cur !== undefined && isFinite(cur);
     return {
       name: r.name,
-      cur: cur,
+      cur: curIsFinite ? cur : null,
       ref: ref,
-      delta: (cur !== null && ref !== null && isFinite(cur) && isFinite(ref)) ? cur - ref : null,
+      delta: (curIsFinite && ref !== null && ref !== undefined && isFinite(ref)) ? cur - ref : null,
     };
-  }).filter(function (r) { return r.cur !== null; });
-  ranked.sort(function (a, b) { return (b.cur || 0) - (a.cur || 0); });
+  });
+  ranked.sort(function (a, b) {
+    const av = a.cur === null ? -Infinity : a.cur;
+    const bv = b.cur === null ? -Infinity : b.cur;
+    return bv - av;
+  });
 
-  const max = ranked.length > 0 ? ranked[0].cur : 1;
+  const finiteMax = ranked.reduce(function (m, r) { return r.cur !== null && r.cur > m ? r.cur : m; }, 0);
+  const max = finiteMax > 0 ? finiteMax : 1;
 
   return (
     <div className={TILE}>
@@ -862,7 +883,7 @@ function GeographySnapshot({ years, geography }) {
       </div>
       <div className="space-y-1.5">
         {ranked.map(function (r, ri) {
-          const w = (r.cur / max) * 100;
+          const w = r.cur !== null ? (r.cur / max) * 100 : 0;
           const dColor = r.delta === null ? "#94a3b8" : r.delta >= 0.005 ? "#16a34a" : r.delta <= -0.005 ? "#dc2626" : "#94a3b8";
           return (
             <div key={r.name} className="flex items-center gap-2 text-[11px]">
@@ -870,12 +891,12 @@ function GeographySnapshot({ years, geography }) {
               <div className="flex-1 h-3 bg-slate-100 dark:bg-slate-800 rounded relative overflow-hidden">
                 <div className="absolute left-0 top-0 bottom-0 rounded" style={{ width: w + "%", background: colorFor(ri), opacity: 0.85 }} />
               </div>
-              <span className="tabular-nums font-semibold w-14 text-right text-gray-900 dark:text-slate-100">{(r.cur * 100).toFixed(1) + "%"}</span>
-              {r.delta !== null && (
-                <span className="tabular-nums w-12 text-right text-[10px]" style={{ color: dColor }}>
-                  {(r.delta >= 0 ? "+" : "") + (r.delta * 100).toFixed(1) + "pp"}
-                </span>
-              )}
+              <span className="tabular-nums font-semibold w-14 text-right text-gray-900 dark:text-slate-100">
+                {r.cur !== null ? (r.cur * 100).toFixed(1) + "%" : "--"}
+              </span>
+              <span className="tabular-nums w-12 text-right text-[10px]" style={{ color: dColor }}>
+                {r.delta !== null ? (r.delta >= 0 ? "+" : "") + (r.delta * 100).toFixed(1) + "pp" : ""}
+              </span>
             </div>
           );
         })}
