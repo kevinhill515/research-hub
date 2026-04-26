@@ -527,6 +527,8 @@ export function useImport(){
 
     var next = {
       years: parsed.years,
+      endDates: parsed.endDates,
+      fiscalYearEndMonth: parsed.fiscalYearEndMonth,
       segments: parsed.segments,
       geography: parsed.geography,
       parsedTotal: parsed.parsedTotal,

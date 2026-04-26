@@ -85,8 +85,8 @@ function MiniSpark({ values, estimate }) {
 function fmtCell(v) {
   if (v === null || v === undefined || !isFinite(v)) return "";
   const a = Math.abs(v);
-  if (a >= 10000) return v.toLocaleString(undefined, { maximumFractionDigits: 0 });
-  if (a >= 100)   return v.toFixed(1);
+  if (a >= 1000)  return v.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  if (a >= 100)   return v.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   if (a >= 10)    return v.toFixed(2);
   return v.toFixed(2);
 }

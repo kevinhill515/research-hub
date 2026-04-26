@@ -60,19 +60,35 @@ function niceTicks(min, max, target) {
   return out;
 }
 
+/* Format a money value (in millions of reporting currency) with
+ * appropriate scale + comma thousands. Examples:
+ *   19,520 EUR-millions  → "19.5 B EUR"
+ *   9,774,930 JPY-millions → "9.77 T JPY"
+ *   880 USD-millions      → "880 M USD"
+ *   12,345 USD-millions   → "12.3 B USD"  (also rendered with commas
+ *                                          when value > 100k mil but in
+ *                                          M scale: "12,345 M USD") */
 function fmtMoney(v, ccy) {
   if (v === null || v === undefined || !isFinite(v)) return "--";
   const a = Math.abs(v);
-  const suffix = ccy ? "M" + ccy : "M";
-  if (a >= 1000) return (v / 1000).toFixed(1) + "B" + (ccy || "");
-  return v.toFixed(0) + " " + suffix;
+  const tag = ccy ? " " + ccy : "";
+  if (a >= 1000000) {
+    /* Trillions of base units (M of M) */
+    return (v / 1000000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " T" + tag;
+  }
+  if (a >= 1000) {
+    return (v / 1000).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 }) + " B" + tag;
+  }
+  return v.toLocaleString(undefined, { maximumFractionDigits: 0 }) + " M" + tag;
 }
 
+/* Short axis-label form — commas, no currency tag, scaled for axis ticks. */
 function fmtMoneyShort(v) {
   if (v === null || v === undefined || !isFinite(v)) return "--";
   const a = Math.abs(v);
-  if (a >= 1000) return (v / 1000).toFixed(1) + "k";
-  return v.toFixed(0);
+  if (a >= 1000000) return (v / 1000000).toFixed(1) + "T";
+  if (a >= 1000)    return (v / 1000).toFixed(0) + "B";
+  return v.toLocaleString(undefined, { maximumFractionDigits: 0 });
 }
 
 function fmtPct(v, dp) {
@@ -530,10 +546,8 @@ function TotalCard({ years, totalSales, totalEbit, totalMargin, ccy, parsedTotal
           active={chartOpen === "ebit"}   onClick={function () { toggle("ebit"); }} />
         <KpiRow label="Margin" value={lastMgn !== null ? fmtPct(lastMgn, 1) : "--"}
           active={chartOpen === "margin"} onClick={function () { toggle("margin"); }} />
-        {parsedTotal && lastRoa !== null && (
-          <KpiRow label="ROA"  value={fmtPct(lastRoa, 1)}
-            active={chartOpen === "roa"}  onClick={function () { toggle("roa"); }} />
-        )}
+        <KpiRow label="ROA" value={lastRoa !== null ? fmtPct(lastRoa, 1) : "--"}
+          active={chartOpen === "roa"}  onClick={function () { toggle("roa"); }} />
       </div>
       {chartOpen && chartFor(chartOpen) && chartFor(chartOpen).values && (
         <div className="mt-2 border-t border-slate-100 dark:border-slate-800 pt-2">

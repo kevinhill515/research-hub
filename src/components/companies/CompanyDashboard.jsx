@@ -823,6 +823,7 @@ function alignToYears(series, years) {
 function fmtBn(v) {
   if (v === null || v === undefined || !isFinite(v)) return "";
   const a = Math.abs(v);
-  if (a >= 1000) return (v / 1000).toFixed(1) + "B";
-  return v.toFixed(0);
+  if (a >= 1000000) return (v / 1000000).toFixed(1) + "T";
+  if (a >= 1000)    return (v / 1000).toFixed(1) + "B";
+  return v.toLocaleString(undefined, { maximumFractionDigits: 0 });
 }
