@@ -80,6 +80,13 @@ function fmtPct(v, dp) {
   return (v * 100).toFixed(dp == null ? 1 : dp) + "%";
 }
 
+const MONTH_NAMES = ["", "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"];
+
+function monthName(m) {
+  return MONTH_NAMES[m] || "";
+}
+
 function lastFinite(arr) {
   if (!arr) return null;
   for (let i = arr.length - 1; i >= 0; i--) {
@@ -157,6 +164,14 @@ export default function SegmentsTab({ company }) {
           </span>
         )}
         <span className="text-[10px] text-gray-400 dark:text-slate-500 italic">Reporting currency: {ccy || "—"}</span>
+        {data.fiscalYearEndMonth && data.fiscalYearEndMonth !== 12 && (
+          <span className="text-[10px] text-amber-700 dark:text-amber-400 italic font-medium">
+            Fiscal year ends {monthName(data.fiscalYearEndMonth)}
+            {data.endDates && data.endDates.length > 0 && data.endDates[data.endDates.length - 1] && (
+              " — latest FY ends " + data.endDates[data.endDates.length - 1]
+            )}
+          </span>
+        )}
         <div className="ml-auto flex gap-2 items-center">
           <span className="text-[11px] text-gray-400 dark:text-slate-500 italic">
             Refresh via Data Hub → Segments
@@ -167,7 +182,7 @@ export default function SegmentsTab({ company }) {
 
       {/* SECTIONS 1 + 2 — Revenue Mix and Profitability Ladder side by side */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <RevenueMix years={data.years} segments={opSegs} ccy={ccy} />
+        <RevenueMix years={data.years} segments={opSegs} ccy={ccy} endDates={data.endDates} />
         <MarginLadder years={data.years} segments={opSegs} />
       </div>
 
@@ -211,7 +226,7 @@ export default function SegmentsTab({ company }) {
 
 /* ============================ Section 1 ================================ */
 
-function RevenueMix({ years, segments, ccy }) {
+function RevenueMix({ years, segments, ccy, endDates }) {
   const [mode, setMode] = useState("abs"); /* "abs" | "pct" */
   const W = 600, H = 340, PAD_T = 16, PAD_B = 30, PAD_L = 60, PAD_R = 16;
   const innerW = W - PAD_L - PAD_R;
@@ -325,7 +340,7 @@ function RevenueMix({ years, segments, ccy }) {
       </div>
       {latestIdx >= 0 && (
         <div className="text-[9px] text-gray-400 dark:text-slate-500 italic mt-1">
-          Latest year: {years[latestIdx]} · Total {fmtMoney(latestTotal, ccy)}
+          Latest: {endDates && endDates[latestIdx] ? "FY " + years[latestIdx] + " (" + endDates[latestIdx] + ")" : years[latestIdx]} · Total {fmtMoney(latestTotal, ccy)}
         </div>
       )}
     </div>
@@ -735,6 +750,11 @@ function GeographySnapshot({ years, geography }) {
       <div className="flex items-baseline gap-2 mb-2">
         <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">Latest Snapshot</div>
         <div className="text-[10px] text-gray-500 dark:text-slate-400">{lastIdx >= 0 ? years[lastIdx] : ""}</div>
+        {ranked.length > 0 && refIdx >= 0 && (
+          <div className="ml-auto text-[10px] text-gray-400 dark:text-slate-500 italic">
+            Δ vs {years[refIdx]}
+          </div>
+        )}
       </div>
       <div className="space-y-1.5">
         {ranked.map(function (r, ri) {
@@ -756,11 +776,6 @@ function GeographySnapshot({ years, geography }) {
           );
         })}
       </div>
-      {ranked.length > 0 && (
-        <div className="mt-2 text-[10px] text-gray-400 dark:text-slate-500 italic">
-          Δ vs {refIdx >= 0 ? years[refIdx] : ""}
-        </div>
-      )}
     </div>
   );
 }

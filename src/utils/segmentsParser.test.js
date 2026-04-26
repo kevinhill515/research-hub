@@ -143,6 +143,25 @@ describe("parseSegmentsPaste", function () {
     expect(r.geography.revenue).toEqual([100, 110, 120]);
   });
 
+  it("detects fiscal year-end month from the date row", function () {
+    /* Hitachi-style: FY YYYY label + 3/31/YYYY date row → March FY-end */
+    const text = [
+      "Hitachi Ltd",
+      "\tFY 2023\tFY 2024\tFY 2025",
+      "\t3/31/2024\t3/31/2025\t3/31/2026",
+      "Segment A",
+      "Sales\t100\t105\t110",
+      "EBIT\t10\t10\t11",
+    ].join("\n");
+    const r = parseSegmentsPaste(text);
+    expect(r.fiscalYearEndMonth).toBe(3);
+  });
+
+  it("defaults fiscal year-end to December when no date row is present", function () {
+    const r = parseSegmentsPaste(SAMPLE);
+    expect(r.fiscalYearEndMonth).toBe(12);
+  });
+
   it("returns an error when no year header is present", function () {
     const r = parseSegmentsPaste("just a company name\nand some text");
     expect(r.error).toBeDefined();

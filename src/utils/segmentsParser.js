@@ -156,13 +156,24 @@ export function parseSegmentsPaste(text) {
 
   /* 4. Find where the data starts (first row after all year-header /
         date rows). FactSet typically has 2 header rows: FY YYYY then
-        12/31/YYYY. We skip any consecutive year-like rows. */
+        the actual date (12/31/YYYY for Dec FY-end, 3/31/YYYY for March,
+        etc.). While skipping additional year-header rows, peek at any
+        full-date cells to capture the company's fiscal-year-end month
+        (so the UI can flag non-December years). */
   let dataStartRow = yearRowIdx + 1;
+  let fiscalYearEndMonth = null;
+  /* endDates[i] = "Mon YYYY" string for the fiscal year at column i.
+     Captured from the date row so non-December fiscal years show
+     correctly (e.g. Hitachi FY 2025 → "Mar 2026"). */
+  let endDates = null;
   while (dataStartRow < lines.length) {
     const cells = splitRow(lines[dataStartRow]);
     if (!looksLikeYearHeader(cells)) break;
+    if (fiscalYearEndMonth === null) fiscalYearEndMonth = detectFyMonth(cells);
+    if (endDates === null) endDates = extractEndDates(cells, yearStartCol, years.length);
     dataStartRow++;
   }
+  if (fiscalYearEndMonth === null) fiscalYearEndMonth = 12; /* default Dec */
 
   /* 5. Walk rows. State machine:
         - "segments" mode (default): collect segment blocks until we see a
@@ -279,6 +290,8 @@ export function parseSegmentsPaste(text) {
   return {
     companyName: companyName,
     years: years,
+    endDates: endDates,
+    fiscalYearEndMonth: fiscalYearEndMonth,
     segments: segments.filter(function (s) { return !s.isTotal; }),
     geography: geography,
     /* Keep the parsed total separately so the view can compare against the
@@ -286,6 +299,52 @@ export function parseSegmentsPaste(text) {
     parsedTotal: segments.find(function (s) { return s.isTotal; }) || null,
     dropped: dropped,
   };
+}
+
+const _MONTH_ABBR = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/* Pull "Mon YYYY" strings from the date row, indexed to match `years`.
+ * Returns null if no row, or an array of strings (some entries may be
+ * null when a date cell is missing). */
+function extractEndDates(cells, yearStartCol, n) {
+  const out = [];
+  let any = false;
+  for (let i = 0; i < n; i++) {
+    const t = ((cells[yearStartCol + i] || "") + "").trim();
+    let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (m) {
+      const month = parseInt(m[2], 10), year = parseInt(m[1], 10);
+      out.push(_MONTH_ABBR[month] + " " + year);
+      any = true;
+      continue;
+    }
+    m = t.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+    if (m) {
+      const month = parseInt(m[1], 10), year = parseInt(m[3], 10);
+      out.push(_MONTH_ABBR[month] + " " + year);
+      any = true;
+      continue;
+    }
+    out.push(null);
+  }
+  return any ? out : null;
+}
+
+/* From a full-date row, extract the fiscal year-end month (1-12).
+ * Accepts m/d/yyyy, yyyy-mm-dd, or yyyy formats. Returns null if no
+ * recognizable date is found. */
+function detectFyMonth(cells) {
+  for (let c = 0; c < cells.length; c++) {
+    const t = (cells[c] || "").trim();
+    if (!t) continue;
+    let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);     /* ISO */
+    if (m) return parseInt(m[2], 10);
+    m = t.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/); /* US m/d/yyyy */
+    if (m) return parseInt(m[1], 10);
+    /* "FY 2015" or bare "2015" — month is unknown from these */
+  }
+  return null;
 }
 
 function makeSegment(name, n) {
