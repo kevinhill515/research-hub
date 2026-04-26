@@ -110,12 +110,44 @@ export default function EpsRevisionsTab({ company }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <RevisionsLineChart dates={data.dates} series={data.series} />
-        <RevisionsBarChart series={data.series} />
-      </div>
+      {/* Compute fiscal-year-end labels (e.g. "12/25", "3/26") so the
+          horizon series get real dates instead of "+0/+1/+2/+3". Uses
+          the company's segments.fiscalYearEndMonth if uploaded;
+          defaults to December otherwise. */}
+      {(function () {
+        const fyMonth = (company && company.segments && company.segments.fiscalYearEndMonth)
+          ? company.segments.fiscalYearEndMonth
+          : 12;
+        const lastDate = data.dates[data.dates.length - 1];
+        const labeled = data.series.map(function (s) {
+          return Object.assign({}, s, { label: fyLabel(lastDate, fyMonth, s.horizon) });
+        });
+        return (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <RevisionsLineChart dates={data.dates} series={labeled} />
+            <RevisionsBarChart series={labeled} />
+          </div>
+        );
+      })()}
     </div>
   );
+}
+
+/* Compute the fiscal-year end label for a horizon. EPS0 = most recently
+ * completed FY at lastDate; +1/+2/+3 are forwards. Returns "M/YY". */
+function fyLabel(lastIso, fyEndMonth, horizon) {
+  const m = String(lastIso || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return "FY+" + horizon;
+  const y = parseInt(m[1], 10);
+  const mo = parseInt(m[2], 10);
+  const day = parseInt(m[3], 10);
+  /* FY0 = most recently completed fiscal year at lastIso */
+  let fy0Year;
+  if (mo > fyEndMonth) fy0Year = y;
+  else if (mo === fyEndMonth) fy0Year = day >= 28 ? y : y - 1;
+  else fy0Year = y - 1;
+  const target = fy0Year + horizon;
+  return fyEndMonth + "/" + String(target).slice(2);
 }
 
 /* =========================================================================
@@ -156,57 +188,61 @@ function RevisionsLineChart({ dates, series }) {
   return (
     <div className={TILE}>
       <div className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-1">Monthly Estimate Trend</div>
-      <svg width="100%" height={H} viewBox={"0 0 " + W + " " + H} role="img" aria-label="EPS estimate revisions">
-        <rect x={PAD_L} y={PAD_T} width={innerW} height={innerH} fill="none" stroke={GRID_COLOR} />
-        {ticks.map(function (t, i) {
-          const y = yOf(t);
-          return (
-            <g key={"t-" + i}>
-              <line x1={PAD_L} y1={y} x2={PAD_L + innerW} y2={y} stroke={TICK_COLOR} />
-              <text x={PAD_L - 6} y={y + 3} fontSize="9" textAnchor="end" fill="#64748b">{fmtVal(t)}</text>
-            </g>
-          );
-        })}
-        {/* Series lines */}
-        {series.map(function (s, si) {
-          const segs = [];
-          let cur = null;
-          for (let i = 0; i < n; i++) {
-            const v = s.monthly[i];
-            if (v === null || v === undefined || !isFinite(v)) {
-              if (cur) { segs.push(cur); cur = null; }
-              continue;
+      <div className="flex items-stretch gap-3">
+        <svg className="flex-1" width="100%" height={H} viewBox={"0 0 " + W + " " + H} preserveAspectRatio="xMidYMid meet" role="img" aria-label="EPS estimate revisions">
+          <rect x={PAD_L} y={PAD_T} width={innerW} height={innerH} fill="none" stroke={GRID_COLOR} />
+          {ticks.map(function (t, i) {
+            const y = yOf(t);
+            return (
+              <g key={"t-" + i}>
+                <line x1={PAD_L} y1={y} x2={PAD_L + innerW} y2={y} stroke={TICK_COLOR} />
+                <text x={PAD_L - 6} y={y + 3} fontSize="9" textAnchor="end" fill="#64748b">{fmtVal(t)}</text>
+              </g>
+            );
+          })}
+          {/* Series lines */}
+          {series.map(function (s, si) {
+            const segs = [];
+            let cur = null;
+            for (let i = 0; i < n; i++) {
+              const v = s.monthly[i];
+              if (v === null || v === undefined || !isFinite(v)) {
+                if (cur) { segs.push(cur); cur = null; }
+                continue;
+              }
+              const pt = [xOf(i), yOf(v)];
+              if (!cur) cur = { pts: [pt] };
+              else cur.pts.push(pt);
             }
-            const pt = [xOf(i), yOf(v)];
-            if (!cur) cur = { pts: [pt] };
-            else cur.pts.push(pt);
-          }
-          if (cur) segs.push(cur);
-          const color = HORIZON_COLORS[s.horizon] || "#64748b";
-          return segs.map(function (sg, idx) {
-            const d = sg.pts.map(function (p, j) { return (j === 0 ? "M" : "L") + p[0].toFixed(1) + "," + p[1].toFixed(1); }).join("");
-            return <path key={si + "-" + idx} d={d} fill="none" stroke={color} strokeWidth="2" />;
-          });
-        })}
-        {/* X labels — every other date to avoid crowding */}
-        {dates.map(function (d, i) {
-          const step = n > 7 ? 2 : 1;
-          if (i % step !== 0 && i !== n - 1) return null;
-          return <text key={i} x={xOf(i)} y={H - 10} fontSize="9" textAnchor="middle" fill="#64748b">{fmtDateShort(d)}</text>;
-        })}
-      </svg>
-      {/* Legend with latest value per series */}
-      <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-[10px] text-gray-600 dark:text-slate-300">
-        {series.map(function (s) {
-          const last = s.monthly[s.monthly.length - 1];
-          const color = HORIZON_COLORS[s.horizon] || "#64748b";
-          return (
-            <span key={s.horizon} className="flex items-center gap-1">
-              <span className="inline-block w-3 h-0.5" style={{ background: color }} />
-              {s.label}: <span className="tabular-nums font-semibold" style={{ color: color }}>{fmtVal(last, 2)}</span>
-            </span>
-          );
-        })}
+            if (cur) segs.push(cur);
+            const color = HORIZON_COLORS[s.horizon] || "#64748b";
+            return segs.map(function (sg, idx) {
+              const d = sg.pts.map(function (p, j) { return (j === 0 ? "M" : "L") + p[0].toFixed(1) + "," + p[1].toFixed(1); }).join("");
+              return <path key={si + "-" + idx} d={d} fill="none" stroke={color} strokeWidth="2" />;
+            });
+          })}
+          {/* X labels — every other date to avoid crowding */}
+          {dates.map(function (d, i) {
+            const step = n > 7 ? 2 : 1;
+            if (i % step !== 0 && i !== n - 1) return null;
+            return <text key={i} x={xOf(i)} y={H - 10} fontSize="9" textAnchor="middle" fill="#64748b">{fmtDateShort(d)}</text>;
+          })}
+        </svg>
+        {/* Latest values panel — vertical list to the right of the chart */}
+        <div className="shrink-0 flex flex-col justify-center gap-1.5 pl-2 pr-1 border-l border-slate-100 dark:border-slate-800" style={{ minWidth: 100 }}>
+          <div className="text-[9px] uppercase tracking-wide text-gray-400 dark:text-slate-500">Latest</div>
+          {series.map(function (s) {
+            const last = s.monthly[s.monthly.length - 1];
+            const color = HORIZON_COLORS[s.horizon] || "#64748b";
+            return (
+              <div key={s.horizon} className="flex items-baseline gap-1.5 text-[11px]">
+                <span className="inline-block w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: color }} />
+                <span className="text-gray-600 dark:text-slate-400">{s.label}</span>
+                <span className="tabular-nums font-semibold ml-auto" style={{ color: color }}>{fmtVal(last, 2)}</span>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -292,7 +328,7 @@ function RevisionsBarChart({ series }) {
         {yMin < 0 && yMax > 0 && (
           <line x1={PAD_L} y1={yOf(0)} x2={PAD_L + innerW} y2={yOf(0)} stroke="#64748b" strokeWidth="1" />
         )}
-        {/* Grouped bars */}
+        {/* Grouped bars + value labels above each bar */}
         {cells.map(function (cell, ci) {
           const cx = xOfGroup(ci);
           const totalGroupW = barW * fwdSeries.length;
@@ -306,10 +342,25 @@ function RevisionsBarChart({ series }) {
                 const top = Math.min(y0, yv);
                 const h = Math.abs(y0 - yv);
                 const color = HORIZON_COLORS[v.horizon] || "#64748b";
+                /* Label sits ABOVE positive bars, BELOW negative bars,
+                   so it's always on the "outside" of the bar end. */
+                const labelY = v.pct >= 0 ? yv - 3 : yv + 9;
                 return (
-                  <rect key={si} x={x} y={top} width={barW * 0.9} height={Math.max(1, h)} fill={color} opacity="0.85">
-                    <title>{cell.label + ": " + fmtPct(v.pct)}</title>
-                  </rect>
+                  <g key={si}>
+                    <rect x={x} y={top} width={barW * 0.9} height={Math.max(1, h)} fill={color} opacity="0.85">
+                      <title>{cell.label + ": " + fmtPct(v.pct)}</title>
+                    </rect>
+                    <text
+                      x={x + (barW * 0.9) / 2}
+                      y={labelY}
+                      fontSize="9"
+                      textAnchor="middle"
+                      fill={color}
+                      fontWeight="600"
+                    >
+                      {fmtPct(v.pct, 1)}
+                    </text>
+                  </g>
                 );
               })}
               <text x={cx} y={H - 18} fontSize="10" textAnchor="middle" fill="#64748b">{cell.label}</text>
