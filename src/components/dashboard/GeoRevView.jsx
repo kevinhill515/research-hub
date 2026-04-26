@@ -71,7 +71,12 @@ function findCountry(region, targetName) {
  * as a flat map { regionName: { share, countries: { countryName: share } } }.
  * Returns null when the company has no standardized data. */
 function companyStdSnapshot(company) {
-  const std = company && company.segments && company.segments.standardized;
+  /* Standardized geography lives under company.segments.geography.standardized
+     (not segments.standardized — that path was a typo in v1 of GeoRev). */
+  const std = company
+    && company.segments
+    && company.segments.geography
+    && company.segments.geography.standardized;
   if (!std || !std.regions || std.regions.length === 0) return null;
   const out = {};
   std.regions.forEach(function (r) {
