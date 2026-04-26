@@ -154,7 +154,9 @@ function fyLabel(lastIso, fyEndMonth, horizon) {
  * Tile 1 — line chart of monthly EPS estimate progression
  * ======================================================================= */
 function RevisionsLineChart({ dates, series }) {
-  const W = 600, H = 280, PAD_T = 16, PAD_B = 28, PAD_L = 50, PAD_R = 16;
+  /* Extra right padding leaves room for inline FY labels (e.g. "12/25")
+     anchored to each line's last point. */
+  const W = 600, H = 280, PAD_T = 16, PAD_B = 28, PAD_L = 50, PAD_R = 56;
   const innerW = W - PAD_L - PAD_R;
   const innerH = H - PAD_T - PAD_B;
   const n = dates.length;
@@ -227,6 +229,40 @@ function RevisionsLineChart({ dates, series }) {
             if (i % step !== 0 && i !== n - 1) return null;
             return <text key={i} x={xOf(i)} y={H - 10} fontSize="9" textAnchor="middle" fill="#64748b">{fmtDateShort(d)}</text>;
           })}
+          {/* FY-end labels at each line's last data point. If two
+             labels would collide vertically, we nudge them apart so
+             they stay readable. */}
+          {(function () {
+            const items = series.map(function (s) {
+              let lastIdx = -1;
+              for (let i = s.monthly.length - 1; i >= 0; i--) {
+                if (s.monthly[i] !== null && isFinite(s.monthly[i])) { lastIdx = i; break; }
+              }
+              if (lastIdx < 0) return null;
+              return {
+                horizon: s.horizon,
+                label: s.label,
+                x: xOf(lastIdx),
+                y: yOf(s.monthly[lastIdx]),
+                color: HORIZON_COLORS[s.horizon] || "#64748b",
+              };
+            }).filter(Boolean);
+            /* Sort by y, then push apart any pair within 12px so labels
+               don't stack on top of each other. */
+            const sorted = items.slice().sort(function (a, b) { return a.y - b.y; });
+            for (let i = 1; i < sorted.length; i++) {
+              if (sorted[i].y - sorted[i - 1].y < 12) {
+                sorted[i].y = sorted[i - 1].y + 12;
+              }
+            }
+            return sorted.map(function (it) {
+              return (
+                <text key={it.horizon} x={it.x + 4} y={it.y + 3} fontSize="10" fontWeight="600" fill={it.color}>
+                  {it.label}
+                </text>
+              );
+            });
+          })()}
         </svg>
         {/* Latest values panel — vertical list to the right of the chart.
             Each forward FY also shows year-over-year EPS growth vs the
