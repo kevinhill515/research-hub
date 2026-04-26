@@ -229,14 +229,14 @@ export default function SegmentsTab({ company }) {
         );
       })()}
 
-      {/* SECTION 4 — Geography. HQ country is filtered out of the stacked
-          area to avoid double-counting (it's already inside its parent
-          region — e.g. France inside Western Europe). HQ gets its own
-          dedicated tile + the existing All-regions snapshot keeps it. */}
+      {/* SECTION 4 — Geography. Stacked area shows ALL reported buckets
+          (per ASC 280 / IFRS 8 they're mutually exclusive — France is a
+          peer of Western Europe, not a subset). HQ country still gets
+          its own callout tile so the home market is easy to find. */}
       {data.geography && data.geography.regions && data.geography.regions.length > 0 && (
         <div className="mt-3 grid grid-cols-1 lg:grid-cols-3 gap-3">
           <div className="lg:col-span-2">
-            <GeographyMix years={data.years} geography={data.geography} hqCountry={company && company.country} />
+            <GeographyMix years={data.years} geography={data.geography} />
           </div>
           <div className="flex flex-col gap-3">
             <HomeMarketTile years={data.years} geography={data.geography} hqCountry={company && company.country} />
@@ -701,23 +701,17 @@ function SegmentMiniChart({ years, values, color, formatY, kind }) {
 
 /* ============================ Section 4 ================================ */
 
-function GeographyMix({ years, geography, hqCountry }) {
+function GeographyMix({ years, geography }) {
   const W = 760, H = 240, PAD_T = 10, PAD_B = 28, PAD_L = 36, PAD_R = 10;
   const innerW = W - PAD_L - PAD_R;
   const innerH = H - PAD_T - PAD_B;
   const n = years.length;
 
-  /* Filter out the HQ country (e.g. France for Schneider) — it's a
-     subset of its parent region (Western Europe) in most company
-     reporting and would double-count in the stack. The HQ gets its
-     own dedicated tile. Case-insensitive comparison. */
-  const hqLower = (hqCountry || "").toLowerCase().trim();
-  const filtered = geography.regions.filter(function (r) {
-    return !hqLower || (r.name || "").toLowerCase().trim() !== hqLower;
-  });
-
-  /* Order regions by latest size, descending. */
-  const ranked = filtered.slice().sort(function (a, b) {
+  /* Companies report mutually-exclusive geographic buckets per ASC 280 /
+     IFRS 8. So the HQ country (e.g. France for Schneider) is a peer of
+     the other regions, not a subset — keep it in the stack so the
+     bands sum to ~100%. */
+  const ranked = geography.regions.slice().sort(function (a, b) {
     return (lastFinite(b.values) || 0) - (lastFinite(a.values) || 0);
   });
 
