@@ -161,9 +161,16 @@ export default function GeoRevView() {
           countryTotals[k] = (countryTotals[k] || 0) + w * r.countries[cname];
         });
       });
-      /* Flag companies whose std-geo sum is outside [98%, 102%]. */
-      if (coSum < 0.98 || coSum > 1.02) {
-        incompleteCompanies.push({ name: co.name, weight: w, sum: coSum });
+      /* Flag companies whose std-geo sum is outside [99.5%, 100.5%].
+         Even small per-holding deviations can compound in a focused
+         portfolio (high per-position weight). */
+      if (coSum < 0.995 || coSum > 1.005) {
+        incompleteCompanies.push({
+          name: co.name,
+          weight: w,
+          sum: coSum,
+          impact: w * (coSum - 1),  /* signed contribution to portfolio total */
+        });
       }
     });
 
@@ -204,8 +211,10 @@ export default function GeoRevView() {
        coverage gaps first. Same for incomplete (sorted by deviation
        from 100% so the worst offenders are obvious). */
     missingCompanies.sort(function (a, b) { return b.weight - a.weight; });
+    /* Sort by absolute weighted impact — biggest portfolio-level
+       contributors to the deviation surface first. */
     incompleteCompanies.sort(function (a, b) {
-      return Math.abs(b.sum - 1) - Math.abs(a.sum - 1);
+      return Math.abs(b.impact) - Math.abs(a.impact);
     });
 
     return {
@@ -383,25 +392,30 @@ export default function GeoRevView() {
                   Doesn't Sum to 100% ({incompleteCompanies.length})
                 </div>
                 <div className="text-[10px] text-gray-500 dark:text-slate-400 mb-1.5">
-                  Holdings whose standardized regions sum outside 98–102% — re-check the upload for missing or double-counted regions. Sorted by deviation.
+                  Holdings whose standardized regions sum outside 99.5–100.5%. Sorted by portfolio impact (weight × deviation). Sum of all impacts in this list = your aggregate's deviation from the cash-adjusted ideal.
                 </div>
-                <div className="space-y-0.5">
-                  {incompleteCompanies.slice(0, 12).map(function (m) {
+                <div className="grid gap-x-2 grid-cols-[1fr_42px_42px_50px] text-[9px] uppercase tracking-wide text-gray-400 dark:text-slate-500 pb-0.5 border-b border-slate-200 dark:border-slate-700">
+                  <span>Holding</span>
+                  <span className="text-right">Wt</span>
+                  <span className="text-right">Sum</span>
+                  <span className="text-right">Impact</span>
+                </div>
+                <div className="space-y-0.5 mt-1">
+                  {incompleteCompanies.slice(0, 15).map(function (m) {
                     const dev = m.sum - 1;
-                    const color = dev > 0.005 ? "#dc2626" : dev < -0.005 ? "#d97706" : "#64748b";
+                    const color = dev > 0.0025 ? "#dc2626" : dev < -0.0025 ? "#d97706" : "#64748b";
                     return (
-                      <div key={m.name} className="flex items-center justify-between text-[11px]">
-                        <span className="truncate text-gray-700 dark:text-slate-300 flex-1">{m.name}</span>
-                        <span className="tabular-nums text-gray-500 dark:text-slate-400 mx-2">{(m.weight * 100).toFixed(1) + "%"}</span>
-                        <span className="tabular-nums font-semibold w-14 text-right" style={{ color: color }}>
-                          {(m.sum * 100).toFixed(1) + "%"}
-                        </span>
+                      <div key={m.name} className="grid gap-x-2 grid-cols-[1fr_42px_42px_50px] text-[11px] items-baseline">
+                        <span className="truncate text-gray-700 dark:text-slate-300">{m.name}</span>
+                        <span className="tabular-nums text-gray-500 dark:text-slate-400 text-right">{(m.weight * 100).toFixed(1) + "%"}</span>
+                        <span className="tabular-nums font-semibold text-right" style={{ color: color }}>{(m.sum * 100).toFixed(1) + "%"}</span>
+                        <span className="tabular-nums font-semibold text-right" style={{ color: color }}>{(m.impact >= 0 ? "+" : "") + (m.impact * 100).toFixed(2) + "pp"}</span>
                       </div>
                     );
                   })}
-                  {incompleteCompanies.length > 12 && (
+                  {incompleteCompanies.length > 15 && (
                     <div className="text-[10px] text-gray-400 dark:text-slate-500 italic mt-1">
-                      … and {incompleteCompanies.length - 12} more
+                      … and {incompleteCompanies.length - 15} more
                     </div>
                   )}
                 </div>
