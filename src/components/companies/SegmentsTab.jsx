@@ -181,27 +181,51 @@ export default function SegmentsTab({ company }) {
       </div>
 
       {/* SECTIONS 1 + 2 — Revenue Mix and Profitability Ladder side by side */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <RevenueMix years={data.years} segments={opSegs} ccy={ccy} endDates={data.endDates} />
-        <MarginLadder years={data.years} segments={opSegs} />
-      </div>
-
-      {/* SECTION 3 — Per-segment cards. Pass per-year totals so each
-          card can compute its share of total Sales / EBIT. */}
       {(function () {
-        const totSales = perYearSum(opSegs, "sales", data.years.length);
-        const totEbit  = perYearSum(opSegs, "ebit",  data.years.length);
+        /* Operating segments only sum into the total (cost centers
+           subtract from EBIT but contribute no Sales). For margin we
+           prefer parsedTotal.margin when the paste includes a Total
+           row; otherwise we derive it from totalEbit / totalSales. */
+        const allSegs = opSegs.concat(costCenters);
+        const totalSales = perYearSum(opSegs, "sales", data.years.length);
+        const totalEbit  = perYearSum(allSegs, "ebit", data.years.length);
+        const derivedMargin = data.years.map(function (_, i) {
+          const s = totalSales[i], e = totalEbit[i];
+          return (s !== null && e !== null && isFinite(s) && isFinite(e) && s > 0) ? e / s : null;
+        });
+        const totalMargin = (data.parsedTotal && data.parsedTotal.margin && data.parsedTotal.margin.some(function (v) { return v !== null && isFinite(v); }))
+          ? data.parsedTotal.margin
+          : derivedMargin;
+
         return (
-          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {opSegs.map(function (s, i) {
-              return <SegmentCard key={s.name} segment={s} years={data.years} color={colorFor(i)} ccy={ccy}
-                totalSales={totSales} totalEbit={totEbit} />;
-            })}
-            {costCenters.map(function (s) {
-              return <SegmentCard key={s.name} segment={s} years={data.years} color="#64748b" ccy={ccy}
-                totalSales={totSales} totalEbit={totEbit} />;
-            })}
-          </div>
+          <>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <RevenueMix years={data.years} segments={opSegs} ccy={ccy} endDates={data.endDates} />
+              <MarginLadder years={data.years} segments={opSegs} totalMargin={totalMargin} />
+            </div>
+
+            {/* SECTION 3 — Per-segment cards (with Total card first). */}
+            <div className="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {(opSegs.length > 0 || costCenters.length > 0) && (
+                <TotalCard
+                  years={data.years}
+                  totalSales={totalSales}
+                  totalEbit={totalEbit}
+                  totalMargin={totalMargin}
+                  ccy={ccy}
+                  parsedTotal={data.parsedTotal}
+                />
+              )}
+              {opSegs.map(function (s, i) {
+                return <SegmentCard key={s.name} segment={s} years={data.years} color={colorFor(i)} ccy={ccy}
+                  totalSales={totalSales} totalEbit={totalEbit} />;
+              })}
+              {costCenters.map(function (s) {
+                return <SegmentCard key={s.name} segment={s} years={data.years} color="#64748b" ccy={ccy}
+                  totalSales={totalSales} totalEbit={totalEbit} />;
+              })}
+            </div>
+          </>
         );
       })()}
 
@@ -349,16 +373,18 @@ function RevenueMix({ years, segments, ccy, endDates }) {
 
 /* ============================ Section 2 ================================ */
 
-function MarginLadder({ years, segments }) {
+function MarginLadder({ years, segments, totalMargin }) {
   const W = 600, H = 340, PAD_T = 16, PAD_B = 30, PAD_L = 50, PAD_R = 16;
   const innerW = W - PAD_L - PAD_R;
   const innerH = H - PAD_T - PAD_B;
   const n = years.length;
 
-  /* Y-range covers all segment margins. Note: `isFinite(null) === true`
-     in JS (Number(null) === 0), so we explicitly null-check first. */
+  /* Y-range covers all segment margins (and the total margin if given).
+     Note: `isFinite(null) === true` in JS (Number(null) === 0), so we
+     explicitly null-check first. */
   const allVals = [];
   segments.forEach(function (s) { s.margin.forEach(function (v) { if (v !== null && v !== undefined && isFinite(v)) allVals.push(v); }); });
+  (totalMargin || []).forEach(function (v) { if (v !== null && v !== undefined && isFinite(v)) allVals.push(v); });
   if (allVals.length === 0) {
     return (
       <div className={TILE}>
@@ -415,6 +441,27 @@ function MarginLadder({ years, segments }) {
             return <path key={si + "-" + idx} d={d} fill="none" stroke={colorFor(si)} strokeWidth="1.75" />;
           });
         })}
+        {/* Total line — drawn last so it sits on top, thicker + black so
+           it's clearly distinguished from individual segment lines. */}
+        {totalMargin && (function () {
+          const segs = [];
+          let cur = null;
+          for (let i = 0; i < n; i++) {
+            const v = totalMargin[i];
+            if (v === null || v === undefined || !isFinite(v)) {
+              if (cur) { segs.push(cur); cur = null; }
+              continue;
+            }
+            const pt = [xOf(i), yOf(v)];
+            if (!cur) cur = { pts: [pt] };
+            else cur.pts.push(pt);
+          }
+          if (cur) segs.push(cur);
+          return segs.map(function (sg, idx) {
+            const d = sg.pts.map(function (p, j) { return (j === 0 ? "M" : "L") + p[0].toFixed(1) + "," + p[1].toFixed(1); }).join("");
+            return <path key={"total-" + idx} d={d} fill="none" stroke="#0f172a" strokeWidth="2.25" />;
+          });
+        })()}
         {/* X labels */}
         {years.map(function (yr, i) {
           const step = n > 10 ? 2 : 1;
@@ -422,7 +469,7 @@ function MarginLadder({ years, segments }) {
           return <text key={i} x={xOf(i)} y={H - 12} fontSize="9" textAnchor="middle" fill="#64748b">{String(yr).slice(2)}</text>;
         })}
       </svg>
-      {/* Legend with last value per segment */}
+      {/* Legend with last value per segment + total */}
       <div className="flex flex-wrap gap-3 mt-1 text-[10px] text-gray-600 dark:text-slate-300">
         {segments.map(function (s, si) {
           const last = lastFinite(s.margin);
@@ -433,12 +480,75 @@ function MarginLadder({ years, segments }) {
             </span>
           );
         })}
+        {totalMargin && (function () {
+          const last = lastFinite(totalMargin);
+          if (last === null) return null;
+          return (
+            <span className="flex items-center gap-1">
+              <span className="inline-block w-3" style={{ height: "2px", background: "#0f172a" }} />
+              <span className="font-semibold">Total:</span> <span className="tabular-nums font-bold" style={{ color: "#0f172a" }}>{fmtPct(last, 1)}</span>
+            </span>
+          );
+        })()}
       </div>
     </div>
   );
 }
 
 /* ============================ Section 3 ================================ */
+
+/* Aggregate "Total" card — same layout as a SegmentCard but pulls
+ * its values from per-year totals (sales / ebit / margin) computed by
+ * the parent. Always shown first in the segment grid. */
+function TotalCard({ years, totalSales, totalEbit, totalMargin, ccy, parsedTotal }) {
+  const [chartOpen, setChartOpen] = useState(null);
+  const lastSales = lastFinite(totalSales);
+  const lastEbit  = lastFinite(totalEbit);
+  const lastMgn   = lastFinite(totalMargin);
+  const lastRoa   = parsedTotal ? lastFinite(parsedTotal.roa) : null;
+
+  function chartFor(kind) {
+    if (kind === "sales")  return { values: totalSales,  fmt: function (v) { return fmtMoney(v, ccy); } };
+    if (kind === "ebit")   return { values: totalEbit,   fmt: function (v) { return fmtMoney(v, ccy); } };
+    if (kind === "margin") return { values: totalMargin, fmt: function (v) { return fmtPct(v, 1); } };
+    if (kind === "roa")    return { values: parsedTotal && parsedTotal.roa, fmt: function (v) { return fmtPct(v, 1); } };
+    return null;
+  }
+  function toggle(kind) { setChartOpen(function (prev) { return prev === kind ? null : kind; }); }
+
+  return (
+    <div className={TILE + " border-2 border-slate-900 dark:border-slate-100"}>
+      <div className="flex items-center gap-2 mb-2">
+        <span className="inline-block w-3 h-3 rounded-sm" style={{ background: "#0f172a" }} />
+        <span className="text-sm font-bold text-gray-900 dark:text-slate-100">Total</span>
+        <span className="text-[9px] uppercase tracking-wide text-gray-400 dark:text-slate-500 ml-1">all segments</span>
+      </div>
+      <div className="grid grid-cols-2 gap-1 text-[11px]">
+        <KpiRow label="Sales"  value={fmtMoney(lastSales, ccy)} sub="100%"
+          active={chartOpen === "sales"}  onClick={function () { toggle("sales"); }} />
+        <KpiRow label="EBIT"   value={fmtMoney(lastEbit, ccy)} sub="100%"
+          active={chartOpen === "ebit"}   onClick={function () { toggle("ebit"); }} />
+        <KpiRow label="Margin" value={lastMgn !== null ? fmtPct(lastMgn, 1) : "--"}
+          active={chartOpen === "margin"} onClick={function () { toggle("margin"); }} />
+        {parsedTotal && lastRoa !== null && (
+          <KpiRow label="ROA"  value={fmtPct(lastRoa, 1)}
+            active={chartOpen === "roa"}  onClick={function () { toggle("roa"); }} />
+        )}
+      </div>
+      {chartOpen && chartFor(chartOpen) && chartFor(chartOpen).values && (
+        <div className="mt-2 border-t border-slate-100 dark:border-slate-800 pt-2">
+          <SegmentMiniChart
+            years={years}
+            values={chartFor(chartOpen).values}
+            color="#0f172a"
+            formatY={chartFor(chartOpen).fmt}
+            kind={chartOpen}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
 
 function SegmentCard({ segment, years, color, ccy, totalSales, totalEbit }) {
   const [chartOpen, setChartOpen] = useState(null); /* null | "sales" | "ebit" | "margin" | "roa" */

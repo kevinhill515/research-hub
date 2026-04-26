@@ -143,6 +143,27 @@ describe("parseSegmentsPaste", function () {
     expect(r.geography.revenue).toEqual([100, 110, 120]);
   });
 
+  it("auto-detects geography when paste is geography-only (no header)", function () {
+    /* Hitachi-style: just a Revenue row with absolute values followed by
+       country % rows, no "Revenue by Geography" header. */
+    const text = [
+      "Hitachi, Ltd",
+      "\tFY 2023\tFY 2024\tFY 2025",
+      "\t3/31/2023\t3/31/2024\t3/31/2025",
+      "Revenue\t9000000\t9500000\t9800000",
+      "Japan\t40.0%\t39.0%\t38.6%",
+      "Europe\t20.0%\t19.5%\t19.4%",
+      "United States\t13.0%\t13.5%\t13.4%",
+    ].join("\n");
+    const r = parseSegmentsPaste(text);
+    expect(r.error).toBeUndefined();
+    expect(r.segments).toEqual([]);
+    expect(r.geography.revenue).toEqual([9000000, 9500000, 9800000]);
+    expect(r.geography.regions.map(function (g) { return g.name; }))
+      .toEqual(["Japan", "Europe", "United States"]);
+    expect(r.geography.regions[0].values[2]).toBeCloseTo(0.386, 4);
+  });
+
   it("detects fiscal year-end month from the date row", function () {
     /* Hitachi-style: FY YYYY label + 3/31/YYYY date row → March FY-end */
     const text = [

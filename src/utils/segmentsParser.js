@@ -241,6 +241,30 @@ export function parseSegmentsPaste(text) {
       }
     }
 
+    /* Geography auto-detect: a "Revenue" row WITH numbers, followed by
+       country/region rows that have % values, is the start of an
+       implicit geography section even without an explicit
+       "Revenue by Geography" header. Common in pastes where the user
+       only includes the geography table. */
+    if (mode === "segments" && /^revenue$/i.test(name) && hasNumber) {
+      let j = i + 1;
+      while (j < lines.length && !lines[j].trim()) j++;
+      if (j < lines.length) {
+        const nextCells = splitRow(lines[j]);
+        const nextName  = rowName(nextCells, yearStartCol);
+        const nextSub   = subRowKind(nextName);
+        const nextRead  = readValues(nextCells);
+        const nextHasPct = nextRead.anyPct ||
+          nextRead.values.some(function (v) { return v !== null && isFinite(v) && Math.abs(v) <= 1.5; });
+        if (!nextSub && nextRead.values.some(isFiniteV) && nextHasPct) {
+          endCurrentSegment();
+          geography.revenue = vals;
+          mode = "geo";
+          continue;
+        }
+      }
+    }
+
     if (mode === "segments") {
       /* Recognized sub-rows under the current segment. */
       const sub = subRowKind(name);
