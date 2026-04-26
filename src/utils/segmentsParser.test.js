@@ -195,6 +195,39 @@ describe("parseSegmentsPaste", function () {
     expect(r.segments[1].roa).toEqual([0.08, 0.085, 0.09]);
   });
 
+  it("ignores empty placeholder sub-rows below a populated segment (Landis+Gyr)", function () {
+    /* Single-segment company template: one populated segment followed
+       by empty Sales/EBIT/Margin/ROA placeholder rows for a phantom
+       second segment. Previously those placeholders overwrote the
+       real values with nulls and the segment got dropped. */
+    const text = [
+      "Landis+Gyr",
+      "\tFY 2023\tFY 2024\tFY 2025",
+      "\t3/31/2023\t3/31/2024\t3/31/2025",
+      "Integrated Energy Management Solutions",
+      "Sales\t1000\t1100\t1200",
+      "EBIT\t50\t60\t70",
+      "Margin\t5.0%\t5.5%\t5.8%",
+      ">",
+      "ROA\t2.2%\t6.2%\t-1.4%",
+      ">",
+      "",
+      "Sales",
+      "EBIT",
+      "Margin",
+      ">",
+      "ROA",
+    ].join("\n");
+    const r = parseSegmentsPaste(text);
+    expect(r.error).toBeUndefined();
+    expect(r.segments.length).toBe(1);
+    expect(r.segments[0].name).toBe("Integrated Energy Management Solutions");
+    expect(r.segments[0].sales).toEqual([1000, 1100, 1200]);
+    expect(r.segments[0].ebit).toEqual([50, 60, 70]);
+    expect(r.segments[0].margin[0]).toBeCloseTo(0.05, 4);
+    expect(r.segments[0].roa[2]).toBeCloseTo(-0.014, 4);
+  });
+
   it("detects fiscal year-end month from the date row", function () {
     /* Hitachi-style: FY YYYY label + 3/31/YYYY date row → March FY-end */
     const text = [

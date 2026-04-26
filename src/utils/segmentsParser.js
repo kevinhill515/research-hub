@@ -275,6 +275,15 @@ export function parseSegmentsPaste(text) {
       /* Recognized sub-rows under the current segment. */
       const sub = subRowKind(name);
       if (sub && currentSeg) {
+        /* Templates often have empty Sales/EBIT/Margin/ROA placeholder
+           rows BELOW the populated segment (Landis+Gyr's one-segment
+           template). Without this guard those placeholders would
+           overwrite the real values with all-nulls and the segment
+           would get dropped by endCurrentSegment. Only update when the
+           incoming row has at least one finite value, OR the current
+           segment has nothing for this field yet (so a truly-empty
+           cost-center Sales row can still register). */
+        if (!hasNumber && currentSeg[sub].some(isFiniteV)) continue;
         currentSeg[sub] = vals;
         if (sub === "margin" || sub === "roa") {
           /* Normalize to decimal: if any cell had % suffix it's already
