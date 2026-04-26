@@ -164,6 +164,37 @@ describe("parseSegmentsPaste", function () {
     expect(r.geography.regions[0].values[2]).toBeCloseTo(0.386, 4);
   });
 
+  it("skips standalone '>' separator rows between metrics (Hitachi template)", function () {
+    /* Hitachi template inserts ">" rows between Margin / ROA blocks.
+       Previously they were misinterpreted as new segments, orphaning
+       the ROA values into a phantom segment that got dropped. */
+    const text = [
+      "Hitachi",
+      "\tFY 2023\tFY 2024\tFY 2025",
+      "\t3/31/2023\t3/31/2024\t3/31/2025",
+      "Green Energy",
+      "Sales\t1000\t1100\t1200",
+      "EBIT\t100\t110\t120",
+      "Margin\t10.0%\t10.0%\t10.0%",
+      ">",
+      "ROA\t6.0%\t6.5%\t7.0%",
+      ">",
+      "Connective Industries",
+      "Sales\t2000\t2100\t2200",
+      "EBIT\t200\t210\t220",
+      "Margin\t10.0%\t10.0%\t10.0%",
+      ">",
+      "ROA\t8.0%\t8.5%\t9.0%",
+      ">",
+    ].join("\n");
+    const r = parseSegmentsPaste(text);
+    expect(r.error).toBeUndefined();
+    expect(r.segments.map(function (s) { return s.name; }))
+      .toEqual(["Green Energy", "Connective Industries"]);
+    expect(r.segments[0].roa).toEqual([0.06, 0.065, 0.07]);
+    expect(r.segments[1].roa).toEqual([0.08, 0.085, 0.09]);
+  });
+
   it("detects fiscal year-end month from the date row", function () {
     /* Hitachi-style: FY YYYY label + 3/31/YYYY date row → March FY-end */
     const text = [

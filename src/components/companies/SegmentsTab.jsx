@@ -212,12 +212,17 @@ export default function SegmentsTab({ company }) {
         const totalMargin = (data.parsedTotal && data.parsedTotal.margin && data.parsedTotal.margin.some(function (v) { return v !== null && isFinite(v); }))
           ? data.parsedTotal.margin
           : derivedMargin;
+        /* ROA isn't derivable from segment Sales/EBIT, so we only have
+           a Total line when the paste included a Total row with ROA. */
+        const totalRoa = (data.parsedTotal && data.parsedTotal.roa && data.parsedTotal.roa.some(function (v) { return v !== null && isFinite(v); }))
+          ? data.parsedTotal.roa
+          : null;
 
         return (
           <>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
               <RevenueMix years={data.years} segments={opSegs} ccy={ccy} endDates={data.endDates} />
-              <MarginLadder years={data.years} segments={opSegs} totalMargin={totalMargin} />
+              <MarginLadder years={data.years} segments={opSegs} totalMargin={totalMargin} totalRoa={totalRoa} />
             </div>
 
             {/* SECTION 3 — Per-segment cards (with Total card first). */}
@@ -389,23 +394,33 @@ function RevenueMix({ years, segments, ccy, endDates }) {
 
 /* ============================ Section 2 ================================ */
 
-function MarginLadder({ years, segments, totalMargin }) {
+function MarginLadder({ years, segments, totalMargin, totalRoa }) {
+  /* Toggle which return metric to plot. EBIT margin = profitability per
+     dollar of sales; ROA = profit per dollar of assets. They tell
+     different stories so the user can flip between them. */
+  const [metric, setMetric] = useState("margin"); /* "margin" | "roa" */
+  const seriesKey = metric === "margin" ? "margin" : "roa";
+  const totalSeries = metric === "margin" ? totalMargin : totalRoa;
   const W = 600, H = 340, PAD_T = 16, PAD_B = 30, PAD_L = 50, PAD_R = 16;
   const innerW = W - PAD_L - PAD_R;
   const innerH = H - PAD_T - PAD_B;
   const n = years.length;
 
-  /* Y-range covers all segment margins (and the total margin if given).
-     Note: `isFinite(null) === true` in JS (Number(null) === 0), so we
-     explicitly null-check first. */
+  /* Y-range covers all segment values for the selected metric (and the
+     total if given). Note: `isFinite(null) === true` in JS
+     (Number(null) === 0), so we explicitly null-check first. */
   const allVals = [];
-  segments.forEach(function (s) { s.margin.forEach(function (v) { if (v !== null && v !== undefined && isFinite(v)) allVals.push(v); }); });
-  (totalMargin || []).forEach(function (v) { if (v !== null && v !== undefined && isFinite(v)) allVals.push(v); });
+  segments.forEach(function (s) { s[seriesKey].forEach(function (v) { if (v !== null && v !== undefined && isFinite(v)) allVals.push(v); }); });
+  (totalSeries || []).forEach(function (v) { if (v !== null && v !== undefined && isFinite(v)) allVals.push(v); });
   if (allVals.length === 0) {
     return (
       <div className={TILE}>
-        <div className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-1">Margin Ladder</div>
-        <div className="text-xs text-gray-400 dark:text-slate-500 italic py-6 text-center">No margin data</div>
+        <div className="flex items-baseline gap-2 mb-1">
+          <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">Profitability Ladder</div>
+        </div>
+        <div className="text-xs text-gray-400 dark:text-slate-500 italic py-6 text-center">
+          No {metric === "margin" ? "margin" : "ROA"} data
+        </div>
       </div>
     );
   }
@@ -422,7 +437,19 @@ function MarginLadder({ years, segments, totalMargin }) {
     <div className={TILE}>
       <div className="flex items-baseline gap-2 mb-1">
         <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">Profitability Ladder</div>
-        <div className="text-[10px] text-gray-500 dark:text-slate-400">Operating margin per segment</div>
+        <div className="text-[10px] text-gray-500 dark:text-slate-400">
+          {metric === "margin" ? "Operating margin per segment" : "Return on Assets per segment"}
+        </div>
+        <div className="ml-auto flex gap-1 text-[11px]">
+          <button
+            onClick={function () { setMetric("margin"); }}
+            className={"px-2 py-0.5 rounded-full border " + (metric === "margin" ? "bg-blue-700 text-white border-blue-700" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-gray-700 dark:text-slate-300")}
+          >Margin</button>
+          <button
+            onClick={function () { setMetric("roa"); }}
+            className={"px-2 py-0.5 rounded-full border " + (metric === "roa" ? "bg-blue-700 text-white border-blue-700" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-gray-700 dark:text-slate-300")}
+          >ROA</button>
+        </div>
       </div>
       <svg width="100%" height={H} viewBox={"0 0 " + W + " " + H} role="img" aria-label="Segment margins">
         <rect x={PAD_L} y={PAD_T} width={innerW} height={innerH} fill="none" stroke={GRID_COLOR} />
@@ -441,8 +468,9 @@ function MarginLadder({ years, segments, totalMargin }) {
         {segments.map(function (s, si) {
           const segs = [];
           let cur = null;
+          const arr = s[seriesKey];
           for (let i = 0; i < n; i++) {
-            const v = s.margin[i];
+            const v = arr[i];
             if (v === null || v === undefined || !isFinite(v)) {
               if (cur) { segs.push(cur); cur = null; }
               continue;
@@ -459,11 +487,11 @@ function MarginLadder({ years, segments, totalMargin }) {
         })}
         {/* Total line — drawn last so it sits on top, thicker + black so
            it's clearly distinguished from individual segment lines. */}
-        {totalMargin && (function () {
+        {totalSeries && (function () {
           const segs = [];
           let cur = null;
           for (let i = 0; i < n; i++) {
-            const v = totalMargin[i];
+            const v = totalSeries[i];
             if (v === null || v === undefined || !isFinite(v)) {
               if (cur) { segs.push(cur); cur = null; }
               continue;
@@ -485,10 +513,11 @@ function MarginLadder({ years, segments, totalMargin }) {
           return <text key={i} x={xOf(i)} y={H - 12} fontSize="9" textAnchor="middle" fill="#64748b">{String(yr).slice(2)}</text>;
         })}
       </svg>
-      {/* Legend with last value per segment + total */}
+      {/* Legend with last value per segment + total — values reflect
+          whichever metric (Margin or ROA) is currently selected. */}
       <div className="flex flex-wrap gap-3 mt-1 text-[10px] text-gray-600 dark:text-slate-300">
         {segments.map(function (s, si) {
-          const last = lastFinite(s.margin);
+          const last = lastFinite(s[seriesKey]);
           return (
             <span key={s.name} className="flex items-center gap-1">
               <span className="inline-block w-3 h-0.5" style={{ background: colorFor(si) }} />
@@ -496,8 +525,8 @@ function MarginLadder({ years, segments, totalMargin }) {
             </span>
           );
         })}
-        {totalMargin && (function () {
-          const last = lastFinite(totalMargin);
+        {totalSeries && (function () {
+          const last = lastFinite(totalSeries);
           if (last === null) return null;
           return (
             <span className="flex items-center gap-1">

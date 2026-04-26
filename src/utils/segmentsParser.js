@@ -211,6 +211,12 @@ export function parseSegmentsPaste(text) {
     const name = rowName(cells, yearStartCol);
     if (!name) continue;
 
+    /* Skip standalone separator/decoration rows like ">" or "-" that
+       some FactSet templates use between segment blocks. Otherwise the
+       parser would mistake them for new segment headers and orphan the
+       ROA row that comes right after (Hitachi template). */
+    if (/^[>\-_=*~+]+$/.test(name)) continue;
+
     const { values: vals, anyPct } = readValues(cells);
     const hasNumber = vals.some(isFiniteV);
 
