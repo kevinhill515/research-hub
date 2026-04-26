@@ -132,12 +132,14 @@ export default function GeoRevView() {
     });
 
     /* For each company with std-geo data, apply weight × share to the
-       running totals. Track which companies contributed (covered) and
-       which are missing data (so we can flag coverage gaps). */
+       running totals. Track which companies contributed (covered),
+       which are missing data, and which have data that doesn't sum to
+       ~100% (so the user knows where the diluted aggregates come from). */
     const regionTotals = {};   /* regionName -> weighted exposure */
     const countryTotals = {};  /* "regionName::countryName" -> weighted exposure */
     let coveredMV = 0;
     const missingCompanies = [];
+    const incompleteCompanies = []; /* sum of std regions outside [98%, 102%] */
     Object.keys(perCompanyMV).forEach(function (id) {
       const co = companies.find(function (c) { return c.id === id; });
       if (!co) return;
@@ -149,14 +151,20 @@ export default function GeoRevView() {
         return;
       }
       coveredMV += mv;
+      let coSum = 0;
       Object.keys(snap).forEach(function (regionName) {
         const r = snap[regionName];
         regionTotals[regionName] = (regionTotals[regionName] || 0) + w * r.share;
+        coSum += r.share;
         Object.keys(r.countries).forEach(function (cname) {
           const k = regionName + "::" + cname;
           countryTotals[k] = (countryTotals[k] || 0) + w * r.countries[cname];
         });
       });
+      /* Flag companies whose std-geo sum is outside [98%, 102%]. */
+      if (coSum < 0.98 || coSum > 1.02) {
+        incompleteCompanies.push({ name: co.name, weight: w, sum: coSum });
+      }
     });
 
     /* Build display rows in canonical region order. Country sub-rows
@@ -193,14 +201,19 @@ export default function GeoRevView() {
     const totalExposure = regionRows.reduce(function (s, r) { return s + r.exposure; }, 0);
 
     /* Sort missing companies by weight desc so the user sees the biggest
-       coverage gaps first. */
+       coverage gaps first. Same for incomplete (sorted by deviation
+       from 100% so the worst offenders are obvious). */
     missingCompanies.sort(function (a, b) { return b.weight - a.weight; });
+    incompleteCompanies.sort(function (a, b) {
+      return Math.abs(b.sum - 1) - Math.abs(a.sum - 1);
+    });
 
     return {
       regionRows: regionRows,
       totalExposure: totalExposure,
       coverageFraction: totalPortMV > 0 ? coveredMV / totalPortMV : 0,
       missingCompanies: missingCompanies,
+      incompleteCompanies: incompleteCompanies,
       totalPortMV: totalPortMV,
     };
   }, [companies, repData, fxRates, portKey]);
@@ -214,7 +227,7 @@ export default function GeoRevView() {
     });
   }
 
-  const { regionRows, totalExposure, coverageFraction, missingCompanies, totalPortMV } = aggregation;
+  const { regionRows, totalExposure, coverageFraction, missingCompanies, incompleteCompanies, totalPortMV } = aggregation;
   const empty = totalPortMV <= 0 || regionRows.every(function (r) { return r.exposure === 0; });
 
   return (
@@ -358,6 +371,37 @@ export default function GeoRevView() {
                   {missingCompanies.length > 12 && (
                     <div className="text-[10px] text-gray-400 dark:text-slate-500 italic mt-1">
                       … and {missingCompanies.length - 12} more
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {incompleteCompanies.length > 0 && (
+              <div className={TILE}>
+                <div className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-1">
+                  Doesn't Sum to 100% ({incompleteCompanies.length})
+                </div>
+                <div className="text-[10px] text-gray-500 dark:text-slate-400 mb-1.5">
+                  Holdings whose standardized regions sum outside 98–102% — re-check the upload for missing or double-counted regions. Sorted by deviation.
+                </div>
+                <div className="space-y-0.5">
+                  {incompleteCompanies.slice(0, 12).map(function (m) {
+                    const dev = m.sum - 1;
+                    const color = dev > 0.005 ? "#dc2626" : dev < -0.005 ? "#d97706" : "#64748b";
+                    return (
+                      <div key={m.name} className="flex items-center justify-between text-[11px]">
+                        <span className="truncate text-gray-700 dark:text-slate-300 flex-1">{m.name}</span>
+                        <span className="tabular-nums text-gray-500 dark:text-slate-400 mx-2">{(m.weight * 100).toFixed(1) + "%"}</span>
+                        <span className="tabular-nums font-semibold w-14 text-right" style={{ color: color }}>
+                          {(m.sum * 100).toFixed(1) + "%"}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {incompleteCompanies.length > 12 && (
+                    <div className="text-[10px] text-gray-400 dark:text-slate-500 italic mt-1">
+                      … and {incompleteCompanies.length - 12} more
                     </div>
                   )}
                 </div>

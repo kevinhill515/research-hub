@@ -503,7 +503,18 @@ export function useImport(){
     var parsed = parseSegmentsPaste(segmentsImportText);
     if(parsed.error){ alertFn("Couldn't parse segments: " + parsed.error); return; }
     if(!parsed.companyName){ alertFn("Could not find a company name above the year header. The first non-empty line should be the company name."); return; }
-    if(!parsed.segments || parsed.segments.length === 0){ alertFn("Parser found years but no segment rows. Did the paste include the segment table?"); return; }
+    /* Accept the paste if EITHER segments OR any geography section
+       (FactSet-reported regions or standardized) has data. Pre-existing
+       segment data is preserved when the user re-uploads with only the
+       geography portion. */
+    var hasSegments = parsed.segments && parsed.segments.length > 0;
+    var hasFactsetGeo = parsed.geography && parsed.geography.regions && parsed.geography.regions.length > 0;
+    var hasStdGeo = parsed.geography && parsed.geography.standardized
+      && parsed.geography.standardized.regions && parsed.geography.standardized.regions.length > 0;
+    if(!hasSegments && !hasFactsetGeo && !hasStdGeo){
+      alertFn("Parser found years but no segment, geography, or standardized region rows. Did the paste include the table body?");
+      return;
+    }
 
     function normalize(n){return(n||"").toLowerCase().replace(/\b(corporation|incorporated|international|holdings|holding|company|limited|group|ordinary|preferred|shares|class|depositary|depository|receipts|receipt|common|stock)\b/g,"").replace(/\b(co\.|inc\.|ltd\.|llc|plc|sa|ag|nv|se|co|inc|ltd|corp|gmbh|kgaa|ab|asa|oyj|spa|srl|bv|ord|com|adr|ads|gdr|pref|reit|shs|npv|cdi|cva|units|unit|jsc|pjsc|ojsc|oao|sab|bhd|tbk)\b/g,"").replace(/[.,&'()\-\/]/g," ").replace(/\s+/g," ").trim();}
 
@@ -525,14 +536,19 @@ export function useImport(){
       return;
     }
 
+    /* If the new paste has no segment rows but the company already had
+       segments saved, preserve the prior segments + parsedTotal so a
+       geography-only paste doesn't blow them away. Geography is always
+       replaced (it's the section the user is updating). */
+    var prior = match.segments || {};
     var next = {
-      years: parsed.years,
-      endDates: parsed.endDates,
+      years:              parsed.years,
+      endDates:           parsed.endDates,
       fiscalYearEndMonth: parsed.fiscalYearEndMonth,
-      segments: parsed.segments,
-      geography: parsed.geography,
-      parsedTotal: parsed.parsedTotal,
-      updatedAt: new Date().toISOString(),
+      segments:           hasSegments ? parsed.segments : (prior.segments || []),
+      geography:          parsed.geography,
+      parsedTotal:        hasSegments ? parsed.parsedTotal : (prior.parsedTotal || null),
+      updatedAt:          new Date().toISOString(),
     };
     var updated = Object.assign({}, match, { segments: next });
     setCompanies(function(cs){ return cs.map(function(c){ return c.id===updated.id ? updated : c; }); });
