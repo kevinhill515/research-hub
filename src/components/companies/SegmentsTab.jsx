@@ -252,11 +252,11 @@ export default function SegmentsTab({ company }) {
       {data.geography && data.geography.regions && data.geography.regions.length > 0 && (
         <div className="mt-3 grid grid-cols-1 lg:grid-cols-3 gap-3">
           <div className="lg:col-span-2">
-            <GeographyMix years={data.years} geography={data.geography} />
+            <GeographyMix years={data.years} geography={data.geography} endDates={data.endDates} />
           </div>
           <div className="flex flex-col gap-3">
-            <HomeMarketTile years={data.years} geography={data.geography} hqCountry={company && company.country} />
-            <GeographySnapshot years={data.years} geography={data.geography} />
+            <HomeMarketTile years={data.years} geography={data.geography} endDates={data.endDates} hqCountry={company && company.country} />
+            <GeographySnapshot years={data.years} geography={data.geography} endDates={data.endDates} />
           </div>
         </div>
       )}
@@ -799,7 +799,15 @@ function GeographyMix({ years, geography }) {
  * latest value and a sparkline of how it has trended. Pulled out from
  * the stacked area chart since it's typically a subset of its parent
  * region (e.g. France inside Western Europe) and double-counts there. */
-function HomeMarketTile({ years, geography, hqCountry }) {
+/* Pick the best year-label for column index `i`: the actual end date
+ * (e.g. "Mar 2025") if endDates is populated, else the bare year. */
+function yearLabel(years, endDates, i) {
+  if (i < 0 || i >= years.length) return "";
+  if (endDates && endDates[i]) return endDates[i];
+  return String(years[i]);
+}
+
+function HomeMarketTile({ years, geography, endDates, hqCountry }) {
   const hqLower = (hqCountry || "").toLowerCase().trim();
   const region = hqLower ? geography.regions.find(function (r) { return (r.name || "").toLowerCase().trim() === hqLower; }) : null;
   if (!region) {
@@ -833,19 +841,19 @@ function HomeMarketTile({ years, geography, hqCountry }) {
           <div className="text-[11px] tabular-nums" style={{ color: dColor }}>
             {(delta >= 0 ? "+" : "") + (delta * 100).toFixed(1) + "pp"}
             <span className="text-[9px] text-gray-400 dark:text-slate-500 ml-1 italic">
-              vs {refIdx >= 0 ? years[refIdx] : ""}
+              vs {yearLabel(years, endDates, refIdx)}
             </span>
           </div>
         )}
       </div>
       <div className="text-[9px] text-gray-400 dark:text-slate-500 italic mt-0.5">
-        of total revenue · {lastIdx >= 0 ? years[lastIdx] : ""}
+        of total revenue · {yearLabel(years, endDates, lastIdx)}
       </div>
     </div>
   );
 }
 
-function GeographySnapshot({ years, geography }) {
+function GeographySnapshot({ years, geography, endDates }) {
   /* Latest year, sorted by size desc, with 5Y delta. We use the latest
      year for which ANY region has a value (not just the revenue total)
      so a region that started reporting recently (e.g. Hitachi's
@@ -888,10 +896,10 @@ function GeographySnapshot({ years, geography }) {
     <div className={TILE}>
       <div className="flex items-baseline gap-2 mb-2">
         <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">Latest Snapshot</div>
-        <div className="text-[10px] text-gray-500 dark:text-slate-400">{lastIdx >= 0 ? years[lastIdx] : ""}</div>
+        <div className="text-[10px] text-gray-500 dark:text-slate-400">{yearLabel(years, endDates, lastIdx)}</div>
         {ranked.length > 0 && refIdx >= 0 && (
           <div className="ml-auto text-[10px] text-gray-400 dark:text-slate-500 italic">
-            Δ vs {years[refIdx]}
+            Δ vs {yearLabel(years, endDates, refIdx)}
           </div>
         )}
       </div>

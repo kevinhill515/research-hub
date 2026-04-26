@@ -382,12 +382,14 @@ function makeSegment(name, n) {
   };
 }
 
+/* Lenient prefix matching — handles trailing units like "ROA %",
+ * "Margin (%)", "Sales (M EUR)" that some templates include. */
 function subRowKind(name) {
   const t = (name || "").toLowerCase().replace(/\s+/g, " ").trim();
-  if (t === "sales" || t === "revenue") return "sales";
-  if (t === "ebit" || t === "operating income" || t === "op income") return "ebit";
-  if (t === "margin" || t === "operating margin" || t === "ebit margin") return "margin";
-  if (t === "roa" || t === "return on assets") return "roa";
+  if (/^(sales|revenue)\b/.test(t))                                   return "sales";
+  if (/^(ebit|operating income|op income)\b/.test(t))                 return "ebit";
+  if (/^(operating margin|ebit margin|margin)\b/.test(t))             return "margin";
+  if (/^(roa|return on assets)\b/.test(t))                            return "roa";
   return null;
 }
 
