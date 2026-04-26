@@ -217,10 +217,18 @@ export default function GeoRevView() {
       return Math.abs(b.impact) - Math.abs(a.impact);
     });
 
+    /* Cash + DIVACC = portfolio MV not attributable to any holding.
+       Useful sanity check: covered + missing-company + cash should
+       sum to ~100% of portfolio MV. */
+    let allCompanyMV = 0;
+    Object.keys(perCompanyMV).forEach(function (id) { allCompanyMV += perCompanyMV[id]; });
+    const cashFraction = totalPortMV > 0 ? Math.max(0, (totalPortMV - allCompanyMV) / totalPortMV) : 0;
+
     return {
       regionRows: regionRows,
       totalExposure: totalExposure,
       coverageFraction: totalPortMV > 0 ? coveredMV / totalPortMV : 0,
+      cashFraction: cashFraction,
       missingCompanies: missingCompanies,
       incompleteCompanies: incompleteCompanies,
       totalPortMV: totalPortMV,
@@ -236,7 +244,7 @@ export default function GeoRevView() {
     });
   }
 
-  const { regionRows, totalExposure, coverageFraction, missingCompanies, incompleteCompanies, totalPortMV } = aggregation;
+  const { regionRows, totalExposure, coverageFraction, cashFraction, missingCompanies, incompleteCompanies, totalPortMV } = aggregation;
   const empty = totalPortMV <= 0 || regionRows.every(function (r) { return r.exposure === 0; });
 
   return (
@@ -263,8 +271,10 @@ export default function GeoRevView() {
         </div>
         <div className="ml-auto flex items-center gap-3 text-[10px]">
           <span className="text-gray-500 dark:text-slate-400">
-            Coverage: <span className="font-semibold tabular-nums text-gray-900 dark:text-slate-100">{(coverageFraction * 100).toFixed(0)}%</span>
-            <span className="text-gray-400 dark:text-slate-500 italic ml-1">of portfolio MV</span>
+            Coverage: <span className="font-semibold tabular-nums text-gray-900 dark:text-slate-100">{(coverageFraction * 100).toFixed(1)}%</span>
+          </span>
+          <span className="text-gray-500 dark:text-slate-400">
+            Cash: <span className="font-semibold tabular-nums text-gray-900 dark:text-slate-100">{(cashFraction * 100).toFixed(1)}%</span>
           </span>
           <span className="text-gray-500 dark:text-slate-400">
             Σ regions: <span className="font-semibold tabular-nums text-gray-900 dark:text-slate-100">{(totalExposure * 100).toFixed(1)}%</span>
@@ -348,15 +358,25 @@ export default function GeoRevView() {
           <div className="flex flex-col gap-3">
             <div className={TILE}>
               <div className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-1">Coverage</div>
-              <div className="text-3xl font-bold tabular-nums text-gray-900 dark:text-slate-100">
-                {(coverageFraction * 100).toFixed(1) + "%"}
-              </div>
-              <div className="text-[10px] text-gray-500 dark:text-slate-400 italic">
-                of portfolio MV has standardized geography uploaded
+              <div className="flex items-baseline gap-3">
+                <div>
+                  <div className="text-3xl font-bold tabular-nums text-gray-900 dark:text-slate-100">
+                    {(coverageFraction * 100).toFixed(1) + "%"}
+                  </div>
+                  <div className="text-[10px] text-gray-500 dark:text-slate-400 italic">
+                    of portfolio MV has std geo
+                  </div>
+                </div>
+                <div className="ml-auto text-right">
+                  <div className="text-2xl font-semibold tabular-nums text-gray-700 dark:text-slate-300">
+                    {(cashFraction * 100).toFixed(1) + "%"}
+                  </div>
+                  <div className="text-[10px] text-gray-500 dark:text-slate-400 italic">cash + DIVACC</div>
+                </div>
               </div>
               {coverageFraction < 0.99 && (
                 <div className="mt-2 text-[10px] text-amber-700 dark:text-amber-400 italic">
-                  Aggregate region totals are diluted by the {((1 - coverageFraction) * 100).toFixed(1)}% of MV that's missing data — they sum to {(totalExposure * 100).toFixed(1)}% rather than 100%.
+                  Σ regions = {(totalExposure * 100).toFixed(1)}% — the {((1 - coverageFraction) * 100).toFixed(1)}% of MV without std data dilutes the rollup. Cash alone explains ~{(cashFraction * 100).toFixed(1)}pp; the rest ({((1 - coverageFraction - cashFraction) * 100).toFixed(1)}pp) is missing-data holdings.
                 </div>
               )}
             </div>
