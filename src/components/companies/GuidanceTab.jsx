@@ -22,8 +22,8 @@
  *   3. Else show absolute values only with a "no Y/Y baseline" note.
  */
 
-import { fmtMoney, fmtPct, isFiniteNum } from '../../utils/chart.js';
-import { lastFinite } from '../../utils/chart.js';
+import { fmtMoney, fmtPct, lastFinite } from '../../utils/chart.js';
+import { isFiniteNum } from '../../utils/numbers.js';
 
 /* "2026-03-31" → "FY26". Uses the year from the period date.
  * (Some companies have non-Dec FYs where this matters: Sony's "FY26"
