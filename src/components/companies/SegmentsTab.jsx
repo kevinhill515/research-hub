@@ -99,10 +99,19 @@ export default function SegmentsTab({ company }) {
     const has2 = v2 !== null && v2 !== undefined && v2 !== "" && isFinite(parseFloat(v2));
     return has1 || has2;
   }
-  const allOpSegs   = data.segments.filter(function (s) { return !s.isCostCenter; });
-  const opSegs      = allOpSegs.filter(isActive);
-  const inactiveOps = allOpSegs.filter(function (s) { return !isActive(s); });
-  const costCenters = data.segments.filter(function (s) { return s.isCostCenter; });
+  /* opSegs        = ALL operating segments — used by the historical
+                       Revenue Mix / Margin Ladder charts so discontinued
+                       segments still show up in the time-series view
+                       (their contribution in earlier years is real and
+                       relevant context).
+     activeOpSegs   = only those reporting in the latest FY — used for
+                       the per-segment tiles below. Discontinued segments
+                       have no current data to track at the tile level.
+     inactiveOps    = the difference, surfaced as a small "N hidden" hint. */
+  const opSegs       = data.segments.filter(function (s) { return !s.isCostCenter; });
+  const activeOpSegs = opSegs.filter(isActive);
+  const inactiveOps  = opSegs.filter(function (s) { return !isActive(s); });
+  const costCenters  = data.segments.filter(function (s) { return s.isCostCenter; });
 
   return (
     <div className="mb-6">
@@ -164,9 +173,13 @@ export default function SegmentsTab({ company }) {
               <MarginLadder years={data.years} segments={opSegs} totalMargin={totalMargin} totalRoa={totalRoa} />
             </div>
 
-            {/* SECTION 3 — Per-segment cards (with Total card first). */}
+            {/* SECTION 3 — Per-segment cards (with Total card first).
+                Active segments only — discontinued segments have no
+                current contribution and clutter the tile grid. They
+                still appear in the historical Revenue Mix / Margin
+                charts above, where their past contribution is relevant. */}
             <div className="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {(opSegs.length > 0 || costCenters.length > 0) && (
+              {(activeOpSegs.length > 0 || costCenters.length > 0) && (
                 <TotalCard
                   years={data.years}
                   totalSales={totalSales}
@@ -176,7 +189,7 @@ export default function SegmentsTab({ company }) {
                   parsedTotal={data.parsedTotal}
                 />
               )}
-              {opSegs.map(function (s, i) {
+              {activeOpSegs.map(function (s, i) {
                 return <SegmentCard key={s.name} segment={s} years={data.years} color={colorFor(i)} ccy={ccy}
                   totalSales={totalSales} totalEbit={totalEbit} />;
               })}
@@ -209,11 +222,34 @@ export default function SegmentsTab({ company }) {
           (Americas / Europe / Asia-Pac / Africa-ME) with sub-country
           detail. Same buckets across companies → enables portfolio-
           weighted regional aggregation. */}
-      {data.geography && data.geography.standardized && data.geography.standardized.regions && data.geography.standardized.regions.length > 0 && (
-        <div className="mt-3">
-          <StandardizedGeography years={data.years} stdGeo={data.geography.standardized} endDates={data.endDates} />
-        </div>
-      )}
+      {data.geography && data.geography.standardized && data.geography.standardized.regions && data.geography.standardized.regions.length > 0 && (function(){
+        /* Display-time dedupe of standardized regions: in older parses
+           (before the parser-side guard) a stray reported-geo row with
+           a canonical region name (e.g. FLEX's "Americas 0.3%") could
+           land in standardized as a duplicate. Render the LARGER one
+           per canonical name without requiring a re-import. */
+        const seen = {};
+        const cleaned = [];
+        (data.geography.standardized.regions || []).forEach(function (r) {
+          const key = (r.name || "").toLowerCase().trim();
+          const last = (function(){ for (let i = (r.values||[]).length - 1; i >= 0; i--) { const v = r.values[i]; if (v !== null && v !== undefined && isFinite(v)) return v; } return null; })();
+          const mag = last !== null ? Math.abs(last) : 0;
+          if (seen[key] === undefined) { seen[key] = cleaned.length; cleaned.push(r); }
+          else {
+            const idx = seen[key];
+            const cur = cleaned[idx];
+            const curLast = (function(){ for (let i = (cur.values||[]).length - 1; i >= 0; i--) { const v = cur.values[i]; if (v !== null && v !== undefined && isFinite(v)) return v; } return null; })();
+            const curMag = curLast !== null ? Math.abs(curLast) : 0;
+            if (mag > curMag) cleaned[idx] = r;
+          }
+        });
+        const cleanedStdGeo = Object.assign({}, data.geography.standardized, { regions: cleaned });
+        return (
+          <div className="mt-3">
+            <StandardizedGeography years={data.years} stdGeo={cleanedStdGeo} endDates={data.endDates} />
+          </div>
+        );
+      })()}
     </div>
   );
 }

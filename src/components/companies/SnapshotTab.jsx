@@ -411,7 +411,10 @@ function TrailingPerformance({ values, benchmarkRows, companyName }) {
 
   return (
     <div className={TILE}>
-      <div className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-2">Trailing Performance</div>
+      <div className="flex items-baseline justify-between mb-2">
+        <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">Trailing Performance</div>
+        <div className="text-[10px] text-gray-400 dark:text-slate-500 italic">USD</div>
+      </div>
       <div className="overflow-x-auto">
         <div style={{ display: "grid", gridTemplateColumns: "minmax(140px, 1.6fr) repeat(" + PERF_WINDOWS.length + ", minmax(56px, 1fr))" }}>
           {/* Header row */}

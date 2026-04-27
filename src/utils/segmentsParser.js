@@ -327,13 +327,22 @@ export function parseSegmentsPaste(text) {
       mode = "stdgeo";
       if (!geography.standardized) geography.standardized = { regions: [] };
       /* Dedupe: if a region with this canonical name already exists,
-         REPLACE it. The standardized section comes after the reported
-         section, so a later same-named row reflects the user's intended
-         standardized split. */
+         keep the row whose latest value is LARGER. A standardized region
+         is by definition a meaningful share of revenue (typically 5-70%);
+         a stray reported-geo row with the same canonical name (e.g.
+         FLEX's "Americas 0.3%") is small. Comparing on magnitude reliably
+         picks the canonical one regardless of which appeared first. */
       const existingIdx = geography.standardized.regions.findIndex(function(r){ return r.name.toLowerCase() === name.toLowerCase(); });
       const next = { name: name, values: normalizedTrial, countries: [] };
-      if (existingIdx >= 0) geography.standardized.regions[existingIdx] = next;
-      else                  geography.standardized.regions.push(next);
+      if (existingIdx >= 0) {
+        const existing = geography.standardized.regions[existingIdx];
+        const existingV = Math.abs(latestVal(existing.values) || 0);
+        const newV      = Math.abs(latestVal(normalizedTrial) || 0);
+        if (newV > existingV) geography.standardized.regions[existingIdx] = next;
+        /* else keep existing (it's the larger / more meaningful one). */
+      } else {
+        geography.standardized.regions.push(next);
+      }
       continue;
     }
 

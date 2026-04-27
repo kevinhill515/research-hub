@@ -443,10 +443,13 @@ function RevisionsBarChart({ series, company }) {
               {/* Stock performance for this window — sits directly under
                   the column label so revisions can be read against the
                   market's reaction. Color-coded green/red, gray when no
-                  metrics imported. */}
+                  metrics imported. Returns are in USD (FactSet metrics
+                  import normalizes to the listed-security's currency,
+                  USD for US tickers / ADRs which is what the script
+                  pulls for trailing perf). */}
               {(function(){
                 const sp = stockPerfFor(WINDOWS[ci].perfKey);
-                const txt = sp === null ? "Stock: —" : "Stock: " + (sp >= 0 ? "+" : "") + (sp * 100).toFixed(1) + "%";
+                const txt = sp === null ? "Stock (USD): —" : "Stock (USD): " + (sp >= 0 ? "+" : "") + (sp * 100).toFixed(1) + "%";
                 const fill = sp === null ? "#94a3b8" : (sp >= 0 ? "#16a34a" : "#dc2626");
                 return <text x={cx} y={H - 18} fontSize="10" textAnchor="middle" fill={fill} fontWeight="600">{txt}</text>;
               })()}
