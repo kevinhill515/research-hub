@@ -170,6 +170,51 @@ export function CompanyDetail(props){
                   </div>)}
                 </div>
               </div>
+              {/* ETF sector mix — for the rare case (e.g. iShares EWY) where a
+                  single holding spans multiple sectors and we want the dashboard
+                  Sector breakdown to reflect that split. Hidden inside Debug
+                  panel so non-ETF companies see no extra UI. When set, the
+                  Sector breakdown distributes this company's MV by these % and
+                  shows a slice of the company in each contributing sector. */}
+              <div className="mt-4 pt-3 border-t border-blue-200 dark:border-blue-800">
+                <div className="flex justify-between items-center mb-2">
+                  <div className="font-semibold text-xs text-gray-900 dark:text-slate-100 font-sans">ETF Sector Mix <span className="text-gray-500 dark:text-slate-400 font-normal">(optional — splits Sector breakdown across GICS sectors)</span></div>
+                  {selCo.sectorWeights ? (
+                    <button onClick={function(){ var u=Object.assign({},selCo); delete u.sectorWeights; setSelCo(u); setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});}); }} className={BTN_SM}>Remove</button>
+                  ) : (
+                    <button onClick={function(){ var u=Object.assign({},selCo,{sectorWeights:{}}); setSelCo(u); setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});}); }} className={BTN_SM}>Add</button>
+                  )}
+                </div>
+                {selCo.sectorWeights && (function(){
+                  var sw = selCo.sectorWeights || {};
+                  var sum = SECTOR_ORDER.reduce(function(s,k){var v=parseFloat(sw[k]); return s + (isFinite(v)?v:0);}, 0);
+                  return (<div>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-x-3 gap-y-1 text-xs font-sans">
+                      {SECTOR_ORDER.map(function(s){
+                        var v = sw[s] != null ? String(sw[s]) : "";
+                        return (<label key={s} className="flex items-center gap-1.5">
+                          <span className="text-gray-700 dark:text-slate-300 flex-1 truncate" title={s}>{s}</span>
+                          <input value={v}
+                            onChange={function(e){
+                              var raw=e.target.value.replace(/[^0-9.\-]/g,"");
+                              var nw=Object.assign({},sw);
+                              if(raw==="") delete nw[s]; else nw[s]=raw;
+                              var u=Object.assign({},selCo,{sectorWeights:nw});
+                              setSelCo(u);
+                              setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});});
+                            }}
+                            placeholder="0"
+                            className={INP + " !text-xs !px-1.5 !py-0.5 w-[55px] text-right"}/>
+                          <span className="text-gray-400 dark:text-slate-500">%</span>
+                        </label>);
+                      })}
+                    </div>
+                    <div className={"mt-2 text-[11px] " + (Math.abs(sum-100)<0.5 ? "text-green-700 dark:text-green-400" : "text-amber-700 dark:text-amber-400")}>
+                      Total: {sum.toFixed(1)}% {Math.abs(sum-100)<0.5 ? "✓" : "(should sum to 100% — values are normalized at display time if not)"}
+                    </div>
+                  </div>);
+                })()}
+              </div>
             </div>);
           })()}
           {/* Tabs */}

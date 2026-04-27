@@ -141,9 +141,25 @@ export function calcBreakdowns(companies, repData, fxRates, portKey) {
     inPort.forEach(function (c) {
       const mv = calcCompanyRepMV(c, pRep, fxRates, owners);
       if (!mv) return;
-      if (c.sector) sectors[c.sector] = (sectors[c.sector] || 0) + mv;
       if (c.country) countries[c.country] = (countries[c.country] || 0) + mv;
-      byCompany.push({ id: c.id, name: c.name, sector: c.sector, country: c.country, mv, portfolio: pk });
+
+      /* ETF sector split: when c.sectorWeights has positive entries that
+         sum to > 0, distribute MV across sectors proportionally and emit
+         one byCompany entry per slice (same id/name). Otherwise fall back
+         to the single-sector behavior using c.sector. */
+      const sw = c.sectorWeights || null;
+      const swKeys = sw ? Object.keys(sw).filter(function (k) { return parseFloat(sw[k]) > 0; }) : [];
+      const swSum  = swKeys.reduce(function (s, k) { return s + parseFloat(sw[k]); }, 0);
+      if (swKeys.length > 0 && swSum > 0) {
+        swKeys.forEach(function (k) {
+          const slice = mv * (parseFloat(sw[k]) / swSum);
+          sectors[k] = (sectors[k] || 0) + slice;
+          byCompany.push({ id: c.id, name: c.name, sector: k, country: c.country, mv: slice, portfolio: pk });
+        });
+      } else {
+        if (c.sector) sectors[c.sector] = (sectors[c.sector] || 0) + mv;
+        byCompany.push({ id: c.id, name: c.name, sector: c.sector, country: c.country, mv, portfolio: pk });
+      }
     });
   });
 

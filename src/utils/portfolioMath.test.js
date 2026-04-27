@@ -12,6 +12,7 @@ import {
   calcDiff,
   getNextReport,
   getPerf5d,
+  calcBreakdowns,
 } from "./portfolioMath.js";
 
 /* ------------------------------ toUSD ------------------------------ */
@@ -250,5 +251,66 @@ describe("getPerf5d", () => {
     expect(getPerf5d({ tickers: [{ isOrdinary: true }] })).toBeNull();
     expect(getPerf5d({ tickers: [] })).toBeNull();
     expect(getPerf5d({})).toBeNull();
+  });
+});
+
+/* -------------------- calcBreakdowns sectorWeights -------------------- */
+describe("calcBreakdowns sectorWeights (ETF split)", () => {
+  /* Setup: a regular Tech holding ($60K) and an ETF ($40K) split 50/30/20
+     across Tech / Financials / Industrials. Expect the Sector breakdown to
+     show the ETF's MV distributed across all three sectors, with one
+     byCompany entry per slice. */
+  const companies = [
+    { id: "a", name: "Apple", sector: "Information Technology", country: "United States", portfolios: ["GL"], tickers: [{ ticker: "AAPL", price: "100", currency: "USD" }] },
+    { id: "etf", name: "iShares EWY", sector: "Financials", country: "South Korea", portfolios: ["GL"],
+      tickers: [{ ticker: "EWY", price: "100", currency: "USD" }],
+      sectorWeights: { "Information Technology": 50, "Financials": 30, "Industrials": 20 } },
+  ];
+  const repData = { GL: { AAPL: { shares: 600 }, EWY: { shares: 400 } } };
+  const fx = {};
+
+  it("distributes ETF MV across sector slices", () => {
+    const r = calcBreakdowns(companies, repData, fx, "GL");
+    expect(r.totalMV).toBe(100000);
+    /* Tech = 60K (Apple) + 50% of 40K (ETF) = 60K + 20K = 80K → 80% */
+    expect(r.sectors["Information Technology"]).toBeCloseTo(80, 5);
+    /* Financials = 30% of 40K = 12K → 12% */
+    expect(r.sectors["Financials"]).toBeCloseTo(12, 5);
+    /* Industrials = 20% of 40K = 8K → 8% */
+    expect(r.sectors["Industrials"]).toBeCloseTo(8, 5);
+  });
+
+  it("emits one byCompany row per ETF slice (same id)", () => {
+    const r = calcBreakdowns(companies, repData, fx, "GL");
+    const etfRows = r.byCompany.filter((c) => c.id === "etf");
+    expect(etfRows.length).toBe(3);
+    const sectors = etfRows.map((c) => c.sector).sort();
+    expect(sectors).toEqual(["Financials", "Industrials", "Information Technology"]);
+    const totalEtfMv = etfRows.reduce((s, c) => s + c.mv, 0);
+    expect(totalEtfMv).toBeCloseTo(40000, 5);
+  });
+
+  it("preserves country (single, not split) for the ETF", () => {
+    const r = calcBreakdowns(companies, repData, fx, "GL");
+    expect(r.countries["South Korea"]).toBeCloseTo(40, 5);
+    expect(r.countries["United States"]).toBeCloseTo(60, 5);
+  });
+
+  it("normalizes weights when they don't sum to 100", () => {
+    const cs = JSON.parse(JSON.stringify(companies));
+    cs[1].sectorWeights = { "Information Technology": 1, "Financials": 1 }; /* sum=2 */
+    const r = calcBreakdowns(cs, repData, fx, "GL");
+    /* 50/50 of 40K → +20K to each */
+    expect(r.sectors["Information Technology"]).toBeCloseTo(80, 5); /* 60K+20K */
+    expect(r.sectors["Financials"]).toBeCloseTo(20, 5);
+  });
+
+  it("falls back to single c.sector when sectorWeights is empty/missing", () => {
+    const cs = JSON.parse(JSON.stringify(companies));
+    cs[1].sectorWeights = {}; /* empty → fall back */
+    const r = calcBreakdowns(cs, repData, fx, "GL");
+    /* ETF's full $40K lands in its declared sector (Financials) */
+    expect(r.sectors["Financials"]).toBeCloseTo(40, 5);
+    expect(r.sectors["Information Technology"]).toBeCloseTo(60, 5); /* Apple only */
   });
 });
