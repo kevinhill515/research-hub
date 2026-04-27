@@ -64,6 +64,18 @@ export function useImport(){
     });
     if(rows.length===0){alertFn("No valid rows parsed. Expected columns: Date, Name, Portfolio, Shares, Price, Amount.");return;}
     var normalize = normalizeCompanyName;  /* shared util — see src/utils/nameMatch.js */
+    /* DIAGNOSTIC — temporary: dump stored name + usTickerName for any
+       company whose name contains one of these substrings, so we can see
+       what the actual stored values look like vs the Tx-file names. */
+    try{
+      var DIAG=["easyjet","yamaha","hikma","yue yuen"];
+      companies.forEach(function(c){
+        var n=(c.name||"").toLowerCase();
+        if(DIAG.some(function(d){return n.indexOf(d)>=0;})){
+          console.log("[Tx diag]",JSON.stringify({name:c.name,usTickerName:c.usTickerName,nameLen:(c.name||"").length,usLen:(c.usTickerName||"").length,nameCodes:Array.from(c.name||"").map(function(ch){return ch.charCodeAt(0);}),usCodes:Array.from(c.usTickerName||"").map(function(ch){return ch.charCodeAt(0);})}));
+        }
+      });
+    }catch(e){console.warn("[Tx diag] error",e);}
     var byName={},byNorm={};
     rows.forEach(function(r){var k=(r.name||"").toLowerCase().trim();(byName[k]=byName[k]||[]).push(r);(byNorm[normalize(r.name)]=byNorm[normalize(r.name)]||[]).push(r);});
     var matchedNames={};var unmatched=new Set(rows.map(function(r){return r.name;}));
