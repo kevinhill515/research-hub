@@ -3,7 +3,10 @@
  *
  * Two tiles:
  *   1. Trailing Performance — horizontal bars for 5D / MTD / QTD / 3M
- *      / 6M / YTD / 1Y. Color + magnitude tell the story instantly.
+ *      / 6M / YTD / 1Y for the stock, plus rows for each Core/Value
+ *      benchmark applicable to the portfolios this company is in.
+ *      Order of windows is computed each render so YTD slots into the
+ *      right position based on calendar date.
  *   2. Snapshot vs 5Y History — for each key metric, where the current
  *      value sits in its 5Y range, with color signaling cheap/rich or
  *      strong/weak depending on the metric's "polarity".
@@ -17,9 +20,13 @@
  *   - selCo.metrics            — current values for snapshot
  *   - selCo.ratios.values      — 5Y history for each metric
  *   - selCo.valuation          — peCurrent + peLow5/peHigh5 for P/E band
+ *   - meta.marketsSnapshot.indices — benchmark trailing returns
  */
 
+import { useEffect, useState } from 'react';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
+import { BENCHMARKS } from '../../constants/index.js';
+import { supaGet } from '../../api/index.js';
 
 const TILE = "rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3";
 const GRID_COLOR = "rgba(100,116,139,0.15)";
@@ -87,20 +94,97 @@ const SNAPSHOT_METRICS = [
   { label: "Int Coverage",ratio: "EBIT/Interest Expense (Int. Coverage)", metric: "intCov", fmt: "x", polarity: "higher", group: "Balance" },
 ];
 
-const PERF_WINDOWS = [
-  { key: "5D",  label: "5D"  },
-  { key: "MTD", label: "MTD" },
-  { key: "QTD", label: "QTD" },
-  { key: "3M",  label: "3M"  },
-  { key: "6M",  label: "6M"  },
-  { key: "YTD", label: "YTD" },
-  { key: "1Y",  label: "1Y"  },
-];
+/* Trailing-window ordering. YTD's effective lookback is "days since
+ * Jan 1", which varies through the year. In April YTD ≈ 115 days
+ * (between 3M and 6M); in July ≈ 200 days (between 6M and 1Y). Sort
+ * windows by their actual lookback days so YTD lands correctly. */
+function buildPerfWindows(now) {
+  const today = now || new Date();
+  const start = new Date(today.getFullYear(), 0, 1);
+  const ytdDays = Math.floor((today - start) / 86400000);
+  /* MTD/QTD lookbacks vary with month; we use rough day-counts that
+     are close enough for sort ordering. */
+  const dom = today.getDate();
+  const monthInQ = today.getMonth() % 3;
+  const qtdDays = monthInQ * 30 + dom;
+  return [
+    { key: "5D",  label: "5D",  days: 5 },
+    { key: "MTD", label: "MTD", days: dom },
+    { key: "QTD", label: "QTD", days: qtdDays },
+    { key: "3M",  label: "3M",  days: 90 },
+    { key: "6M",  label: "6M",  days: 180 },
+    { key: "YTD", label: "YTD", days: ytdDays },
+    { key: "1Y",  label: "1Y",  days: 365 },
+  ].sort(function (a, b) { return a.days - b.days; });
+}
+
+/* Benchmark label resolution. For each benchmark name in BENCHMARKS
+ * (e.g. "ACWI"), we search the marketsSnapshot Indices section for
+ * the first ETF-ticker match (intraday), falling back to the first
+ * non-ETF match (prior close). ETF tickers follow the AAA-XX format
+ * (e.g. ACWI-US, IWVU-GB); index codes (digits, MS-prefix) and blanks
+ * resolve to non-ETF. Aliases handle the "MSCI " prefix and
+ * "(Index)" suffix conventions in the user's upload. */
+function isEtfTicker(t) {
+  if (!t) return false;
+  return /^[A-Za-z][A-Za-z0-9]+[-/][A-Za-z]{2}$/.test(String(t).trim());
+}
+
+function findBenchmarkRow(indices, benchName) {
+  if (!indices || !Array.isArray(indices) || !benchName) return null;
+  const candidates = [
+    benchName,
+    "MSCI " + benchName,
+    benchName + " (Index)",
+    "MSCI " + benchName + " (Index)",
+  ].map(function (s) { return s.toLowerCase().trim(); });
+  const matches = indices.filter(function (r) {
+    const lbl = ((r.label || r.name || "") + "").toLowerCase().trim();
+    return candidates.indexOf(lbl) >= 0;
+  });
+  if (matches.length === 0) return null;
+  const etfMatch = matches.find(function (r) { return isEtfTicker(r.ticker); });
+  if (etfMatch) return { row: etfMatch, isPriorClose: false };
+  return { row: matches[0], isPriorClose: true };
+}
+
+function benchmarkValue(row, key) {
+  if (!row) return null;
+  const v = row[key.toLowerCase()] !== undefined ? row[key.toLowerCase()]
+          : row[key] !== undefined ? row[key] : null;
+  if (v === null || v === undefined) return null;
+  if (typeof v === "number") return isFinite(v) ? v : null;
+  /* String form like "0.74%" — strip and parse */
+  const s = String(v).replace(/%/g, "").trim();
+  if (!s) return null;
+  const n = parseFloat(s);
+  if (!isFinite(n)) return null;
+  /* If the source is %-form (e.g. "8.66"), we want decimal 0.0866 */
+  return Math.abs(n) > 1.5 ? n / 100 : n;
+}
 
 /* ======================================================================== */
 
 export default function SnapshotTab({ company }) {
   const { } = useCompanyContext();
+
+  /* Load marketsSnapshot lazily on first render — only this tab needs
+     it, no point bloating the global context. */
+  const [marketsSnap, setMarketsSnap] = useState(null);
+  useEffect(function () {
+    let cancelled = false;
+    (async function () {
+      try {
+        const r = await supaGet("meta", "key", "marketsSnapshot");
+        if (cancelled) return;
+        if (r && r.value) {
+          try { setMarketsSnap(JSON.parse(r.value)); }
+          catch (e) { setMarketsSnap(null); }
+        }
+      } catch (e) { /* ignore */ }
+    })();
+    return function () { cancelled = true; };
+  }, []);
 
   const m = (company && company.metrics) || {};
   const hasMetrics = Object.keys(m).length > 0;
@@ -137,6 +221,26 @@ export default function SnapshotTab({ company }) {
     "YTD": parseFloat(perf.YTD),
     "1Y":  parseFloat(perf["1Y"]),
   };
+
+  /* ---- Benchmarks applicable to this company's portfolios ----
+   * For each portfolio the company is in, take Core + Value benchmarks
+   * from the BENCHMARKS map; dedupe; resolve to marketsSnapshot rows. */
+  const benchmarkNames = [];
+  (company.portfolios || []).forEach(function (p) {
+    const b = BENCHMARKS[p];
+    if (!b) return;
+    if (b.core && benchmarkNames.indexOf(b.core) < 0) benchmarkNames.push(b.core);
+    if (b.value && benchmarkNames.indexOf(b.value) < 0) benchmarkNames.push(b.value);
+  });
+  const indicesData = (marketsSnap && marketsSnap.indices) || null;
+  const benchmarkRows = benchmarkNames.map(function (name) {
+    const found = findBenchmarkRow(indicesData, name);
+    return {
+      name: name,
+      row: found ? found.row : null,
+      isPriorClose: found ? found.isPriorClose : false,
+    };
+  });
 
   /* ---- 5Y snapshot rows ---- */
   const snapshotRows = SNAPSHOT_METRICS.map(function (cfg) {
@@ -197,7 +301,11 @@ export default function SnapshotTab({ company }) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <TrailingPerformance values={perfValues} />
+        <TrailingPerformance
+          values={perfValues}
+          benchmarkRows={benchmarkRows}
+          companyName={company && company.name}
+        />
         <SnapshotHeatmap groupOrder={groupOrder} grouped={grouped} />
       </div>
 
@@ -212,78 +320,114 @@ export default function SnapshotTab({ company }) {
 
 /* ====================== Tile 1: Trailing Performance ===================== */
 
-function TrailingPerformance({ values }) {
-  const finite = PERF_WINDOWS.map(function (w) { return values[w.key]; }).filter(isFiniteV);
-  if (finite.length === 0) {
+function TrailingPerformance({ values, benchmarkRows, companyName }) {
+  const PERF_WINDOWS = buildPerfWindows();
+
+  /* Build rows: first the stock, then each benchmark. Each row is
+     { label, values: { 5D:..., MTD:..., ... }, isPriorClose: bool }. */
+  const rows = [
+    {
+      label: companyName || "Stock",
+      isStock: true,
+      isPriorClose: false,
+      values: values,
+    },
+  ].concat(
+    (benchmarkRows || []).map(function (b) {
+      const vals = {};
+      PERF_WINDOWS.forEach(function (w) {
+        vals[w.key] = benchmarkValue(b.row, w.key);
+      });
+      return {
+        label: b.name,
+        isStock: false,
+        isPriorClose: b.isPriorClose,
+        values: vals,
+        missing: !b.row,
+      };
+    })
+  );
+
+  /* Empty state — no perf data anywhere */
+  const anyData = rows.some(function (r) {
+    return PERF_WINDOWS.some(function (w) { return isFiniteV(r.values[w.key]); });
+  });
+  if (!anyData) {
     return (
       <div className={TILE}>
         <div className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-1">Trailing Performance</div>
-        <div className="text-xs text-gray-400 dark:text-slate-500 italic py-6 text-center">No performance data — needs a daily FactSet pull.</div>
+        <div className="text-xs text-gray-400 dark:text-slate-500 italic py-6 text-center">
+          No performance data — needs a daily FactSet pull (and benchmark rows in the Markets Dashboard upload).
+        </div>
       </div>
     );
   }
 
-  const absMax = Math.max.apply(null, finite.map(function (v) { return Math.abs(v); })) || 0.05;
-  const W = 600, H = 240, PAD_T = 12, PAD_B = 12, PAD_L = 56, PAD_R = 56;
-  const innerW = W - PAD_L - PAD_R;
-  const innerH = H - PAD_T - PAD_B;
-  const rowH = innerH / PERF_WINDOWS.length;
-  const cx = PAD_L + innerW / 2; /* center: 0% */
+  /* Compute color thresholds per window across all rows so the bars
+     are mutually comparable within a column. */
+  const absMaxByWindow = {};
+  PERF_WINDOWS.forEach(function (w) {
+    let mx = 0.02;
+    rows.forEach(function (r) {
+      const v = r.values[w.key];
+      if (isFiniteV(v) && Math.abs(v) > mx) mx = Math.abs(v);
+    });
+    absMaxByWindow[w.key] = mx;
+  });
 
-  function widthFor(v) {
-    if (!isFiniteV(v)) return 0;
-    return (Math.abs(v) / absMax) * (innerW / 2 - 4);
+  function fmt(v) {
+    if (!isFiniteV(v)) return "--";
+    return (v >= 0 ? "+" : "") + (v * 100).toFixed(1) + "%";
+  }
+  function color(v) {
+    if (!isFiniteV(v)) return "#94a3b8";
+    if (v >= 0.0005) return "#16a34a";
+    if (v <= -0.0005) return "#dc2626";
+    return "#64748b";
   }
 
   return (
     <div className={TILE}>
-      <div className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-1">Trailing Performance</div>
-      <svg width="100%" height={H} viewBox={"0 0 " + W + " " + H} role="img">
-        {/* Center "0%" axis */}
-        <line x1={cx} y1={PAD_T} x2={cx} y2={H - PAD_B} stroke="#94a3b8" strokeWidth="1" />
-        {/* Bars + labels */}
-        {PERF_WINDOWS.map(function (w, i) {
-          const v = values[w.key];
-          const yMid = PAD_T + i * rowH + rowH / 2;
-          const barH = rowH * 0.6;
-          const yTop = yMid - barH / 2;
-          if (!isFiniteV(v)) {
+      <div className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-2">Trailing Performance</div>
+      <div className="overflow-x-auto">
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(140px, 1.6fr) repeat(" + PERF_WINDOWS.length + ", minmax(56px, 1fr))" }}>
+          {/* Header row */}
+          <div className="text-[9px] uppercase tracking-wide text-gray-400 dark:text-slate-500 border-b border-slate-200 dark:border-slate-700 py-1"></div>
+          {PERF_WINDOWS.map(function (w) {
             return (
-              <g key={w.key}>
-                <text x={PAD_L - 6} y={yMid + 4} fontSize="11" textAnchor="end" fill="#64748b">{w.label}</text>
-                <text x={cx + 8} y={yMid + 4} fontSize="11" fill="#cbd5e1">--</text>
-              </g>
+              <div key={"h-" + w.key} className="text-[9px] uppercase tracking-wide text-gray-400 dark:text-slate-500 border-b border-slate-200 dark:border-slate-700 py-1 text-right">{w.label}</div>
             );
-          }
-          const positive = v >= 0;
-          const color = positive ? "#16a34a" : "#dc2626";
-          const w2 = widthFor(v);
-          return (
-            <g key={w.key}>
-              <text x={PAD_L - 6} y={yMid + 4} fontSize="11" textAnchor="end" fill="#64748b">{w.label}</text>
-              <rect
-                x={positive ? cx : cx - w2}
-                y={yTop}
-                width={Math.max(1, w2)}
-                height={barH}
-                fill={color}
-                opacity="0.85"
-                rx="2"
-              />
-              <text
-                x={positive ? cx + w2 + 4 : cx - w2 - 4}
-                y={yMid + 4}
-                fontSize="11"
-                textAnchor={positive ? "start" : "end"}
-                fill={color}
-                fontWeight="600"
-              >
-                {(v >= 0 ? "+" : "") + (v * 100).toFixed(1) + "%"}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
+          })}
+
+          {/* Data rows */}
+          {rows.map(function (r, ri) {
+            const isFirst = ri === 0;
+            const rowBg = isFirst ? "bg-blue-50/40 dark:bg-blue-950/20" : "";
+            return (
+              <div key={"row-" + ri} style={{ display: "contents" }}>
+                <div className={"py-1 px-1 text-[11px] font-medium text-gray-900 dark:text-slate-100 truncate " + rowBg}>
+                  {r.label}
+                  {r.isPriorClose && (
+                    <span className="text-[9px] text-amber-600 dark:text-amber-400 italic ml-1">(prior close)</span>
+                  )}
+                  {r.missing && (
+                    <span className="text-[9px] text-gray-400 dark:text-slate-500 italic ml-1">(no data)</span>
+                  )}
+                </div>
+                {PERF_WINDOWS.map(function (w) {
+                  const v = r.values[w.key];
+                  return (
+                    <div key={w.key} className={"py-1 px-1 text-[11px] tabular-nums text-right " + rowBg}
+                         style={{ color: color(v) }}>
+                      {fmt(v)}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
