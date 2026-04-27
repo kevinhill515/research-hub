@@ -7,6 +7,7 @@ import { parseDashboardUpload } from '../utils/dashboardParser.js';
 import { parseRatioPaste } from '../utils/ratioParser.js';
 import { parseSegmentsPaste } from '../utils/segmentsParser.js';
 import { parseEpsRevisionsPaste } from '../utils/epsRevisionsParser.js';
+import { findCompanyByName, findCompanyByTickerOrName, normalizeCompanyName } from '../utils/nameMatch.js';
 import { useAlert } from '../components/ui/DialogProvider.jsx';
 import { REP_ACCOUNTS } from '../constants/index.js';
 
@@ -62,7 +63,7 @@ export function useImport(){
       }
     });
     if(rows.length===0){alertFn("No valid rows parsed. Expected columns: Date, Name, Portfolio, Shares, Price, Amount.");return;}
-    function normalize(n){return(n||"").toLowerCase().replace(/\b(corporation|incorporated|international|holdings|holding|company|limited|group|ordinary|preferred|shares|class|depositary|depository|receipts|receipt|common|stock)\b/g,"").replace(/\b(co\.|inc\.|ltd\.|llc|plc|sa|ag|nv|se|co|inc|ltd|corp|gmbh|kgaa|ab|asa|oyj|spa|srl|bv|ord|com|adr|ads|gdr|pref|reit|shs|npv|cdi|cva|units|unit|jsc|pjsc|ojsc|oao|sab|bhd|tbk)\b/g,"").replace(/[.,&'()\-\/]/g," ").replace(/\s+/g," ").trim();}
+    var normalize = normalizeCompanyName;  /* shared util — see src/utils/nameMatch.js */
     var byName={},byNorm={};
     rows.forEach(function(r){var k=(r.name||"").toLowerCase().trim();(byName[k]=byName[k]||[]).push(r);(byNorm[normalize(r.name)]=byNorm[normalize(r.name)]||[]).push(r);});
     var matchedNames={};var unmatched=new Set(rows.map(function(r){return r.name;}));
@@ -459,21 +460,8 @@ export function useImport(){
     if(!parsed.companyName){ alertFn("Could not find a company name above the year header. The first non-empty line should be the company name."); return; }
     if(parsed.ratioNames.length===0){ alertFn("Parser found years but no data rows. Did the paste include the table body?"); return; }
 
-    function normalize(n){return(n||"").toLowerCase().replace(/\b(corporation|incorporated|international|holdings|holding|company|limited|group|ordinary|preferred|shares|class|depositary|depository|receipts|receipt|common|stock)\b/g,"").replace(/\b(co\.|inc\.|ltd\.|llc|plc|sa|ag|nv|se|co|inc|ltd|corp|gmbh|kgaa|ab|asa|oyj|spa|srl|bv|ord|com|adr|ads|gdr|pref|reit|shs|npv|cdi|cva|units|unit|jsc|pjsc|ojsc|oao|sab|bhd|tbk)\b/g,"").replace(/[.,&'()\-\/]/g," ").replace(/\s+/g," ").trim();}
-
     var targetName = parsed.companyName;
-    var tLower = targetName.toLowerCase().trim();
-    var tNorm  = normalize(targetName);
-
-    var match = null;
-    companies.forEach(function(c){
-      if(match) return;
-      var cn = (c.name||"").toLowerCase().trim();
-      var un = (c.usTickerName||"").toLowerCase().trim();
-      if(cn===tLower || un===tLower) { match = c; return; }
-      if(normalize(c.name)===tNorm || (un && normalize(c.usTickerName)===tNorm)) { match = c; return; }
-    });
-
+    var match = findCompanyByName(companies, targetName);
     if(!match){
       alertFn('No company matched "' + targetName + '". Add the company first (or check spelling), then re-import.');
       return;
@@ -518,21 +506,8 @@ export function useImport(){
       return;
     }
 
-    function normalize(n){return(n||"").toLowerCase().replace(/\b(corporation|incorporated|international|holdings|holding|company|limited|group|ordinary|preferred|shares|class|depositary|depository|receipts|receipt|common|stock)\b/g,"").replace(/\b(co\.|inc\.|ltd\.|llc|plc|sa|ag|nv|se|co|inc|ltd|corp|gmbh|kgaa|ab|asa|oyj|spa|srl|bv|ord|com|adr|ads|gdr|pref|reit|shs|npv|cdi|cva|units|unit|jsc|pjsc|ojsc|oao|sab|bhd|tbk)\b/g,"").replace(/[.,&'()\-\/]/g," ").replace(/\s+/g," ").trim();}
-
     var targetName = parsed.companyName;
-    var tLower = targetName.toLowerCase().trim();
-    var tNorm  = normalize(targetName);
-
-    var match = null;
-    companies.forEach(function(c){
-      if(match) return;
-      var cn = (c.name||"").toLowerCase().trim();
-      var un = (c.usTickerName||"").toLowerCase().trim();
-      if(cn===tLower || un===tLower) { match = c; return; }
-      if(normalize(c.name)===tNorm || (un && normalize(c.usTickerName)===tNorm)) { match = c; return; }
-    });
-
+    var match = findCompanyByName(companies, targetName);
     if(!match){
       alertFn('No company matched "' + targetName + '". Add the company first, then re-import.');
       return;
@@ -573,8 +548,6 @@ export function useImport(){
     if(parsed.error){ alertFn("Couldn't parse EPS revisions: " + parsed.error); return; }
     if(!parsed.rows || parsed.rows.length === 0){ alertFn("No data rows found in the paste."); return; }
 
-    function normalize(n){return(n||"").toLowerCase().replace(/\b(corporation|incorporated|international|holdings|holding|company|limited|group|ordinary|preferred|shares|class|depositary|depository|receipts|receipt|common|stock)\b/g,"").replace(/\b(co\.|inc\.|ltd\.|llc|plc|sa|ag|nv|se|co|inc|ltd|corp|gmbh|kgaa|ab|asa|oyj|spa|srl|bv|ord|com|adr|ads|gdr|pref|reit|shs|npv|cdi|cva|units|unit|jsc|pjsc|ojsc|oao|sab|bhd|tbk)\b/g,"").replace(/[.,&'()\-\/]/g," ").replace(/\s+/g," ").trim();}
-
     /* Build a single map by id of new epsRevisions to apply. */
     var updatesById = {};
     var matchedCount = 0;
@@ -582,28 +555,7 @@ export function useImport(){
     var asOf = new Date().toISOString();
 
     parsed.rows.forEach(function(row){
-      var tk = (row.ticker || "").toUpperCase().trim();
-      var nm = (row.name || "").toLowerCase().trim();
-      var nmNorm = normalize(row.name);
-      var match = null;
-      if(tk){
-        companies.forEach(function(c){
-          if(match) return;
-          (c.tickers || []).forEach(function(t){
-            if(match) return;
-            if((t.ticker||"").toUpperCase().trim() === tk) match = c;
-          });
-        });
-      }
-      if(!match && nm){
-        companies.forEach(function(c){
-          if(match) return;
-          var cn = (c.name||"").toLowerCase().trim();
-          var un = (c.usTickerName||"").toLowerCase().trim();
-          if(cn===nm || un===nm) { match = c; return; }
-          if(normalize(c.name)===nmNorm || (un && normalize(c.usTickerName)===nmNorm)) { match = c; return; }
-        });
-      }
+      var match = findCompanyByTickerOrName(companies, row.ticker, row.name);
       if(!match){
         unmatched.push(row.ticker || row.name || "(unknown)");
         return;
