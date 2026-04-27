@@ -383,7 +383,42 @@ export default function GuidanceTab({ company }) {
   history.forEach(function (r) {
     (rowsByMetric[r.item] = rowsByMetric[r.item] || []).push(r);
   });
-  const metrics = Object.keys(rowsByMetric).sort(function (a, b) {
+
+  /* Dedupe metrics whose row sets are identical (e.g. Sony's "Sales" vs
+     "Sales - Consolidated" — same numbers throughout). Compute a content
+     hash per metric from the (date, period, low, high, mean, actual)
+     tuples sorted; group metrics by hash; in each duplicate group keep
+     the shortest name (so "Sales" wins over "Sales - Consolidated"). The
+     hash is content-based, so when the values DO differ (e.g. some
+     companies' parent-only vs consolidated genuinely diverge) both
+     metrics still render. */
+  function contentHash(rows) {
+    return rows.slice().sort(function (a, b) {
+      return (a.date || "").localeCompare(b.date || "") || (a.period || "").localeCompare(b.period || "");
+    }).map(function (r) {
+      return [r.date, r.period, r.low, r.high, r.mean, r.actual].join("|");
+    }).join("¦");
+  }
+  const byHash = {};
+  Object.keys(rowsByMetric).forEach(function (m) {
+    const h = contentHash(rowsByMetric[m]);
+    (byHash[h] = byHash[h] || []).push(m);
+  });
+  const keepers = new Set();
+  Object.keys(byHash).forEach(function (h) {
+    const names = byHash[h];
+    /* Shortest name wins; ties broken by IS order (so the canonical
+       version of an ambiguous pair lands on the IS-ordered one). */
+    names.sort(function (a, b) {
+      if (a.length !== b.length) return a.length - b.length;
+      const oa = metricOrder(a), ob = metricOrder(b);
+      if (oa !== ob) return oa - ob;
+      return a.localeCompare(b);
+    });
+    keepers.add(names[0]);
+  });
+
+  const metrics = Object.keys(rowsByMetric).filter(function (m) { return keepers.has(m); }).sort(function (a, b) {
     const oa = metricOrder(a), ob = metricOrder(b);
     if (oa !== ob) return oa - ob;
     return a.localeCompare(b);
