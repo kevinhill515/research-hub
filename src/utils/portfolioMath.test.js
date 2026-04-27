@@ -305,6 +305,27 @@ describe("calcBreakdowns sectorWeights (ETF split)", () => {
     expect(r.sectors["Financials"]).toBeCloseTo(20, 5);
   });
 
+  it("Cash key is included in denominator but not distributed to any sector", () => {
+    const cs = JSON.parse(JSON.stringify(companies));
+    /* 50% Tech + 30% Fin + 15% Ind + 5% Cash = 100% total */
+    cs[1].sectorWeights = { "Information Technology": 50, "Financials": 30, "Industrials": 15, "Cash": 5 };
+    const r = calcBreakdowns(cs, repData, fx, "GL");
+    /* Tech = 60K (Apple) + 50% of 40K = 60K + 20K = 80K → 80% */
+    expect(r.sectors["Information Technology"]).toBeCloseTo(80, 5);
+    /* Fin = 30% of 40K = 12K → 12% */
+    expect(r.sectors["Financials"]).toBeCloseTo(12, 5);
+    /* Ind = 15% of 40K = 6K → 6% */
+    expect(r.sectors["Industrials"]).toBeCloseTo(6, 5);
+    /* Cash should NOT appear as a sector */
+    expect(r.sectors["Cash"]).toBeUndefined();
+    /* Sum of GICS sector weights from the ETF = 95% of its MV; the 5%
+       cash sleeve is implicit (not counted as sector exposure). */
+    const etfRows = r.byCompany.filter((c) => c.id === "etf");
+    expect(etfRows.length).toBe(3); /* Tech, Fin, Ind only — no Cash */
+    const totalEtfSectorMv = etfRows.reduce((s, c) => s + c.mv, 0);
+    expect(totalEtfSectorMv).toBeCloseTo(38000, 5); /* 95% of 40K */
+  });
+
   it("falls back to single c.sector when sectorWeights is empty/missing", () => {
     const cs = JSON.parse(JSON.stringify(companies));
     cs[1].sectorWeights = {}; /* empty → fall back */

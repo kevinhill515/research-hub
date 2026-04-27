@@ -178,39 +178,59 @@ export function CompanyDetail(props){
                   shows a slice of the company in each contributing sector. */}
               <div className="mt-4 pt-3 border-t border-blue-200 dark:border-blue-800">
                 <div className="flex justify-between items-center mb-2">
-                  <div className="font-semibold text-xs text-gray-900 dark:text-slate-100 font-sans">ETF Sector Mix <span className="text-gray-500 dark:text-slate-400 font-normal">(optional — splits Sector breakdown across GICS sectors)</span></div>
+                  <div className="font-semibold text-xs text-gray-900 dark:text-slate-100 font-sans">ETF Sector Mix <span className="text-gray-500 dark:text-slate-400 font-normal">(optional — splits Sector breakdown across GICS sectors; Cash isn't counted as sector exposure)</span></div>
                   {selCo.sectorWeights ? (
-                    <button onClick={function(){ var u=Object.assign({},selCo); delete u.sectorWeights; setSelCo(u); setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});}); }} className={BTN_SM}>Remove</button>
+                    <button onClick={function(){ var u=Object.assign({},selCo); delete u.sectorWeights; delete u.sectorWeightsUpdatedAt; setSelCo(u); setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});}); }} className={BTN_SM}>Remove</button>
                   ) : (
-                    <button onClick={function(){ var u=Object.assign({},selCo,{sectorWeights:{}}); setSelCo(u); setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});}); }} className={BTN_SM}>Add</button>
+                    <button onClick={function(){ var u=Object.assign({},selCo,{sectorWeights:{},sectorWeightsUpdatedAt:new Date().toISOString()}); setSelCo(u); setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});}); }} className={BTN_SM}>Add</button>
                   )}
                 </div>
                 {selCo.sectorWeights && (function(){
                   var sw = selCo.sectorWeights || {};
-                  var sum = SECTOR_ORDER.reduce(function(s,k){var v=parseFloat(sw[k]); return s + (isFinite(v)?v:0);}, 0);
+                  /* Local helper — bind once per render. Updates a single key,
+                     stamps the updatedAt, persists to companies state. */
+                  function updateWeight(key, raw){
+                    var clean=String(raw||"").replace(/[^0-9.\-]/g,"");
+                    var nw=Object.assign({},sw);
+                    if(clean==="") delete nw[key]; else nw[key]=clean;
+                    var u=Object.assign({},selCo,{sectorWeights:nw,sectorWeightsUpdatedAt:new Date().toISOString()});
+                    setSelCo(u);
+                    setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});});
+                  }
+                  var sectorSum = SECTOR_ORDER.reduce(function(s,k){var v=parseFloat(sw[k]); return s + (isFinite(v)?v:0);}, 0);
+                  var cashVal = parseFloat(sw["Cash"]);
+                  var cashSum = isFinite(cashVal) ? cashVal : 0;
+                  var totalSum = sectorSum + cashSum;
+                  var stamp = selCo.sectorWeightsUpdatedAt;
+                  /* Show date + time in user's locale, abbreviated. */
+                  var stampLabel = stamp ? new Date(stamp).toLocaleString(undefined,{year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}) : "(never)";
                   return (<div>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-x-3 gap-y-1 text-xs font-sans">
                       {SECTOR_ORDER.map(function(s){
                         var v = sw[s] != null ? String(sw[s]) : "";
                         return (<label key={s} className="flex items-center gap-1.5">
                           <span className="text-gray-700 dark:text-slate-300 flex-1 truncate" title={s}>{s}</span>
-                          <input value={v}
-                            onChange={function(e){
-                              var raw=e.target.value.replace(/[^0-9.\-]/g,"");
-                              var nw=Object.assign({},sw);
-                              if(raw==="") delete nw[s]; else nw[s]=raw;
-                              var u=Object.assign({},selCo,{sectorWeights:nw});
-                              setSelCo(u);
-                              setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});});
-                            }}
+                          <input value={v} onChange={function(e){updateWeight(s, e.target.value);}}
                             placeholder="0"
                             className={INP + " !text-xs !px-1.5 !py-0.5 w-[55px] text-right"}/>
                           <span className="text-gray-400 dark:text-slate-500">%</span>
                         </label>);
                       })}
+                      {/* Cash row — visually offset from the GICS sectors. */}
+                      <label className="flex items-center gap-1.5 pt-1 border-t border-slate-200 dark:border-slate-700 md:border-t-0 md:pt-0">
+                        <span className="text-gray-700 dark:text-slate-300 flex-1 italic">Cash</span>
+                        <input value={sw["Cash"] != null ? String(sw["Cash"]) : ""}
+                          onChange={function(e){updateWeight("Cash", e.target.value);}}
+                          placeholder="0"
+                          className={INP + " !text-xs !px-1.5 !py-0.5 w-[55px] text-right"}/>
+                        <span className="text-gray-400 dark:text-slate-500">%</span>
+                      </label>
                     </div>
-                    <div className={"mt-2 text-[11px] " + (Math.abs(sum-100)<0.5 ? "text-green-700 dark:text-green-400" : "text-amber-700 dark:text-amber-400")}>
-                      Total: {sum.toFixed(1)}% {Math.abs(sum-100)<0.5 ? "✓" : "(should sum to 100% — values are normalized at display time if not)"}
+                    <div className="mt-2 flex justify-between items-center text-[11px] gap-3 flex-wrap">
+                      <span className={Math.abs(totalSum-100)<0.5 ? "text-green-700 dark:text-green-400" : "text-amber-700 dark:text-amber-400"}>
+                        Total: {totalSum.toFixed(1)}% (sectors {sectorSum.toFixed(1)}% + cash {cashSum.toFixed(1)}%) {Math.abs(totalSum-100)<0.5 ? "✓" : "(should sum to 100% — values are normalized at display time)"}
+                      </span>
+                      <span className="text-gray-500 dark:text-slate-400">Last updated: {stampLabel}</span>
                     </div>
                   </div>);
                 })()}

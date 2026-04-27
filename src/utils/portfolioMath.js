@@ -145,12 +145,16 @@ export function calcBreakdowns(companies, repData, fxRates, portKey) {
 
       /* ETF sector split: when c.sectorWeights has positive entries that
          sum to > 0, distribute MV across sectors proportionally and emit
-         one byCompany entry per slice (same id/name). Otherwise fall back
-         to the single-sector behavior using c.sector. */
+         one byCompany entry per slice (same id/name). The special key
+         "Cash" is included in the denominator but NOT distributed to any
+         sector — it represents the ETF's cash sleeve, which shouldn't be
+         counted as sector exposure. Otherwise fall back to the
+         single-sector behavior using c.sector. */
       const sw = c.sectorWeights || null;
-      const swKeys = sw ? Object.keys(sw).filter(function (k) { return parseFloat(sw[k]) > 0; }) : [];
-      const swSum  = swKeys.reduce(function (s, k) { return s + parseFloat(sw[k]); }, 0);
-      if (swKeys.length > 0 && swSum > 0) {
+      const allKeys = sw ? Object.keys(sw).filter(function (k) { return parseFloat(sw[k]) > 0; }) : [];
+      const swSum   = allKeys.reduce(function (s, k) { return s + parseFloat(sw[k]); }, 0);
+      const swKeys  = allKeys.filter(function (k) { return k !== "Cash"; });
+      if (allKeys.length > 0 && swSum > 0) {
         swKeys.forEach(function (k) {
           const slice = mv * (parseFloat(sw[k]) / swSum);
           sectors[k] = (sectors[k] || 0) + slice;
