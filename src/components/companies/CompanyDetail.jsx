@@ -240,7 +240,7 @@ export function CompanyDetail(props){
           })()}
           {/* Tabs */}
           <div className="flex gap-1 mb-3.5 flex-wrap">
-            {coTabs.map(function(t){return <button key={t.id} className={coView===t.id?TABSM_ACTIVE:TABSM_INACTIVE} onClick={function(){setCoView(t.id);}}>{t.label}</button>;})}
+            {coTabs.map(function(t){return <button key={t.id} title={t.title||undefined} className={coView===t.id?TABSM_ACTIVE:TABSM_INACTIVE} onClick={function(){setCoView(t.id);}}>{t.label}</button>;})}
           </div>
 
           {/* TEMPLATE TAB */}

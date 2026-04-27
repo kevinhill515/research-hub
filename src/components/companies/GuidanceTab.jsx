@@ -298,8 +298,8 @@ function MetricTile({ company, metric, rowsByMetric, currency }) {
   return (
     <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3">
       <div className="mb-2">
-        <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">{metric}</div>
-        <div className="text-[10px] text-gray-500 dark:text-slate-400">
+        <div className="text-base font-semibold text-gray-900 dark:text-slate-100">{metric}</div>
+        <div className="text-[11px] text-gray-500 dark:text-slate-400">
           {tileHasYoy ? "Y/Y vs prior FY actual · ▲ revised up vs prior · ▼ revised down" : "absolute values only — no Y/Y baseline"}
         </div>
       </div>
@@ -307,10 +307,10 @@ function MetricTile({ company, metric, rowsByMetric, currency }) {
         /* Layout columns (everything left of the bar — date, Y/Y mid w/
            direction arrow, abs range, stock-day reaction; bar on right):
               50px date · 70px Y/Y mid · 95px abs · 60px stock · 1fr bar */
-        const COLS = "grid-cols-[50px_70px_95px_60px_1fr]";
+        const COLS = "grid-cols-[60px_85px_120px_70px_1fr]";
         return (
           <div key={g.period} className="mb-3 last:mb-0">
-            <div className="text-[11px] font-semibold text-gray-700 dark:text-slate-300 mb-1">
+            <div className="text-[13px] font-semibold text-gray-700 dark:text-slate-300 mb-1">
               {fyLabel(g.period)}
               <span className="text-gray-400 dark:text-slate-500 font-normal"> · period {g.period}</span>
               {g.baseline.value != null && (
@@ -318,7 +318,7 @@ function MetricTile({ company, metric, rowsByMetric, currency }) {
               )}
             </div>
             {/* Column header strip — clarifies what each column is. */}
-            <div className={"grid " + COLS + " gap-1.5 items-end mb-0.5 text-[9px] uppercase tracking-wide text-gray-400 dark:text-slate-500"}>
+            <div className={"grid " + COLS + " gap-1.5 items-end mb-0.5 text-[10px] uppercase tracking-wide text-gray-400 dark:text-slate-500"}>
               <div>Date</div>
               <div>Y/Y mid</div>
               <div title="Y/Y % at the low and high ends of the guidance range. Hover a value to see the absolute amount.">Y/Y range</div>
@@ -356,18 +356,18 @@ function MetricTile({ company, metric, rowsByMetric, currency }) {
                 rangeContent = showRange ? lowAbs + "–" + highAbs : (lowAbs || highAbs || "—");
               }
               return (
-                <div key={r.date + ":" + idx} className={"grid " + COLS + " gap-1.5 items-center text-[11px] py-0.5"}>
+                <div key={r.date + ":" + idx} className={"grid " + COLS + " gap-1.5 items-center text-[13px] py-0.5"}>
                   <div className="text-gray-700 dark:text-slate-300 tabular-nums">{dateLabel(r.date)}</div>
                   <div className="tabular-nums font-semibold flex items-center gap-1" style={{ color: prevMid != null ? color : undefined }}>
-                    <span className="text-[10px]">{arrow}</span>
+                    <span className="text-[12px]">{arrow}</span>
                     <span>{g.hasYoy && isFiniteNum(it.midYoy) ? fmtPct(it.midYoy, 1, true) : "—"}</span>
                   </div>
-                  <div className="text-gray-500 dark:text-slate-400 tabular-nums text-[10px] truncate" title={absTitle ? "Absolute: " + absTitle : ""}>
+                  <div className="text-gray-600 dark:text-slate-300 tabular-nums text-[12px] truncate" title={absTitle ? "Absolute: " + absTitle : ""}>
                     {rangeContent}
                   </div>
                   <div>
                     {isFiniteNum(r.priceImpact) ? (
-                      <span className={"text-[10px] px-1.5 py-0.5 rounded-full font-semibold " + (r.priceImpact >= 0 ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400")} title="Stock price reaction on the day this guidance was announced">
+                      <span className={"text-[11px] px-1.5 py-0.5 rounded-full font-semibold " + (r.priceImpact >= 0 ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400")} title="Stock price reaction on the day this guidance was announced">
                         {fmtPct(r.priceImpact, 1, true)}
                       </span>
                     ) : <span className="text-gray-300 dark:text-slate-600">—</span>}
@@ -379,7 +379,7 @@ function MetricTile({ company, metric, rowsByMetric, currency }) {
               );
             })}
             {g.closedSummary && (
-              <div className="mt-1 text-[10px] text-gray-500 dark:text-slate-400 italic" title={"The Actual value is read from the FactSet upload's 'Actual' column. Sourced from the row issued " + dateLabel(g.closedSummary.sourceDate) + ". Verify in your FactSet sheet: filter Item=" + metric + " AND Period=" + g.period + ", look at the Actual column."}>
+              <div className="mt-1 text-[11px] text-gray-500 dark:text-slate-400 italic" title={"The Actual value is read from the FactSet upload's 'Actual' column. Sourced from the row issued " + dateLabel(g.closedSummary.sourceDate) + ". Verify in your FactSet sheet: filter Item=" + metric + " AND Period=" + g.period + ", look at the Actual column."}>
                 Closed: actual {fmtMoney(g.closedSummary.actual, currency)}
                 <span className="not-italic text-gray-400 dark:text-slate-500"> (from Actual column on the {dateLabel(g.closedSummary.sourceDate)} row{g.closedSummary.distinctActuals > 1 ? "; " + g.closedSummary.distinctActuals + " distinct actuals across rows — FactSet revised mid-cycle" : ""})</span>
                 {g.closedSummary.beat != null && (

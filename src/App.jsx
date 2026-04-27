@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { PORTFOLIOS, TIER_ORDER, SECTOR_ORDER, COUNTRY_ORDER, SECTOR_COLORS, SECTOR_SHORT, COUNTRY_GROUPS, COUNTRY_COLORS, REGION_COLORS, REGION_GROUPS, STATUS_RANK, CURRENCY_MAP, ALL_CURRENCIES, MONTHS, CO_SORTS, FORMATS, TONES, LIB_SORTS, PRESET_TAGS, UPLOAD_TYPES, TEMPLATE_SECTIONS, SECTION_SUBHEADINGS, THESIS_STATUSES, TP_CHANGES, AVG_WPM, ALL_COLS, COMPACT_COLS, COMPANY_COLUMNS, SHORTCUTS, CONF_BG, CONF_COLOR, ACTIONS, TEAM_MEMBERS, TEAM_COLORS, REP_ACCOUNTS, PORT_NAMES, FLAG_STYLES } from './constants/index.js';
 import { shortSector, sectorStyle, countryStyle, getRegion, getTiers, getCurrency, calcNormEPS, calcTP, calcMOS, fmtPrice, fmtTP, fmtMOS, mosBg, impliedFYLabel, tierPillStyle, tierBg, fmtTime, getCore, getConf, escHTML, toHTML, toMD, simScore, downloadMD, detectCompanyTags, todayStr, parseDate, daysSince, reviewedColor, getStatusRank, getTierIndex, getCompanyMOS, blankEarnings, sortCos, synPrompt, tierToStatus, repShares, repAvgCost, getInitiatedDate, monthsSince, isInitiationTx } from './utils/index.js';
 import { supaGet, supaUpsert, ANTHROPIC_KEY, apiCall } from './api/index.js';
+import { getDataStatus, statusBadge, staleReason } from './utils/dataStatus.js';
 import { PriceAgeIndicator, BarRow, PillEl, PortPicker, SectionBlock, StatusPill, DiffView } from './components/ui/index.js';
 import { SectionEditTab, EarningsEntry, NotesCell, ActionCell, FlagCell, DatePicker } from './components/forms/index.js';
 import { GlobalSearch, TemplateSearch, QuickUploadModal, DiscussionsPanel } from './components/modals/index.js';
@@ -113,7 +114,17 @@ export default function App(){
   /* Metrics comes before the TEMPLATE_SECTIONS so the first subtab of a
      company is the quick-look Metrics dashboard (its Valuation section is
      the first TEMPLATE_SECTIONS item). */
-  var coTabs=[{id:"dashboard",label:"Dashboard"},{id:"financials",label:"Financials"+((selCo&&selCo.financials&&selCo.financials.ratioNames&&selCo.financials.ratioNames.length>0)?" ("+selCo.financials.ratioNames.length+")":"")},{id:"ratios",label:"Ratios"+((selCo&&selCo.ratios&&selCo.ratios.ratioNames&&selCo.ratios.ratioNames.length>0)?" ("+selCo.ratios.ratioNames.length+")":"")},{id:"segments",label:"Segments"+((selCo&&selCo.segments&&selCo.segments.segments&&selCo.segments.segments.length>0)?" ("+selCo.segments.segments.length+")":"")},{id:"epsrev",label:"E[EPS] Revisions"+((selCo&&selCo.epsRevisions&&selCo.epsRevisions.dates&&selCo.epsRevisions.dates.length>0)?" ✓":"")},{id:"guidance",label:"Guidance"+((selCo&&selCo.guidance&&selCo.guidance.history&&selCo.guidance.history.length>0)?" ("+selCo.guidance.history.length+")":"")},{id:"metrics",label:"Snapshot"},...TEMPLATE_SECTIONS.map(function(s){return{id:"section:"+s,label:s};}),{id:"earnings",label:"Earnings & Thesis Check"},{id:"template",label:"Template"},
+  /* Per-tab data-currency badge: ✓ = current, ⚠ = one or more FYs
+     stale (re-import to refresh). See utils/dataStatus.js. The title
+     attribute on stale tabs surfaces *why* via hover tooltip. */
+  var sFin = getDataStatus(selCo, "financials");
+  var sRat = getDataStatus(selCo, "ratios");
+  var sSeg = getDataStatus(selCo, "segments");
+  var sEps = getDataStatus(selCo, "epsrev");
+  var sGui = getDataStatus(selCo, "guidance");
+  var sSnap = getDataStatus(selCo, "snapshot");
+  function tipFor(s, k){ return s === "stale" ? staleReason(selCo, k) : undefined; }
+  var coTabs=[{id:"dashboard",label:"Dashboard"},{id:"financials",label:"Financials"+((selCo&&selCo.financials&&selCo.financials.ratioNames&&selCo.financials.ratioNames.length>0)?" ("+selCo.financials.ratioNames.length+")":"")+statusBadge(sFin),title:tipFor(sFin,"financials")},{id:"ratios",label:"Ratios"+((selCo&&selCo.ratios&&selCo.ratios.ratioNames&&selCo.ratios.ratioNames.length>0)?" ("+selCo.ratios.ratioNames.length+")":"")+statusBadge(sRat),title:tipFor(sRat,"ratios")},{id:"segments",label:"Segments"+((selCo&&selCo.segments&&selCo.segments.segments&&selCo.segments.segments.length>0)?" ("+selCo.segments.segments.length+")":"")+statusBadge(sSeg),title:tipFor(sSeg,"segments")},{id:"epsrev",label:"E[EPS] Revisions"+statusBadge(sEps),title:tipFor(sEps,"epsrev")},{id:"guidance",label:"Guidance"+((selCo&&selCo.guidance&&selCo.guidance.history&&selCo.guidance.history.length>0)?" ("+selCo.guidance.history.length+")":"")+statusBadge(sGui),title:tipFor(sGui,"guidance")},{id:"metrics",label:"Snapshot"+statusBadge(sSnap),title:tipFor(sSnap,"snapshot")},...TEMPLATE_SECTIONS.map(function(s){return{id:"section:"+s,label:s};}),{id:"earnings",label:"Earnings & Thesis Check"},{id:"template",label:"Template"},
     {id:"weights",label:"Weights"+((selCo&&selCo.portWeightHistory&&selCo.portWeightHistory.length>0)?" ("+selCo.portWeightHistory.length+")":"")},
     {id:"transactions",label:"Transactions"+((selCo&&selCo.transactions&&selCo.transactions.length>0)?" ("+selCo.transactions.length+")":"")},
     {id:"linked",label:"Linked"+(linkedEntries.length>0?" ("+linkedEntries.length+")":"")},{id:"upload",label:"Upload"},{id:"history",label:"Log"+((selCo&&selCo.updateLog&&selCo.updateLog.length>0)?" ("+selCo.updateLog.length+")":"")}];
