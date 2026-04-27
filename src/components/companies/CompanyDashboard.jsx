@@ -13,6 +13,7 @@
  */
 
 import { pickSeries, yoyGrowth, cagr, minMaxAcross, fmtPct } from './overviewCharts.js';
+import { printPage } from '../../utils/index.js';
 
 const TILE = "rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3";
 const HIST_COLOR = "#2563eb"; /* blue-600 */
@@ -63,8 +64,17 @@ export default function CompanyDashboard({ company }) {
   }
 
   return (
-    <div className="mb-6">
-      <div className="text-sm font-medium text-gray-900 dark:text-slate-100 mb-3">Overview Dashboard</div>
+    <div className="mb-6 print-target">
+      <div className="flex items-baseline gap-3 mb-3">
+        <div className="text-sm font-medium text-gray-900 dark:text-slate-100">Overview Dashboard — {company.name}</div>
+        <button
+          onClick={function () { printPage("charts"); }}
+          className="ml-auto text-xs px-2.5 py-1 font-medium rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors no-print"
+          title="Print this view (portrait, multi-page)"
+        >
+          🖨 Print
+        </button>
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         <GrowthEngine       company={company} />
         <MarginLadder       company={company} />

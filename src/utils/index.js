@@ -45,31 +45,47 @@ export function blankEarnings(){return{id:(typeof crypto!=="undefined"&&crypto.r
 /* Trigger browser print with body.printing class so the @media print rules
    in index.css hide everything except .print-target. Before printing we
    measure the target's natural size and compute a zoom factor so the
-   content fits landscape letter in one page. Restores on afterprint. */
-export function printPage(){
+   content fits the page in one go. Restores on afterprint.
+
+   `mode` controls layout / shrink:
+     - "table" (default): aggressive shrink to fit landscape tables on one
+       page. Used by the Portfolios print button.
+     - "charts": gentler shrink with portrait orientation; chart-heavy
+       company views (Dashboard, Snapshot, Financials, Ratios) where
+       readability of axis labels and metric values matters more than
+       cramming onto one sheet. Multi-page output is fine.
+*/
+export function printPage(mode){
   if(typeof document==="undefined")return;
   var target=document.querySelector(".print-target");
+  var isCharts = mode === "charts";
   var zoom=1;
-  if(target){
-    /* Landscape letter minus 0.25in margins = 10.5in x 8in of usable space.
-       At 96 CSS px/in the screen equivalent is ~1008 x 768 px. The native
-       .print-target is already styled smaller in print-mode CSS (5pt font)
-       but we can't measure that here; instead we approximate using the
-       current on-screen scrollHeight and target a scale that would fit in
-       one page once the screen size is reduced ~0.55x by the font swap. */
+  if(target && !isCharts){
+    /* Landscape letter minus 0.25in margins = 10.5in x 8in of usable space. */
     var natH=target.scrollHeight;
     var natW=target.scrollWidth;
     var availW=1008;var availH=768;
-    /* Empirical: 5pt font is ~0.55 of 9pt on-screen; combined padding reduction gives ~0.45. */
     var shrink=0.45;
-    var pageH=availH/shrink;  /* how tall the natural content can be and still fit after the CSS shrink */
+    var pageH=availH/shrink;
     var pageW=availW/shrink;
     zoom=Math.min(pageH/natH,pageW/natW,1);
     if(!isFinite(zoom)||zoom<=0)zoom=1;
   }
+  if(isCharts){
+    /* Charts mode: keep readable font sizes, let it overflow to multiple
+       pages. No measurement-based zoom — the print.css rules size the
+       target sensibly for portrait letter. */
+    zoom=1;
+  }
   document.documentElement.style.setProperty("--print-zoom",String(zoom));
   document.body.classList.add("printing");
-  var cleanup=function(){document.body.classList.remove("printing");document.documentElement.style.removeProperty("--print-zoom");window.removeEventListener("afterprint",cleanup);};
+  if(isCharts) document.body.classList.add("printing-charts");
+  var cleanup=function(){
+    document.body.classList.remove("printing");
+    document.body.classList.remove("printing-charts");
+    document.documentElement.style.removeProperty("--print-zoom");
+    window.removeEventListener("afterprint",cleanup);
+  };
   window.addEventListener("afterprint",cleanup);
   setTimeout(function(){try{window.print();}catch(e){cleanup();}},50);
   /* Safety cleanup in case afterprint doesn't fire */

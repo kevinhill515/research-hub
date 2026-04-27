@@ -26,6 +26,7 @@
 import { useEffect } from 'react';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import { BENCHMARKS } from '../../constants/index.js';
+import { printPage } from '../../utils/index.js';
 
 const TILE = "rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3";
 const GRID_COLOR = "rgba(100,116,139,0.15)";
@@ -307,12 +308,19 @@ export default function SnapshotTab({ company }) {
   const hasEpsRev = !!(company.epsRevisions && company.epsRevisions.dates && company.epsRevisions.dates.length > 0);
 
   return (
-    <div className="mb-6">
+    <div className="mb-6 print-target">
       <div className="flex items-baseline gap-3 mb-3">
-        <div className="text-sm font-medium text-gray-900 dark:text-slate-100">Snapshot</div>
+        <div className="text-sm font-medium text-gray-900 dark:text-slate-100">Snapshot — {company.name}</div>
         <div className="text-[10px] text-gray-500 dark:text-slate-400">
           Trailing performance + current values vs 5Y range. Auto-updated daily from FactSet.
         </div>
+        <button
+          onClick={function () { printPage("charts"); }}
+          className="ml-auto text-xs px-2.5 py-1 font-medium rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors no-print"
+          title="Print this view (portrait, multi-page)"
+        >
+          🖨 Print
+        </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">

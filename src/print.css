@@ -71,4 +71,59 @@
     break-inside: avoid;
     page-break-inside: avoid;
   }
+
+  /* ===== Charts mode (body.printing-charts) =====
+   * Used by company-detail tabs (Dashboard, Snapshot, Financials,
+   * Ratios, etc.) where readability of axis labels and metric values
+   * matters more than fitting on one page. Portrait orientation,
+   * normal font sizes, page-breaks between major tiles. */
+  body.printing-charts.printing { /* nothing — selector specificity bump only */ }
+
+  body.printing-charts {
+    @page { size: letter portrait; margin: 0.4in; }
+  }
+
+  body.printing-charts .print-target {
+    font-size: 9pt !important;
+    line-height: 1.25 !important;
+  }
+
+  /* No aggressive padding collapse in charts mode — keep tiles readable. */
+  body.printing-charts .print-target [style*="table-cell"] {
+    padding-top: revert !important;
+    padding-bottom: revert !important;
+    padding-right: revert !important;
+  }
+  body.printing-charts .print-target .rounded-full,
+  body.printing-charts .print-target [class*="px-1.5"],
+  body.printing-charts .print-target [class*="py-0.5"] {
+    padding: revert !important;
+    font-size: revert !important;
+    line-height: revert !important;
+  }
+
+  /* Tiles flow as a single column on print. The grid-cols-2/3 layouts
+     used on screen are too wide for portrait letter. */
+  body.printing-charts .print-target .grid {
+    grid-template-columns: 1fr !important;
+    gap: 12pt !important;
+  }
+
+  /* Prefer to keep individual tiles whole on a page; allow page break
+     between them. */
+  body.printing-charts .print-target .rounded-lg {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* SVG charts scale to container; ensure they don't overflow page width. */
+  body.printing-charts .print-target svg {
+    max-width: 100% !important;
+    height: auto !important;
+  }
+
+  /* Hide horizontal scrollbars in print (overflow-x-auto wrappers). */
+  body.printing-charts .print-target [class*="overflow-x-auto"] {
+    overflow: visible !important;
+  }
 }
