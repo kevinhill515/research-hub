@@ -656,30 +656,71 @@ def _str(v) -> str | None:
     return s if s else None
 
 
+PRICES_PERF_KEYS = ["TODAY", "5D", "MTD", "1M", "QTD", "3M", "6M", "YTD", "1Y", "2Y", "3Y"]
+
 def read_prices(xl: ExcelSession) -> dict[str, dict]:
-    """Returns { upper_ticker: {price, perf5d} } for every populated row.
+    """Returns { upper_ticker: {price, perf, perf5d} } for every populated row.
+
+    Layout (27 columns, A..AA):
+        A: Company       B: Ord Ticker   C: Ord Price
+        D..N: 11 ord trailing returns (TODAY, 5D, MTD, 1M, QTD, 3M, 6M,
+                                       YTD, 1Y, 2Y, 3Y)
+        O: US Ticker     P: US Price
+        Q..AA: 11 US trailing returns (same windows)
+
+    Each ticker entry stores:
+        price   — float or None
+        perf    — dict mapping window key → decimal (0.012 for 1.2%)
+        perf5d  — string form of the 5D value (legacy, e.g. "1.2"),
+                  preserved so older clients keep rendering until they
+                  re-read the full perf object.
+
     Single bulk range read — much faster than the per-cell loop."""
     out: dict[str, dict] = {}
-    rows = xl.read_range("Prices", f"A2:G{MAX_COMPANY_ROW}")
+    rows = xl.read_range("Prices", f"A2:AA{MAX_COMPANY_ROW}")
+    # Indexed offsets into each row for the two ticker blocks:
+    ORD_PRICE_IDX = 2
+    ORD_PERF_START = 3
+    US_TICKER_IDX = 14
+    US_PRICE_IDX = 15
+    US_PERF_START = 16
+    NUM_PERF_COLS = len(PRICES_PERF_KEYS)  # 11
+
+    def parse_perf_block(row, start: int) -> dict:
+        """Read NUM_PERF_COLS cells starting at `start`. Treat the
+        sheet values as percent-form (1.2 → 0.012); skip None/blank.
+        Returns the dict of populated entries."""
+        block: dict = {}
+        for i, key in enumerate(PRICES_PERF_KEYS):
+            idx = start + i
+            if idx >= len(row): break
+            v = _num(row[idx])
+            if v is None: continue
+            block[key] = round(v / 100, 6)
+        return block
+
     for row in rows:
-        # row[0]=Company A, [1]=Ord Ticker B, [2]=Price C, [3]=Perf5D D,
-        # [4]=US Ticker E, [5]=US Price F, [6]=US Perf G
-        if len(row) < 4: continue
+        if len(row) < 3: continue
         ord_tk = _str(row[1])
         if ord_tk:
-            price = _num(row[2])
-            perf = _num(row[3])
-            if perf is not None: perf = round(perf * 100, 2)
-            if price is not None or perf is not None:
-                out[ord_tk.upper()] = {"price": price, "perf5d": perf}
-        if len(row) >= 7:
-            us_tk = _str(row[4])
+            price = _num(row[ORD_PRICE_IDX]) if len(row) > ORD_PRICE_IDX else None
+            perf  = parse_perf_block(row, ORD_PERF_START)
+            entry: dict = {"price": price, "perf": perf}
+            # Legacy: write perf5d (string, percent-form) for back-compat.
+            if "5D" in perf:
+                entry["perf5d"] = f"{perf['5D'] * 100:.2f}"
+            if price is not None or perf:
+                out[ord_tk.upper()] = entry
+        if len(row) > US_TICKER_IDX:
+            us_tk = _str(row[US_TICKER_IDX])
             if us_tk:
-                us_price = _num(row[5])
-                us_perf = _num(row[6])
-                if us_perf is not None: us_perf = round(us_perf * 100, 2)
-                if us_price is not None or us_perf is not None:
-                    out[us_tk.upper()] = {"price": us_price, "perf5d": us_perf}
+                us_price = _num(row[US_PRICE_IDX]) if len(row) > US_PRICE_IDX else None
+                us_perf  = parse_perf_block(row, US_PERF_START)
+                us_entry: dict = {"price": us_price, "perf": us_perf}
+                if "5D" in us_perf:
+                    us_entry["perf5d"] = f"{us_perf['5D'] * 100:.2f}"
+                if us_price is not None or us_perf:
+                    out[us_tk.upper()] = us_entry
     log(f"  Prices: {len(out)} tickers")
     return out
 
@@ -1068,17 +1109,14 @@ METRICS_COLS = [
     ("opROE1",  34, False),  # AH
     ("opROE2",  35, False),  # AI
 ]
-METRICS_PERF_COLS = [
-    ("MTD", 36), ("QTD", 37), ("3M", 38), ("6M", 39), ("YTD", 40), ("1Y", 41),
-]
-
-
 def read_metrics(xl: ExcelSession) -> dict[str, dict]:
-    """Bulk-read the Metrics tab in one shot — A..AO covers ord ticker
-    + every metric + 6 trailing perf periods. Was 14000 COM calls
-    (400 rows × 35 cols), now 1."""
+    """Bulk-read the Metrics tab — A..AI covers Company + Ord Ticker +
+    33 metric columns. Trailing returns (formerly AJ..AO) now live on
+    the Prices tab per ticker, so they're not read here.
+
+    Single bulk range read — was 14000 COM calls before, now 1."""
     out: dict[str, dict] = {}
-    rows = xl.read_range("Metrics", f"A2:AO{MAX_COMPANY_ROW}")
+    rows = xl.read_range("Metrics", f"A2:AI{MAX_COMPANY_ROW}")
     for row in rows:
         if len(row) < 3: continue
         tk = _str(row[1])  # col B = ord ticker
@@ -1090,14 +1128,6 @@ def read_metrics(xl: ExcelSession) -> dict[str, dict]:
                 v = _num(row[idx])
                 if v is not None:
                     m[key] = v
-        perf: dict = {}
-        for period, col in METRICS_PERF_COLS:
-            idx = col - 1
-            if idx < len(row):
-                v = _num(row[idx])
-                if v is not None:
-                    perf[period] = v
-        if perf: m["perf"] = perf
         if m: out[tk.upper()] = m
     log(f"  Metrics: {len(out)} tickers")
     return out
@@ -1249,14 +1279,17 @@ def merge_companies(companies, prices, valuations, earnings):
         if not all_tks and c.get("ticker"):
             all_tks.append(c["ticker"].upper())
 
-        # Prices
+        # Prices — each ticker gets its own price + perf object (11
+        # trailing windows in decimal form). Legacy perf5d string is
+        # also written for back-compat with older clients.
         any_p = False
         for t in (c.get("tickers") or []):
             tk = (t.get("ticker") or "").upper()
             if tk in prices:
                 p = prices[tk]
-                if p["price"] is not None: t["price"] = p["price"]
-                if p["perf5d"] is not None: t["perf5d"] = str(p["perf5d"])
+                if p.get("price") is not None: t["price"] = p["price"]
+                if p.get("perf"):              t["perf"]  = p["perf"]
+                if p.get("perf5d") is not None: t["perf5d"] = p["perf5d"]
                 any_p = True
         if any_p: n_p += 1
 
@@ -1364,6 +1397,13 @@ def clean_legacy_errors(companies: list[dict], fx_rates: dict) -> tuple[int, int
                 t["price"] = None; n_co += 1
             if _looks_like_error_number(t.get("perf5d")):
                 t["perf5d"] = None; n_co += 1
+            # Clean perf object: drop any window whose value parses as
+            # a sentinel error (Excel #N/A / #VALUE!).
+            perf = t.get("perf")
+            if isinstance(perf, dict):
+                for k in list(perf.keys()):
+                    if _looks_like_error_number(perf[k]):
+                        del perf[k]; n_co += 1
         val = c.get("valuation") or {}
         for k in list(val.keys()):
             if _looks_like_error_number(val[k]):
