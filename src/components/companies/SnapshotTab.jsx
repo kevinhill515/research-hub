@@ -27,6 +27,7 @@ import { useEffect } from 'react';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import { BENCHMARKS } from '../../constants/index.js';
 import { printPage } from '../../utils/index.js';
+import { isFiniteNum } from '../../utils/numbers.js';
 
 const TILE = "rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3";
 const GRID_COLOR = "rgba(100,116,139,0.15)";
@@ -122,13 +123,17 @@ function buildPerfWindows(now) {
   const monthInQ = today.getMonth() % 3;
   const qtdDays = monthInQ * 30 + dom;
   return [
-    { key: "5D",  label: "5D",  days: 5 },
-    { key: "MTD", label: "MTD", days: dom },
-    { key: "QTD", label: "QTD", days: qtdDays },
-    { key: "3M",  label: "3M",  days: 90 },
-    { key: "6M",  label: "6M",  days: 180 },
-    { key: "YTD", label: "YTD", days: ytdDays },
-    { key: "1Y",  label: "1Y",  days: 365 },
+    { key: "TODAY", label: "1D",  days: 1 },
+    { key: "5D",    label: "5D",  days: 5 },
+    { key: "MTD",   label: "MTD", days: dom },
+    { key: "1M",    label: "1M",  days: 30 },
+    { key: "QTD",   label: "QTD", days: qtdDays },
+    { key: "3M",    label: "3M",  days: 90 },
+    { key: "6M",    label: "6M",  days: 180 },
+    { key: "YTD",   label: "YTD", days: ytdDays },
+    { key: "1Y",    label: "1Y",  days: 365 },
+    { key: "2Y",    label: "2Y",  days: 730 },
+    { key: "3Y",    label: "3Y",  days: 1095 },
   ].sort(function (a, b) { return a.days - b.days; });
 }
 
@@ -205,23 +210,47 @@ export default function SnapshotTab({ company }) {
     );
   }
 
-  /* ---- Trailing performance values ---- */
-  const ordT = (company.tickers || []).find(function (t) { return t.isOrdinary; }) || {};
-  const perf5dRaw = ordT.perf5d;
-  let perf5d = null;
-  if (perf5dRaw && perf5dRaw !== "#N/A") {
-    const n = parseFloat(perf5dRaw);
-    if (!isNaN(n)) perf5d = n / 100;
+  /* ---- Trailing performance values ----
+   * Source priority: US ticker's own perf object (USD returns) → ord
+   * ticker's perf object → legacy company.metrics.perf → legacy
+   * t.perf5d. The US-ticker source gives us trailing returns measured in
+   * USD, which is what the Snapshot tab labels claim. */
+  const tickers = company.tickers || [];
+  const ordT = tickers.find(function (t) { return t.isOrdinary; }) || {};
+  const usT  = tickers.find(function (t) { return (t.currency || "").toUpperCase() === "USD" && !t.isOrdinary; })
+            || (((ordT.currency || "").toUpperCase() === "USD") ? ordT : null);
+  const perfTicker = usT || ordT;
+  const perfSource = (perfTicker && perfTicker.ticker) ? perfTicker.ticker : null;
+  const tickerPerf = (perfTicker && perfTicker.perf) || {};
+  const legacyMetricPerf = m.perf || {};
+  function readPerf(key) {
+    if (tickerPerf[key] !== undefined && tickerPerf[key] !== null && isFiniteNum(tickerPerf[key])) return tickerPerf[key];
+    /* Legacy fallback — older imports stored perf on company.metrics.perf
+       as decimals already (pctToDecimal). */
+    const lv = legacyMetricPerf[key];
+    if (lv !== undefined && lv !== null && isFiniteNum(parseFloat(lv))) return parseFloat(lv);
+    return null;
   }
-  const perf = m.perf || {};
+  /* Legacy perf5d string fallback — parse "1.2" → 0.012. Used only when
+     neither ticker.perf nor metrics.perf has the 5D entry. */
+  function legacyPerf5d() {
+    const raw = (perfTicker && perfTicker.perf5d) || ordT.perf5d;
+    if (!raw || raw === "#N/A") return null;
+    const n = parseFloat(raw);
+    return isNaN(n) ? null : n / 100;
+  }
   const perfValues = {
-    "5D":  perf5d,
-    "MTD": parseFloat(perf.MTD),
-    "QTD": parseFloat(perf.QTD),
-    "3M":  parseFloat(perf["3M"]),
-    "6M":  parseFloat(perf["6M"]),
-    "YTD": parseFloat(perf.YTD),
-    "1Y":  parseFloat(perf["1Y"]),
+    "TODAY": readPerf("TODAY"),
+    "5D":    readPerf("5D") !== null ? readPerf("5D") : legacyPerf5d(),
+    "MTD":   readPerf("MTD"),
+    "1M":    readPerf("1M"),
+    "QTD":   readPerf("QTD"),
+    "3M":    readPerf("3M"),
+    "6M":    readPerf("6M"),
+    "YTD":   readPerf("YTD"),
+    "1Y":    readPerf("1Y"),
+    "2Y":    readPerf("2Y"),
+    "3Y":    readPerf("3Y"),
   };
 
   /* ---- Benchmarks applicable to this company's portfolios ----
@@ -328,6 +357,8 @@ export default function SnapshotTab({ company }) {
           values={perfValues}
           benchmarkRows={benchmarkRows}
           companyName={company && company.name}
+          perfSource={perfSource}
+          perfCurrency={perfTicker ? (perfTicker.currency || "") : ""}
         />
         <SnapshotHeatmap groupOrder={groupOrder} grouped={grouped} />
       </div>
@@ -343,7 +374,7 @@ export default function SnapshotTab({ company }) {
 
 /* ====================== Tile 1: Trailing Performance ===================== */
 
-function TrailingPerformance({ values, benchmarkRows, companyName }) {
+function TrailingPerformance({ values, benchmarkRows, companyName, perfSource, perfCurrency }) {
   const PERF_WINDOWS = buildPerfWindows();
 
   /* Build rows: first the stock, then each benchmark. Each row is
@@ -411,9 +442,11 @@ function TrailingPerformance({ values, benchmarkRows, companyName }) {
 
   return (
     <div className={TILE}>
-      <div className="flex items-baseline justify-between mb-2">
+      <div className="flex items-baseline justify-between mb-2 gap-2 flex-wrap">
         <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">Trailing Performance</div>
-        <div className="text-[10px] text-gray-400 dark:text-slate-500 italic">USD</div>
+        <div className="text-[10px] text-gray-400 dark:text-slate-500 italic" title={perfSource ? "Returns sourced from " + perfSource + " (" + (perfCurrency || "?") + ")" : ""}>
+          {perfSource ? perfSource + " (" + (perfCurrency || "?") + ")" : (perfCurrency || "")}
+        </div>
       </div>
       <div className="overflow-x-auto">
         <div style={{ display: "grid", gridTemplateColumns: "minmax(140px, 1.6fr) repeat(" + PERF_WINDOWS.length + ", minmax(56px, 1fr))" }}>

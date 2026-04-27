@@ -224,9 +224,12 @@ export function useImport(){
         lines.shift();
       }
     }
-    /* NEW layout (41 cols): Company, Ord Ticker, then current+1+2 triplets
-       per metric, then 6 trailing-return periods. For backward compat the
-       parser also accepts the OLD 31-col layout (no "current" fields). */
+    /* CURRENT layout (35 cols): Company, Ord Ticker, then current+1+2
+       triplets per metric. Trailing returns now live on the Prices
+       upload (per-ticker, with USD context from the US ticker), so the
+       Metrics upload no longer carries them. The parser still tolerates
+       the OLD 41-col layout (silently ignores AJ:AO if present) and the
+       even-older 31-col layout (no "current" fields). */
     var METRIC_KEYS_NEW = [
       null, null,  // Company, Ticker — not stored on metrics
       "mktCap",
@@ -250,11 +253,10 @@ export function useImport(){
       "grMgn1","grMgn2","netMgn1","netMgn2",
       "gpAss1","gpAss2","npAss1","npAss2","opROE1","opROE2",
     ];
-    /* Auto-detect layout by column count. New = 41 (35 metric cols + 6 perf).
-       Old = 31 (25 metric cols + 6 perf). Pick the closer match per row;
-       fall back to new for ambiguous rows. */
-    var PERF_KEYS = ["MTD","QTD","3M","6M","YTD","1Y"];
-    var NEW_PERF_START = 35, OLD_PERF_START = 25;
+    /* Auto-detect layout by column count.
+       Current = 35 (Company + Ticker + 33 metric cols, no perf cols).
+       Legacy 41-col still accepted (perf cols 35..40 silently ignored).
+       Legacy 31-col (no "current" fields, perf cols 25..30) still accepted.  */
     /* Fields stored as decimals internally (e.g. 0.032 for 3.2%). If
        user pastes in percent form (3.2 for 3.2%), divide by 100. */
     var PCT_FIELDS = {
@@ -290,9 +292,12 @@ export function useImport(){
            fall back to OLD (31-col) when shorter. Half-filled rows with
            only a few numeric fields still work — unmapped indices are
            just ignored. */
-        var useNew = parts.length >= 36;
+        /* Decide which key map to use. The triplet-style "new" layout
+           is the current 35-col format (and the 41-col legacy with
+           trailing perf cols we now ignore). Single-value "old" layout
+           is the 31-col legacy (or 25-col without perf). */
+        var useNew = parts.length >= 35;
         var METRIC_KEYS = useNew ? METRIC_KEYS_NEW : METRIC_KEYS_OLD;
-        var perfStart = useNew ? NEW_PERF_START : OLD_PERF_START;
         /* Percent-kind fields go through pctToDecimal (shared helper in
            utils/format.js). Non-percent fields (mktCap, fpe*, intCov)
            stay numeric. Keeps metrics + dashboard upload percent-handling
@@ -304,13 +309,9 @@ export function useImport(){
           var v = PCT_FIELDS[key] ? pctToDecimal(parts[i]) : num(i);
           if(v !== null) m[key] = v;
         }
-        var perf = {};
-        for(var j=0; j<PERF_KEYS.length; j++){
-          /* Trailing-return perf values are always percent-form */
-          var v2 = pctToDecimal(parts[perfStart + j]);
-          if(v2 !== null) perf[PERF_KEYS[j]] = v2;
-        }
-        if(Object.keys(perf).length > 0) m.perf = perf;
+        /* Trailing perf no longer parsed from this upload — lives on the
+           Prices import (per ticker, with USD context). If a legacy 41-col
+           row is pasted, the trailing 6 perf cells are silently ignored. */
         if(Object.keys(m).length === 0) return c;
         count++;
         return Object.assign({},c,{metrics:m});

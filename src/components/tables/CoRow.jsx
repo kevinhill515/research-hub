@@ -174,10 +174,18 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
         <div className={tdBase} style={rowBg ? { background: rowBg } : undefined}>
           {(function () {
             var ord = (company.tickers || []).find(function (t) { return t.isOrdinary; });
-            var raw = ord && ord.perf5d;
-            if (!raw || raw === "#N/A") return <span className="text-xs text-gray-400 dark:text-slate-500">--</span>;
-            var n = parseFloat(raw);
-            if (isNaN(n)) return <span className="text-xs text-gray-400 dark:text-slate-500">--</span>;
+            if (!ord) return <span className="text-xs text-gray-400 dark:text-slate-500">--</span>;
+            /* Prefer ord.perf["5D"] (decimal, new format). Fall back to
+               legacy ord.perf5d (string "1.2"). */
+            var n;
+            if (ord.perf && typeof ord.perf["5D"] === "number" && isFinite(ord.perf["5D"])) {
+              n = ord.perf["5D"] * 100;
+            } else {
+              var raw = ord.perf5d;
+              if (!raw || raw === "#N/A") return <span className="text-xs text-gray-400 dark:text-slate-500">--</span>;
+              n = parseFloat(raw);
+              if (isNaN(n)) return <span className="text-xs text-gray-400 dark:text-slate-500">--</span>;
+            }
             var cls = n >= 0 ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400";
             return <span className={"text-xs font-semibold " + cls}>{n >= 0 ? "+" : ""}{n.toFixed(1)}%</span>;
           })()}

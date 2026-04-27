@@ -85,21 +85,45 @@ const ROWS = [
       return parseFloatOrNull((c.metrics || {}).intCov);
   } },
 
-  /* Trailing returns — higher is better */
-  { group: "Trailing",  label: "5D",       kind: "pct",   polarity: "higher", get: function (c) {
-      const ord = (c.tickers || []).find(function (t) { return t.isOrdinary; }) || {};
-      const v = ord.perf5d;
-      if (!v || v === "#N/A") return null;
-      const n = parseFloat(v);
-      return isFiniteNum(n) ? n / 100 : null;
-  } },
-  { group: "Trailing",  label: "MTD",      kind: "pct",   polarity: "higher", get: function (c) { return parseFloatOrNull(((c.metrics || {}).perf || {}).MTD); } },
-  { group: "Trailing",  label: "QTD",      kind: "pct",   polarity: "higher", get: function (c) { return parseFloatOrNull(((c.metrics || {}).perf || {}).QTD); } },
-  { group: "Trailing",  label: "3M",       kind: "pct",   polarity: "higher", get: function (c) { return parseFloatOrNull(((c.metrics || {}).perf || {})["3M"]); } },
-  { group: "Trailing",  label: "6M",       kind: "pct",   polarity: "higher", get: function (c) { return parseFloatOrNull(((c.metrics || {}).perf || {})["6M"]); } },
-  { group: "Trailing",  label: "YTD",      kind: "pct",   polarity: "higher", get: function (c) { return parseFloatOrNull(((c.metrics || {}).perf || {}).YTD); } },
-  { group: "Trailing",  label: "1Y",       kind: "pct",   polarity: "higher", get: function (c) { return parseFloatOrNull(((c.metrics || {}).perf || {})["1Y"]); } },
+  /* Trailing returns — higher is better. Pulled from the ticker's perf
+     object (USD-preferred — the US ticker gets priority since side-by-
+     side comparison only makes sense in a single currency). Falls back
+     to legacy ord.perf5d / company.metrics.perf for un-refreshed data. */
+  { group: "Trailing",  label: "1D",   kind: "pct", polarity: "higher", get: function (c) { return readTickerPerf(c, "TODAY"); } },
+  { group: "Trailing",  label: "5D",   kind: "pct", polarity: "higher", get: function (c) { return readTickerPerf(c, "5D"); } },
+  { group: "Trailing",  label: "MTD",  kind: "pct", polarity: "higher", get: function (c) { return readTickerPerf(c, "MTD"); } },
+  { group: "Trailing",  label: "1M",   kind: "pct", polarity: "higher", get: function (c) { return readTickerPerf(c, "1M"); } },
+  { group: "Trailing",  label: "QTD",  kind: "pct", polarity: "higher", get: function (c) { return readTickerPerf(c, "QTD"); } },
+  { group: "Trailing",  label: "3M",   kind: "pct", polarity: "higher", get: function (c) { return readTickerPerf(c, "3M"); } },
+  { group: "Trailing",  label: "6M",   kind: "pct", polarity: "higher", get: function (c) { return readTickerPerf(c, "6M"); } },
+  { group: "Trailing",  label: "YTD",  kind: "pct", polarity: "higher", get: function (c) { return readTickerPerf(c, "YTD"); } },
+  { group: "Trailing",  label: "1Y",   kind: "pct", polarity: "higher", get: function (c) { return readTickerPerf(c, "1Y"); } },
+  { group: "Trailing",  label: "2Y",   kind: "pct", polarity: "higher", get: function (c) { return readTickerPerf(c, "2Y"); } },
+  { group: "Trailing",  label: "3Y",   kind: "pct", polarity: "higher", get: function (c) { return readTickerPerf(c, "3Y"); } },
 ];
+
+/* Resolve a trailing-return value for `key` ("5D", "1Y", etc.). USD
+ * first via the US ticker, then ord, then legacy company.metrics.perf,
+ * then legacy ord.perf5d for the 5D-only special case. */
+function readTickerPerf(c, key) {
+  const tickers = (c && c.tickers) || [];
+  const ord = tickers.find(function (t) { return t.isOrdinary; }) || {};
+  const usd = tickers.find(function (t) { return (t.currency || "").toUpperCase() === "USD" && !t.isOrdinary; })
+           || (((ord.currency || "").toUpperCase() === "USD") ? ord : null);
+  const src = usd || ord;
+  const p = src && src.perf;
+  if (p && p[key] !== undefined && p[key] !== null && isFiniteNum(p[key])) return p[key];
+  const legacy = parseFloatOrNull(((c.metrics || {}).perf || {})[key]);
+  if (legacy !== null) return legacy;
+  if (key === "5D") {
+    const v = ord.perf5d;
+    if (v && v !== "#N/A") {
+      const n = parseFloat(v);
+      if (isFiniteNum(n)) return n / 100;
+    }
+  }
+  return null;
+}
 
 function parseFloatOrNull(v) {
   if (v === null || v === undefined || v === "") return null;

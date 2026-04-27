@@ -250,34 +250,146 @@ export function useCompanies(){
     try{var allSecs=[...TEMPLATE_SECTIONS];var cur=allSecs.map(function(s){return"## "+s+"\n"+((selCo.sections&&selCo.sections[s])||"(empty)");}).join("\n\n");var r=await apiCall("Investment research assistant. New research ("+upType+") for "+selCo.name+" ("+selCo.ticker+"). Current template:\n"+cur+"\n\nReturn ONLY JSON: {changes:[{section,before,after,reason}],summary:string}. No markdown fences.",[{type:"text",text:upText}],2500);var parsed=JSON.parse(r.replace(/```json|```/g,"").trim());setPendingDiff(parsed.changes||[]);setPendingMeta({summary:parsed.summary,type:upType,date:todayStr()});}catch(e){alertFn("Could not process: "+e.message);}
     setUpLoading(false);
   }
+  /* Price + trailing-perf upload.
+   *
+   * Column layout (27 columns total):
+   *    [0] Company
+   *    [1] Ord Ticker        [2] Ord Price
+   *    [3..13] Ord trailing returns: TODAY 5D MTD 1M QTD 3M 6M YTD 1Y 2Y 3Y (11 cols)
+   *    [14] US Ticker        [15] US Price
+   *    [16..26] US trailing returns: TODAY 5D MTD 1M QTD 3M 6M YTD 1Y 2Y 3Y (11 cols)
+   *
+   * Each ticker stores its own `perf` object with all 11 windows as
+   * decimals (0.032 = 3.2%). Legacy `t.perf5d` (string) is also written
+   * from the 5D value so older UI surfaces keep working during the
+   * transition. The Snapshot / EPS Revisions tabs prefer the US ticker
+   * when present so trailing returns read in USD; ord ticker (often
+   * non-USD) is used as a fallback.
+   *
+   * The 7-col legacy paste (Company, Ord, OrdPrice, Ord5D, US, USPrice,
+   * US5D) is still accepted — detected by short row length. */
+  var PRICE_PERF_KEYS = ["TODAY","5D","MTD","1M","QTD","3M","6M","YTD","1Y","2Y","3Y"];
+  function parsePerfCell(raw){
+    if(raw == null) return null;
+    var s = String(raw).trim();
+    if(!s || s === "#N/A" || s === "—" || s === "-" || /^n\.?a\.?$/i.test(s)) return null;
+    /* "(1.2%)" → -1.2; strip %, parens, comma. */
+    var t = s.replace(/[%\s,]/g,"");
+    var paren = /^\((.+)\)$/.exec(t);
+    if(paren) t = "-" + paren[1];
+    var n = parseFloat(t);
+    if(!isFinite(n)) return null;
+    /* Values come in percent form (3.2 means 3.2%). Convert to decimal. */
+    return n / 100;
+  }
   function applyPriceImport(){
-    if(!priceImportText.trim())return;var lines=priceImportText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});var ordMap={};var adrMap={};
-  var priceData=[];lines.forEach(function(line){var delim=line.indexOf("\t")>=0?"\t":",";var parts=line.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});if(parts.length>=3){var name=parts[0];var ordTicker=parts[1].toUpperCase();var ordPrice=parseFloat(parts[2]);var rawPerf=parts.length>=4&&parts[3]?parts[3]:"";var ordPerf5d=rawPerf==="#N/A"||rawPerf===""?"":rawPerf.replace(/[()%\s]/g,"").replace(/^\((.+)\)$/,"-$1");var adrTicker=parts.length>=6&&parts[4]?parts[4].toUpperCase():"";var adrPrice=parts.length>=6&&parts[5]?parseFloat(parts[5].replace(/,/g,"")):NaN;var rawAdrPerf=parts.length>=7&&parts[6]?parts[6]:"";var adrPerf5d=rawAdrPerf==="#N/A"||rawAdrPerf===""?"":rawAdrPerf.replace(/[()%\s]/g,"").replace(/^\((.+)\)$/,"-$1");priceData.push({name:name,ordTicker:ordTicker,ordPrice:ordPrice,ordPerf5d:ordPerf5d,adrTicker:adrTicker,adrPrice:isNaN(adrPrice)?null:adrPrice,adrPerf5d:adrPerf5d});}});
-    var count=0;
+    if(!priceImportText.trim())return;
+    var lines = priceImportText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});
+    /* Skip header row if first cell looks like "Company"/"Name". */
+    if(lines.length>0){
+      var firstParts = lines[0].split(lines[0].indexOf("\t")>=0?"\t":",");
+      if(/^(company|name)$/i.test((firstParts[0]||"").trim())) lines.shift();
+    }
+    var priceData = [];
+    lines.forEach(function(line){
+      var delim = line.indexOf("\t")>=0 ? "\t" : ",";
+      var parts = line.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});
+      if(parts.length < 3) return;
+      var name = parts[0];
+      var ordTicker = (parts[1]||"").toUpperCase();
+      var ordPrice  = parts[2] ? parseFloat(parts[2].replace(/,/g,"")) : NaN;
+
+      /* Detect layout. New 27-col has perf cells at indices 3..13 and
+         15..25; legacy 7-col has US ticker at index 4. We pick by
+         whether index 4 looks like a price (number) or a ticker. */
+      var ordPerf = {};
+      var usTicker = "", usPrice = NaN;
+      var usPerf = {};
+      if(parts.length >= 14){
+        /* New layout. Ord perf cells 3..13. */
+        for(var i=0; i<PRICE_PERF_KEYS.length; i++){
+          var v = parsePerfCell(parts[3 + i]);
+          if(v !== null) ordPerf[PRICE_PERF_KEYS[i]] = v;
+        }
+        usTicker = (parts[14]||"").toUpperCase();
+        usPrice  = parts[15] ? parseFloat(parts[15].replace(/,/g,"")) : NaN;
+        for(var k=0; k<PRICE_PERF_KEYS.length; k++){
+          var v2 = parsePerfCell(parts[16 + k]);
+          if(v2 !== null) usPerf[PRICE_PERF_KEYS[k]] = v2;
+        }
+      } else {
+        /* Legacy 7-col: Company, Ord, OrdPrice, Ord5D, US, USPrice, US5D. */
+        var raw = parts[3] || "";
+        var v5d = parsePerfCell(raw);
+        if(v5d !== null) ordPerf["5D"] = v5d;
+        usTicker = parts.length>=5 ? (parts[4]||"").toUpperCase() : "";
+        usPrice  = parts.length>=6 && parts[5] ? parseFloat(parts[5].replace(/,/g,"")) : NaN;
+        var rawUs = parts.length>=7 ? (parts[6]||"") : "";
+        var v5dUs = parsePerfCell(rawUs);
+        if(v5dUs !== null) usPerf["5D"] = v5dUs;
+      }
+      priceData.push({
+        name: name,
+        ordTicker: ordTicker, ordPrice: ordPrice, ordPerf: ordPerf,
+        usTicker: usTicker,   usPrice: isNaN(usPrice) ? null : usPrice, usPerf: usPerf,
+      });
+    });
+
+    var count = 0;
     setCompanies(function(prev){return prev.map(function(c){
-    var cname=(c.name||"").toLowerCase().trim();
-    var cTickerSet={};
-    (c.tickers||[]).forEach(function(t){if(t.ticker)cTickerSet[t.ticker.toUpperCase()]=true;});
-    if(c.ticker)cTickerSet[c.ticker.toUpperCase()]=true;
-    /* Match price rows by ticker first (authoritative), then by name (fallback) */
-    var match=priceData.find(function(d){return(d.ordTicker&&cTickerSet[d.ordTicker])||(d.adrTicker&&cTickerSet[d.adrTicker]);});
-    if(!match)match=priceData.find(function(d){return d.name.toLowerCase().trim()===cname;});
-    if(!match)return c;var updates={};
-    // Preserve user's existing ordinary designation if it matches one of the new tickers
-    var existingOrdinaryTicker=((c.tickers||[]).find(function(t){return t.isOrdinary;})||{}).ticker;
-    var ordIsExistingOrdinary=existingOrdinaryTicker===match.ordTicker;
-    var adrIsExistingOrdinary=existingOrdinaryTicker===match.adrTicker;
-    var hasExistingOrdinaryMatch=ordIsExistingOrdinary||adrIsExistingOrdinary;
-    var ordHasSuffixPI=/-[A-Z]{2}$/.test(match.ordTicker);
-    var ordCcyPI=ordHasSuffixPI?getCurrency(c.country):"USD";
-    var newTickers=[{ticker:match.ordTicker,price:match.ordPrice,perf5d:match.ordPerf5d||"",currency:ordCcyPI,isOrdinary:hasExistingOrdinaryMatch?ordIsExistingOrdinary:true}];
-    if(match.adrTicker&&match.adrPrice!==null&&match.adrTicker!==match.ordTicker)newTickers.push({ticker:match.adrTicker,price:match.adrPrice,perf5d:match.adrPerf5d||"",currency:"USD",isOrdinary:hasExistingOrdinaryMatch?adrIsExistingOrdinary:false});
-    // Set valuation.price and currency from whichever ticker is now the ordinary
-    var nowOrdinary=newTickers.find(function(t){return t.isOrdinary;})||newTickers[0];
-    if(!isNaN(nowOrdinary.price)){updates.valuation=Object.assign({},c.valuation||{},{price:nowOrdinary.price,currency:nowOrdinary.currency});count++;}
-    updates.tickers=newTickers;
-    return Object.assign({},c,updates);});});
-    setPriceImportText("");setShowPriceImport(false);var priceUpdateStr=todayStr()+" "+new Date().toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"});setLastPriceUpdate(priceUpdateStr);supaUpsert("meta",{key:"lastPriceUpdate",value:priceUpdateStr});setTimeout(function(){alertFn("Updated prices for "+count+" companies.");},100);
+      var cname = (c.name||"").toLowerCase().trim();
+      var cTickerSet = {};
+      (c.tickers||[]).forEach(function(t){ if(t.ticker) cTickerSet[t.ticker.toUpperCase()] = true; });
+      if(c.ticker) cTickerSet[c.ticker.toUpperCase()] = true;
+      /* Match by ticker first, then by name. */
+      var match = priceData.find(function(d){ return (d.ordTicker && cTickerSet[d.ordTicker]) || (d.usTicker && cTickerSet[d.usTicker]); });
+      if(!match) match = priceData.find(function(d){ return d.name.toLowerCase().trim() === cname; });
+      if(!match) return c;
+
+      var updates = {};
+      /* Preserve which ticker is marked ordinary if it matches one of
+         the new tickers; otherwise default to the ord ticker. */
+      var existingOrdinary = ((c.tickers||[]).find(function(t){return t.isOrdinary;}) || {}).ticker;
+      var ordIsExistingOrd = existingOrdinary === match.ordTicker;
+      var usIsExistingOrd  = existingOrdinary === match.usTicker;
+      var hasMatch = ordIsExistingOrd || usIsExistingOrd;
+      var ordHasSuffix = /-[A-Z]{2}$/.test(match.ordTicker);
+      var ordCcy = ordHasSuffix ? getCurrency(c.country) : "USD";
+
+      function legacy5d(perf){ return perf && isFinite(perf["5D"]) ? String((perf["5D"] * 100).toFixed(1)) : ""; }
+
+      var newTickers = [{
+        ticker:    match.ordTicker,
+        price:     match.ordPrice,
+        currency:  ordCcy,
+        isOrdinary: hasMatch ? ordIsExistingOrd : true,
+        perf:      match.ordPerf,
+        perf5d:    legacy5d(match.ordPerf), /* legacy field — read by older UI surfaces */
+      }];
+      if(match.usTicker && match.usPrice !== null && match.usTicker !== match.ordTicker){
+        newTickers.push({
+          ticker:    match.usTicker,
+          price:     match.usPrice,
+          currency:  "USD",
+          isOrdinary: hasMatch ? usIsExistingOrd : false,
+          perf:      match.usPerf,
+          perf5d:    legacy5d(match.usPerf),
+        });
+      }
+      var nowOrdinary = newTickers.find(function(t){return t.isOrdinary;}) || newTickers[0];
+      if(!isNaN(nowOrdinary.price)){
+        updates.valuation = Object.assign({}, c.valuation||{}, { price: nowOrdinary.price, currency: nowOrdinary.currency });
+        count++;
+      }
+      updates.tickers = newTickers;
+      return Object.assign({}, c, updates);
+    });});
+    setPriceImportText("");
+    setShowPriceImport(false);
+    var priceUpdateStr = todayStr() + " " + new Date().toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    setLastPriceUpdate(priceUpdateStr);
+    supaUpsert("meta", { key: "lastPriceUpdate", value: priceUpdateStr });
+    setTimeout(function(){ alertFn("Updated prices for " + count + " companies."); }, 100);
   }
   /* Three-state click cycle on column headers:
        0: (cold) column not active -> set to this col's default direction

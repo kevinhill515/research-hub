@@ -318,25 +318,43 @@ function RevisionsBarChart({ series, company }) {
   const fwdSeries = series.filter(function (s) { return s.horizon > 0; });
 
   /* Lookback windows: index offset back from the most-recent monthly point.
-     `perfKey` selects the matching trailing-stock-return field on
-     company.metrics.perf so each column gets a context-line under it. */
+     `perfKey` selects the matching trailing-stock-return field on the
+     ticker's perf object so each column gets a context-line under it. */
   const WINDOWS = [
-    { label: "1 Mo Change",  back: 1,  perfKey: "MTD" },
+    { label: "1 Mo Change",  back: 1,  perfKey: "1M" },
     { label: "3 Mo Change",  back: 3,  perfKey: "3M" },
     { label: "6 Mo Change",  back: 6,  perfKey: "6M" },
     { label: "1 Yr Change",  back: 12, perfKey: "1Y" },
   ];
 
-  /* Resolve stock performance for each window. Falls back to null when
-     the company doesn't have metrics imported. Values stored as percent
-     numbers (3.2 means 3.2%) per the metrics importer convention. */
-  const perf = (company && company.metrics && company.metrics.perf) || {};
+  /* Resolve stock performance for each window. Source priority:
+       1. US ticker's perf (USD) — preferred, since EPS revisions are
+          USD-denominated and matching currency keeps the comparison clean
+       2. Ord ticker's perf (local currency)
+       3. Legacy company.metrics.perf (older imports)
+     Values stored as decimals (0.032 = 3.2%). */
+  const tickers = (company && company.tickers) || [];
+  const ordT = tickers.find(function (t) { return t.isOrdinary; }) || {};
+  const usT  = tickers.find(function (t) { return (t.currency || "").toUpperCase() === "USD" && !t.isOrdinary; })
+            || (((ordT.currency || "").toUpperCase() === "USD") ? ordT : null);
+  const perfTicker = usT || ordT;
+  const tickerPerf = (perfTicker && perfTicker.perf) || {};
+  const legacyMetricPerf = (company && company.metrics && company.metrics.perf) || {};
   function stockPerfFor(key) {
-    const raw = perf[key];
-    if (raw === null || raw === undefined || raw === "") return null;
-    const n = parseFloat(raw);
-    return isFinite(n) ? n / 100 : null;
+    if (tickerPerf[key] !== null && tickerPerf[key] !== undefined && isFinite(tickerPerf[key])) {
+      return tickerPerf[key];
+    }
+    /* Legacy fallback — older imports stored perf as decimals on
+       company.metrics.perf; the 1M key didn't exist there so it'll
+       still return null for that one window on un-refreshed companies. */
+    const lv = legacyMetricPerf[key];
+    if (lv !== null && lv !== undefined && lv !== "") {
+      const n = parseFloat(lv);
+      if (isFinite(n)) return n;
+    }
+    return null;
   }
+  const perfCurrency = perfTicker ? (perfTicker.currency || "") : "";
 
   /* Compute % changes per (window × series). */
   function pctChange(s, back) {
@@ -442,14 +460,13 @@ function RevisionsBarChart({ series, company }) {
               <text x={cx} y={H - 36} fontSize="10" textAnchor="middle" fill="#64748b">{cell.label}</text>
               {/* Stock performance for this window — sits directly under
                   the column label so revisions can be read against the
-                  market's reaction. Color-coded green/red, gray when no
-                  metrics imported. Returns are in USD (FactSet metrics
-                  import normalizes to the listed-security's currency,
-                  USD for US tickers / ADRs which is what the script
-                  pulls for trailing perf). */}
+                  market's reaction. Color-coded green/red, gray when
+                  perf isn't available. Currency suffix reflects the
+                  resolved source (USD when the US ticker is used). */}
               {(function(){
                 const sp = stockPerfFor(WINDOWS[ci].perfKey);
-                const txt = sp === null ? "Stock (USD): —" : "Stock (USD): " + (sp >= 0 ? "+" : "") + (sp * 100).toFixed(1) + "%";
+                const ccy = perfCurrency ? " (" + perfCurrency + ")" : "";
+                const txt = sp === null ? "Stock" + ccy + ": —" : "Stock" + ccy + ": " + (sp >= 0 ? "+" : "") + (sp * 100).toFixed(1) + "%";
                 const fill = sp === null ? "#94a3b8" : (sp >= 0 ? "#16a34a" : "#dc2626");
                 return <text x={cx} y={H - 18} fontSize="10" textAnchor="middle" fill={fill} fontWeight="600">{txt}</text>;
               })()}

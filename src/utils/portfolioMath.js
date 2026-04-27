@@ -177,10 +177,22 @@ export function calcBreakdowns(companies, repData, fxRates, portKey) {
   return { sectors: toPct(sectors), countries: toPct(countries), totalMV: totalMV, byCompany: byCompany };
 }
 
-/* 5-day perf from the company's ordinary ticker, or null. */
+/* 5-day perf from the company's ordinary ticker, or null.
+ * Returns the value as a percent number (e.g. 1.2 means +1.2%).
+ *
+ * Source priority:
+ *   1. ord.perf["5D"] — the new per-ticker perf object (decimal form,
+ *      0.012 → 1.2 returned)
+ *   2. ord.perf5d — legacy string form ("1.2") kept for backward compat
+ *      while the Prices import has been re-run on every company.
+ */
 export function getPerf5d(company) {
   const ord = ((company && company.tickers) || []).find(function (t) { return t.isOrdinary; });
-  const p = ord && ord.perf5d;
+  if (!ord) return null;
+  if (ord.perf && typeof ord.perf["5D"] === "number" && isFinite(ord.perf["5D"])) {
+    return ord.perf["5D"] * 100;
+  }
+  const p = ord.perf5d;
   if (!p || p === "#N/A") return null;
   const n = parseFloat(p);
   return isNaN(n) ? null : n;
