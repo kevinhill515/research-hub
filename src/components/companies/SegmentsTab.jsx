@@ -85,8 +85,23 @@ export default function SegmentsTab({ company }) {
   /* Reporting currency derives from the company's country, not the
      company object directly — getCurrency() takes a country string. */
   const ccy = getCurrency(company && company.country) || "USD";
-  /* Operating segments only (cost centers handled separately). */
-  const opSegs = data.segments.filter(function (s) { return !s.isCostCenter; });
+  /* "Active" segments only — those with reported data in the most-recent
+     historical year. Drops discontinued / divested segments whose data
+     trails off years before the latest reported year (e.g. Vinci's
+     former segments that were spun out — they shouldn't render as tiles
+     since there's no current contribution to track). */
+  const lastIdx = (data.years || []).length - 1;
+  function isActive(s) {
+    if (lastIdx < 0) return true;
+    const v1 = s && s.sales ? s.sales[lastIdx] : null;
+    const v2 = s && s.ebit  ? s.ebit[lastIdx]  : null;
+    const has1 = v1 !== null && v1 !== undefined && v1 !== "" && isFinite(parseFloat(v1));
+    const has2 = v2 !== null && v2 !== undefined && v2 !== "" && isFinite(parseFloat(v2));
+    return has1 || has2;
+  }
+  const allOpSegs   = data.segments.filter(function (s) { return !s.isCostCenter; });
+  const opSegs      = allOpSegs.filter(isActive);
+  const inactiveOps = allOpSegs.filter(function (s) { return !isActive(s); });
   const costCenters = data.segments.filter(function (s) { return s.isCostCenter; });
 
   return (
@@ -99,6 +114,11 @@ export default function SegmentsTab({ company }) {
           </span>
         )}
         <span className="text-[10px] text-gray-400 dark:text-slate-500 italic">Reporting currency: {ccy || "—"}</span>
+        {inactiveOps.length > 0 && (
+          <span className="text-[10px] text-gray-400 dark:text-slate-500 italic" title={"Hidden (no data in latest FY): " + inactiveOps.map(function(s){return s.name;}).join(", ")}>
+            {inactiveOps.length} discontinued segment{inactiveOps.length === 1 ? "" : "s"} hidden
+          </span>
+        )}
         {data.fiscalYearEndMonth && data.fiscalYearEndMonth !== 12 && (
           <span className="text-[10px] text-amber-700 dark:text-amber-400 italic font-medium">
             Fiscal year ends {monthName(data.fiscalYearEndMonth)}

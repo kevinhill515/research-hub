@@ -309,16 +309,31 @@ export function parseSegmentsPaste(text) {
        Once in stdgeo, all known std region names (including the
        ambiguous "Europe" and slash-less "Asia Pacific") count as a
        new region grouping. Templates put this section AFTER the
-       FactSet-reported geography, often separated by a ">" row. */
-    if ((mode === "geo" || mode === "stdgeo") && hasNumber &&
+       FactSet-reported geography, often separated by a ">" row.
+
+       Threshold guard: some FactSet-reported geographies coincidentally
+       use a canonical region name (e.g. FLEX has "Americas 0.3%" in
+       its reported breakout). Without a guard, that row falsely fires
+       the stdgeo trigger and the real standardized "Americas" appears
+       as a duplicate. We require the latest non-null value to be at
+       least 0.5% (the minimum any meaningful standardized region tends
+       to be) before promoting the row to a stdgeo trigger. */
+    function latestVal(arr){ for (let i = arr.length - 1; i >= 0; i--) { if (isFiniteV(arr[i])) return arr[i]; } return null; }
+    const normalizedTrial = normalizePctSeries(vals, anyPct);
+    const lastV = latestVal(normalizedTrial);
+    const meetsThreshold = lastV === null || Math.abs(lastV) >= 0.005;
+    if ((mode === "geo" || mode === "stdgeo") && hasNumber && meetsThreshold &&
         (isStdTrigger(name) || (mode === "stdgeo" && isStdRegion(name)))) {
       mode = "stdgeo";
       if (!geography.standardized) geography.standardized = { regions: [] };
-      geography.standardized.regions.push({
-        name: name,
-        values: normalizePctSeries(vals, anyPct),
-        countries: [],
-      });
+      /* Dedupe: if a region with this canonical name already exists,
+         REPLACE it. The standardized section comes after the reported
+         section, so a later same-named row reflects the user's intended
+         standardized split. */
+      const existingIdx = geography.standardized.regions.findIndex(function(r){ return r.name.toLowerCase() === name.toLowerCase(); });
+      const next = { name: name, values: normalizedTrial, countries: [] };
+      if (existingIdx >= 0) geography.standardized.regions[existingIdx] = next;
+      else                  geography.standardized.regions.push(next);
       continue;
     }
 

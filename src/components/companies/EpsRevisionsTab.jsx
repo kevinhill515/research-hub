@@ -125,7 +125,7 @@ export default function EpsRevisionsTab({ company }) {
         return (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             <RevisionsLineChart dates={data.dates} series={labeled} />
-            <RevisionsBarChart series={labeled} />
+            <RevisionsBarChart series={labeled} company={company} />
           </div>
         );
       })()}
@@ -312,18 +312,31 @@ function RevisionsLineChart({ dates, series }) {
 /* =========================================================================
  * Tile 2 — bar chart of % revision change over 1mo / 3mo / 6mo / 1Y
  * ======================================================================= */
-function RevisionsBarChart({ series }) {
+function RevisionsBarChart({ series, company }) {
   /* Skip FY0 (last completed — % change vs estimate isn't actionable
      since the actual is now fixed). Show only forward horizons. */
   const fwdSeries = series.filter(function (s) { return s.horizon > 0; });
 
-  /* Lookback windows: index offset back from the most-recent monthly point. */
+  /* Lookback windows: index offset back from the most-recent monthly point.
+     `perfKey` selects the matching trailing-stock-return field on
+     company.metrics.perf so each column gets a context-line under it. */
   const WINDOWS = [
-    { label: "1 Mo Change",  back: 1 },
-    { label: "3 Mo Change",  back: 3 },
-    { label: "6 Mo Change",  back: 6 },
-    { label: "1 Yr Change",  back: 12 },
+    { label: "1 Mo Change",  back: 1,  perfKey: "MTD" },
+    { label: "3 Mo Change",  back: 3,  perfKey: "3M" },
+    { label: "6 Mo Change",  back: 6,  perfKey: "6M" },
+    { label: "1 Yr Change",  back: 12, perfKey: "1Y" },
   ];
+
+  /* Resolve stock performance for each window. Falls back to null when
+     the company doesn't have metrics imported. Values stored as percent
+     numbers (3.2 means 3.2%) per the metrics importer convention. */
+  const perf = (company && company.metrics && company.metrics.perf) || {};
+  function stockPerfFor(key) {
+    const raw = perf[key];
+    if (raw === null || raw === undefined || raw === "") return null;
+    const n = parseFloat(raw);
+    return isFinite(n) ? n / 100 : null;
+  }
 
   /* Compute % changes per (window × series). */
   function pctChange(s, back) {
@@ -360,7 +373,9 @@ function RevisionsBarChart({ series }) {
   const yMin = vMin - pad;
   const yMax = vMax + pad;
 
-  const W = 600, H = 280, PAD_T = 16, PAD_B = 38, PAD_L = 50, PAD_R = 16;
+  /* PAD_B bumped to fit two label rows under the X axis: window label
+     ("3 Mo Change") and stock performance ("Stock: +5.4%"). */
+  const W = 600, H = 280, PAD_T = 16, PAD_B = 56, PAD_L = 50, PAD_R = 16;
   const innerW = W - PAD_L - PAD_R;
   const innerH = H - PAD_T - PAD_B;
   const groupW = innerW / cells.length;
@@ -424,7 +439,17 @@ function RevisionsBarChart({ series }) {
                   </g>
                 );
               })}
-              <text x={cx} y={H - 18} fontSize="10" textAnchor="middle" fill="#64748b">{cell.label}</text>
+              <text x={cx} y={H - 36} fontSize="10" textAnchor="middle" fill="#64748b">{cell.label}</text>
+              {/* Stock performance for this window — sits directly under
+                  the column label so revisions can be read against the
+                  market's reaction. Color-coded green/red, gray when no
+                  metrics imported. */}
+              {(function(){
+                const sp = stockPerfFor(WINDOWS[ci].perfKey);
+                const txt = sp === null ? "Stock: —" : "Stock: " + (sp >= 0 ? "+" : "") + (sp * 100).toFixed(1) + "%";
+                const fill = sp === null ? "#94a3b8" : (sp >= 0 ? "#16a34a" : "#dc2626");
+                return <text x={cx} y={H - 18} fontSize="10" textAnchor="middle" fill={fill} fontWeight="600">{txt}</text>;
+              })()}
             </g>
           );
         })}

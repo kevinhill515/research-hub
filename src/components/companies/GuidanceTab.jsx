@@ -307,7 +307,7 @@ function MetricTile({ company, metric, rowsByMetric, currency }) {
         /* Layout columns (everything left of the bar — date, Y/Y mid w/
            direction arrow, abs range, stock-day reaction; bar on right):
               50px date · 70px Y/Y mid · 95px abs · 60px stock · 1fr bar */
-        const COLS = "grid-cols-[60px_85px_120px_70px_1fr]";
+        const COLS = "grid-cols-[60px_85px_120px_1fr_70px]";
         return (
           <div key={g.period} className="mb-3 last:mb-0">
             <div className="text-[13px] font-semibold text-gray-700 dark:text-slate-300 mb-1">
@@ -322,10 +322,10 @@ function MetricTile({ company, metric, rowsByMetric, currency }) {
               <div>Date</div>
               <div>Y/Y mid</div>
               <div title="Y/Y % at the low and high ends of the guidance range. Hover a value to see the absolute amount.">Y/Y range</div>
-              <div title="Stock price reaction on the day the guidance was issued">Stock Δ</div>
               <div className="relative">
                 {g.hasYoy ? <AxisTicks axisMin={g.axisMin} axisMax={g.axisMax}/> : null}
               </div>
+              <div title="Stock price reaction on the day the guidance was issued">Stock Δ</div>
             </div>
             {g.items.map(function (it, idx) {
               const r = it.row;
@@ -355,15 +355,22 @@ function MetricTile({ company, metric, rowsByMetric, currency }) {
               } else {
                 rangeContent = showRange ? lowAbs + "–" + highAbs : (lowAbs || highAbs || "—");
               }
+              /* Mid absolute for the Y/Y mid column tooltip. */
+              const midAbsRaw = (isFiniteNum(r.low) && isFiniteNum(r.high)) ? (r.low + r.high) / 2
+                              : (isFiniteNum(r.low) ? r.low : (isFiniteNum(r.high) ? r.high : null));
+              const midAbsTitle = isFiniteNum(midAbsRaw) ? "Absolute mid: " + fmtMoney(midAbsRaw, currency) : "";
               return (
                 <div key={r.date + ":" + idx} className={"grid " + COLS + " gap-1.5 items-center text-[13px] py-0.5"}>
                   <div className="text-gray-700 dark:text-slate-300 tabular-nums">{dateLabel(r.date)}</div>
-                  <div className="tabular-nums font-semibold flex items-center gap-1" style={{ color: prevMid != null ? color : undefined }}>
+                  <div className="tabular-nums font-semibold flex items-center gap-1" style={{ color: prevMid != null ? color : undefined }} title={midAbsTitle}>
                     <span className="text-[12px]">{arrow}</span>
                     <span>{g.hasYoy && isFiniteNum(it.midYoy) ? fmtPct(it.midYoy, 1, true) : "—"}</span>
                   </div>
                   <div className="text-gray-600 dark:text-slate-300 tabular-nums text-[12px] truncate" title={absTitle ? "Absolute: " + absTitle : ""}>
                     {rangeContent}
+                  </div>
+                  <div className="min-w-0">
+                    {g.hasYoy ? <RangeBar lowPct={it.lowYoy} highPct={it.highYoy} globalMin={g.axisMin} globalMax={g.axisMax} color={color}/> : <div className="h-4 bg-slate-50 dark:bg-slate-800 rounded"/>}
                   </div>
                   <div>
                     {isFiniteNum(r.priceImpact) ? (
@@ -371,9 +378,6 @@ function MetricTile({ company, metric, rowsByMetric, currency }) {
                         {fmtPct(r.priceImpact, 1, true)}
                       </span>
                     ) : <span className="text-gray-300 dark:text-slate-600">—</span>}
-                  </div>
-                  <div className="min-w-0">
-                    {g.hasYoy ? <RangeBar lowPct={it.lowYoy} highPct={it.highYoy} globalMin={g.axisMin} globalMax={g.axisMax} color={color}/> : <div className="h-4 bg-slate-50 dark:bg-slate-800 rounded"/>}
                   </div>
                 </div>
               );

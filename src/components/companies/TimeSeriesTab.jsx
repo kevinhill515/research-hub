@@ -204,33 +204,36 @@ export default function TimeSeriesTab({ company, dataKey, title, dataHubLabel })
 
       <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
         <div style={{ display: "grid", gridTemplateColumns: gridCols, minWidth: "fit-content" }}>
-          {/* Year header */}
-          <div className="px-2 py-1.5 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-semibold sticky left-0 z-10" />
+          {/* Year header — sticky at the top of the viewport so the column
+              labels stay visible while scrolling through line items. The
+              flag row sits directly under it (top offset = 28px ≈ year
+              row height); click-hint row not sticky. */}
+          <div className="px-2 py-1.5 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-semibold sticky left-0 top-0 z-30" />
           {data.years.map(function (yr, i) {
             const est = data.estimate[i];
             return (
-              <div key={"yr-" + i} className="px-1.5 py-1.5 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[10px] text-center font-semibold"
+              <div key={"yr-" + i} className="px-1.5 py-1.5 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[10px] text-center font-semibold sticky top-0 z-20"
                 style={{ color: est ? "#ea580c" : "#64748b", background: est ? EST_BG : undefined }}
                 title={est ? "Estimate" : "Final"}>
                 {"Dec-" + String(yr).slice(2)}
               </div>
             );
           })}
-          <div className="px-2 py-1.5 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-semibold">
+          <div className="px-2 py-1.5 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-semibold sticky top-0 z-20">
             Comments
           </div>
-          {/* Flag row */}
-          <div className="px-2 py-1 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[9px] uppercase tracking-wide text-gray-400 dark:text-slate-500 sticky left-0 z-10" />
+          {/* Flag row — sticky just below the year header. */}
+          <div className="px-2 py-1 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[9px] uppercase tracking-wide text-gray-400 dark:text-slate-500 sticky left-0 z-30" style={{ top: 28 }} />
           {data.years.map(function (_, i) {
             const est = data.estimate[i];
             return (
-              <div key={"est-" + i} className="px-1.5 py-1 border-b border-slate-200 dark:border-slate-700 text-[9px] text-center italic"
-                style={{ color: est ? "#ea580c" : "#94a3b8", background: est ? EST_BG : undefined }}>
+              <div key={"est-" + i} className="px-1.5 py-1 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[9px] text-center italic sticky z-20"
+                style={{ top: 28, color: est ? "#ea580c" : "#94a3b8", background: est ? EST_BG : undefined }}>
                 {est ? "Estimate" : "Final"}
               </div>
             );
           })}
-          <div className="px-2 py-1 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[9px] italic text-gray-400 dark:text-slate-500">
+          <div className="px-2 py-1 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[9px] italic text-gray-400 dark:text-slate-500 sticky z-20" style={{ top: 28 }}>
             click any cell to add/edit
           </div>
 

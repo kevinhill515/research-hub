@@ -124,7 +124,27 @@ export default function App(){
   var sGui = getDataStatus(selCo, "guidance");
   var sSnap = getDataStatus(selCo, "snapshot");
   function tipFor(s, k){ return s === "stale" ? staleReason(selCo, k) : undefined; }
-  var coTabs=[{id:"dashboard",label:"Dashboard"},{id:"financials",label:"Financials"+((selCo&&selCo.financials&&selCo.financials.ratioNames&&selCo.financials.ratioNames.length>0)?" ("+selCo.financials.ratioNames.length+")":"")+statusBadge(sFin),title:tipFor(sFin,"financials")},{id:"ratios",label:"Ratios"+((selCo&&selCo.ratios&&selCo.ratios.ratioNames&&selCo.ratios.ratioNames.length>0)?" ("+selCo.ratios.ratioNames.length+")":"")+statusBadge(sRat),title:tipFor(sRat,"ratios")},{id:"segments",label:"Segments"+((selCo&&selCo.segments&&selCo.segments.segments&&selCo.segments.segments.length>0)?" ("+selCo.segments.segments.length+")":"")+statusBadge(sSeg),title:tipFor(sSeg,"segments")},{id:"epsrev",label:"E[EPS] Revisions"+statusBadge(sEps),title:tipFor(sEps,"epsrev")},{id:"guidance",label:"Guidance"+((selCo&&selCo.guidance&&selCo.guidance.history&&selCo.guidance.history.length>0)?" ("+selCo.guidance.history.length+")":"")+statusBadge(sGui),title:tipFor(sGui,"guidance")},{id:"metrics",label:"Snapshot"+statusBadge(sSnap),title:tipFor(sSnap,"snapshot")},...TEMPLATE_SECTIONS.map(function(s){return{id:"section:"+s,label:s};}),{id:"earnings",label:"Earnings & Thesis Check"},{id:"template",label:"Template"},
+  /* Active-segments count: a segment is "active" if its most recent
+     historical year has any reported value (sales / EBIT). Discontinued
+     segments — where data trails off years before the latest year in
+     the dataset — are excluded so the tab count and the tile list
+     match what's currently meaningful. */
+  function activeSegmentCount(c){
+    var segs = (c && c.segments && c.segments.segments) || [];
+    var years = (c && c.segments && c.segments.years) || [];
+    if (segs.length === 0 || years.length === 0) return 0;
+    var lastIdx = years.length - 1;
+    return segs.filter(function(s){
+      var sales = (s && s.sales) || [];
+      var ebit  = (s && s.ebit)  || [];
+      var v1 = sales[lastIdx], v2 = ebit[lastIdx];
+      var has1 = v1 !== null && v1 !== undefined && v1 !== "" && isFinite(parseFloat(v1));
+      var has2 = v2 !== null && v2 !== undefined && v2 !== "" && isFinite(parseFloat(v2));
+      return has1 || has2;
+    }).length;
+  }
+  var actSeg = activeSegmentCount(selCo);
+  var coTabs=[{id:"dashboard",label:"Dashboard"},{id:"financials",label:"Financials"+statusBadge(sFin),title:tipFor(sFin,"financials")},{id:"ratios",label:"Ratios"+statusBadge(sRat),title:tipFor(sRat,"ratios")},{id:"segments",label:"Segments"+(actSeg>0?" ("+actSeg+")":"")+statusBadge(sSeg),title:tipFor(sSeg,"segments")},{id:"epsrev",label:"E[EPS] Revisions"+statusBadge(sEps),title:tipFor(sEps,"epsrev")},{id:"guidance",label:"Guidance"+statusBadge(sGui),title:tipFor(sGui,"guidance")},{id:"metrics",label:"Snapshot"+statusBadge(sSnap),title:tipFor(sSnap,"snapshot")},...TEMPLATE_SECTIONS.map(function(s){return{id:"section:"+s,label:s};}),{id:"earnings",label:"Earnings & Thesis Check"},{id:"template",label:"Template"},
     {id:"weights",label:"Weights"+((selCo&&selCo.portWeightHistory&&selCo.portWeightHistory.length>0)?" ("+selCo.portWeightHistory.length+")":"")},
     {id:"transactions",label:"Transactions"+((selCo&&selCo.transactions&&selCo.transactions.length>0)?" ("+selCo.transactions.length+")":"")},
     {id:"linked",label:"Linked"+(linkedEntries.length>0?" ("+linkedEntries.length+")":"")},{id:"upload",label:"Upload"},{id:"history",label:"Log"+((selCo&&selCo.updateLog&&selCo.updateLog.length>0)?" ("+selCo.updateLog.length+")":"")}];
