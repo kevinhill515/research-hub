@@ -23,6 +23,7 @@ import FinancialsTab from './FinancialsTab.jsx';
 import CompanyDashboard from './CompanyDashboard.jsx';
 import SegmentsTab from './SegmentsTab.jsx';
 import EpsRevisionsTab from './EpsRevisionsTab.jsx';
+import SnapshotTab from './SnapshotTab.jsx';
 
 const INP = "text-sm px-2 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:outline-none";
 const CARD = "bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 px-3.5 py-3 mb-2";
@@ -499,98 +500,10 @@ export function CompanyDetail(props){
               charted as line trend + % change bar comparison. */}
           {coView==="epsrev"&&<EpsRevisionsTab company={selCo}/>}
 
-          {/* METRICS TAB — displays everything under selCo.metrics in a
-              grouped layout. Read-only; populated by the daily FactSet
-              script or via the Data Hub Metrics upload. */}
-          {coView==="metrics"&&(function(){
-            var m=selCo.metrics||{};
-            var has=Object.keys(m).length>0;
-            if(!has){
-              return (
-                <div className="text-sm text-gray-500 dark:text-slate-400 italic py-6">
-                  No metrics data yet. The daily FactSet job (7:20 AM weekdays) or the Data Hub → Metrics upload populates this view.
-                </div>
-              );
-            }
-            function fmtPct(v){var n=parseFloat(v);return isNaN(n)?"--":(n*100).toFixed(1)+"%";}
-            function fmtX(v){var n=parseFloat(v);return isNaN(n)?"--":n.toFixed(1)+"x";}
-            function fmtRatio(v){var n=parseFloat(v);return isNaN(n)?"--":n.toFixed(1);}
-            function fmtBn(v){var n=parseFloat(v);return isNaN(n)?"--":"$"+n.toFixed(1)+"B";}
-            function fmtPerf(v){var n=parseFloat(v);if(isNaN(n))return"--";var s=(n*100).toFixed(1);return(n>=0?"+":"")+s+"%";}
-            function perfColor(v){var n=parseFloat(v);if(isNaN(n))return undefined;return n>=0?"#166534":"#dc2626";}
-            /* Each metric group now shows current (LTM), +1, +2 side-by-
-               side. Items with no data render as "--". */
-            var GROUPS=[
-              {title:"Size", items:[["MktCap (USD)",m.mktCap,fmtBn]]},
-              {title:"Valuation",items:[
-                ["P/E",m.fpe,fmtX],["P/E +1",m.fpe1,fmtX],["P/E +2",m.fpe2,fmtX],
-                ["FCF Yld",m.fcfYld,fmtPct],["FCF Yld +1",m.fcfYld1,fmtPct],["FCF Yld +2",m.fcfYld2,fmtPct],
-                ["Div Yld",m.divYld,fmtPct],["Div Yld +1",m.divYld1,fmtPct],["Div Yld +2",m.divYld2,fmtPct],
-                ["Payout",m.payout,fmtPct],["Payout +1",m.payout1,fmtPct],["Payout +2",m.payout2,fmtPct],
-              ]},
-              {title:"Leverage",items:[
-                ["Net D/E",m.netDE,fmtPct],["Net D/E +1",m.netDE1,fmtPct],["Net D/E +2",m.netDE2,fmtPct],
-                ["Int Cov",m.intCov,fmtRatio],
-              ]},
-              {title:"Growth",  items:[["LT EPS Growth",m.ltEPS,fmtPct]]},
-              {title:"Margins", items:[
-                ["Gross Mgn",m.grMgn,fmtPct],["Gross Mgn +1",m.grMgn1,fmtPct],["Gross Mgn +2",m.grMgn2,fmtPct],
-                ["Net Mgn",m.netMgn,fmtPct],["Net Mgn +1",m.netMgn1,fmtPct],["Net Mgn +2",m.netMgn2,fmtPct],
-              ]},
-              {title:"Returns on Assets / Equity",items:[
-                ["GP / Assets",m.gpAss,fmtPct],["GP / Assets +1",m.gpAss1,fmtPct],["GP / Assets +2",m.gpAss2,fmtPct],
-                ["NP / Assets",m.npAss,fmtPct],["NP / Assets +1",m.npAss1,fmtPct],["NP / Assets +2",m.npAss2,fmtPct],
-                ["Op ROE",m.opROE,fmtPct],["Op ROE +1",m.opROE1,fmtPct],["Op ROE +2",m.opROE2,fmtPct],
-              ]},
-            ];
-            var perf=m.perf||{};
-            /* 5D% comes from the ordinary ticker's latest perf5d (same
-               source the Companies 5D column uses). It's stored as a
-               percent-form string (e.g. "1.5"), so divide by 100 to
-               match the other perf values which are decimals. */
-            var ordT=((selCo.tickers||[]).find(function(t){return t.isOrdinary;})||{});
-            var perf5dRaw=ordT.perf5d;
-            var perf5d=null;
-            if(perf5dRaw&&perf5dRaw!=="#N/A"){var n=parseFloat(perf5dRaw);if(!isNaN(n))perf5d=n/100;}
-            var PERF_ITEMS=[["5D",perf5d],["MTD",perf.MTD],["QTD",perf.QTD],["3M",perf["3M"]],["6M",perf["6M"]],["YTD",perf.YTD],["1Y",perf["1Y"]]];
-            return (
-              <div className="mb-6">
-                <div className="text-[11px] text-gray-500 dark:text-slate-400 mb-3 italic">Auto-updated daily from FactSet. Read-only.</div>
-                {GROUPS.map(function(g){
-                  return (
-                    <div key={g.title} className="mb-4">
-                      <div className={SECTION_LABEL}>{g.title}</div>
-                      <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2">
-                        {g.items.map(function(it){
-                          var key=it[0], val=it[1], fmter=it[2];
-                          return (
-                            <div key={key} className="px-3 py-2 rounded-md bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                              <div className="text-[10px] text-gray-500 dark:text-slate-400 mb-0.5 whitespace-nowrap">{key}</div>
-                              <div className="text-sm font-semibold text-gray-900 dark:text-slate-100 font-mono">{fmter(val)}</div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-                <div className="mb-2">
-                  <div className={SECTION_LABEL}>Trailing Performance</div>
-                  <div className="grid grid-cols-[repeat(auto-fill,minmax(110px,1fr))] gap-2">
-                    {PERF_ITEMS.map(function(it){
-                      var key=it[0], val=it[1];
-                      return (
-                        <div key={key} className="px-3 py-2 rounded-md bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                          <div className="text-[10px] text-gray-500 dark:text-slate-400 mb-0.5">{key}</div>
-                          <div className="text-sm font-semibold font-mono" style={{color:perfColor(val)}}>{fmtPerf(val)}</div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            );
-          }())}
+          {/* SNAPSHOT TAB (formerly Metrics) — chart-first quick-glance:
+              trailing performance bars + current values vs 5Y history.
+              Replaces the previous numbers-grid Metrics tab. */}
+          {coView==="metrics"&&<SnapshotTab company={selCo}/>}
 
           {/* EARNINGS & THESIS CHECK TAB */}
           {coView==="earnings"&&(<div>
