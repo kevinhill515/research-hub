@@ -879,7 +879,24 @@ def read_rep_holdings(xl: ExcelSession) -> dict[str, dict[str, dict]]:
         shares = _num(row[2])
         avg = _num(row[3])
         if not ticker or shares is None: continue
-        out[port_key][ticker.upper()] = {"shares": shares, "avgCost": avg if avg is not None else 0}
+        # Same ticker can appear multiple times for one portfolio (most
+        # commonly CASH split into multiple line items, or DIVACC + cash
+        # adjustments). Sum the shares and take a shares-weighted average
+        # of avg cost so we match the manual Rep Holdings import.
+        tk = ticker.upper()
+        prev = out[port_key].get(tk)
+        if prev:
+            prev_shares = prev.get("shares") or 0
+            prev_cost   = prev.get("avgCost") or 0
+            new_shares = prev_shares + shares
+            this_cost = avg if avg is not None else 0
+            if new_shares > 0:
+                new_avg = ((prev_shares * prev_cost) + (shares * this_cost)) / new_shares
+            else:
+                new_avg = this_cost
+            out[port_key][tk] = {"shares": new_shares, "avgCost": new_avg}
+        else:
+            out[port_key][tk] = {"shares": shares, "avgCost": avg if avg is not None else 0}
 
     total = sum(len(v) for v in out.values())
     log(f"  Rep Holdings: {total} positions across {sum(1 for v in out.values() if v)} portfolios")
