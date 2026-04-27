@@ -7,6 +7,7 @@ import { parseDashboardUpload } from '../utils/dashboardParser.js';
 import { parseRatioPaste } from '../utils/ratioParser.js';
 import { parseSegmentsPaste } from '../utils/segmentsParser.js';
 import { parseEpsRevisionsPaste } from '../utils/epsRevisionsParser.js';
+import { parseGuidancePaste } from '../utils/guidanceParser.js';
 import { findCompanyByName, findCompanyByTickerOrName, normalizeCompanyName } from '../utils/nameMatch.js';
 import { useAlert } from '../components/ui/DialogProvider.jsx';
 import { REP_ACCOUNTS } from '../constants/index.js';
@@ -38,6 +39,7 @@ export function useImport(){
   const [financialsImportText,setFinancialsImportText]=useState("");
   const [segmentsImportText,setSegmentsImportText]=useState("");
   const [epsRevImportText,setEpsRevImportText]=useState("");
+  const [guidanceImportText,setGuidanceImportText]=useState("");
   const [perfPortTargets,setPerfPortTargets]=useState(["FIN"]);
   const [perfText,setPerfText]=useState("");
   const [portTab,setPortTab]=useState("overlap");
@@ -606,6 +608,46 @@ export function useImport(){
     }, 50);
   }
 
+  /* Guidance import — paste a FactSet "Guidance History" block for one
+     company at a time. Parser auto-locates the title (with ticker in
+     parentheses) and the "Date Issued" header row, so the user can paste
+     B2:M58 verbatim without trimming the header metadata.
+     - Matches the company by ticker first, falls back to fuzzy name.
+     - Replaces c.guidance.history wholesale (re-paste each quarter).
+     - Stores all rows including closed-FY rows where Actual is populated;
+       the GuidanceTab uses those at render time as the Y/Y baseline. */
+  function applyGuidanceImport(){
+    if(!guidanceImportText.trim())return;
+    var parsed = parseGuidancePaste(guidanceImportText);
+    if(parsed.error){ alertFn("Couldn't parse guidance: " + parsed.error); return; }
+    if(parsed.rows.length === 0){ alertFn("Parser found a header but no usable data rows."); return; }
+    var match = findCompanyByTickerOrName(companies, parsed.ticker, parsed.companyName);
+    if(!match){
+      alertFn('No company matched ticker "' + (parsed.ticker||"?") + '" or name "' + (parsed.companyName||"?") + '". Add the company first, then re-import.');
+      return;
+    }
+    var nextGuidance = {
+      ticker: parsed.ticker || null,
+      companyName: parsed.companyName || null,
+      history: parsed.rows,
+      updatedAt: new Date().toISOString(),
+      updatedBy: currentUser || "",
+    };
+    var updated = Object.assign({}, match, { guidance: nextGuidance });
+    setCompanies(function(cs){ return cs.map(function(c){ return c.id === updated.id ? updated : c; }); });
+    setTimeout(function(){
+      /* Summarize: how many distinct metrics, periods, and closed FYs (with actuals). */
+      var metrics = {}, periods = {}, closed = 0;
+      parsed.rows.forEach(function(r){ metrics[r.item]=true; periods[r.period]=true; if(r.actual!==null) closed++; });
+      var msg = 'Imported ' + parsed.rows.length + ' guidance rows for "' + match.name + '" — ' +
+        Object.keys(metrics).length + ' metrics × ' + Object.keys(periods).length + ' fiscal periods.';
+      if(closed > 0) msg += '  (' + closed + ' rows have Actual populated for Y/Y baseline.)';
+      if(parsed.dropped > 0) msg += '  (' + parsed.dropped + ' rows skipped — empty / no item / no values.)';
+      alertFn(msg);
+      setGuidanceImportText("");
+    }, 50);
+  }
+
   function exportAll(){var txt=JSON.stringify({companies,library:saved,exportedAt:new Date().toISOString()},null,2);try{var el=document.createElement("textarea");el.value=txt;el.style.position="fixed";el.style.opacity="0";document.body.appendChild(el);el.focus();el.select();document.execCommand("copy");document.body.removeChild(el);setCopied("exportall");setTimeout(function(){setCopied(null);},2000);}catch(e){setImportText(txt);setShowDataPanel(true);}}
 
   return {
@@ -620,7 +662,8 @@ export function useImport(){
     financialsImportText,setFinancialsImportText,
     segmentsImportText,setSegmentsImportText,
     epsRevImportText,setEpsRevImportText,
-    applyFxImport,applyRepImport,applyTxImport,applyPerfImport,applyCalImport,applyWeightsImport,applyValImport,applyEstImport,applyMetricsImport,applyBenchmarkImport,applyDashboardImport,applyRatioImport,applyFinancialsImport,applySegmentsImport,applyEpsRevImport,
+    guidanceImportText,setGuidanceImportText,
+    applyFxImport,applyRepImport,applyTxImport,applyPerfImport,applyCalImport,applyWeightsImport,applyValImport,applyEstImport,applyMetricsImport,applyBenchmarkImport,applyDashboardImport,applyRatioImport,applyFinancialsImport,applySegmentsImport,applyEpsRevImport,applyGuidanceImport,
     importAll,exportAll
   };
 }

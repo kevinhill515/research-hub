@@ -23,6 +23,7 @@ import FinancialsTab from './FinancialsTab.jsx';
 import CompanyDashboard from './CompanyDashboard.jsx';
 import SegmentsTab from './SegmentsTab.jsx';
 import EpsRevisionsTab from './EpsRevisionsTab.jsx';
+import GuidanceTab from './GuidanceTab.jsx';
 import SnapshotTab from './SnapshotTab.jsx';
 
 const INP = "text-sm px-2 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:outline-none";
@@ -564,6 +565,11 @@ export function CompanyDetail(props){
           {/* E[EPS] REVISIONS TAB — monthly EPS estimate revisions
               charted as line trend + % change bar comparison. */}
           {coView==="epsrev"&&<EpsRevisionsTab company={selCo}/>}
+
+          {/* GUIDANCE TAB — per-metric guidance evolution from FactSet
+              Guidance History uploads. Replaces the old Guidance/KPIs
+              freeform template section. */}
+          {coView==="guidance"&&<GuidanceTab company={selCo}/>}
 
           {/* SNAPSHOT TAB (formerly Metrics) — chart-first quick-glance:
               trailing performance bars + current values vs 5Y history.
