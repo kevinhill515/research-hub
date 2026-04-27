@@ -24,6 +24,7 @@
 
 import { fmtMoney, fmtPct, lastFinite } from '../../utils/chart.js';
 import { isFiniteNum } from '../../utils/numbers.js';
+import { parseDate } from '../../utils/index.js';
 
 /* "2026-03-31" → "FY26". Uses the year from the period date.
  * (Some companies have non-Dec FYs where this matters: Sony's "FY26"
@@ -351,8 +352,8 @@ function MetricTile({ company, metric, rowsByMetric, currency }) {
               );
             })}
             {g.closedSummary && (
-              <div className="mt-1 text-[10px] text-gray-500 dark:text-slate-400 italic">
-                Closed: actual {fmtMoney(g.closedSummary.actual, currency)}
+              <div className="mt-1 text-[10px] text-gray-500 dark:text-slate-400 italic" title="The Actual value is read from the FactSet upload's 'Actual' column for this period. Once an FY closes, every guidance row for that period gets the same realized actual.">
+                Closed: actual {fmtMoney(g.closedSummary.actual, currency)} <span className="not-italic text-gray-400 dark:text-slate-500">(from FactSet Actual column)</span>
                 {g.closedSummary.beat != null && (
                   <span> — {g.closedSummary.beat >= 0 ? "beat" : "missed"} final mid-guidance by {fmtPct(Math.abs(g.closedSummary.beat), 1, false)}</span>
                 )}
@@ -454,20 +455,23 @@ export default function GuidanceTab({ company }) {
            earningsEntries.reportDate so it still works for companies
            that haven't been re-imported recently. */
         let nextRepIso = guidance.nextReportDate || null;
+        let nextRepSource = nextRepIso ? "FactSet metadata" : null;
         if (!nextRepIso) {
           const today0 = new Date(); today0.setHours(0,0,0,0);
           ((company.earningsEntries) || []).forEach(function (e) {
             if (!e.reportDate) return;
-            const d = new Date(e.reportDate + "T00:00:00");
-            if (isNaN(d.getTime()) || d < today0) return;
-            if (!nextRepIso || d < new Date(nextRepIso + "T00:00:00")) nextRepIso = e.reportDate;
+            const d = parseDate(e.reportDate);
+            if (!d || isNaN(d.getTime()) || d < today0) return;
+            const cur = nextRepIso ? parseDate(nextRepIso) : null;
+            if (!cur || d < cur) nextRepIso = e.reportDate;
           });
+          if (nextRepIso) nextRepSource = "earnings calendar";
         }
         let nextRepLabel = null, nextRepDays = null, nextRepClass = "text-gray-500 dark:text-slate-400";
         if (nextRepIso) {
           const t0 = new Date(); t0.setHours(0,0,0,0);
-          const dt = new Date(nextRepIso + "T00:00:00");
-          if (!isNaN(dt.getTime())) {
+          const dt = parseDate(nextRepIso);
+          if (dt && !isNaN(dt.getTime())) {
             nextRepDays = Math.round((dt.getTime() - t0.getTime()) / (24*3600*1000));
             nextRepLabel = dt.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
             if (nextRepDays < 0)      nextRepClass = "text-gray-400 dark:text-slate-500";
@@ -484,12 +488,14 @@ export default function GuidanceTab({ company }) {
                 {currency && <span className="ml-1">· values in {currency}</span>}
                 {hiddenAsDup > 0 && <span className="ml-1 italic">({hiddenAsDup} duplicate metric{hiddenAsDup === 1 ? "" : "s"} hidden)</span>}
               </div>
-              {nextRepIso && (
-                <span className={"text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 " + nextRepClass} title={"Next report: " + nextRepLabel + (guidance.nextReportDate ? " (from FactSet metadata)" : " (from earnings calendar)")}>
+              {nextRepIso ? (
+                <span className={"text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 " + nextRepClass} title={"Next report: " + nextRepLabel + " (from " + nextRepSource + ")"}>
                   {nextRepDays === 0 ? "Reports today" :
                    nextRepDays > 0 ? "Next report in " + nextRepDays + " day" + (nextRepDays === 1 ? "" : "s") + " · " + nextRepLabel :
                                      "Reported " + Math.abs(nextRepDays) + " day" + (Math.abs(nextRepDays) === 1 ? "" : "s") + " ago · " + nextRepLabel}
                 </span>
+              ) : (
+                <span className="text-xs text-gray-400 dark:text-slate-500 italic" title="No 'Next Report Date' in the FactSet upload and no future date in this company's earnings calendar. Re-import to refresh.">no next-report date</span>
               )}
             </div>
             <div className="text-[11px] text-gray-400 dark:text-slate-500">
