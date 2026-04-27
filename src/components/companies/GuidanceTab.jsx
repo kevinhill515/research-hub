@@ -35,6 +35,74 @@ function fyLabel(periodIso) {
   return "FY" + yy;
 }
 
+/* Sort priority for guidance metrics, following standard income-statement
+ * order. Lower index = displayed first. Items not matched by any pattern
+ * fall to the end; a secondary alphabetical sort tiebreaks within the
+ * same priority (so "Sales" comes before "Sales - Consolidated"). */
+const METRIC_ORDER_RX = [
+  /* Income statement, top-down */
+  /^sales\b/i,
+  /^organic\s+growth/i,
+  /^gross\s+(income|profit|margin)/i,
+  /^selling.*marketing|^s_m_exp/i,
+  /^selling.*(general|admin)|^sga\b/i,
+  /^general.*admin|^g_a_exp/i,
+  /^research.*development|^r&d|^rd_exp/i,
+  /^stock\s*option/i,
+  /^ebitdar\b/i,
+  /^ebitda\b/i,
+  /^ebita\b/i,
+  /^ebit\b/i,
+  /^depreciation.*amortization|^d&a\b|^depr/i,
+  /^interest\s+expense/i,
+  /^pretax/i,
+  /^tax\s+expense/i,
+  /^net\s+income/i,
+  /^recurring\s+profit/i,           /* Japan-specific, sits with NI */
+  /^long.?term\s+growth|^eps_ltg/i,
+  /^earning?s\s+per\s+share|^eps\b/i,
+  /^dividends?\s+per\s+share|^dps\b/i,
+  /^free\s+cash\s+flow\s+per\s+share|^fcfps\b/i,
+  /^free\s+cash\s+flow|^fcf\b/i,
+  /^cash\s+flow.*operations?/i,
+  /^cash\s+flow.*investing/i,
+  /^cash\s+flow.*financing/i,
+  /^maintenance\s+cap/i,
+  /^capital\s+expenditures?|^capex\b/i,
+  /* Balance sheet / per-share book metrics */
+  /^net\s+assets?\s+value\s+per\s+share|^navps\b/i,
+  /^book\s+value\s+per\s+share.*tangible|^bps_tang\b/i,
+  /^book\s+value\s+per\s+share|^bps\b/i,
+  /^current\s+assets/i,
+  /^total\s+assets/i,
+  /^current\s+liabilit/i,
+  /^total\s+liabilit/i,
+  /^shareholders.*equity/i,
+  /^total\s+debt/i,
+  /^net\s+debt|^ndt\b/i,
+  /^goodwill/i,
+  /^target\s+price|^price.?tgt/i,
+];
+function metricOrder(name) {
+  for (let i = 0; i < METRIC_ORDER_RX.length; i++) {
+    if (METRIC_ORDER_RX[i].test(name)) return i;
+  }
+  return METRIC_ORDER_RX.length;
+}
+
+/* Stale-FY filter: drop fiscal periods whose end date is more than 6
+ * months in the past — those FYs are closed long enough that their
+ * guidance evolution isn't actionable. The just-closed FY (within 6
+ * months) stays so we can see how the final guidance landed. */
+const STALE_FY_THRESHOLD_DAYS = 180;
+function isStalePeriod(periodIso) {
+  if (!periodIso) return true;
+  const p = new Date(periodIso + "T00:00:00").getTime();
+  if (isNaN(p)) return true;
+  const cutoff = Date.now() - STALE_FY_THRESHOLD_DAYS * 24 * 60 * 60 * 1000;
+  return p < cutoff;
+}
+
 /* "2025-02-14" → "Feb '25". */
 function dateLabel(iso) {
   const m = /^(\d{4})-(\d{2})-/.exec(iso || "");
@@ -115,16 +183,39 @@ function RangeBar({ lowPct, highPct, midPct, globalMin, globalMax, color }) {
   const lp = Math.max(0, Math.min(100, ((lowPct  - globalMin) / span) * 100));
   const hp = Math.max(0, Math.min(100, ((highPct - globalMin) / span) * 100));
   const mp = Math.max(0, Math.min(100, ((midPct  - globalMin) / span) * 100));
-  const w = Math.max(0.5, hp - lp); /* min visible width so point estimates don't disappear */
+  const w = Math.max(1, hp - lp); /* min visible width so point estimates don't disappear */
   const c = color || "#3b82f6";
   return (
-    <div className="relative h-3 bg-slate-100 dark:bg-slate-800 rounded-sm">
-      {/* zero line */}
+    <div className="relative h-4 bg-slate-100 dark:bg-slate-800 rounded">
+      {/* zero line — always rendered when the axis crosses zero */}
       {globalMin < 0 && globalMax > 0 && (
-        <div className="absolute top-0 bottom-0" style={{ left: ((0 - globalMin) / span) * 100 + "%", width: 1, background: "rgba(100,116,139,0.4)" }}/>
+        <div className="absolute top-0 bottom-0" style={{ left: ((0 - globalMin) / span) * 100 + "%", width: 1, background: "rgba(100,116,139,0.55)" }}/>
       )}
-      <div className="absolute top-0 bottom-0 rounded-sm opacity-80" style={{ left: lp + "%", width: w + "%", background: c }}/>
-      <div className="absolute top-[-2px] bottom-[-2px] w-[2px] bg-gray-900 dark:bg-slate-100" style={{ left: mp + "%" }}/>
+      <div className="absolute top-[3px] bottom-[3px] rounded-sm opacity-85" style={{ left: lp + "%", width: w + "%", background: c }}/>
+      <div className="absolute top-[-1px] bottom-[-1px] w-[2.5px] rounded-sm" style={{ left: mp + "%", background: c, transform: "translateX(-1px)" }}/>
+    </div>
+  );
+}
+
+/* Tiny per-FY axis ticks rendered above the first row of bars. Marks
+ * min, 0 (if visible), and max as small label strings. */
+function AxisTicks({ axisMin, axisMax }) {
+  const span = axisMax - axisMin;
+  if (!(span > 0)) return null;
+  const ticks = [{ v: axisMin }, { v: axisMax }];
+  if (axisMin < 0 && axisMax > 0) ticks.push({ v: 0 });
+  ticks.sort(function (a, b) { return a.v - b.v; });
+  return (
+    <div className="relative h-3 mb-0.5 text-[9px] text-gray-400 dark:text-slate-500">
+      {ticks.map(function (t) {
+        const pct = ((t.v - axisMin) / span) * 100;
+        const align = pct < 5 ? "left" : pct > 95 ? "right" : "center";
+        return (
+          <span key={t.v} className="absolute tabular-nums" style={{ left: pct + "%", transform: align === "right" ? "translateX(-100%)" : align === "center" ? "translateX(-50%)" : "none" }}>
+            {fmtPct(t.v, 0, true)}
+          </span>
+        );
+      })}
     </div>
   );
 }
@@ -135,15 +226,21 @@ function MetricTile({ company, metric, rowsByMetric, currency }) {
   const rows = rowsByMetric[metric] || [];
   if (rows.length === 0) return null;
 
-  /* Group by period (FY end). Each group sorted oldest-first by date. */
+  /* Group by period (FY end). Each group sorted oldest-first by date.
+     Closed FYs older than the stale threshold are dropped — closed
+     actuals are still used as Y/Y baselines for newer FYs (resolveYoyBaseline
+     reads from the full history regardless), but their tile rows would
+     be visual clutter. */
   const byPeriod = {};
   rows.forEach(function (r) { (byPeriod[r.period] = byPeriod[r.period] || []).push(r); });
-  const periods = Object.keys(byPeriod).sort();
+  const periods = Object.keys(byPeriod).filter(function (p) { return !isStalePeriod(p); }).sort();
+  if (periods.length === 0) return null;
   periods.forEach(function (p) { byPeriod[p].sort(byDateAsc); });
 
   const today = new Date().toISOString().slice(0, 10);
 
-  /* Pre-compute Y/Y + global axis range across this metric. */
+  /* Pre-compute Y/Y + per-FY axis range. Each FY scales locally so a
+     wide-range FY doesn't squash a tight-range FY (and vice-versa). */
   const decorated = periods.map(function (period) {
     const rs = byPeriod[period];
     const baseline = resolveYoyBaseline(rows, period, company, metric);
@@ -166,32 +263,31 @@ function MetricTile({ company, metric, rowsByMetric, currency }) {
       const beat = midG > 0 ? (closedRow.actual / midG - 1) : null;
       closedSummary = { actual: closedRow.actual, beat: beat };
     }
-    return { period: period, baseline: baseline, items: items, closedSummary: closedSummary };
-  });
-
-  /* Compute global Y/Y range across all items so axis is consistent. */
-  let gMin = Infinity, gMax = -Infinity;
-  decorated.forEach(function (g) {
-    g.items.forEach(function (it) {
+    /* Per-FY axis range with padding and zero pinned visible. */
+    let lMin = Infinity, lMax = -Infinity;
+    items.forEach(function (it) {
       [it.lowYoy, it.highYoy].forEach(function (v) {
-        if (isFiniteNum(v)) { if (v < gMin) gMin = v; if (v > gMax) gMax = v; }
+        if (isFiniteNum(v)) { if (v < lMin) lMin = v; if (v > lMax) lMax = v; }
       });
     });
+    const localHasYoy = isFinite(lMin) && isFinite(lMax);
+    if (localHasYoy) {
+      const pad = Math.max(0.02, (lMax - lMin) * 0.15);
+      lMin = Math.min(lMin, 0) - pad;
+      lMax = Math.max(lMax, 0) + pad;
+    }
+    return { period: period, baseline: baseline, items: items, closedSummary: closedSummary, hasYoy: localHasYoy, axisMin: lMin, axisMax: lMax };
   });
-  const hasYoy = isFinite(gMin) && isFinite(gMax);
-  /* Add 10% padding either side, ensure 0 visible. */
-  if (hasYoy) {
-    const pad = Math.max(0.02, (gMax - gMin) * 0.1);
-    gMin = Math.min(gMin, 0) - pad;
-    gMax = Math.max(gMax, 0) + pad;
-  }
+
+  /* Tile-level "any FY has Y/Y" flag for the subtitle. */
+  const tileHasYoy = decorated.some(function (g) { return g.hasYoy; });
 
   return (
     <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 mb-3">
       <div className="flex justify-between items-baseline mb-2">
         <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">{metric}</div>
         <div className="text-[11px] text-gray-500 dark:text-slate-400">
-          {hasYoy ? "Y/Y vs prior FY actual" : "absolute values only — no Y/Y baseline"}
+          {tileHasYoy ? "Y/Y vs prior FY actual" : "absolute values only — no Y/Y baseline"}
         </div>
       </div>
       {decorated.map(function (g) {
@@ -203,6 +299,14 @@ function MetricTile({ company, metric, rowsByMetric, currency }) {
                 <div className="text-[10px] text-gray-400 dark:text-slate-500">baseline: {fmtMoney(g.baseline.value, currency)} <span className="italic">({g.baseline.source})</span></div>
               )}
             </div>
+            {g.hasYoy && (
+              <div className="grid grid-cols-[88px_1fr_220px_60px] gap-2 mb-0.5">
+                <div/>
+                <AxisTicks axisMin={g.axisMin} axisMax={g.axisMax}/>
+                <div/>
+                <div/>
+              </div>
+            )}
             <div className="grid grid-cols-[88px_1fr_220px_60px] gap-2 items-center text-[11px]">
               {g.items.map(function (it, idx) {
                 const r = it.row;
@@ -219,13 +323,13 @@ function MetricTile({ company, metric, rowsByMetric, currency }) {
                   <div key={r.date + ":" + idx} className="contents">
                     <div className="text-gray-700 dark:text-slate-300 tabular-nums">{dateLabel(r.date)}</div>
                     <div className="min-w-0">
-                      {hasYoy ? <RangeBar lowPct={it.lowYoy} highPct={it.highYoy} midPct={it.midYoy} globalMin={gMin} globalMax={gMax} color={color}/> : <div className="h-3 bg-slate-50 dark:bg-slate-800 rounded-sm"/>}
+                      {g.hasYoy ? <RangeBar lowPct={it.lowYoy} highPct={it.highYoy} midPct={it.midYoy} globalMin={g.axisMin} globalMax={g.axisMax} color={color}/> : <div className="h-3 bg-slate-50 dark:bg-slate-800 rounded-sm"/>}
                     </div>
                     <div className="text-gray-500 dark:text-slate-400 tabular-nums text-[10px] truncate">
-                      {hasYoy && isFiniteNum(it.midYoy) && (
+                      {g.hasYoy && isFiniteNum(it.midYoy) && (
                         <span className="font-semibold text-gray-700 dark:text-slate-200">{fmtPct(it.midYoy, 1, true)}</span>
                       )}
-                      {hasYoy && (r.low !== r.high) && isFiniteNum(it.lowYoy) && isFiniteNum(it.highYoy) && (
+                      {g.hasYoy && (r.low !== r.high) && isFiniteNum(it.lowYoy) && isFiniteNum(it.highYoy) && (
                         <span> [{fmtPct(it.lowYoy, 1, true)} … {fmtPct(it.highYoy, 1, true)}]</span>
                       )}
                       <span className="text-gray-400 dark:text-slate-500"> {showRange ? lowAbs + " – " + highAbs : lowAbs || highAbs}</span>
@@ -270,13 +374,20 @@ export default function GuidanceTab({ company }) {
     );
   }
 
-  /* Group rows by item — one tile per metric. Sort metrics by total row
-     count descending, so the most-tracked metrics surface first. */
+  /* Group rows by item — one tile per metric. Metrics are sorted in
+     income-statement order (Sales → Gross → SG&A/R&D → EBITDA → EBIT →
+     Net Income → EPS → DPS → CFO/FCF → CapEx → BS items) so the tab
+     reads top-down like a P&L. Anything not in the IS-order regex list
+     falls to the bottom, alphabetical. */
   const rowsByMetric = {};
   history.forEach(function (r) {
     (rowsByMetric[r.item] = rowsByMetric[r.item] || []).push(r);
   });
-  const metrics = Object.keys(rowsByMetric).sort(function (a, b) { return rowsByMetric[b].length - rowsByMetric[a].length; });
+  const metrics = Object.keys(rowsByMetric).sort(function (a, b) {
+    const oa = metricOrder(a), ob = metricOrder(b);
+    if (oa !== ob) return oa - ob;
+    return a.localeCompare(b);
+  });
 
   const currency = getCurrencyForCompany(company);
   const stamp = guidance.updatedAt ? new Date(guidance.updatedAt).toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
