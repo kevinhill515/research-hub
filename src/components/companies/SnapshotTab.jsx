@@ -23,10 +23,9 @@
  *   - meta.marketsSnapshot.indices — benchmark trailing returns
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import { BENCHMARKS } from '../../constants/index.js';
-import { supaGet } from '../../api/index.js';
 
 const TILE = "rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3";
 const GRID_COLOR = "rgba(100,116,139,0.15)";
@@ -180,25 +179,13 @@ function benchmarkValue(row, key) {
 /* ======================================================================== */
 
 export default function SnapshotTab({ company }) {
-  const { } = useCompanyContext();
-
-  /* Load marketsSnapshot lazily on first render — only this tab needs
-     it, no point bloating the global context. */
-  const [marketsSnap, setMarketsSnap] = useState(null);
+  /* marketsSnapshot is loaded once into the shared CompanyContext.
+     ensureMarketsSnapshot() kicks off the supaGet on first call;
+     subsequent calls (or other tabs) get the cached value. */
+  const { marketsSnapshot: marketsSnap, ensureMarketsSnapshot } = useCompanyContext();
   useEffect(function () {
-    let cancelled = false;
-    (async function () {
-      try {
-        const r = await supaGet("meta", "key", "marketsSnapshot");
-        if (cancelled) return;
-        if (r && r.value) {
-          try { setMarketsSnap(JSON.parse(r.value)); }
-          catch (e) { setMarketsSnap(null); }
-        }
-      } catch (e) { /* ignore */ }
-    })();
-    return function () { cancelled = true; };
-  }, []);
+    if (typeof ensureMarketsSnapshot === "function") ensureMarketsSnapshot();
+  }, [ensureMarketsSnapshot]);
 
   const m = (company && company.metrics) || {};
   const hasMetrics = Object.keys(m).length > 0;

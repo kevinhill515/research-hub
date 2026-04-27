@@ -7,10 +7,8 @@
  * Color: positive green, negative red, deeper saturation for larger moves.
  * Layout: scrollable table per group; FX panel sits on the right. */
 
-import { useEffect, useState } from 'react';
-
-const SUPA_URL = "https://vesnqbxswmggdfevqokt.supabase.co";
-const SUPA_KEY = "sb_publishable_7kqbGZlL_im9kIpgFXLA-A_9CdqsyiT";
+import { useEffect } from 'react';
+import { useCompanyContext } from '../../context/CompanyContext.jsx';
 
 const PERIODS = ["1D", "5D", "MTD", "QTD", "YTD", "1Y", "3Y"];
 
@@ -201,47 +199,16 @@ function FxBlock({ label, rows }) {
 }
 
 export default function MarketsDashboard() {
-  const [snap, setSnap] = useState(null);
-  const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(true);
-
+  /* marketsSnapshot is shared via CompanyContext — first reader triggers
+     the supaGet, every subsequent tab/use gets the cached value. */
+  const { marketsSnapshot: snap, marketsStatus, ensureMarketsSnapshot } = useCompanyContext();
   useEffect(function () {
-    let cancelled = false;
-    async function load() {
-      try {
-        const r = await fetch(SUPA_URL + "/rest/v1/meta?key=eq.marketsSnapshot&select=value", {
-          headers: {
-            apikey: SUPA_KEY,
-            Authorization: "Bearer " + SUPA_KEY,
-            Accept: "application/vnd.pgrst.object+json",
-          },
-        });
-        if (!r.ok) {
-          if (r.status === 406) { // no row yet
-            if (!cancelled) { setSnap(null); setLoading(false); }
-            return;
-          }
-          throw new Error("HTTP " + r.status);
-        }
-        const payload = await r.json();
-        const parsed = JSON.parse(payload.value);
-        if (!cancelled) { setSnap(parsed); setLoading(false); }
-      } catch (e) {
-        if (!cancelled) { setError(e.message); setLoading(false); }
-      }
-    }
-    load();
-    return function () { cancelled = true; };
-  }, []);
+    if (typeof ensureMarketsSnapshot === "function") ensureMarketsSnapshot();
+  }, [ensureMarketsSnapshot]);
 
-  if (loading) {
-    return <div className="text-sm text-gray-500 dark:text-slate-400 italic py-6">Loading markets data…</div>;
-  }
-  if (error) {
+  if (marketsStatus === "loading") {
     return (
-      <div className="text-sm text-red-600 dark:text-red-400 py-6">
-        Couldn't load Markets data: {error}
-      </div>
+      <div className="text-sm text-gray-500 dark:text-slate-400 italic py-6">Loading markets data…</div>
     );
   }
   if (!snap) {

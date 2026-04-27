@@ -42,6 +42,32 @@ export function CompanyProvider({children}){
      Shape: [{ id, author, type:"bug"|"improvement", area, text, date, resolved }]
      Order in the array = priority (top → bottom). */
   const [feedback,setFeedback]=useState([]);
+  /* marketsSnapshot — daily FactSet pull writes to meta.marketsSnapshot.
+     Shape: { indices: [{label, ticker, "1d", "5d", ...}], sectors: [...],
+     countries: [...], commodities: [...], bonds: [...], fx: {...} }.
+     Loaded lazily on first read and cached here so SnapshotTab and
+     MarketsDashboard don't each re-fetch. */
+  const [marketsSnapshot,setMarketsSnapshot]=useState(null);
+  /* "loading" | "ready" — distinguishes "still fetching" from "fetched
+     but empty". Used by MarketsDashboard to avoid showing the empty
+     state during the initial load. */
+  const [marketsStatus,setMarketsStatus]=useState("loading");
+  const [marketsLoaded,setMarketsLoaded]=useState(false);
+  /* Trigger the lazy load on first call to ensureMarketsSnapshot. */
+  function ensureMarketsSnapshot(){
+    if(marketsLoaded)return;
+    setMarketsLoaded(true);
+    (async function(){
+      try{
+        const r=await supaGet("meta","key","marketsSnapshot");
+        if(r&&r.value){
+          try{ setMarketsSnapshot(JSON.parse(r.value)); }
+          catch(e){ /* ignore */ }
+        }
+      }catch(e){ /* ignore */ }
+      finally{ setMarketsStatus("ready"); }
+    })();
+  }
 
   function migratePortfolioKeys(cos){
     var RENAMES={"FIV":"FIN","IV":"IN","FOC1":"FIN1","FOC2":"FIN2","FOC3":"FIN3","MC1":"FIN1","MC2":"FIN2","MC3":"FIN3","MC4":"INGL1","MC5":"INGL2","INTL":"IN1"};
@@ -477,7 +503,8 @@ export function CompanyProvider({children}){
     addTransaction,deleteTransaction,setTxInitOverride,setTxCashFlow,updateInitiatedDate,
     researchAssignments,setResearchAssignments,setResearchSlot,setReorgSlot,
     perfData,setPerfData,setPerfSeries,addPerfSeries,removePerfSeries,movePerfSeries,setPerfSeriesOrder,setPerfReturn,setPerfLastMonthEMV,applyPerfBulk,
-    feedback,setFeedback,addFeedback,updateFeedback,removeFeedback,moveFeedback
+    feedback,setFeedback,addFeedback,updateFeedback,removeFeedback,moveFeedback,
+    marketsSnapshot,setMarketsSnapshot,marketsStatus,ensureMarketsSnapshot
   };
 
   return <CompanyContext.Provider value={value}>{children}</CompanyContext.Provider>;
