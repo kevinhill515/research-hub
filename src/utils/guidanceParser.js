@@ -28,12 +28,17 @@
  *   - "-" / blank / "n.a." / "#N/A" values, all parsed as null
  */
 
-const TICKER_RE = /\(([A-Za-z0-9]{1,8}(?:[-\/][A-Za-z]{1,3})?)\)/;
-const NAME_RE   = /Guidance\s*History\s*[-–—]\s*(.+?)\s*\(/i;
+const TICKER_RE     = /\(([A-Za-z0-9]{1,8}(?:[-\/][A-Za-z]{1,3})?)\)/;
+const NAME_RE       = /Guidance\s*History\s*[-–—]\s*(.+?)\s*\(/i;
+const NEXT_REPORT_RE = /Next\s*Report\s*Date\s*:?\s*([0-9A-Za-z\-\/]+)/i;
+const MONTH_NAMES = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, oct:10, nov:11, dec:12 };
 
-/* Parse a date string in M/D/YY, M/D/YYYY, MM/DD/YY, or YYYY-MM-DD form.
- * Returns ISO "YYYY-MM-DD" or null if unparseable. Two-digit years
- * < 50 are interpreted as 2000s, ≥ 50 as 1900s. */
+/* Parse a date string in M/D/YY, M/D/YYYY, MM/DD/YY, YYYY-MM-DD, or
+ * "13-May-2026" / "May-13-2026" form. Returns ISO "YYYY-MM-DD" or null
+ * if unparseable. Two-digit years < 50 are interpreted as 2000s, ≥ 50
+ * as 1900s. The FactSet metadata block uses "13-May-2026"-style for
+ * the Next Report Date / Last Refresh fields, so that pattern matters
+ * here even though the data table uses M/D/YY. */
 export function parseGuidanceDate(s) {
   if (s === null || s === undefined) return null;
   const t = String(s).trim();
@@ -49,6 +54,25 @@ export function parseGuidanceDate(s) {
     let y = parseInt(m[3], 10);
     if (y < 100) y += y < 50 ? 2000 : 1900;
     return y + "-" + String(parseInt(m[1], 10)).padStart(2, "0") + "-" + String(parseInt(m[2], 10)).padStart(2, "0");
+  }
+  // "13-May-2026" or "May-13-2026"
+  m = /^(\d{1,2})-([A-Za-z]{3})-(\d{2,4})$/.exec(t);
+  if (m) {
+    const mon = MONTH_NAMES[m[2].toLowerCase()];
+    if (mon) {
+      let y = parseInt(m[3], 10);
+      if (y < 100) y += y < 50 ? 2000 : 1900;
+      return y + "-" + String(mon).padStart(2, "0") + "-" + String(parseInt(m[1], 10)).padStart(2, "0");
+    }
+  }
+  m = /^([A-Za-z]{3})-(\d{1,2})-(\d{2,4})$/.exec(t);
+  if (m) {
+    const mon = MONTH_NAMES[m[1].toLowerCase()];
+    if (mon) {
+      let y = parseInt(m[3], 10);
+      if (y < 100) y += y < 50 ? 2000 : 1900;
+      return y + "-" + String(mon).padStart(2, "0") + "-" + String(parseInt(m[2], 10)).padStart(2, "0");
+    }
   }
   return null;
 }
@@ -97,7 +121,7 @@ function findColContains(headerCells, sub) {
 
 export function parseGuidancePaste(text) {
   const lines = String(text || "").split(/\r?\n/);
-  let ticker = null, companyName = null, headerIdx = -1;
+  let ticker = null, companyName = null, nextReportDate = null, headerIdx = -1;
 
   for (let i = 0; i < lines.length; i++) {
     const ln = lines[i];
@@ -110,11 +134,18 @@ export function parseGuidancePaste(text) {
         if (nm) companyName = nm[1].trim();
       }
     }
+    if (nextReportDate === null) {
+      const nrm = NEXT_REPORT_RE.exec(ln);
+      if (nrm) {
+        const parsed = parseGuidanceDate(nrm[1]);
+        if (parsed) nextReportDate = parsed;
+      }
+    }
     if (/\bdate issued\b/i.test(ln)) { headerIdx = i; break; }
   }
 
   if (headerIdx < 0) {
-    return { ticker: ticker, companyName: companyName, rows: [], error: "Could not find a 'Date Issued' header row." };
+    return { ticker: ticker, companyName: companyName, nextReportDate: nextReportDate, rows: [], error: "Could not find a 'Date Issued' header row." };
   }
 
   const headerCells = lines[headerIdx].split("\t").map(function (s) { return (s || "").trim(); });
@@ -166,5 +197,5 @@ export function parseGuidancePaste(text) {
     });
   }
 
-  return { ticker: ticker, companyName: companyName, rows: rows, dropped: dropped, error: null };
+  return { ticker: ticker, companyName: companyName, nextReportDate: nextReportDate, rows: rows, dropped: dropped, error: null };
 }

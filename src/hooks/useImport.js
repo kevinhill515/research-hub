@@ -629,6 +629,7 @@ export function useImport(){
     var nextGuidance = {
       ticker: parsed.ticker || null,
       companyName: parsed.companyName || null,
+      nextReportDate: parsed.nextReportDate || null,
       history: parsed.rows,
       updatedAt: new Date().toISOString(),
       updatedBy: currentUser || "",

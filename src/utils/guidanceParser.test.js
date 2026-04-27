@@ -10,6 +10,13 @@ describe("parseGuidanceDate", () => {
   it("parses M/D/YY", () => { expect(parseGuidanceDate("2/14/25")).toBe("2025-02-14"); });
   it("parses M/D/YYYY", () => { expect(parseGuidanceDate("2/14/2025")).toBe("2025-02-14"); });
   it("parses ISO", () => { expect(parseGuidanceDate("2025-02-14")).toBe("2025-02-14"); });
+  it("parses D-Mon-YYYY (FactSet metadata format)", () => {
+    expect(parseGuidanceDate("13-May-2026")).toBe("2026-05-13");
+    expect(parseGuidanceDate("3-Jan-2027")).toBe("2027-01-03");
+  });
+  it("parses Mon-D-YYYY", () => {
+    expect(parseGuidanceDate("May-13-2026")).toBe("2026-05-13");
+  });
   it("zero-pads single-digit month/day", () => { expect(parseGuidanceDate("3/9/26")).toBe("2026-03-09"); });
   it("treats YY < 50 as 2000s, ≥ 50 as 1900s", () => {
     expect(parseGuidanceDate("1/1/49")).toBe("2049-01-01");
@@ -65,6 +72,17 @@ describe("parseGuidancePaste", () => {
     expect(r.ticker).toBe("6758-JP");
     expect(r.companyName).toBe("Sony Group Corporation");
     expect(r.error).toBeNull();
+  });
+
+  it("extracts Next Report Date from the metadata block", () => {
+    const r = parseGuidancePaste(SAMPLE);
+    expect(r.nextReportDate).toBe("2026-05-13");
+  });
+
+  it("returns nextReportDate null when not present in metadata", () => {
+    const txt = "Guidance History - Apple Inc. (AAPL)\nDate Issued\tPeriod\tItem\tGuidance L\tGuidance H\n2/14/25\t9/30/25\tSales\t100\t110";
+    const r = parseGuidancePaste(txt);
+    expect(r.nextReportDate).toBeNull();
   });
 
   it("parses all valid data rows", () => {

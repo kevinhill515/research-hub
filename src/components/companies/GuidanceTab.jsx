@@ -449,12 +449,48 @@ export default function GuidanceTab({ company }) {
           rowsByMetric[m].forEach(function (r) { if (!isStalePeriod(r.period)) displayedPeriods.add(r.period); });
         });
         const hiddenAsDup = Object.keys(rowsByMetric).length - metrics.length;
+        /* Next-report countdown: prefer the FactSet metadata captured
+           at upload time; fall back to the most-recent-future
+           earningsEntries.reportDate so it still works for companies
+           that haven't been re-imported recently. */
+        let nextRepIso = guidance.nextReportDate || null;
+        if (!nextRepIso) {
+          const today0 = new Date(); today0.setHours(0,0,0,0);
+          ((company.earningsEntries) || []).forEach(function (e) {
+            if (!e.reportDate) return;
+            const d = new Date(e.reportDate + "T00:00:00");
+            if (isNaN(d.getTime()) || d < today0) return;
+            if (!nextRepIso || d < new Date(nextRepIso + "T00:00:00")) nextRepIso = e.reportDate;
+          });
+        }
+        let nextRepLabel = null, nextRepDays = null, nextRepClass = "text-gray-500 dark:text-slate-400";
+        if (nextRepIso) {
+          const t0 = new Date(); t0.setHours(0,0,0,0);
+          const dt = new Date(nextRepIso + "T00:00:00");
+          if (!isNaN(dt.getTime())) {
+            nextRepDays = Math.round((dt.getTime() - t0.getTime()) / (24*3600*1000));
+            nextRepLabel = dt.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+            if (nextRepDays < 0)      nextRepClass = "text-gray-400 dark:text-slate-500";
+            else if (nextRepDays <= 7)  nextRepClass = "text-amber-700 dark:text-amber-400 font-semibold";
+            else if (nextRepDays <= 30) nextRepClass = "text-amber-700 dark:text-amber-400";
+            else                         nextRepClass = "text-gray-600 dark:text-slate-300";
+          }
+        }
         return (
           <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
-            <div className="text-xs text-gray-500 dark:text-slate-400">
-              {displayedRows} rows · {metrics.length} metrics · {displayedPeriods.size} fiscal periods
-              {currency && <span className="ml-1">· values in {currency}</span>}
-              {hiddenAsDup > 0 && <span className="ml-1 italic">({hiddenAsDup} duplicate metric{hiddenAsDup === 1 ? "" : "s"} hidden)</span>}
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="text-xs text-gray-500 dark:text-slate-400">
+                {displayedRows} rows · {metrics.length} metrics · {displayedPeriods.size} fiscal periods
+                {currency && <span className="ml-1">· values in {currency}</span>}
+                {hiddenAsDup > 0 && <span className="ml-1 italic">({hiddenAsDup} duplicate metric{hiddenAsDup === 1 ? "" : "s"} hidden)</span>}
+              </div>
+              {nextRepIso && (
+                <span className={"text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 " + nextRepClass} title={"Next report: " + nextRepLabel + (guidance.nextReportDate ? " (from FactSet metadata)" : " (from earnings calendar)")}>
+                  {nextRepDays === 0 ? "Reports today" :
+                   nextRepDays > 0 ? "Next report in " + nextRepDays + " day" + (nextRepDays === 1 ? "" : "s") + " · " + nextRepLabel :
+                                     "Reported " + Math.abs(nextRepDays) + " day" + (Math.abs(nextRepDays) === 1 ? "" : "s") + " ago · " + nextRepLabel}
+                </span>
+              )}
             </div>
             <div className="text-[11px] text-gray-400 dark:text-slate-500">
               {guidance.updatedBy ? "Last imported by " + guidance.updatedBy : "Last imported"} · {stamp}
