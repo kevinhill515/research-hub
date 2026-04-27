@@ -22,93 +22,20 @@ import { useState } from 'react';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import { useConfirm } from '../ui/DialogProvider.jsx';
 import { getCurrency } from '../../utils/index.js';
+import { isFiniteNum } from '../../utils/numbers.js';
+import {
+  niceTicks, fmtMoney, fmtMoneyShort, fmtPct, lastFinite, lastFiniteIndex,
+  paletteColor as colorFor,
+  HIST_COLOR, EST_COLOR, GRID_COLOR, TICK_COLOR,
+} from '../../utils/chart.js';
 
 const TILE = "rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3";
-const HIST_COLOR = "#2563eb";
-const EST_COLOR  = "#ea580c";
-const GRID_COLOR = "rgba(100,116,139,0.12)";
-const TICK_COLOR = "rgba(100,116,139,0.18)";
-
-/* Distinct, accessible-ish palette for segment colors. Cycled if there
- * are more segments than entries. */
-const PALETTE = [
-  "#2563eb", "#059669", "#7c3aed", "#dc2626", "#ea580c",
-  "#0891b2", "#ca8a04", "#be185d", "#475569", "#65a30d",
-];
-
-function colorFor(idx) { return PALETTE[idx % PALETTE.length]; }
-
-function niceTicks(min, max, target) {
-  if (!isFinite(min) || !isFinite(max) || max <= min) return [];
-  const t = target || 5;
-  const range = max - min;
-  const rawStep = range / t;
-  const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
-  const norm = rawStep / mag;
-  let step;
-  if (norm < 1.5) step = 1;
-  else if (norm < 3) step = 2;
-  else if (norm < 4) step = 2.5;
-  else if (norm < 7) step = 5;
-  else step = 10;
-  step *= mag;
-  const start = Math.ceil(min / step) * step;
-  const out = [];
-  for (let v = start; v <= max + 1e-9; v += step) {
-    out.push(Math.abs(v) < step / 1e6 ? 0 : v);
-  }
-  return out;
-}
-
-/* Format a money value (in millions of reporting currency) with
- * appropriate scale + comma thousands. Examples:
- *   19,520 EUR-millions  → "19.5 B EUR"
- *   9,774,930 JPY-millions → "9.77 T JPY"
- *   880 USD-millions      → "880 M USD"
- *   12,345 USD-millions   → "12.3 B USD"  (also rendered with commas
- *                                          when value > 100k mil but in
- *                                          M scale: "12,345 M USD") */
-function fmtMoney(v, ccy) {
-  if (v === null || v === undefined || !isFinite(v)) return "--";
-  const a = Math.abs(v);
-  const tag = ccy ? " " + ccy : "";
-  if (a >= 1000000) {
-    /* Trillions of base units (M of M) */
-    return (v / 1000000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " T" + tag;
-  }
-  if (a >= 1000) {
-    return (v / 1000).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 }) + " B" + tag;
-  }
-  return v.toLocaleString(undefined, { maximumFractionDigits: 0 }) + " M" + tag;
-}
-
-/* Short axis-label form — commas, no currency tag, scaled for axis ticks. */
-function fmtMoneyShort(v) {
-  if (v === null || v === undefined || !isFinite(v)) return "--";
-  const a = Math.abs(v);
-  if (a >= 1000000) return (v / 1000000).toFixed(1) + "T";
-  if (a >= 1000)    return (v / 1000).toFixed(0) + "B";
-  return v.toLocaleString(undefined, { maximumFractionDigits: 0 });
-}
-
-function fmtPct(v, dp) {
-  if (v === null || v === undefined || !isFinite(v)) return "--";
-  return (v * 100).toFixed(dp == null ? 1 : dp) + "%";
-}
 
 const MONTH_NAMES = ["", "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December"];
 
 function monthName(m) {
   return MONTH_NAMES[m] || "";
-}
-
-function lastFinite(arr) {
-  if (!arr) return null;
-  for (let i = arr.length - 1; i >= 0; i--) {
-    if (arr[i] !== null && isFinite(arr[i])) return arr[i];
-  }
-  return null;
 }
 
 /* Sum a given key (e.g. "sales") across an array of segments at every
@@ -125,14 +52,6 @@ function perYearSum(segments, key, n) {
     out[i] = any ? s : null;
   }
   return out;
-}
-
-function lastFiniteIndex(arr) {
-  if (!arr) return -1;
-  for (let i = arr.length - 1; i >= 0; i--) {
-    if (arr[i] !== null && isFinite(arr[i])) return i;
-  }
-  return -1;
 }
 
 /* ======================================================================== */

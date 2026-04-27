@@ -235,10 +235,16 @@ export default function TimeSeriesTab({ company, dataKey, title, dataHubLabel })
           </div>
 
           {data.sections.map(function (sec) {
+            /* Migrate legacy "Uncategorized" label on already-imported
+               financials data to "Income Statement" at display time, so
+               users don't have to re-import. New imports already store
+               "Income Statement" via parseRatioPaste's defaultSectionName. */
+            const displayName = (dataKey === "financials" && sec.name === "Uncategorized") ? "Income Statement" : sec.name;
+            const secForDisplay = displayName === sec.name ? sec : Object.assign({}, sec, { displayName: displayName });
             return (
               <SectionRows
                 key={sec.name}
-                section={sec}
+                section={secForDisplay}
                 years={data.years}
                 estimate={data.estimate}
                 openItems={openItems}
@@ -271,7 +277,7 @@ function SectionRows({ section, years, estimate, openItems, onToggle, chartWidth
     <>
       <div className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-700 dark:text-slate-200 bg-slate-100/70 dark:bg-slate-800/70 border-b border-slate-200 dark:border-slate-700"
         style={{ gridColumn: "1 / -1" }}>
-        {section.name}
+        {section.displayName || section.name}
       </div>
       {section.items.map(function (item) {
         const isOpen = openItems.has(item.name);

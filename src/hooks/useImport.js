@@ -453,9 +453,9 @@ export function useImport(){
      usTickerName using the same normalize() family as Tx import).
      Re-importing replaces the stored data wholesale. Stores to
      company[dataKey]. */
-  function _applyTimeSeriesImport(text, dataKey, label, clearText){
+  function _applyTimeSeriesImport(text, dataKey, label, clearText, parseOpts){
     if(!text || !text.trim())return;
-    var parsed = parseRatioPaste(text);
+    var parsed = parseRatioPaste(text, parseOpts);
     if(parsed.error){ alertFn("Couldn't parse " + label + ": " + parsed.error); return; }
     if(!parsed.companyName){ alertFn("Could not find a company name above the year header. The first non-empty line should be the company name."); return; }
     if(parsed.ratioNames.length===0){ alertFn("Parser found years but no data rows. Did the paste include the table body?"); return; }
@@ -484,7 +484,7 @@ export function useImport(){
   }
 
   function applyRatioImport()      { _applyTimeSeriesImport(ratioImportText,     "ratios",     "ratios",     setRatioImportText); }
-  function applyFinancialsImport() { _applyTimeSeriesImport(financialsImportText, "financials", "line items", setFinancialsImportText); }
+  function applyFinancialsImport() { _applyTimeSeriesImport(financialsImportText, "financials", "line items", setFinancialsImportText, { defaultSectionName: "Income Statement" }); }
 
   /* Segments + Geography import. Same fuzzy-name matching as the time-series
      imports; replaces company.segments wholesale on each upload. */

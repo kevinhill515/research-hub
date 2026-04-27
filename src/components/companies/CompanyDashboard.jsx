@@ -12,41 +12,14 @@
  * useful when only some data has been uploaded.
  */
 
-import { pickSeries, yoyGrowth, cagr, minMaxAcross, fmtPct } from './overviewCharts.js';
+import { pickSeries, yoyGrowth, cagr } from './overviewCharts.js';
 import { printPage } from '../../utils/index.js';
+import {
+  niceTicks, minMaxAcross, fmtPct, fmtBn, lastFinite, lastHistorical,
+  HIST_COLOR, EST_COLOR, GRID_COLOR, TICK_COLOR,
+} from '../../utils/chart.js';
 
 const TILE = "rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3";
-const HIST_COLOR = "#2563eb"; /* blue-600 */
-const EST_COLOR  = "#ea580c"; /* orange-600 */
-const GRID_COLOR = "rgba(100,116,139,0.12)"; /* slate-500 @ 12% — frame */
-const TICK_COLOR = "rgba(100,116,139,0.18)"; /* gridlines (slightly darker) */
-
-/* Generate "nice" tick values in [min, max] — multiples of 1/2/2.5/5
- * times a power of 10, targeting ~5 ticks. Returns an array of numbers
- * that sit inside the range (may exclude the exact min/max). */
-function niceTicks(min, max, target) {
-  if (!isFinite(min) || !isFinite(max) || max <= min) return [];
-  const t = target || 5;
-  const range = max - min;
-  const rawStep = range / t;
-  const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
-  const norm = rawStep / mag;
-  let step;
-  if (norm < 1.5) step = 1;
-  else if (norm < 3) step = 2;
-  else if (norm < 4) step = 2.5;
-  else if (norm < 7) step = 5;
-  else step = 10;
-  step *= mag;
-  const start = Math.ceil(min / step) * step;
-  const out = [];
-  for (let v = start; v <= max + 1e-9; v += step) {
-    /* Floating point tidy-up — trim near-zero noise */
-    const rounded = Math.abs(v) < step / 1e6 ? 0 : v;
-    out.push(rounded);
-  }
-  return out;
-}
 
 export default function CompanyDashboard({ company }) {
   const hasFin  = !!(company && company.financials && company.financials.years && company.financials.years.length > 0);
@@ -799,26 +772,6 @@ function toDecimalPct(values) {
   return values.map(function (v) { return v === null || !isFinite(v) ? null : v * 0.01; });
 }
 
-function lastFinite(arr) {
-  for (let i = arr.length - 1; i >= 0; i--) {
-    const v = arr[i];
-    if (v !== null && v !== undefined && isFinite(v)) return v;
-  }
-  return null;
-}
-
-/* Like lastFinite but only considers historical (non-estimate) entries.
- * Falls back to lastFinite if no historical value is found. */
-function lastHistorical(arr, estimate) {
-  if (!estimate) return lastFinite(arr);
-  for (let i = arr.length - 1; i >= 0; i--) {
-    if (estimate[i]) continue;
-    const v = arr[i];
-    if (v !== null && v !== undefined && isFinite(v)) return v;
-  }
-  return lastFinite(arr);
-}
-
 function alignToYears(series, years) {
   /* If series.years matches `years`, return as-is. Otherwise map values
      by year. */
@@ -830,10 +783,3 @@ function alignToYears(series, years) {
   return years.map(function (y) { return byYear[y] === undefined ? null : byYear[y]; });
 }
 
-function fmtBn(v) {
-  if (v === null || v === undefined || !isFinite(v)) return "";
-  const a = Math.abs(v);
-  if (a >= 1000000) return (v / 1000000).toFixed(1) + "T";
-  if (a >= 1000)    return (v / 1000).toFixed(1) + "B";
-  return v.toLocaleString(undefined, { maximumFractionDigits: 0 });
-}

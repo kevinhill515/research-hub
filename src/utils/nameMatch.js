@@ -13,7 +13,7 @@
  * the suffix list is single-source-of-truth.
  */
 
-const STOPWORDS_LONG = /\b(corporation|incorporated|international|holdings|holding|company|limited|group|ordinary|preferred|shares|class|depositary|depository|receipts|receipt|common|stock)\b/g;
+const STOPWORDS_LONG = /\b(corporation|incorporated|international|holdings|holding|company|limited|group|ordinary|preferred|shares|class|depositary|depository|receipts|receipt|common|stock|sponsored|unsponsored)\b/g;
 const STOPWORDS_SHORT = /\b(co\.|inc\.|ltd\.|llc|plc|sa|ag|nv|se|co|inc|ltd|corp|gmbh|kgaa|ab|asa|oyj|spa|srl|bv|ord|com|adr|ads|gdr|pref|reit|shs|npv|cdi|cva|units|unit|jsc|pjsc|ojsc|oao|sab|bhd|tbk)\b/g;
 const PUNCT = /[.,&'()\-\/]/g;
 

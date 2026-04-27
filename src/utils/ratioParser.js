@@ -104,7 +104,8 @@ function looksLikeYearHeader(cells) {
   return hits >= 3;
 }
 
-export function parseRatioPaste(text) {
+export function parseRatioPaste(text, options) {
+  const defaultSectionName = (options && options.defaultSectionName) || "Uncategorized";
   const lines = (text || "").split(/\r?\n/).map(function (l) { return l.replace(/\s+$/, ""); });
 
   /* 1. Find year header. */
@@ -186,7 +187,7 @@ export function parseRatioPaste(text) {
         skip. Section header = non-empty name, no numeric values in the
         year columns. Ratio row = name + at least one parsed number. */
   const sections = [];
-  let currentSection = { name: "Uncategorized", items: [] };
+  let currentSection = { name: defaultSectionName, items: [] };
   sections.push(currentSection);
   const ratioNames = [];
   const values = {};
@@ -235,9 +236,9 @@ export function parseRatioPaste(text) {
     values[name] = rowValues;
   }
 
-  /* Drop the leading "Uncategorized" bucket if it's empty. */
+  /* Drop the leading default bucket if it's empty. */
   const cleanSections = sections.filter(function (s, idx) {
-    return !(idx === 0 && s.name === "Uncategorized" && s.items.length === 0);
+    return !(idx === 0 && s.name === defaultSectionName && s.items.length === 0);
   });
 
   return {
