@@ -42,14 +42,28 @@ function lastFinite(arr) {
 }
 
 /* Take the last N finite entries from an array. Used to compute 5Y
- * range stats from a longer time series. */
-function lastNFinite(arr, n) {
+ * range stats from a longer time series. If `estimate` is supplied,
+ * forward-estimate years are excluded — the 5Y range should reflect
+ * actual reported history, not consensus forecasts. */
+function lastNFinite(arr, n, estimate) {
   if (!arr) return [];
   const out = [];
   for (let i = arr.length - 1; i >= 0 && out.length < n; i--) {
+    if (estimate && estimate[i]) continue;
     if (isFiniteV(arr[i])) out.unshift(arr[i]);
   }
   return out;
+}
+
+/* Last finite value in an array, optionally skipping forward-estimate
+ * positions. */
+function lastHistorical(arr, estimate) {
+  if (!arr) return null;
+  for (let i = arr.length - 1; i >= 0; i--) {
+    if (estimate && estimate[i]) continue;
+    if (isFiniteV(arr[i])) return arr[i];
+  }
+  return null;
 }
 
 function rangeStats(values) {
@@ -223,10 +237,18 @@ export default function SnapshotTab({ company }) {
   };
 
   /* ---- Benchmarks applicable to this company's portfolios ----
-   * For each portfolio the company is in, take Core + Value benchmarks
-   * from the BENCHMARKS map; dedupe; resolve to marketsSnapshot rows. */
+   * For each portfolio the company is in (company.portfolios) OR being
+   * considered for (company.portNote, comma/space delimited list of
+   * portfolio codes from the "Port? (considering for)" picker), take
+   * Core + Value benchmarks from the BENCHMARKS map; dedupe; resolve
+   * to marketsSnapshot rows. */
+  const portCodes = (company.portfolios || []).slice();
+  ((company.portNote || "").split(/[,\s]+/)).forEach(function (p) {
+    const code = (p || "").trim().toUpperCase();
+    if (code && BENCHMARKS[code] && portCodes.indexOf(code) < 0) portCodes.push(code);
+  });
   const benchmarkNames = [];
-  (company.portfolios || []).forEach(function (p) {
+  portCodes.forEach(function (p) {
     const b = BENCHMARKS[p];
     if (!b) return;
     if (b.core && benchmarkNames.indexOf(b.core) < 0) benchmarkNames.push(b.core);
@@ -243,15 +265,21 @@ export default function SnapshotTab({ company }) {
   });
 
   /* ---- 5Y snapshot rows ---- */
+  const ratiosEstimate = (ratios && ratios.estimate) || null;
   const snapshotRows = SNAPSHOT_METRICS.map(function (cfg) {
     let history = null;
     /* Prefer ratios history (longer time series). Fall back to metric
-       current value alone (no range bar then). */
+       current value alone (no range bar then). Only apply the
+       raw-percent → decimal normalization to actual percent metrics —
+       multiplier ratios like P/E or Net Debt/EBITDA stay as-is
+       (otherwise a P/Sales of 3.5 would get divided to 0.035). */
     if (ratios && ratios.values && cfg.ratio && ratios.values[cfg.ratio]) {
-      history = toDecimalPct(ratios.values[cfg.ratio].slice());
+      const raw = ratios.values[cfg.ratio].slice();
+      history = cfg.fmt === "pct" ? toDecimalPct(raw) : raw;
     }
     let current = null;
-    if (history && history.length > 0) current = lastFinite(history);
+    /* Current = latest HISTORICAL value (skip forward estimates). */
+    if (history && history.length > 0) current = lastHistorical(history, ratiosEstimate);
     if (current === null && cfg.metric != null) {
       const v = parseFloat(m[cfg.metric]);
       if (isFinite(v)) current = v;
@@ -262,10 +290,10 @@ export default function SnapshotTab({ company }) {
       current = parseFloat(valuation.peCurrent);
     }
 
-    /* 5Y range = last 5 finite values from history */
+    /* 5Y range = last 5 HISTORICAL values from history (no estimates) */
     let stats = null;
     if (history) {
-      const last5 = lastNFinite(history, 5);
+      const last5 = lastNFinite(history, 5, ratiosEstimate);
       if (last5.length >= 2) stats = rangeStats(last5);
     }
     /* Special-case P/E: use valuation 5Y stats if available */
