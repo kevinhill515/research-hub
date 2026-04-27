@@ -80,10 +80,26 @@ export function useImport(){
     rows.forEach(function(r){var k=(r.name||"").toLowerCase().trim();(byName[k]=byName[k]||[]).push(r);(byNorm[normalize(r.name)]=byNorm[normalize(r.name)]||[]).push(r);});
     var matchedNames={};var unmatched=new Set(rows.map(function(r){return r.name;}));
     var txCount=0;
+    /* DIAGNOSTIC — log byName keys once per import. */
+    try{ console.log("[Tx diag] byName keys (first 30):",Object.keys(byName).slice(0,30)); }catch(e){}
     setCompanies(function(prev){return prev.map(function(c){
       var cname=(c.name||"").toLowerCase().trim();
       var cUsName=(c.usTickerName||"").toLowerCase().trim();
       var matches=byName[cname]||(cUsName&&byName[cUsName])||byNorm[normalize(c.name)]||(cUsName&&byNorm[normalize(c.usTickerName)]);
+      /* DIAGNOSTIC — for the 4 target companies, log exactly which lookup hit/missed. */
+      try{
+        var DIAG2=["easyjet","yamaha","hikma","yue yuen"];
+        if(DIAG2.some(function(d){return cname.indexOf(d)>=0;})){
+          console.log("[Tx match diag]",JSON.stringify({
+            cname:cname, cUsName:cUsName,
+            hitName:!!byName[cname], hitUs:!!(cUsName&&byName[cUsName]),
+            hitNormName:!!byNorm[normalize(c.name)], hitNormUs:!!(cUsName&&byNorm[normalize(c.usTickerName)]),
+            normCname:normalize(c.name), normCusName:normalize(c.usTickerName),
+            byNameHasCusName:Object.prototype.hasOwnProperty.call(byName,cUsName),
+            matched:!!matches, matchCount:matches?matches.length:0
+          }));
+        }
+      }catch(e){console.warn("[Tx match diag] error",e);}
       if(!matches||matches.length===0)return c;
       matches.forEach(function(r){matchedNames[r.name]=true;unmatched.delete(r.name);});
       var existing=c.transactions||[];
