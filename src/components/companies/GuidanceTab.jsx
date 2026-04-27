@@ -177,13 +177,12 @@ function byDateAsc(a, b) { return (a.date || "").localeCompare(b.date || ""); }
 /* Renders a horizontal range bar (low%-high% Y/Y) with a midpoint tick.
  * lowPct / highPct are decimals (e.g. -0.05 for -5%). globalMin/Max set
  * the visible range so all bars in a tile share the same axis. */
-function RangeBar({ lowPct, highPct, midPct, globalMin, globalMax, color }) {
+function RangeBar({ lowPct, highPct, globalMin, globalMax, color }) {
   const span = globalMax - globalMin;
   if (!(span > 0)) return null;
   const lp = Math.max(0, Math.min(100, ((lowPct  - globalMin) / span) * 100));
   const hp = Math.max(0, Math.min(100, ((highPct - globalMin) / span) * 100));
-  const mp = Math.max(0, Math.min(100, ((midPct  - globalMin) / span) * 100));
-  const w = Math.max(1, hp - lp); /* min visible width so point estimates don't disappear */
+  const w = Math.max(1.5, hp - lp); /* min visible width so point estimates don't disappear */
   const c = color || "#3b82f6";
   return (
     <div className="relative h-4 bg-slate-100 dark:bg-slate-800 rounded">
@@ -191,8 +190,7 @@ function RangeBar({ lowPct, highPct, midPct, globalMin, globalMax, color }) {
       {globalMin < 0 && globalMax > 0 && (
         <div className="absolute top-0 bottom-0" style={{ left: ((0 - globalMin) / span) * 100 + "%", width: 1, background: "rgba(100,116,139,0.55)" }}/>
       )}
-      <div className="absolute top-[3px] bottom-[3px] rounded-sm opacity-85" style={{ left: lp + "%", width: w + "%", background: c }}/>
-      <div className="absolute top-[-1px] bottom-[-1px] w-[2.5px] rounded-sm" style={{ left: mp + "%", background: c, transform: "translateX(-1px)" }}/>
+      <div className="absolute top-[3px] bottom-[3px] rounded-sm" style={{ left: lp + "%", width: w + "%", background: c, opacity: 0.9 }}/>
     </div>
   );
 }
@@ -283,68 +281,75 @@ function MetricTile({ company, metric, rowsByMetric, currency }) {
   const tileHasYoy = decorated.some(function (g) { return g.hasYoy; });
 
   return (
-    <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 mb-3">
-      <div className="flex justify-between items-baseline mb-2">
+    <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3">
+      <div className="mb-2">
         <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">{metric}</div>
-        <div className="text-[11px] text-gray-500 dark:text-slate-400">
-          {tileHasYoy ? "Y/Y vs prior FY actual" : "absolute values only — no Y/Y baseline"}
+        <div className="text-[10px] text-gray-500 dark:text-slate-400">
+          {tileHasYoy ? "Y/Y vs prior FY actual · ▲ revised up vs prior · ▼ revised down" : "absolute values only — no Y/Y baseline"}
         </div>
       </div>
       {decorated.map(function (g) {
+        /* Layout columns (everything left of the bar — date, Y/Y mid w/
+           direction arrow, abs range, stock-day reaction; bar on right):
+              50px date · 70px Y/Y mid · 95px abs · 60px stock · 1fr bar */
+        const COLS = "grid-cols-[50px_70px_95px_60px_1fr]";
         return (
           <div key={g.period} className="mb-3 last:mb-0">
-            <div className="flex justify-between items-center mb-1">
-              <div className="text-[11px] font-semibold text-gray-700 dark:text-slate-300">{fyLabel(g.period)} <span className="text-gray-400 dark:text-slate-500 font-normal">(period {g.period})</span></div>
+            <div className="text-[11px] font-semibold text-gray-700 dark:text-slate-300 mb-1">
+              {fyLabel(g.period)}
+              <span className="text-gray-400 dark:text-slate-500 font-normal"> · period {g.period}</span>
               {g.baseline.value != null && (
-                <div className="text-[10px] text-gray-400 dark:text-slate-500">baseline: {fmtMoney(g.baseline.value, currency)} <span className="italic">({g.baseline.source})</span></div>
+                <span className="text-gray-400 dark:text-slate-500 font-normal"> · baseline {fmtMoney(g.baseline.value, currency)} <span className="italic">({g.baseline.source})</span></span>
               )}
             </div>
-            {g.hasYoy && (
-              <div className="grid grid-cols-[88px_1fr_220px_60px] gap-2 mb-0.5">
-                <div/>
-                <AxisTicks axisMin={g.axisMin} axisMax={g.axisMax}/>
-                <div/>
-                <div/>
+            {/* Column header strip — clarifies what each column is. */}
+            <div className={"grid " + COLS + " gap-1.5 items-end mb-0.5 text-[9px] uppercase tracking-wide text-gray-400 dark:text-slate-500"}>
+              <div>Date</div>
+              <div>Y/Y mid</div>
+              <div>Range</div>
+              <div title="Stock price reaction on the day the guidance was issued">Stock Δ</div>
+              <div className="relative">
+                {g.hasYoy ? <AxisTicks axisMin={g.axisMin} axisMax={g.axisMax}/> : null}
               </div>
-            )}
-            <div className="grid grid-cols-[88px_1fr_220px_60px] gap-2 items-center text-[11px]">
-              {g.items.map(function (it, idx) {
-                const r = it.row;
-                const prevMid = idx > 0 ? g.items[idx-1].midYoy : null;
-                let color = "#94a3b8"; /* gray (no prior to compare) */
-                if (prevMid != null && isFiniteNum(it.midYoy)) {
-                  if (it.midYoy > prevMid + 0.001) color = "#16a34a"; /* up — green */
-                  else if (it.midYoy < prevMid - 0.001) color = "#dc2626"; /* down — red */
-                }
-                const lowAbs  = isFiniteNum(r.low)  ? fmtMoney(r.low,  currency) : "";
-                const highAbs = isFiniteNum(r.high) ? fmtMoney(r.high, currency) : "";
-                const showRange = (r.low !== r.high) && lowAbs && highAbs;
-                return (
-                  <div key={r.date + ":" + idx} className="contents">
-                    <div className="text-gray-700 dark:text-slate-300 tabular-nums">{dateLabel(r.date)}</div>
-                    <div className="min-w-0">
-                      {g.hasYoy ? <RangeBar lowPct={it.lowYoy} highPct={it.highYoy} midPct={it.midYoy} globalMin={g.axisMin} globalMax={g.axisMax} color={color}/> : <div className="h-3 bg-slate-50 dark:bg-slate-800 rounded-sm"/>}
-                    </div>
-                    <div className="text-gray-500 dark:text-slate-400 tabular-nums text-[10px] truncate">
-                      {g.hasYoy && isFiniteNum(it.midYoy) && (
-                        <span className="font-semibold text-gray-700 dark:text-slate-200">{fmtPct(it.midYoy, 1, true)}</span>
-                      )}
-                      {g.hasYoy && (r.low !== r.high) && isFiniteNum(it.lowYoy) && isFiniteNum(it.highYoy) && (
-                        <span> [{fmtPct(it.lowYoy, 1, true)} … {fmtPct(it.highYoy, 1, true)}]</span>
-                      )}
-                      <span className="text-gray-400 dark:text-slate-500"> {showRange ? lowAbs + " – " + highAbs : lowAbs || highAbs}</span>
-                    </div>
-                    <div className="text-right">
-                      {isFiniteNum(r.priceImpact) && (
-                        <span className={"text-[10px] px-1.5 py-0.5 rounded-full font-semibold " + (r.priceImpact >= 0 ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400")}>
-                          {fmtPct(r.priceImpact, 1, true)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
             </div>
+            {g.items.map(function (it, idx) {
+              const r = it.row;
+              const prevMid = idx > 0 ? g.items[idx-1].midYoy : null;
+              /* Direction-vs-prior color + arrow. Gray when there's no
+                 prior bar to compare (the first row of the FY group). */
+              let color = "#94a3b8";       /* gray */
+              let arrow = "·";              /* neutral dot for first row */
+              if (prevMid != null && isFiniteNum(it.midYoy)) {
+                if (it.midYoy > prevMid + 0.001)      { color = "#16a34a"; arrow = "▲"; } /* up */
+                else if (it.midYoy < prevMid - 0.001) { color = "#dc2626"; arrow = "▼"; }
+                else                                  {                    arrow = "—"; }
+              }
+              const lowAbs  = isFiniteNum(r.low)  ? fmtMoney(r.low,  currency) : "";
+              const highAbs = isFiniteNum(r.high) ? fmtMoney(r.high, currency) : "";
+              const showRange = (r.low !== r.high) && lowAbs && highAbs;
+              return (
+                <div key={r.date + ":" + idx} className={"grid " + COLS + " gap-1.5 items-center text-[11px] py-0.5"}>
+                  <div className="text-gray-700 dark:text-slate-300 tabular-nums">{dateLabel(r.date)}</div>
+                  <div className="tabular-nums font-semibold flex items-center gap-1" style={{ color: prevMid != null ? color : undefined }}>
+                    <span className="text-[10px]">{arrow}</span>
+                    <span>{g.hasYoy && isFiniteNum(it.midYoy) ? fmtPct(it.midYoy, 1, true) : "—"}</span>
+                  </div>
+                  <div className="text-gray-500 dark:text-slate-400 tabular-nums text-[10px] truncate" title={showRange ? lowAbs + " – " + highAbs : lowAbs || highAbs}>
+                    {showRange ? lowAbs + "–" + highAbs : (lowAbs || highAbs || "—")}
+                  </div>
+                  <div>
+                    {isFiniteNum(r.priceImpact) ? (
+                      <span className={"text-[10px] px-1.5 py-0.5 rounded-full font-semibold " + (r.priceImpact >= 0 ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400")} title="Stock price reaction on the day this guidance was announced">
+                        {fmtPct(r.priceImpact, 1, true)}
+                      </span>
+                    ) : <span className="text-gray-300 dark:text-slate-600">—</span>}
+                  </div>
+                  <div className="min-w-0">
+                    {g.hasYoy ? <RangeBar lowPct={it.lowYoy} highPct={it.highYoy} globalMin={g.axisMin} globalMax={g.axisMax} color={color}/> : <div className="h-4 bg-slate-50 dark:bg-slate-800 rounded"/>}
+                  </div>
+                </div>
+              );
+            })}
             {g.closedSummary && (
               <div className="mt-1 text-[10px] text-gray-500 dark:text-slate-400 italic">
                 Closed: actual {fmtMoney(g.closedSummary.actual, currency)}
@@ -457,9 +462,11 @@ export default function GuidanceTab({ company }) {
           </div>
         );
       })()}
-      {metrics.map(function (m) {
-        return <MetricTile key={m} company={company} metric={m} rowsByMetric={rowsByMetric} currency={currency}/>;
-      })}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        {metrics.map(function (m) {
+          return <MetricTile key={m} company={company} metric={m} rowsByMetric={rowsByMetric} currency={currency}/>;
+        })}
+      </div>
     </div>
   );
 }
