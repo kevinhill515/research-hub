@@ -251,8 +251,12 @@ function MetricTile({ company, metric, rowsByMetric, currency }) {
         : (lowYoy != null ? lowYoy : highYoy);
       return { row: r, lowYoy: lowYoy, highYoy: highYoy, midYoy: midYoy };
     });
-    /* Trailing actual + final-guidance midpoint, for closed FYs. */
-    const closedRow = rs.find(function (r) { return isFiniteNum(r.actual); });
+    /* Trailing actual + final-guidance midpoint, for closed FYs.
+     * Picks the LATEST row that has a non-null Actual so the source
+     * attribution is the most recent (relevant when the value evolves
+     * over time as FactSet updates the column from preliminary to
+     * final). */
+    const closedRow = rs.slice().reverse().find(function (r) { return isFiniteNum(r.actual); });
     const lastGuidance = rs.slice().reverse().find(function (r) { return isFiniteNum(r.low) || isFiniteNum(r.high); });
     let closedSummary = null;
     if (closedRow && lastGuidance && period < today && isFiniteNum(closedRow.actual)) {
@@ -260,7 +264,17 @@ function MetricTile({ company, metric, rowsByMetric, currency }) {
       const highG = isFiniteNum(lastGuidance.high) ? lastGuidance.high : lastGuidance.low;
       const midG = (lowG + highG) / 2;
       const beat = midG > 0 ? (closedRow.actual / midG - 1) : null;
-      closedSummary = { actual: closedRow.actual, beat: beat };
+      /* How many distinct Actual values are populated across rows? When
+       * > 1, FactSet evolved the Actual mid-cycle (e.g. preliminary
+       * vs. revised). Surface that so the user can sanity-check. */
+      const actualValues = rs.map(function (r) { return r.actual; }).filter(isFiniteNum);
+      const distinctActuals = Array.from(new Set(actualValues)).length;
+      closedSummary = {
+        actual: closedRow.actual,
+        beat: beat,
+        sourceDate: closedRow.date,
+        distinctActuals: distinctActuals,
+      };
     }
     /* Per-FY axis range with padding and zero pinned visible. */
     let lMin = Infinity, lMax = -Infinity;
@@ -352,8 +366,9 @@ function MetricTile({ company, metric, rowsByMetric, currency }) {
               );
             })}
             {g.closedSummary && (
-              <div className="mt-1 text-[10px] text-gray-500 dark:text-slate-400 italic" title="The Actual value is read from the FactSet upload's 'Actual' column for this period. Once an FY closes, every guidance row for that period gets the same realized actual.">
-                Closed: actual {fmtMoney(g.closedSummary.actual, currency)} <span className="not-italic text-gray-400 dark:text-slate-500">(from FactSet Actual column)</span>
+              <div className="mt-1 text-[10px] text-gray-500 dark:text-slate-400 italic" title={"The Actual value is read from the FactSet upload's 'Actual' column. Sourced from the row issued " + dateLabel(g.closedSummary.sourceDate) + ". Verify in your FactSet sheet: filter Item=" + metric + " AND Period=" + g.period + ", look at the Actual column."}>
+                Closed: actual {fmtMoney(g.closedSummary.actual, currency)}
+                <span className="not-italic text-gray-400 dark:text-slate-500"> (from Actual column on the {dateLabel(g.closedSummary.sourceDate)} row{g.closedSummary.distinctActuals > 1 ? "; " + g.closedSummary.distinctActuals + " distinct actuals across rows — FactSet revised mid-cycle" : ""})</span>
                 {g.closedSummary.beat != null && (
                   <span> — {g.closedSummary.beat >= 0 ? "beat" : "missed"} final mid-guidance by {fmtPct(Math.abs(g.closedSummary.beat), 1, false)}</span>
                 )}
