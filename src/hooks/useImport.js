@@ -64,42 +64,25 @@ export function useImport(){
     });
     if(rows.length===0){alertFn("No valid rows parsed. Expected columns: Date, Name, Portfolio, Shares, Price, Amount.");return;}
     var normalize = normalizeCompanyName;  /* shared util — see src/utils/nameMatch.js */
-    /* DIAGNOSTIC — temporary: dump stored name + usTickerName for any
-       company whose name contains one of these substrings, so we can see
-       what the actual stored values look like vs the Tx-file names. */
-    try{
-      var DIAG=["easyjet","yamaha","hikma","yue yuen"];
-      companies.forEach(function(c){
-        var n=(c.name||"").toLowerCase();
-        if(DIAG.some(function(d){return n.indexOf(d)>=0;})){
-          console.log("[Tx diag]",JSON.stringify({name:c.name,usTickerName:c.usTickerName,nameLen:(c.name||"").length,usLen:(c.usTickerName||"").length,nameCodes:Array.from(c.name||"").map(function(ch){return ch.charCodeAt(0);}),usCodes:Array.from(c.usTickerName||"").map(function(ch){return ch.charCodeAt(0);})}));
-        }
-      });
-    }catch(e){console.warn("[Tx diag] error",e);}
     var byName={},byNorm={};
     rows.forEach(function(r){var k=(r.name||"").toLowerCase().trim();(byName[k]=byName[k]||[]).push(r);(byNorm[normalize(r.name)]=byNorm[normalize(r.name)]||[]).push(r);});
     var matchedNames={};var unmatched=new Set(rows.map(function(r){return r.name;}));
     var txCount=0;
-    /* DIAGNOSTIC — log byName keys once per import. */
-    try{ console.log("[Tx diag] byName keys (first 30):",Object.keys(byName).slice(0,30)); }catch(e){}
     setCompanies(function(prev){return prev.map(function(c){
       var cname=(c.name||"").toLowerCase().trim();
       var cUsName=(c.usTickerName||"").toLowerCase().trim();
-      var matches=byName[cname]||(cUsName&&byName[cUsName])||byNorm[normalize(c.name)]||(cUsName&&byNorm[normalize(c.usTickerName)]);
-      /* DIAGNOSTIC — for the 4 target companies, log exactly which lookup hit/missed. */
-      try{
-        var DIAG2=["easyjet","yamaha","hikma","yue yuen"];
-        if(DIAG2.some(function(d){return cname.indexOf(d)>=0;})){
-          console.log("[Tx match diag]",JSON.stringify({
-            cname:cname, cUsName:cUsName,
-            hitName:!!byName[cname], hitUs:!!(cUsName&&byName[cUsName]),
-            hitNormName:!!byNorm[normalize(c.name)], hitNormUs:!!(cUsName&&byNorm[normalize(c.usTickerName)]),
-            normCname:normalize(c.name), normCusName:normalize(c.usTickerName),
-            byNameHasCusName:Object.prototype.hasOwnProperty.call(byName,cUsName),
-            matched:!!matches, matchCount:matches?matches.length:0
-          }));
-        }
-      }catch(e){console.warn("[Tx match diag] error",e);}
+      /* Union all four lookups — Tx files may list the same company under
+         multiple names (ord name, US/ADR name, normalized variants). Using
+         || would short-circuit on the first hit and leave ADR-name rows
+         unclaimed when ord-name rows already matched. Dedupe by row identity. */
+      var seenRow=new Set();
+      var matches=[];
+      function addAll(arr){ if(!arr)return; arr.forEach(function(r){ if(!seenRow.has(r)){ seenRow.add(r); matches.push(r); } }); }
+      addAll(byName[cname]);
+      if(cUsName) addAll(byName[cUsName]);
+      addAll(byNorm[normalize(c.name)]);
+      if(cUsName) addAll(byNorm[normalize(c.usTickerName)]);
+      if(matches.length===0) matches=null;
       if(!matches||matches.length===0)return c;
       matches.forEach(function(r){matchedNames[r.name]=true;unmatched.delete(r.name);});
       var existing=c.transactions||[];
