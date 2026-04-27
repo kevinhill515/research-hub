@@ -393,10 +393,15 @@ export default function GuidanceTab({ company }) {
      companies' parent-only vs consolidated genuinely diverge) both
      metrics still render. */
   function contentHash(rows) {
+    /* Hash on company-reported values only (date, period, low, high, actual).
+       Consensus mean / surprise / price impact can legitimately differ
+       between a parent and consolidated variant even when the company's
+       own guidance is identical (FactSet pulls separate consensus
+       pools), so including those in the hash would prevent dedupe. */
     return rows.slice().sort(function (a, b) {
       return (a.date || "").localeCompare(b.date || "") || (a.period || "").localeCompare(b.period || "");
     }).map(function (r) {
-      return [r.date, r.period, r.low, r.high, r.mean, r.actual].join("|");
+      return [r.date, r.period, r.low, r.high, r.actual].join("|");
     }).join("¦");
   }
   const byHash = {};
@@ -429,15 +434,29 @@ export default function GuidanceTab({ company }) {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
-        <div className="text-xs text-gray-500 dark:text-slate-400">
-          {history.length} rows · {metrics.length} metrics · {Array.from(new Set(history.map(function (r) { return r.period; }))).length} fiscal periods
-          {currency && <span className="ml-1">· values in {currency}</span>}
-        </div>
-        <div className="text-[11px] text-gray-400 dark:text-slate-500">
-          {guidance.updatedBy ? "Last imported by " + guidance.updatedBy : "Last imported"} · {stamp}
-        </div>
-      </div>
+      {(function(){
+        /* Reflect what's actually rendered: keepers ∩ non-stale periods. */
+        const displayedRows = metrics.reduce(function (s, m) {
+          return s + rowsByMetric[m].filter(function (r) { return !isStalePeriod(r.period); }).length;
+        }, 0);
+        const displayedPeriods = new Set();
+        metrics.forEach(function (m) {
+          rowsByMetric[m].forEach(function (r) { if (!isStalePeriod(r.period)) displayedPeriods.add(r.period); });
+        });
+        const hiddenAsDup = Object.keys(rowsByMetric).length - metrics.length;
+        return (
+          <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
+            <div className="text-xs text-gray-500 dark:text-slate-400">
+              {displayedRows} rows · {metrics.length} metrics · {displayedPeriods.size} fiscal periods
+              {currency && <span className="ml-1">· values in {currency}</span>}
+              {hiddenAsDup > 0 && <span className="ml-1 italic">({hiddenAsDup} duplicate metric{hiddenAsDup === 1 ? "" : "s"} hidden)</span>}
+            </div>
+            <div className="text-[11px] text-gray-400 dark:text-slate-500">
+              {guidance.updatedBy ? "Last imported by " + guidance.updatedBy : "Last imported"} · {stamp}
+            </div>
+          </div>
+        );
+      })()}
       {metrics.map(function (m) {
         return <MetricTile key={m} company={company} metric={m} rowsByMetric={rowsByMetric} currency={currency}/>;
       })}
