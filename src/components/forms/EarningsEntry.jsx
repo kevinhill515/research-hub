@@ -12,13 +12,110 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
   var [aiLoading, setAiLoading] = useState(false);
   var alertFn = useAlert();
 
+  /* Build a structured context block from c.guidance / c.epsRevisions /
+   * the prior earnings entry so the AI has the same backdrop the human
+   * does when writing the thesis check. The model is instructed to use
+   * this context when filling thesisStatus, takeaways, and bullets so
+   * the synthesized output reflects deltas vs prior expectations rather
+   * than reading the raw notes in isolation. */
+  function buildContextBlock() {
+    if (!company) return "";
+    const lines = [];
+    lines.push("COMPANY CONTEXT");
+    lines.push("Name: " + (company.name || "?"));
+    if (company.sector)  lines.push("Sector: " + company.sector);
+    if (company.country) lines.push("Country: " + company.country);
+    if (company.valuation && company.valuation.fyMonth) lines.push("FY ends: " + company.valuation.fyMonth);
+    /* Latest guidance summary — most relevant FY (upcoming, else most-
+       recent-closed within a year). Top 5 metrics by row count. */
+    var g = company.guidance && company.guidance.history ? company.guidance.history : null;
+    if (g && g.length) {
+      var todayStr = new Date().toISOString().slice(0, 10);
+      var staleMs = Date.now() - 365 * 24 * 3600 * 1000;
+      var upcoming = null, closed = null;
+      g.forEach(function (r) {
+        if (!r.period) return;
+        if (r.period >= todayStr) {
+          if (!upcoming || r.period < upcoming) upcoming = r.period;
+        } else {
+          var d = new Date(r.period + "T00:00:00");
+          if (isNaN(d.getTime()) || d.getTime() < staleMs) return;
+          if (!closed || r.period > closed) closed = r.period;
+        }
+      });
+      var period = upcoming || closed;
+      if (period) {
+        var byMetric = {};
+        g.forEach(function (r) { if (r.period === period) (byMetric[r.item] = byMetric[r.item] || []).push(r); });
+        var entries = Object.keys(byMetric).map(function (m) {
+          var arr = byMetric[m].slice().sort(function (a, b) { return (a.date || "").localeCompare(b.date || ""); });
+          var last = arr[arr.length - 1];
+          var prev = arr.length > 1 ? arr[arr.length - 2] : null;
+          function mid(r) {
+            if (!r) return null;
+            if (r.low != null && r.high != null) return (r.low + r.high) / 2;
+            return r.low != null ? r.low : (r.high != null ? r.high : null);
+          }
+          var lm = mid(last), pm = mid(prev);
+          var dir = "";
+          if (lm != null && pm != null) {
+            if (lm > pm * 1.001) dir = " (revised up)";
+            else if (lm < pm * 0.999) dir = " (revised down)";
+            else dir = " (unchanged)";
+          }
+          var lo = last && last.low != null ? last.low : null;
+          var hi = last && last.high != null ? last.high : null;
+          var rangeStr = "";
+          if (lo != null && hi != null && lo !== hi) rangeStr = lo + " – " + hi;
+          else if (lm != null) rangeStr = String(lm);
+          return { metric: m, count: arr.length, line: m + ": " + rangeStr + dir };
+        }).sort(function (a, b) { return b.count - a.count; }).slice(0, 5);
+        lines.push("Latest guidance (" + period + (upcoming ? "" : ", just closed") + "):");
+        entries.forEach(function (e) { lines.push("  - " + e.line); });
+      }
+    }
+    /* EPS revisions trend — last 3M direction by horizon. */
+    var er = company.epsRevisions;
+    if (er && er.series && er.series.length) {
+      var hz = er.series.filter(function (s) { return s.horizon > 0 && s.monthly && s.monthly.length >= 4; });
+      if (hz.length > 0) {
+        lines.push("EPS revisions (last 3M):");
+        hz.slice(0, 3).forEach(function (s) {
+          var lst = s.monthly[s.monthly.length - 1];
+          var bk  = s.monthly[s.monthly.length - 4];
+          if (lst == null || bk == null || bk === 0) return;
+          var pct = (lst - bk) / Math.abs(bk);
+          var arrow = pct > 0.005 ? "up" : pct < -0.005 ? "down" : "flat";
+          lines.push("  - FY+" + s.horizon + ": " + arrow + " " + (pct * 100).toFixed(1) + "%");
+        });
+      }
+    }
+    /* Prior earnings entry summary — most recent past entry. */
+    var prior = ((company.earningsEntries) || [])
+      .filter(function (x) { return x.id !== entry.id && x.reportDate; })
+      .sort(function (a, b) { return (b.reportDate || "").localeCompare(a.reportDate || ""); })[0];
+    if (prior) {
+      lines.push("Prior cycle (" + (prior.quarter || prior.reportDate) + "):");
+      if (prior.thesisStatus) lines.push("  - Thesis: " + prior.thesisStatus + (prior.thesisNote ? " — " + prior.thesisNote : ""));
+      if (prior.shortTakeaway) lines.push("  - Takeaway: " + prior.shortTakeaway);
+      if (prior.tpChange && prior.tpChange !== "Unchanged") {
+        lines.push("  - TP " + prior.tpChange.toLowerCase() + (prior.newTP ? " to " + prior.newTP : "") + (prior.tpRationale ? " — " + prior.tpRationale : ""));
+      }
+    }
+    return lines.join("\n");
+  }
+
   async function runAIFill() {
     if (!aiText.trim()) return;
     setAiLoading(true);
     try {
+      var ctx = buildContextBlock();
+      var userMessage = ctx
+        ? ctx + "\n\nEARNINGS NOTES\n" + aiText
+        : aiText;
       var res = await apiCall(
-        "You are an investment research assistant. Extract earnings data from the provided notes and return ONLY valid JSON with these keys: quarter (string e.g. Q2 2026), reportDate (YYYY-MM-DD or empty string), eps (number as string), tpChange (one of: Unchanged Increased Decreased), newTP (number as string or empty), tpRationale (short string), thesisStatus (one of: On track Watch Broken), thesisNote (short string), shortTakeaway (max 6 words), extendedTakeaway (2-3 sentences), bullets (array of up to 5 key point strings). Return nothing else.",
-        aiText, 1200
+        "You are an investment research assistant supporting a portfolio team. Use the COMPANY CONTEXT (when present) together with the user's EARNINGS NOTES to extract or synthesize structured fields. Use context to inform thesisStatus, takeaways, and bullets — especially deltas vs the company's most recent guidance and the prior cycle's thesis. Return ONLY valid JSON with these keys: quarter (string e.g. Q2 2026), reportDate (YYYY-MM-DD or empty string), eps (number as string), tpChange (one of: Unchanged Increased Decreased), newTP (number as string or empty), tpRationale (short string), thesisStatus (one of: On track Watch Broken), thesisNote (short string), shortTakeaway (max 6 words), extendedTakeaway (2-3 sentences), bullets (array of up to 5 key point strings). Return nothing else.",
+        userMessage, 1200
       );
       var parsed = JSON.parse(res.replace(/```json|```/g, "").trim());
       var patch = {};
