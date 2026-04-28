@@ -20,6 +20,7 @@
 import { BENCHMARKS } from '../../constants/index.js';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import { isFiniteNum } from '../../utils/numbers.js';
+import { parseDate } from '../../utils/index.js';
 
 const TILE = "rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3";
 const SECTION = "mb-2 last:mb-0";
@@ -45,11 +46,12 @@ function fyLabel(periodIso) {
   return "FY" + m[1].slice(2);
 }
 
-/* Days from today to an ISO date string. Negative = in the past. */
+/* Days from today to a date string (any parseDate-acceptable format).
+ * Negative = in the past. */
 function daysUntil(iso) {
   if (!iso) return null;
-  const d = new Date(iso + "T00:00:00");
-  if (isNaN(d.getTime())) return null;
+  const d = parseDate(iso);
+  if (!d || isNaN(d.getTime())) return null;
   const t0 = new Date(); t0.setHours(0, 0, 0, 0);
   return Math.round((d.getTime() - t0.getTime()) / (24 * 3600 * 1000));
 }
@@ -75,17 +77,30 @@ export default function PreEarningsBrief({ company }) {
 
   if (!company) return null;
 
-  /* ---- Section 1: next-report countdown ---- */
+  /* ---- Section 1: next-report countdown ----
+   * Source priority:
+   *   1. c.guidance.nextReportDate (FactSet Guidance History metadata)
+   *   2. soonest future c.earningsEntries.reportDate (Earnings Dates
+   *      upload populates this)
+   *   3. c.lastReportDate sanity check — if it's in the future, use it
+   *      (rare; happens when the calendar import landed a date that
+   *      hasn't passed yet but didn't create an entry)
+   * Uses parseDate so it tolerates "YYYY-MM-DD", "M/D/YYYY", etc. */
   let nextRepIso = (company.guidance && company.guidance.nextReportDate) || null;
   if (!nextRepIso) {
-    /* Fallback: soonest future earningsEntries.reportDate */
     const t0 = new Date(); t0.setHours(0, 0, 0, 0);
     ((company.earningsEntries) || []).forEach(function (e) {
       if (!e.reportDate) return;
-      const d = new Date(e.reportDate + "T00:00:00");
-      if (isNaN(d.getTime()) || d < t0) return;
-      if (!nextRepIso || d < new Date(nextRepIso + "T00:00:00")) nextRepIso = e.reportDate;
+      const d = parseDate(e.reportDate);
+      if (!d || isNaN(d.getTime()) || d < t0) return;
+      const cur = nextRepIso ? parseDate(nextRepIso) : null;
+      if (!cur || d < cur) nextRepIso = e.reportDate;
     });
+  }
+  if (!nextRepIso && company.lastReportDate) {
+    const lr = parseDate(company.lastReportDate);
+    const t0 = new Date(); t0.setHours(0, 0, 0, 0);
+    if (lr && !isNaN(lr.getTime()) && lr >= t0) nextRepIso = company.lastReportDate;
   }
   const daysToNext = daysUntil(nextRepIso);
 
