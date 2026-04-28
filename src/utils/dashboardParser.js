@@ -15,8 +15,17 @@ const SECTION_ALIASES = {
   countries: "countries",
   commodities: "commodities",
   bonds: "bonds",
+  fx: "fx",
 };
-const PERIODS = ["1D", "5D", "MTD", "QTD", "YTD", "1Y", "3Y"];
+/* 11 trailing-return columns. "TODAY" is the FactSet column name; we
+ * normalize it to "1D" in storage so existing UI surfaces keep working
+ * (the Snapshot benchmark row reads "1D"). */
+const PERIODS = ["1D", "5D", "MTD", "1M", "QTD", "3M", "6M", "YTD", "1Y", "2Y", "3Y"];
+const PERIOD_HEADER_ALIASES = {
+  today: "1D", "1d": "1D", "5d": "5D", mtd: "MTD", "1m": "1M",
+  qtd: "QTD", "3m": "3M", "6m": "6M", ytd: "YTD",
+  "1y": "1Y", "1yr": "1Y", "2y": "2Y", "2yr": "2Y", "3y": "3Y", "3yr": "3Y",
+};
 export const FX_PATTERN = /FX\s*[-_]?\s*(3M|12M)/i;
 
 /* Split one line into cells, handling tab- OR comma-separated + stripping
@@ -88,10 +97,18 @@ export function parseFxMatrixBlock(lines, startIdx) {
  * Percent fields stored as DECIMAL (via pctToDecimal). */
 export function parseDashboardUpload(text) {
   const lines = (text || "").split("\n").map(function (l) { return l.replace("\r", ""); });
-  const bySection = { indices: [], sectors: [], countries: [], commodities: [], bonds: [] };
+  const bySection = { indices: [], sectors: [], countries: [], commodities: [], bonds: [], fx: [] };
   const fxMatrices = {};
   let dropped = 0;
   let headerSkipped = false;
+
+  /* Column→period mapping for the flat rows. Defaults to canonical 11-
+     window order if no header was seen (Section / Label / Ticker / 1D /
+     5D / MTD / 1M / QTD / 3M / 6M / YTD / 1Y / 2Y / 3Y). When a
+     "Section / Label / Ticker / TODAY / 5D / ..." header is present,
+     we infer the column-to-period mapping from it so older 7-window
+     and newer 11-window pastes both work. */
+  let periodCols = PERIODS.slice();
 
   let i = 0;
   while (i < lines.length) {
@@ -99,7 +116,8 @@ export function parseDashboardUpload(text) {
     if (!line.trim()) { i++; continue; }
     const firstCell = (splitRow(line)[0] || "").trim();
 
-    /* FX matrix block? */
+    /* FX matrix block? (legacy "FX - 3M %" / "FX - 12M %" cross-currency
+       matrices, distinct from the new flat FX section.) */
     const fxMatch = FX_PATTERN.exec(firstCell);
     if (fxMatch) {
       const period = fxMatch[1].toUpperCase();
@@ -111,9 +129,17 @@ export function parseDashboardUpload(text) {
 
     /* Flat section row? */
     const parts = splitRow(line);
-    /* Skip a "Section, Label, Ticker, ..." header row */
+    /* Skip a "Section, Label, Ticker, ..." header row. Use it to
+       remap which column → which period for the data rows below. */
     if (/^section$|^name$|^label$/i.test(parts[0] || "")) {
       headerSkipped = true;
+      const inferred = [];
+      for (let c = 3; c < parts.length; c++) {
+        const k = (parts[c] || "").toLowerCase().replace(/\s+/g, "");
+        const mapped = PERIOD_HEADER_ALIASES[k] || (PERIODS.indexOf(k.toUpperCase()) >= 0 ? k.toUpperCase() : null);
+        if (mapped) inferred.push(mapped);
+      }
+      if (inferred.length > 0) periodCols = inferred;
       i++;
       continue;
     }
@@ -122,8 +148,8 @@ export function parseDashboardUpload(text) {
     if (!secKey || parts.length < 4) { dropped++; i++; continue; }
 
     const row = { label: parts[1] || "", ticker: parts[2] || null };
-    for (let p = 0; p < PERIODS.length; p++) {
-      row[PERIODS[p]] = pctToDecimal(parts[3 + p]);
+    for (let p = 0; p < periodCols.length; p++) {
+      row[periodCols[p]] = pctToDecimal(parts[3 + p]);
     }
     bySection[secKey].push(row);
     i++;

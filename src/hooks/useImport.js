@@ -421,7 +421,7 @@ export function useImport(){
     var dropped=parsed.dropped;
     var hasFlat=Object.keys(bySection).some(function(k){return bySection[k].length>0;});
     var hasFx=Object.keys(fxMatrices).length>0;
-    if(!hasFlat && !hasFx){alertFn("No valid rows parsed. Expected flat rows (Section, Label, Ticker, 1D, 5D, MTD, QTD, YTD, 1Y, 3Y) and/or FX matrix blocks.");return;}
+    if(!hasFlat && !hasFx){alertFn("No valid rows parsed. Expected flat rows (Section, Label, Ticker, TODAY, 5D, MTD, 1M, QTD, 3M, 6M, YTD, 1Y, 2Y, 3Y) and/or FX matrix blocks.");return;}
 
     (async function(){
       var existing={};

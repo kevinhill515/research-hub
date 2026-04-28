@@ -656,7 +656,11 @@ def _str(v) -> str | None:
     return s if s else None
 
 
-PRICES_PERF_KEYS = ["TODAY", "5D", "MTD", "1M", "QTD", "3M", "6M", "YTD", "1Y", "2Y", "3Y"]
+# Column-position to storage-key map for the Prices sheet. The
+# spreadsheet column header is "TODAY" (FactSet's name); we store it
+# under "1D" so it aligns with the Markets Dashboard convention used by
+# the Snapshot tile's benchmark rows.
+PRICES_PERF_KEYS = ["1D", "5D", "MTD", "1M", "QTD", "3M", "6M", "YTD", "1Y", "2Y", "3Y"]
 
 def read_prices(xl: ExcelSession) -> dict[str, dict]:
     """Returns { upper_ticker: {price, perf, perf5d} } for every populated row.
@@ -1145,9 +1149,26 @@ MARKETS_SECTIONS = {
     "countries":   "Countries",
     "commodities": "Commodities",
     "bonds":       "Bonds",
+    "fx":          "FX",
 }
 MARKETS_SCAN_MAX_ROW = 200   # generous upper bound; scan stops at first blank Section run
-MARKETS_PERIOD_COLS = [("1D",4),("5D",5),("MTD",6),("QTD",7),("YTD",8),("1Y",9),("3Y",10)]
+# Dashboard layout: Section / Label / Ticker / TODAY / 5D / MTD / 1M /
+# QTD / 3M / 6M / YTD / 1Y / 2Y / 3Y. Column letters D..N (indices 3..13
+# zero-based, 4..14 one-based as below). The TODAY column is stored
+# under "1D" so it aligns with the existing benchmark-row reads.
+MARKETS_PERIOD_COLS = [
+    ("1D",  4),   # D = TODAY
+    ("5D",  5),
+    ("MTD", 6),
+    ("1M",  7),
+    ("QTD", 8),
+    ("3M",  9),
+    ("6M", 10),
+    ("YTD",11),
+    ("1Y", 12),
+    ("2Y", 13),
+    ("3Y", 14),
+]
 
 
 def read_markets(xl: ExcelSession) -> dict:
@@ -1161,15 +1182,16 @@ def read_markets(xl: ExcelSession) -> dict:
     import re as _re
     _FX_PAT = _re.compile(r"FX\s*[-_]?\s*(3M|12M)", _re.IGNORECASE)
 
-    # Single bulk read.
-    grid = xl.read_range("Dashboard", f"A2:J{MARKETS_SCAN_MAX_ROW}")
+    # Single bulk read. Range expanded from A..J to A..N to cover the
+    # 14-column layout (Section + Label + Ticker + 11 period columns).
+    grid = xl.read_range("Dashboard", f"A2:N{MARKETS_SCAN_MAX_ROW}")
     # grid[i] is the i-th data row; row index in workbook = i + 2
     n = len(grid)
     i = 0
     blank_streak = 0
     while i < n:
         row = grid[i]
-        while len(row) < 10: row.append(None)
+        while len(row) < 14: row.append(None)
         section_raw = row[0]
         if section_raw is None or (isinstance(section_raw, str) and not section_raw.strip()):
             blank_streak += 1

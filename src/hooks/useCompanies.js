@@ -268,7 +268,11 @@ export function useCompanies(){
    *
    * The 7-col legacy paste (Company, Ord, OrdPrice, Ord5D, US, USPrice,
    * US5D) is still accepted — detected by short row length. */
-  var PRICE_PERF_KEYS = ["TODAY","5D","MTD","1M","QTD","3M","6M","YTD","1Y","2Y","3Y"];
+  /* Column-position to storage-key map for the Prices import. The
+     spreadsheet column header is "TODAY" (FactSet's name); we store it
+     under "1D" so it aligns with the Markets Dashboard convention used
+     by the Snapshot tile's benchmark rows. */
+  var PRICE_PERF_KEYS = ["1D","5D","MTD","1M","QTD","3M","6M","YTD","1Y","2Y","3Y"];
   function parsePerfCell(raw){
     if(raw == null) return null;
     var s = String(raw).trim();

@@ -83,6 +83,37 @@ describe("parseDashboardUpload — flat rows", () => {
     expect(r.bySection.sectors).toHaveLength(1);
   });
 
+  it("parses the 14-column layout with TODAY / 1M / 3M / 6M / 2Y", () => {
+    const text = [
+      "Section\tLabel\tTicker\tTODAY\t5D\tMTD\t1M\tQTD\t3M\t6M\tYTD\t1Y\t2Y\t3Y",
+      "Indices\tMSCI ACWI\tACWI-US\t0.1\t0.8\t2.3\t3.5\t5.5\t6.0\t7.2\t8.7\t15.2\t19.0\t23.4",
+    ].join("\n");
+    const r = parseDashboardUpload(text);
+    expect(r.headerSkipped).toBe(true);
+    const row = r.bySection.indices[0];
+    expect(row.label).toBe("MSCI ACWI");
+    expect(row["1D"]).toBeCloseTo(0.001, 5);
+    expect(row["1M"]).toBeCloseTo(0.035, 5);
+    expect(row["3M"]).toBeCloseTo(0.06, 5);
+    expect(row["6M"]).toBeCloseTo(0.072, 5);
+    expect(row["2Y"]).toBeCloseTo(0.19, 5);
+    expect(row["3Y"]).toBeCloseTo(0.234, 5);
+  });
+
+  it("FX section parses USDXXX rows like any other section", () => {
+    const text = [
+      "Section\tLabel\tTicker\tTODAY\t5D\tMTD\t1M\tQTD\t3M\t6M\tYTD\t1Y\t2Y\t3Y",
+      "FX\tUSDEUR\t\t0.1\t0.5\t1.0\t1.2\t1.5\t1.8\t2.1\t2.5\t4.0\t5.0\t8.0",
+      "FX\tUSDJPY\t\t-0.1\t-0.5\t-1.0\t-1.2\t-1.5\t-1.8\t-2.1\t-2.5\t-4.0\t-5.0\t-8.0",
+    ].join("\n");
+    const r = parseDashboardUpload(text);
+    expect(r.bySection.fx).toHaveLength(2);
+    expect(r.bySection.fx[0].label).toBe("USDEUR");
+    expect(r.bySection.fx[0]["1D"]).toBeCloseTo(0.001, 5);
+    expect(r.bySection.fx[1].label).toBe("USDJPY");
+    expect(r.bySection.fx[1]["1Y"]).toBeCloseTo(-0.04, 5);
+  });
+
   it("percent division is unconditional — fixes the >1.5 heuristic bug", () => {
     /* Small percents (0.5%, 1.2%) used to stay un-divided and render at
      * 50%/120%. pctToDecimal must always divide by 100. */
