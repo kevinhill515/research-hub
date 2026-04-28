@@ -387,72 +387,110 @@ export default function SnapshotTab({ company }) {
 
 /* ====================== Tile 1: Trailing Performance ===================== */
 
-/* Mini vertical-bar chart for one performance row across the visible
- * windows. Bars are color-coded (green = up, red = down, gray = ~0),
- * sized proportionally to the largest absolute value across the row's
- * own window set. Each bar is annotated with its label below the X
- * axis and its formatted value above the bar (or below for negatives).
+/* Mini vertical-bar chart for two performance rows (company + first
+ * benchmark) across the visible windows. Each window is a group of
+ * two adjacent bars:
+ *   - left  bar (color-coded green/red): the company row
+ *   - right bar (slate gray with stripe): the benchmark row
+ * Sized proportionally to the largest absolute value across BOTH rows
+ * so the heights stay comparable.
  *
  * Lives inside SnapshotTab because it leans on its color/fmt helpers,
  * but it's self-contained otherwise — easy to lift out if reused. */
-function PerfBarChart({ row, windows, fmt, color }) {
+function PerfBarChart({ row, benchRow, windows, fmt, color }) {
   if (!row || !windows || windows.length === 0) return null;
-  const values = windows.map(function (w) { return row.values[w.key]; });
-  const finite = values.filter(isFiniteV);
-  if (finite.length === 0) return null;
+  const rowValues   = windows.map(function (w) { return row.values[w.key]; });
+  const benchValues = benchRow ? windows.map(function (w) { return benchRow.values[w.key]; }) : [];
+  const allFinite = rowValues.concat(benchValues).filter(isFiniteV);
+  if (allFinite.length === 0) return null;
 
   /* Y-axis range — symmetric around zero so the baseline is visually
      in the middle when up/down are roughly balanced. Padded so the
      value label above each bar doesn't crash into the top edge. */
-  const absMax = Math.max.apply(null, finite.map(function (v) { return Math.abs(v); }));
+  const absMax = Math.max.apply(null, allFinite.map(function (v) { return Math.abs(v); }));
   const pad = Math.max(0.005, absMax * 0.18);
   const yMin = -absMax - pad;
   const yMax =  absMax + pad;
   const span = yMax - yMin;
 
   const W = 600;
-  const H = 110;
-  const PAD_T = 8;
-  const PAD_B = 30;     /* room for window labels */
+  const H = benchRow ? 130 : 110;       /* extra height for legend */
+  const PAD_T = benchRow ? 22 : 8;      /* room for legend strip on top */
+  const PAD_B = 30;                     /* room for window labels */
   const PAD_L = 4;
   const PAD_R = 4;
   const innerW = W - PAD_L - PAD_R;
   const innerH = H - PAD_T - PAD_B;
   const groupW = innerW / windows.length;
-  const barW = Math.min(28, groupW * 0.55);
+  /* Two narrower bars per window when a benchmark is present, with a
+     small gap between them. One wider centered bar otherwise. */
+  const barW = benchRow
+    ? Math.min(14, groupW * 0.32)
+    : Math.min(28, groupW * 0.55);
+  const gap = benchRow ? Math.max(2, groupW * 0.04) : 0;
+  const BENCH_COLOR = "#64748b"; /* slate-500 */
 
   function yOf(v) { return PAD_T + (1 - (v - yMin) / span) * innerH; }
   function xCenter(i) { return PAD_L + i * groupW + groupW / 2; }
   const yZero = yOf(0);
 
+  function renderBar(v, x, fillColor) {
+    if (!isFiniteV(v)) return null;
+    const yv = yOf(v);
+    const top = Math.min(yZero, yv);
+    const h = Math.max(1, Math.abs(yZero - yv));
+    return <rect x={x} y={top} width={barW} height={h} fill={fillColor} opacity="0.85" rx="1.5"/>;
+  }
+  function renderValueLabel(v, cx, fillColor) {
+    if (!isFiniteV(v)) return null;
+    const yv = yOf(v);
+    const labelY = v >= 0 ? yv - 2 : yv + 9;
+    return <text x={cx} y={labelY} fontSize="8" textAnchor="middle" fill={fillColor} fontWeight="600">{fmt(v)}</text>;
+  }
+
   return (
     <svg className="block w-full mb-2" height={H} viewBox={"0 0 " + W + " " + H} preserveAspectRatio="none" role="img" aria-label="Trailing returns bar chart">
+      {/* Legend strip — only when benchmark is present */}
+      {benchRow && (
+        <g>
+          <rect x={PAD_L} y={6} width={10} height={8} fill="#16a34a" opacity="0.85" rx="1"/>
+          <text x={PAD_L + 14} y={13} fontSize="9" fill="#475569">{(row.label || "Stock").slice(0, 40)}</text>
+          <rect x={PAD_L + 200} y={6} width={10} height={8} fill={BENCH_COLOR} opacity="0.85" rx="1"/>
+          <text x={PAD_L + 214} y={13} fontSize="9" fill="#475569">{(benchRow.label || "Benchmark").slice(0, 40)}</text>
+        </g>
+      )}
       {/* Zero baseline */}
       <line x1={PAD_L} y1={yZero} x2={W - PAD_R} y2={yZero} stroke="rgba(100,116,139,0.45)" strokeWidth="1"/>
       {windows.map(function (w, i) {
         const v = row.values[w.key];
+        const bv = benchRow ? benchRow.values[w.key] : null;
         const cx = xCenter(i);
         const labelY = H - PAD_B + 14;
-        if (!isFiniteV(v)) {
-          return (
-            <g key={w.key}>
-              <text x={cx} y={labelY} fontSize="9" textAnchor="middle" fill="#94a3b8">{w.label}</text>
-              <text x={cx} y={yZero - 2} fontSize="8" textAnchor="middle" fill="#cbd5e1">--</text>
-            </g>
-          );
-        }
-        const yv = yOf(v);
-        const top = Math.min(yZero, yv);
-        const h = Math.max(1, Math.abs(yZero - yv));
-        const c = color(v);
-        const valueLabelY = v >= 0 ? yv - 2 : yv + 9;
+        const c = isFiniteV(v) ? color(v) : "#94a3b8";
+        /* Bar X positions: stock bar to the left of cx, bench bar to
+           the right. When no benchmark, stock bar is centered. */
+        const xStock = benchRow ? cx - barW - gap / 2 : cx - barW / 2;
+        const xBench = cx + gap / 2;
         return (
           <g key={w.key}>
-            <rect x={cx - barW / 2} y={top} width={barW} height={h} fill={c} opacity="0.85" rx="1.5">
-              <title>{w.label + ": " + fmt(v)}</title>
-            </rect>
-            <text x={cx} y={valueLabelY} fontSize="8.5" textAnchor="middle" fill={c} fontWeight="600">{fmt(v)}</text>
+            {renderBar(v, xStock, c)}
+            {benchRow && renderBar(bv, xBench, BENCH_COLOR)}
+            {/* Value labels — only on the stock bar to keep the chart
+                from getting noisy. Tooltip on hover gives both. */}
+            {renderValueLabel(v, benchRow ? xStock + barW / 2 : cx, c)}
+            {!isFiniteV(v) && (
+              <text x={cx} y={yZero - 2} fontSize="8" textAnchor="middle" fill="#cbd5e1">--</text>
+            )}
             <text x={cx} y={labelY} fontSize="9" textAnchor="middle" fill="#64748b">{w.label}</text>
+            {/* Tooltips covering each bar's hit area */}
+            <rect x={xStock} y={PAD_T} width={barW} height={innerH} fill="transparent">
+              <title>{(row.label || "Stock") + " · " + w.label + ": " + (isFiniteV(v) ? fmt(v) : "no data")}</title>
+            </rect>
+            {benchRow && (
+              <rect x={xBench} y={PAD_T} width={barW} height={innerH} fill="transparent">
+                <title>{(benchRow.label || "Benchmark") + " · " + w.label + ": " + (isFiniteV(bv) ? fmt(bv) : "no data")}</title>
+              </rect>
+            )}
           </g>
         );
       })}
@@ -590,12 +628,15 @@ function TrailingPerformance({ companyName, benchmarkRows, usTicker, usPerf, ord
     return "#64748b";
   }
 
-  /* Mini bar chart showing the first stock row's returns across the
-     visible windows. Vertical bars, one per window, color-coded
-     green/red, with a labeled zero baseline. Sits just above the
+  /* Mini bar chart showing the first stock row's returns alongside
+     the first benchmark row, across the visible windows. Vertical
+     grouped bars, color-coded for the stock and slate-gray for the
+     benchmark, with a labeled zero baseline. Sits just above the
      numeric table so users can scan the shape (e.g. monotonically
-     improving vs choppy) before reading the values. */
+     improving vs choppy) and the benchmark gap before reading the
+     values. */
   const chartRow = stockRows[0];
+  const chartBenchRow = benchRows.find(function (r) { return !r.missing; }) || null;
 
   return (
     <div className={TILE}>
@@ -608,6 +649,7 @@ function TrailingPerformance({ companyName, benchmarkRows, usTicker, usPerf, ord
       {chartRow && (
         <PerfBarChart
           row={chartRow}
+          benchRow={chartBenchRow}
           windows={visibleWindows}
           fmt={fmt}
           color={color}
