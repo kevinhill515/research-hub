@@ -581,7 +581,7 @@ export function CompanyDetail(props){
           {/* EARNINGS & THESIS CHECK TAB */}
           {coView==="earnings"&&(<div className="print-target">
             <PreEarningsBrief company={selCo}/>
-            <EarningsCycleStrip entries={earningsEntries}/>
+            <EarningsCycleStrip entries={earningsEntries} company={selCo}/>
             <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
               <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">Earnings & Thesis Check</div>
               <div className="flex gap-2 items-center">
