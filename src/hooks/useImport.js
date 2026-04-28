@@ -13,7 +13,8 @@ import { useAlert } from '../components/ui/DialogProvider.jsx';
 import { REP_ACCOUNTS } from '../constants/index.js';
 
 export function useImport(){
-  const { companies, setCompanies, saved, setSaved, setCopied, currentUser, repData, setRepData, fxRates, setFxRates, specialWeights, setSpecialWeights, benchmarkWeights, setBenchmarkWeights, calLastUpdated, setCalLastUpdated, calLastUpdatedBy, setCalLastUpdatedBy, repLastUpdated, setRepLastUpdated, fxLastUpdated, setFxLastUpdated, applyPerfBulk } = useCompanyContext();
+  const ctx = useCompanyContext();
+  const { companies, setCompanies, saved, setSaved, setCopied, currentUser, repData, setRepData, fxRates, setFxRates, specialWeights, setSpecialWeights, benchmarkWeights, setBenchmarkWeights, calLastUpdated, setCalLastUpdated, calLastUpdatedBy, setCalLastUpdatedBy, repLastUpdated, setRepLastUpdated, fxLastUpdated, setFxLastUpdated, applyPerfBulk } = ctx;
   /* All import functions surface results / errors via the in-app
      alert dialog (instead of native window.alert). Keeps look + feel
      consistent with the rest of the app and unblocks Test/CI environments
@@ -456,10 +457,61 @@ export function useImport(){
     })();
   }
 
+  /* Keys we round-trip in the export's `meta` block. Each key maps to a
+     {get, set, supaKey} triple — get reads the current value off the
+     context, set is the React setter, supaKey is the meta-table row
+     for persistence. Keeping the list explicit here means new context
+     fields don't get accidentally serialized; we add them deliberately. */
+  function metaSpec(){
+    return {
+      fxRates:             { get: ctx.fxRates,             set: ctx.setFxRates,             supaKey: "fxRates" },
+      repData:             { get: ctx.repData,             set: ctx.setRepData,             supaKey: "repData" },
+      specialWeights:      { get: ctx.specialWeights,      set: ctx.setSpecialWeights,      supaKey: "specialWeights" },
+      benchmarkWeights:    { get: ctx.benchmarkWeights,    set: ctx.setBenchmarkWeights,    supaKey: "benchmarkWeights" },
+      marketsSnapshot:     { get: ctx.marketsSnapshot,     set: ctx.setMarketsSnapshot,     supaKey: "marketsSnapshot" },
+      perfData:            { get: ctx.perfData,            set: ctx.setPerfData,            supaKey: "perfData" },
+      alertRules:          { get: ctx.alertRules,          set: ctx.setAlertRules,          supaKey: "alertRules" },
+      annotations:         { get: ctx.annotations,         set: null /* no setter exposed */, supaKey: "annotations" },
+      researchAssignments: { get: ctx.researchAssignments, set: ctx.setResearchAssignments, supaKey: "researchAssignments" },
+      feedback:            { get: ctx.feedback,            set: ctx.setFeedback,            supaKey: "feedback" },
+      entryComments:       { get: ctx.entryComments,       set: ctx.setEntryComments,       supaKey: "entryComments" },
+      lastPriceUpdate:     { get: ctx.lastPriceUpdate,     set: ctx.setLastPriceUpdate,     supaKey: "lastPriceUpdate" },
+    };
+  }
+
   function importAll(){
     setImportError("");
-    try{var d=JSON.parse(importText);var cos=d.companies||(Array.isArray(d)?d:null),lib=d.library||null;if(!cos&&!lib){setImportError("No data found.");return;}if(cos&&Array.isArray(cos)){setCompanies(cos);supaUpsert("companies",{id:"shared",data:JSON.stringify(cos)});}if(lib&&Array.isArray(lib)){setSaved(lib);supaUpsert("library",{id:"shared",data:JSON.stringify(lib)});}setImportText("");setShowDataPanel(false);}
-    catch(e){setImportError("Invalid JSON: "+e.message);}
+    try{
+      var d = JSON.parse(importText);
+      var cos = d.companies || (Array.isArray(d) ? d : null);
+      var lib = d.library || null;
+      var meta = d.meta || null;
+      if(!cos && !lib && !meta){ setImportError("No data found."); return; }
+      if(cos && Array.isArray(cos)){
+        setCompanies(cos);
+        supaUpsert("companies", { id: "shared", data: JSON.stringify(cos) });
+      }
+      if(lib && Array.isArray(lib)){
+        setSaved(lib);
+        supaUpsert("library", { id: "shared", data: JSON.stringify(lib) });
+      }
+      if(meta && typeof meta === "object"){
+        var spec = metaSpec();
+        Object.keys(meta).forEach(function(k){
+          var s = spec[k];
+          if(!s) return; /* unknown key — silently skip */
+          var v = meta[k];
+          if(s.set) s.set(v);
+          var serialized = (v === null || v === undefined)
+            ? null
+            : (typeof v === "string" ? v : JSON.stringify(v));
+          if(serialized !== null) supaUpsert("meta", { key: s.supaKey, value: serialized });
+        });
+      }
+      setImportText("");
+      setShowDataPanel(false);
+    }
+    catch(e){ setImportError("Invalid JSON: " + e.message); }
   }
   /* Shared import helper for time-series pastes (Ratio Analysis and
      Financial Statements). First non-empty line before the year header
@@ -650,7 +702,47 @@ export function useImport(){
     }, 50);
   }
 
-  function exportAll(){var txt=JSON.stringify({companies,library:saved,exportedAt:new Date().toISOString()},null,2);try{var el=document.createElement("textarea");el.value=txt;el.style.position="fixed";el.style.opacity="0";document.body.appendChild(el);el.focus();el.select();document.execCommand("copy");document.body.removeChild(el);setCopied("exportall");setTimeout(function(){setCopied(null);},2000);}catch(e){setImportText(txt);setShowDataPanel(true);}}
+  /* Full-fidelity backup. Bundles:
+       - companies (everything per-company, including guidance/financials/etc.)
+       - library
+       - meta (fxRates / repData / marketsSnapshot / alertRules / etc.)
+     The output is a JSON dump that round-trips through importAll —
+     paste it back to fully restore the workspace. Triggers a clipboard
+     copy when permitted; falls back to populating the import textarea
+     so the user can copy from there. */
+  function exportAll(){
+    var spec = metaSpec();
+    var meta = {};
+    Object.keys(spec).forEach(function(k){
+      var v = spec[k].get;
+      if(v === undefined || v === null) return;
+      /* Empty-string lastPriceUpdate is meaningful; serialize anyway. */
+      if(typeof v === "object" && Object.keys(v).length === 0 && !Array.isArray(v)) return;
+      meta[k] = v;
+    });
+    var payload = {
+      companies: companies,
+      library: saved,
+      meta: meta,
+      exportedAt: new Date().toISOString(),
+      schemaVersion: 2, /* v1 = pre-meta; v2 = meta included */
+    };
+    var txt = JSON.stringify(payload, null, 2);
+    try{
+      var el = document.createElement("textarea");
+      el.value = txt;
+      el.style.position = "fixed"; el.style.opacity = "0";
+      document.body.appendChild(el);
+      el.focus(); el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+      setCopied("exportall");
+      setTimeout(function(){ setCopied(null); }, 2000);
+    }catch(e){
+      setImportText(txt);
+      setShowDataPanel(true);
+    }
+  }
 
   return {
     showDataPanel,setShowDataPanel,importText,setImportText,importError,setImportError,

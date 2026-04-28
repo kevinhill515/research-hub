@@ -4,6 +4,7 @@ import { shortSector, sectorStyle, countryStyle, getRegion, getTiers, getCurrenc
 import { supaGet, supaUpsert, ANTHROPIC_KEY, apiCall } from './api/index.js';
 import { getDataStatus, statusBadge, staleReason } from './utils/dataStatus.js';
 import AlertsPanel from './components/dashboard/AlertsPanel.jsx';
+import ThisWeekEarnings from './components/dashboard/ThisWeekEarnings.jsx';
 import { PriceAgeIndicator, BarRow, PillEl, PortPicker, SectionBlock, StatusPill, DiffView } from './components/ui/index.js';
 import { SectionEditTab, EarningsEntry, NotesCell, ActionCell, FlagCell, DatePicker } from './components/forms/index.js';
 import { GlobalSearch, TemplateSearch, QuickUploadModal, DiscussionsPanel } from './components/modals/index.js';
@@ -95,6 +96,17 @@ export default function App(){
       if(e.key==="b"){setTab("companies");setShowBulk(true);}
       if(e.key==="d"){setTab("dashboard");setSelCo(null);}
       if(e.key==="c")setTab("companies");
+      /* j / k navigation between companies — only when looking at a
+         company detail. Cycles through `displayedCos` (the filtered
+         list shown on the Companies tab), so j/k respects the
+         user's current filter / sort. Wraps at the ends. */
+      if((e.key==="j"||e.key==="k") && tab==="companies" && selCo && displayedCos.length>0){
+        var idx = displayedCos.findIndex(function(c){return c.id===selCo.id;});
+        if(idx<0) idx = 0;
+        var nextIdx = e.key==="j" ? (idx+1)%displayedCos.length : (idx-1+displayedCos.length)%displayedCos.length;
+        var nextCo = displayedCos[nextIdx];
+        if(nextCo){ setSelCo(nextCo); setCoView("dashboard"); }
+      }
       if(e.key==="s"){setTab("synthesize");setSelCo(null);}
       if(e.key==="l"){setTab("library");setSelCo(null);}
       if(e.key==="r"){setTab("recall");setSelCo(null);}
@@ -205,6 +217,33 @@ export default function App(){
       {tab==="companies"&&!selCo&&(<div>
         {(function(){var owners={};var dupes={};companies.forEach(function(c){(c.tickers||[]).forEach(function(t){var tk=(t.ticker||"").toUpperCase();if(!tk)return;if(owners[tk]&&owners[tk]!==c.id){if(!dupes[tk])dupes[tk]=[owners[tk]];if(dupes[tk].indexOf(c.id)<0)dupes[tk].push(c.id);}else if(!owners[tk]){owners[tk]=c.id;}});});var dupeList=Object.keys(dupes);if(dupeList.length===0)return null;return(<div className="mb-2 px-3.5 py-2 bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800 rounded-lg"><div className="text-xs font-semibold text-amber-800 dark:text-amber-300 mb-1">⚠ Duplicate tickers detected ({dupeList.length})</div><div className="text-[11px] text-amber-700 dark:text-amber-400 mb-1">Each ticker should belong to only one company. The same ticker on multiple companies can cause incorrect rep weight attribution. Click a name to fix.</div><div className="flex flex-col gap-1">{dupeList.map(function(tk){var ids=dupes[tk];var names=ids.map(function(id){var c=companies.find(function(x){return x.id===id;});return c?c.name:"?";});return(<div key={tk} className="text-[11px]"><span className="font-mono font-semibold text-amber-900 dark:text-amber-200">{tk}</span><span className="text-amber-700 dark:text-amber-400"> on: </span>{names.map(function(n,i){var co=companies.find(function(x){return x.name===n;});return <span key={i}>{i>0&&", "}<span onClick={function(){if(co){setSelCo(co);setCoView("section:Overview");}}} className="underline cursor-pointer hover:text-amber-900 dark:hover:text-amber-200">{n}</span></span>;})}</div>);})}</div></div>);})()}
         {(function(){var byName={};companies.forEach(function(c){var key=(c.name||"").trim().toLowerCase();if(!key)return;if(!byName[key])byName[key]=[];byName[key].push(c);});var nameDupes=Object.keys(byName).filter(function(k){return byName[k].length>1;});if(nameDupes.length===0)return null;return(<div className="mb-2 px-3.5 py-2 bg-rose-50 dark:bg-rose-950/30 border border-rose-300 dark:border-rose-800 rounded-lg"><div className="flex items-center justify-between mb-1"><div className="text-xs font-semibold text-rose-800 dark:text-rose-300">⚠ Duplicate company names ({nameDupes.length})</div><button onClick={function(){var firstDupes=nameDupes.map(function(k){return byName[k][0].name;});if(window.confirm("Auto-merge duplicates?\n\nFor each set of duplicate names, the most recently updated copy will be kept (preferring entries with sections/portfolios populated). Older duplicates will be deleted.\n\nAffected: "+firstDupes.slice(0,5).join(", ")+(firstDupes.length>5?" +"+(firstDupes.length-5)+" more":""))){setCompanies(function(prev){var byNameLocal={};prev.forEach(function(c){var k=(c.name||"").trim().toLowerCase();if(!k)return;if(!byNameLocal[k])byNameLocal[k]=[];byNameLocal[k].push(c);});var keepIds=new Set();Object.keys(byNameLocal).forEach(function(k){var group=byNameLocal[k];if(group.length===1){keepIds.add(group[0].id);return;}var best=group.reduce(function(a,b){var sa=Object.keys(a.sections||{}).length+(a.updateLog||[]).length+(a.portfolios||[]).length+(a.tickers||[]).length;var sb=Object.keys(b.sections||{}).length+(b.updateLog||[]).length+(b.portfolios||[]).length+(b.tickers||[]).length;return sb>sa?b:a;});keepIds.add(best.id);});return prev.filter(function(c){return keepIds.has(c.id);});});}}} className="text-[11px] px-2 py-0.5 rounded-md bg-rose-600 dark:bg-rose-700 text-white hover:bg-rose-700 dark:hover:bg-rose-600 transition-colors">Auto-merge duplicates</button></div><div className="text-[11px] text-rose-700 dark:text-rose-400 mb-1">Multiple company entries share the same name. This can cause double-counting in rep weights and confused price imports. Click a name to open it.</div><div className="flex flex-col gap-1 max-h-48 overflow-y-auto">{nameDupes.map(function(k){var group=byName[k];return(<div key={k} className="text-[11px]"><span className="font-medium text-rose-900 dark:text-rose-200">{group[0].name}</span><span className="text-rose-700 dark:text-rose-400"> \u00d7 {group.length} entries: </span>{group.map(function(c,i){return <span key={c.id}>{i>0&&", "}<span onClick={function(){setSelCo(c);setCoView("section:Overview");}} className="underline cursor-pointer hover:text-rose-900 dark:hover:text-rose-200">[{(c.tier||"no tier")}{c.status?" \u00b7 "+c.status:""}]</span></span>;})}</div>);})}</div></div>);})()}
+        {/* Data-health: companies missing valuation.fyMonth. fyMonth is
+            needed by stale-data badges, the Earnings cycle Q1-Q4 grid,
+            year-header rendering on Financials/Ratios, and the FY
+            arithmetic in the Pre-Earnings Brief. Companies created via
+            bulk import sometimes don't get this field populated; the
+            notice surfaces them so they can be fixed. */}
+        {(function(){
+          var missing = companies.filter(function(c){
+            return !(c && c.valuation && c.valuation.fyMonth);
+          });
+          if(missing.length === 0) return null;
+          return (
+            <div className="mb-2 px-3.5 py-2 bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800 rounded-lg">
+              <div className="text-xs font-semibold text-amber-800 dark:text-amber-300 mb-1">⚠ {missing.length} compan{missing.length===1?"y":"ies"} missing FY-end month</div>
+              <div className="text-[11px] text-amber-700 dark:text-amber-400 mb-1">Set <code>valuation.fyMonth</code> (e.g. <code>Mar</code>, <code>Sep</code>, defaults to <code>Dec</code>) on each. Stale-data badges, the Q1-Q4 grid, and Pre-Earnings Brief math all depend on this. Click a name to fix.</div>
+              <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
+                {missing.slice(0, 100).map(function(c){
+                  return (
+                    <span key={c.id} onClick={function(){setSelCo(c);setCoView("section:Valuation");}} className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 cursor-pointer hover:bg-amber-200 dark:hover:bg-amber-900/60">{c.name}</span>
+                  );
+                })}
+                {missing.length > 100 && <span className="text-[11px] text-amber-700 dark:text-amber-400 italic self-center">+ {missing.length - 100} more</span>}
+              </div>
+            </div>
+          );
+        })()}
+        <ThisWeekEarnings companies={displayedCos} onSelectCompany={function(c){setSelCo(c);setCoView("dashboard");}}/>
         <div className="flex gap-2 flex-wrap mb-1.5 items-center">
           <input ref={searchRef} value={coSearch} onChange={function(e){setCoSearch(e.target.value);}} placeholder="Search... (/ to focus)" className={INP + " flex-1 min-w-[120px] !text-xs !px-2 !py-1"}/>
           <select value={coSort} onChange={function(e){var v=e.target.value;setCoSort(v);var descByDefault=v==="Last Reviewed"||v==="Last Updated"||v==="5D%"||v==="MOS";setCoSortDir(descByDefault?"desc":"asc");}} className={INP + " !text-xs !px-2 !py-1"}>{CO_SORTS.map(function(s){return <option key={s}>{s}</option>;})}</select>

@@ -588,7 +588,62 @@ export function CompanyDetail(props){
                 <button onClick={function(){ printPage("charts"); }}
                   className="text-xs px-2.5 py-1 font-medium rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors no-print"
                   title="Print this view (portrait, multi-page)">🖨 Print</button>
-                <button onClick={function(){var e=blankEarnings();var u=Object.assign({},selCo,{earningsEntries:[e].concat(earningsEntries)});setSelCo(u);setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});});}} className={BTN_SM}>+ Add earnings entry</button>
+                <button onClick={function(){
+                  /* Pre-fill quarter + reportDate when we have the
+                     context. Two prefill paths:
+                       - reportDate: prefer guidance.nextReportDate (if
+                         within 30 days of today), else today.
+                       - quarter: if the soon-to-be-set reportDate is
+                         within 90 days AFTER a closed FY in guidance
+                         history, this is the FY-end report → "Q4 FYxx".
+                         Otherwise derive Q1-Q4 from reportDate +
+                         valuation.fyMonth. */
+                  var entry = blankEarnings();
+                  var nextRep = (selCo.guidance && selCo.guidance.nextReportDate) || null;
+                  var today0 = new Date(); today0.setHours(0,0,0,0);
+                  var prefillDate = todayStr();
+                  if (nextRep) {
+                    var nd = parseDate(nextRep);
+                    if (nd && Math.abs(nd.getTime() - today0.getTime()) < 30 * 86400000) {
+                      prefillDate = nextRep;
+                    }
+                  }
+                  entry.reportDate = prefillDate;
+                  var fyMonthRaw = (selCo.valuation && selCo.valuation.fyMonth) || "Dec";
+                  var monthMap = {jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
+                  var fyMonth = monthMap[String(fyMonthRaw).toLowerCase().slice(0,3)] || 12;
+                  /* Try matching to a closed FY in guidance.history first. */
+                  var matchedFy = null;
+                  var hist = (selCo.guidance && selCo.guidance.history) || [];
+                  hist.forEach(function(r){
+                    if (!r.period) return;
+                    var p = parseDate(r.period);
+                    var t = parseDate(prefillDate);
+                    if (!p || !t) return;
+                    var diff = t.getTime() - p.getTime();
+                    if (diff < 0 || diff > 90 * 86400000) return;
+                    if (!matchedFy || diff < matchedFy.diff) matchedFy = { period: r.period, diff: diff };
+                  });
+                  if (matchedFy) {
+                    var ym = /^(\d{4})/.exec(matchedFy.period);
+                    if (ym) entry.quarter = "Q4 FY" + ym[1].slice(2);
+                  } else {
+                    /* Derive from reportDate (period reported = ~60 days before reportDate). */
+                    var rd = parseDate(prefillDate);
+                    if (rd) {
+                      var per = new Date(rd.getTime() - 60 * 86400000);
+                      var py = per.getFullYear();
+                      var pm = per.getMonth() + 1;
+                      var dist = (fyMonth - pm + 12) % 12;
+                      var q = dist <= 2 ? 4 : dist <= 5 ? 3 : dist <= 8 ? 2 : 1;
+                      var fy = pm > fyMonth ? py + 1 : py;
+                      entry.quarter = "Q" + q + " FY" + String(fy).slice(2);
+                    }
+                  }
+                  var u = Object.assign({}, selCo, { earningsEntries: [entry].concat(earningsEntries) });
+                  setSelCo(u);
+                  setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});});
+                }} className={BTN_SM}>+ Add earnings entry</button>
               </div>
             </div>
             {earningsEntries.length===0&&<p className="text-sm text-gray-500 dark:text-slate-400">No earnings entries yet. Click "+ Add earnings entry" to get started.</p>}

@@ -37,7 +37,7 @@ export const AVG_WPM=200;
 /* Companies table columns now live in ../components/tables/companyColumns.js
    as the single source of truth. Re-exported here for backward compat. */
 export { ALL_COLS, COMPACT_COLS, COMPANY_COLUMNS } from '../components/tables/companyColumns.js';
-export const SHORTCUTS=[{key:"/",desc:"Focus search"},{key:"n",desc:"New company"},{key:"b",desc:"Bulk import"},{key:"d",desc:"Dashboard"},{key:"c",desc:"Companies"},{key:"s",desc:"Synthesize"},{key:"l",desc:"Library"},{key:"r",desc:"Recall"},{key:"Escape",desc:"Close/deselect"},{key:"?",desc:"Show shortcuts"}];
+export const SHORTCUTS=[{key:"/",desc:"Focus search"},{key:"n",desc:"New company"},{key:"b",desc:"Bulk import"},{key:"d",desc:"Dashboard"},{key:"c",desc:"Companies"},{key:"s",desc:"Synthesize"},{key:"l",desc:"Library"},{key:"r",desc:"Recall"},{key:"j",desc:"Next company (in detail view)"},{key:"k",desc:"Prev company (in detail view)"},{key:"Escape",desc:"Close/deselect"},{key:"?",desc:"Show shortcuts"}];
 export const CONF_BG={"High":"#dcfce7","Medium":"#fef9c3","Low":"#fee2e2"};
 export const CONF_COLOR={"High":"#166534","Medium":"#854d0e","Low":"#991b1b"};
 export const ACTIONS=["Increase TP","No Action","Decrease TP"];
