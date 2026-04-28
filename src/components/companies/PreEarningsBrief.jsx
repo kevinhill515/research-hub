@@ -114,24 +114,38 @@ export default function PreEarningsBrief({ company }) {
   const lastReported = sortedEntries.find(function (e) { return (e.reportDate || "") <= todayStr; });
 
   /* ---- Section 3: latest guidance per metric ----
-   * Pick the upcoming FY (smallest period >= today). For each item with
-   * data in that FY, show the latest mid-guidance Y/Y and direction
-   * vs the prior row in that FY. Limit to top 4 metrics by row count. */
+   * Pick the most relevant FY:
+   *   - Prefer the smallest period >= today (the next FY guidance is
+   *     being given for; e.g. FY27 once Hitachi has issued FY27 ranges).
+   *   - Else fall back to the most recent CLOSED FY (period < today),
+   *     so for a name like Hitachi that JUST reported FY26 actuals and
+   *     hasn't yet issued FY27 guidance, FY26 still surfaces here.
+   *   - Periods more than 365 days in the past are treated as stale
+   *     and don't qualify for the fallback. */
   const guidance = company.guidance && company.guidance.history ? company.guidance : null;
   const upcomingFyRows = (function () {
     if (!guidance) return null;
-    /* Find the upcoming FY end. */
-    let upcomingPeriod = null;
+    let upcomingPeriod = null, recentClosedPeriod = null;
+    const stalenessCutoffMs = Date.now() - 365 * 24 * 3600 * 1000;
     guidance.history.forEach(function (r) {
       if (!r.period) return;
-      if (r.period < todayStr) return;
-      if (!upcomingPeriod || r.period < upcomingPeriod) upcomingPeriod = r.period;
+      if (r.period >= todayStr) {
+        if (!upcomingPeriod || r.period < upcomingPeriod) upcomingPeriod = r.period;
+      } else {
+        const pd = parseDate(r.period);
+        if (!pd || pd.getTime() < stalenessCutoffMs) return;
+        if (!recentClosedPeriod || r.period > recentClosedPeriod) recentClosedPeriod = r.period;
+      }
     });
-    if (!upcomingPeriod) return null;
+    const upcomingPeriodOrClosed = upcomingPeriod || recentClosedPeriod;
+    if (!upcomingPeriodOrClosed) return null;
+    const isClosed = upcomingPeriodOrClosed === recentClosedPeriod && !upcomingPeriod;
+    /* Reuse a single name from here on. */
+    const period = upcomingPeriodOrClosed;
     /* Group by metric. */
     const byMetric = {};
     guidance.history.forEach(function (r) {
-      if (r.period !== upcomingPeriod) return;
+      if (r.period !== period) return;
       (byMetric[r.item] = byMetric[r.item] || []).push(r);
     });
     /* Resolve prior FY actual per metric for Y/Y baseline. */
@@ -140,7 +154,7 @@ export default function PreEarningsBrief({ company }) {
       if (!m) return null;
       return (parseInt(m[1], 10) - 1) + "-" + m[2] + "-" + m[3];
     }
-    const prior = priorFyEnd(upcomingPeriod);
+    const prior = priorFyEnd(period);
     const rows = Object.keys(byMetric).map(function (metric) {
       const entries = byMetric[metric].slice().sort(function (a, b) { return (a.date || "").localeCompare(b.date || ""); });
       const last = entries[entries.length - 1];
@@ -171,7 +185,7 @@ export default function PreEarningsBrief({ company }) {
         lastMid: lastMid, baseline: baseline,
       };
     }).sort(function (a, b) { return b.count - a.count; }).slice(0, 4);
-    return { period: upcomingPeriod, rows: rows };
+    return { period: period, rows: rows, isClosed: isClosed };
   })();
 
   /* ---- Section 4: EPS revisions trend ----
@@ -333,7 +347,7 @@ export default function PreEarningsBrief({ company }) {
         {/* Right col: guidance summary for upcoming FY */}
         <div>
           <div className={SECTION_LABEL}>
-            Latest guidance {upcomingFyRows ? "· " + fyLabel(upcomingFyRows.period) + " (period " + upcomingFyRows.period + ")" : ""}
+            Latest guidance {upcomingFyRows ? "· " + fyLabel(upcomingFyRows.period) + (upcomingFyRows.isClosed ? " (closed)" : "") + " · period " + upcomingFyRows.period : ""}
           </div>
           {upcomingFyRows && upcomingFyRows.rows.length > 0 ? (
             <div className="space-y-1">
