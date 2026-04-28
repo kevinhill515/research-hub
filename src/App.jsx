@@ -232,7 +232,10 @@ export default function App(){
             state lives in localStorage so the user's preference survives
             tab switches and page reloads. */}
         {(function(){
+          /* Skip Sold names — we don't review those each cycle, so a
+             missing fyMonth there isn't actionable. */
           var missing = companies.filter(function(c){
+            if (c && c.status === "Sold") return false;
             return !(c && c.valuation && c.valuation.fyMonth);
           });
           if(missing.length === 0) return null;
@@ -260,8 +263,8 @@ export default function App(){
           );
         })()}
         {/* This-week earnings — collapsible. Header summarizes count
-            even when collapsed so the user can see "5 reports this week"
-            without opening it. */}
+            even when collapsed. Sold names excluded — we don't track
+            their next reports. */}
         {(function(){
           var t0=new Date();t0.setHours(0,0,0,0);
           function dayOf(iso){
@@ -270,7 +273,8 @@ export default function App(){
             if(!d)return null;
             return Math.round((d.getTime()-t0.getTime())/(24*3600*1000));
           }
-          var thisWeekCount=displayedCos.filter(function(c){
+          var activeCos=displayedCos.filter(function(c){return c.status!=="Sold";});
+          var thisWeekCount=activeCos.filter(function(c){
             var iso=(c.guidance&&c.guidance.nextReportDate)||null;
             if(!iso){
               ((c.earningsEntries)||[]).forEach(function(e){
@@ -294,7 +298,7 @@ export default function App(){
               </div>
               {showThisWeek&&(
                 <div className="px-3 pb-2 -mt-1">
-                  <ThisWeekEarnings companies={displayedCos} onSelectCompany={function(c){setSelCo(c);setCoView("dashboard");}}/>
+                  <ThisWeekEarnings companies={activeCos} onSelectCompany={function(c){setSelCo(c);setCoView("dashboard");}}/>
                 </div>
               )}
             </div>
