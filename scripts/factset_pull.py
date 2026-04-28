@@ -691,16 +691,42 @@ def read_prices(xl: ExcelSession) -> dict[str, dict]:
     NUM_PERF_COLS = len(PRICES_PERF_KEYS)  # 11
 
     def parse_perf_block(row, start: int) -> dict:
-        """Read NUM_PERF_COLS cells starting at `start`. Treat the
-        sheet values as percent-form (1.2 → 0.012); skip None/blank.
-        Returns the dict of populated entries."""
-        block: dict = {}
-        for i, key in enumerate(PRICES_PERF_KEYS):
+        """Read NUM_PERF_COLS cells starting at `start`.
+
+        Auto-detects whether the sheet values are percent-form (1.2 for
+        1.2%) or decimal-form (0.012 for 1.2%). Excel cells formatted
+        as Percentage store the underlying decimal (0.012) but display
+        '1.2%'; cells formatted as Number store 1.2 directly. Both
+        formats are common in FactSet templates; we pick the right
+        interpretation per row by looking at the magnitude of values
+        in the block:
+
+           max(|v|) >= 1.5  →  percent-form, divide by 100
+           max(|v|) <  1.5  →  decimal-form, use as-is
+
+        The 1.5 threshold means a row of returns where any window
+        exceeds ~1.5 (i.e. >150% if decimal would be implausible,
+        whereas 1.5%+ is unremarkable in percent form) trips the
+        percent-form path. Returns the dict of populated entries.
+
+        Returns are stored as DECIMALS in the perf object (0.012 for
+        1.2%) so the display layer just multiplies by 100. """
+        raw_values = []
+        for i, _ in enumerate(PRICES_PERF_KEYS):
             idx = start + i
             if idx >= len(row): break
             v = _num(row[idx])
+            raw_values.append(v)
+        finite = [abs(v) for v in raw_values if v is not None]
+        if not finite:
+            return {}
+        is_percent_form = max(finite) >= 1.5
+        block: dict = {}
+        for i, key in enumerate(PRICES_PERF_KEYS):
+            if i >= len(raw_values): break
+            v = raw_values[i]
             if v is None: continue
-            block[key] = round(v / 100, 6)
+            block[key] = round(v / 100 if is_percent_form else v, 6)
         return block
 
     for row in rows:

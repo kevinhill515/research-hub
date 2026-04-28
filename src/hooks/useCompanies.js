@@ -273,18 +273,41 @@ export function useCompanies(){
      under "1D" so it aligns with the Markets Dashboard convention used
      by the Snapshot tile's benchmark rows. */
   var PRICE_PERF_KEYS = ["1D","5D","MTD","1M","QTD","3M","6M","YTD","1Y","2Y","3Y"];
-  function parsePerfCell(raw){
-    if(raw == null) return null;
+  /* Parse one perf cell into a raw {value, hadPercent} record. The
+     percent-vs-decimal interpretation is decided at the row level
+     (see parsePerfRow below) using both the % symbol presence and
+     the magnitude of values, so individual cells stay format-agnostic. */
+  function parsePerfCellRaw(raw){
+    if(raw == null) return { value: null, hadPercent: false };
     var s = String(raw).trim();
-    if(!s || s === "#N/A" || s === "—" || s === "-" || /^n\.?a\.?$/i.test(s)) return null;
-    /* "(1.2%)" → -1.2; strip %, parens, comma. */
+    if(!s || s === "#N/A" || s === "—" || s === "-" || /^n\.?a\.?$/i.test(s)) return { value: null, hadPercent: false };
+    var hadPercent = s.indexOf("%") >= 0;
     var t = s.replace(/[%\s,]/g,"");
     var paren = /^\((.+)\)$/.exec(t);
     if(paren) t = "-" + paren[1];
     var n = parseFloat(t);
-    if(!isFinite(n)) return null;
-    /* Values come in percent form (3.2 means 3.2%). Convert to decimal. */
-    return n / 100;
+    if(!isFinite(n)) return { value: null, hadPercent: hadPercent };
+    return { value: n, hadPercent: hadPercent };
+  }
+  /* Decide percent-vs-decimal for a row of cells, then return the
+     row's parsed values as decimals. Heuristics:
+        - Any cell had a % symbol → percent-form (divide by 100).
+        - Else if max(|v|) >= 1.5 → percent-form (typical "5.2 = 5.2%"
+          paste). 1.5 chosen because returns of >150% would be
+          implausible if values were already decimal.
+        - Else → decimal-form (already e.g. 0.052 for 5.2%).
+     This handles both Excel cells formatted as Percentage (underlying
+     decimal) and as Number (percent-form). */
+  function parsePerfRow(rawCells){
+    var parsed = rawCells.map(parsePerfCellRaw);
+    var anyPercent = parsed.some(function(p){ return p.hadPercent; });
+    var finite = parsed.filter(function(p){ return p.value !== null; }).map(function(p){ return Math.abs(p.value); });
+    var maxAbs = finite.length > 0 ? Math.max.apply(null, finite) : 0;
+    var isPercentForm = anyPercent || maxAbs >= 1.5;
+    return parsed.map(function(p){
+      if(p.value === null) return null;
+      return isPercentForm ? p.value / 100 : p.value;
+    });
   }
   function applyPriceImport(){
     if(!priceImportText.trim())return;
@@ -310,27 +333,28 @@ export function useCompanies(){
       var usTicker = "", usPrice = NaN;
       var usPerf = {};
       if(parts.length >= 14){
-        /* New layout. Ord perf cells 3..13. */
-        for(var i=0; i<PRICE_PERF_KEYS.length; i++){
-          var v = parsePerfCell(parts[3 + i]);
-          if(v !== null) ordPerf[PRICE_PERF_KEYS[i]] = v;
-        }
+        /* New layout. Ord perf cells 3..13, US perf cells 16..26. */
+        var ordCells = [];
+        for(var i=0; i<PRICE_PERF_KEYS.length; i++){ ordCells.push(parts[3 + i]); }
+        var ordVals = parsePerfRow(ordCells);
+        ordVals.forEach(function(v, idx){ if(v !== null) ordPerf[PRICE_PERF_KEYS[idx]] = v; });
         usTicker = (parts[14]||"").toUpperCase();
         usPrice  = parts[15] ? parseFloat(parts[15].replace(/,/g,"")) : NaN;
-        for(var k=0; k<PRICE_PERF_KEYS.length; k++){
-          var v2 = parsePerfCell(parts[16 + k]);
-          if(v2 !== null) usPerf[PRICE_PERF_KEYS[k]] = v2;
-        }
+        var usCells = [];
+        for(var k=0; k<PRICE_PERF_KEYS.length; k++){ usCells.push(parts[16 + k]); }
+        var usVals = parsePerfRow(usCells);
+        usVals.forEach(function(v, idx){ if(v !== null) usPerf[PRICE_PERF_KEYS[idx]] = v; });
       } else {
-        /* Legacy 7-col: Company, Ord, OrdPrice, Ord5D, US, USPrice, US5D. */
+        /* Legacy 7-col: Company, Ord, OrdPrice, Ord5D, US, USPrice, US5D.
+           Row-level interpretation runs over both the ord and US 5D cells
+           to keep the format detection consistent. */
         var raw = parts[3] || "";
-        var v5d = parsePerfCell(raw);
-        if(v5d !== null) ordPerf["5D"] = v5d;
         usTicker = parts.length>=5 ? (parts[4]||"").toUpperCase() : "";
         usPrice  = parts.length>=6 && parts[5] ? parseFloat(parts[5].replace(/,/g,"")) : NaN;
         var rawUs = parts.length>=7 ? (parts[6]||"") : "";
-        var v5dUs = parsePerfCell(rawUs);
-        if(v5dUs !== null) usPerf["5D"] = v5dUs;
+        var legacyVals = parsePerfRow([raw, rawUs]);
+        if(legacyVals[0] !== null) ordPerf["5D"] = legacyVals[0];
+        if(legacyVals[1] !== null) usPerf["5D"] = legacyVals[1];
       }
       priceData.push({
         name: name,
