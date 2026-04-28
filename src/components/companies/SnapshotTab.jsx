@@ -23,7 +23,7 @@
  *   - meta.marketsSnapshot.indices — benchmark trailing returns
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import { BENCHMARKS } from '../../constants/index.js';
 import { printPage } from '../../utils/index.js';
@@ -389,30 +389,37 @@ export default function SnapshotTab({ company }) {
 
 function TrailingPerformance({ companyName, benchmarkRows, usTicker, usPerf, ordTicker, ordPerf, ordCurrency, legacyPerf, fxRows }) {
   const PERF_WINDOWS = buildPerfWindows();
-  /* USD ↔ Local toggle for the ord-ticker row. The US-ticker row is
-     always USD (it's the listed-USD security), no toggle needed. */
-  const [ordMode, setOrdMode] = useState("usd"); // "usd" | "local"
 
-  /* Look up the FX series for this company's ord currency, if any.
-     The Markets Dashboard upload's FX section stores rows like
-     { label: "USDEUR", "1D": ..., "5D": ..., ... }. The series tells
-     us how many local currency units per USD changed over each window.
-     To convert a local-currency return to USD:
-        USD_return = (1 + local_return) / (1 + fx_return) - 1
-     because LOCAL/USD * USD = local-asset value; rearranging.  */
+  /* FX series lookup. The Markets Dashboard upload's FX section stores
+     rows keyed by canonical pair (USDEUR, USDJPY, ...) with the same 11
+     trailing-window decimals as any other Dashboard row. Tells us how
+     much LOCAL/USD changed over each window.
+
+     The Prices import stores ord-ticker perf as USD-adjusted total
+     returns (FactSet's default for the ord ticker block). To go USD →
+     local for the same window:
+        local = (1 + usd_return) * (1 + fx_return) - 1
+     Derivation: USD_return = (price_T/price_0) * (fx_0/fx_T) - 1.
+     Rearranging: local_return = (price_T/price_0) - 1
+                              = (1 + USD_return) * (fx_T/fx_0) - 1
+                              = (1 + USD_return) * (1 + fx_return) - 1. */
   const fxLabel = ordCurrency && ordCurrency !== "USD" ? "USD" + ordCurrency : null;
   const fxRow = fxLabel ? (fxRows || []).find(function (r) {
     return ((r.label || "") + "").toUpperCase().trim() === fxLabel;
   }) : null;
-  function ordToUsd(localRet, key) {
-    if (!isFiniteV(localRet)) return null;
+  function usdToLocal(usdRet, key) {
+    if (!isFiniteV(usdRet)) return null;
     if (!fxRow) return null;
     const fxRet = fxRow[key];
     if (!isFiniteV(fxRet)) return null;
-    return (1 + localRet) / (1 + fxRet) - 1;
+    return (1 + usdRet) * (1 + fxRet) - 1;
   }
 
-  /* Build the company rows. We have up to two: US (USD) and Ord (toggle). */
+  /* Build the company rows. Up to three:
+       1. US ticker  — USD (as uploaded)
+       2. Ord ticker — USD (as uploaded; FactSet pulls USD-adjusted)
+       3. Ord ticker — Local (computed via FX, only when FX series present
+                              and ord currency isn't already USD) */
   const stockRows = [];
   if (usPerf) {
     stockRows.push({
@@ -421,19 +428,19 @@ function TrailingPerformance({ companyName, benchmarkRows, usTicker, usPerf, ord
     });
   }
   if (ordPerf && ordTicker && ordTicker !== usTicker) {
-    let ordValues = ordPerf;
-    let tag = ordCurrency || "LCL";
-    if (ordMode === "usd" && fxRow) {
-      const conv = {};
-      Object.keys(ordPerf).forEach(function (k) { conv[k] = ordToUsd(ordPerf[k], k); });
-      ordValues = conv;
-      tag = "USD";
-    }
     stockRows.push({
-      label: (companyName || "Stock") + " · " + ordTicker + " (" + tag + ")",
-      isStock: true, isPriorClose: false, values: ordValues, currencyTag: tag,
-      isOrdRow: true, // flagged so we render the toggle next to its label
+      label: (companyName || "Stock") + " · " + ordTicker + " (USD)",
+      isStock: true, isPriorClose: false, values: ordPerf, currencyTag: "USD",
     });
+    if (fxRow && ordCurrency && ordCurrency !== "USD") {
+      const localValues = {};
+      Object.keys(ordPerf).forEach(function (k) { localValues[k] = usdToLocal(ordPerf[k], k); });
+      stockRows.push({
+        label: (companyName || "Stock") + " · " + ordTicker + " (" + ordCurrency + ")",
+        isStock: true, isPriorClose: false, values: localValues, currencyTag: ordCurrency,
+        isLocalRow: true,
+      });
+    }
   }
   if (stockRows.length === 0 && legacyPerf) {
     stockRows.push({
@@ -503,23 +510,6 @@ function TrailingPerformance({ companyName, benchmarkRows, usTicker, usPerf, ord
     return "#64748b";
   }
 
-  /* Toggle button (USD ↔ Local) for the ord row, sized to fit inline
-     with the row label. Only enabled when an FX series is available. */
-  function OrdToggle() {
-    const canToggle = !!fxRow;
-    return (
-      <button
-        type="button"
-        disabled={!canToggle}
-        onClick={function () { setOrdMode(function (m) { return m === "usd" ? "local" : "usd"; }); }}
-        className={"ml-1 text-[9px] px-1.5 py-0.5 rounded border " + (canToggle ? "border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer" : "border-slate-200 dark:border-slate-700 text-gray-400 dark:text-slate-600 cursor-not-allowed")}
-        title={canToggle ? ("Switch to " + (ordMode === "usd" ? ordCurrency : "USD")) : ("Upload FX returns for " + (fxLabel || "this currency") + " in the Markets Dashboard to enable USD conversion.")}
-      >
-        {ordMode === "usd" ? "→ " + (ordCurrency || "LCL") : "→ USD"}
-      </button>
-    );
-  }
-
   return (
     <div className={TILE}>
       <div className="flex items-baseline justify-between mb-2 gap-2 flex-wrap">
@@ -546,7 +536,9 @@ function TrailingPerformance({ companyName, benchmarkRows, usTicker, usPerf, ord
               <div key={"row-" + ri} style={{ display: "contents" }}>
                 <div className={"py-1 px-1 text-[11px] font-medium text-gray-900 dark:text-slate-100 truncate " + rowBg}>
                   {r.label}
-                  {r.isOrdRow && <OrdToggle/>}
+                  {r.isLocalRow && (
+                    <span className="text-[9px] text-gray-400 dark:text-slate-500 italic ml-1" title={"Converted from USD using the " + fxLabel + " FX series"}>(via FX)</span>
+                  )}
                   {r.isPriorClose && (
                     <span className="text-[9px] text-amber-600 dark:text-amber-400 italic ml-1">(prior close)</span>
                   )}
