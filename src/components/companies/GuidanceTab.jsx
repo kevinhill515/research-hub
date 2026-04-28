@@ -24,7 +24,7 @@
 
 import { fmtMoney, fmtPct, lastFinite } from '../../utils/chart.js';
 import { isFiniteNum } from '../../utils/numbers.js';
-import { parseDate } from '../../utils/index.js';
+import { parseDate, printPage } from '../../utils/index.js';
 
 /* "2026-03-31" → "FY26". Uses the year from the period date.
  * (Some companies have non-Dec FYs where this matters: Sony's "FY26"
@@ -471,7 +471,7 @@ export default function GuidanceTab({ company }) {
   const stamp = guidance.updatedAt ? new Date(guidance.updatedAt).toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
 
   return (
-    <div>
+    <div className="print-target">
       {(function(){
         /* Reflect what's actually rendered: keepers ∩ non-stale periods. */
         const displayedRows = metrics.reduce(function (s, m) {
@@ -530,8 +530,13 @@ export default function GuidanceTab({ company }) {
                 <span className="text-xs text-gray-400 dark:text-slate-500 italic" title="No 'Next Report Date' in the FactSet upload and no future date in this company's earnings calendar. Re-import to refresh.">no next-report date</span>
               )}
             </div>
-            <div className="text-[11px] text-gray-400 dark:text-slate-500">
-              {guidance.updatedBy ? "Last imported by " + guidance.updatedBy : "Last imported"} · {stamp}
+            <div className="flex items-center gap-2">
+              <div className="text-[11px] text-gray-400 dark:text-slate-500">
+                {guidance.updatedBy ? "Last imported by " + guidance.updatedBy : "Last imported"} · {stamp}
+              </div>
+              <button onClick={function(){ printPage("charts"); }}
+                className="text-xs px-2.5 py-1 font-medium rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors no-print"
+                title="Print this view (portrait, multi-page)">🖨 Print</button>
             </div>
           </div>
         );

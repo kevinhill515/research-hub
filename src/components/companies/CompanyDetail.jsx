@@ -13,7 +13,7 @@ import {
   getTiers, tierToStatus, tierBg, tierPillStyle,
   isInitiationTx, getInitiatedDate, monthsSince, blankEarnings,
   escHTML, getCore, getConf, toHTML, toMD,
-  repShares, repAvgCost,
+  repShares, repAvgCost, printPage,
 } from '../../utils/index.js';
 import { StatusPill, PortPicker, SectionBlock, DiffView, BarRow, PillEl, PriceAgeIndicator } from '../ui/index.js';
 import { useConfirm, useAlert } from '../ui/DialogProvider.jsx';
@@ -579,12 +579,17 @@ export function CompanyDetail(props){
           {coView==="metrics"&&<SnapshotTab company={selCo}/>}
 
           {/* EARNINGS & THESIS CHECK TAB */}
-          {coView==="earnings"&&(<div>
+          {coView==="earnings"&&(<div className="print-target">
             <PreEarningsBrief company={selCo}/>
             <EarningsCycleStrip entries={earningsEntries}/>
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
               <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">Earnings & Thesis Check</div>
-              <button onClick={function(){var e=blankEarnings();var u=Object.assign({},selCo,{earningsEntries:[e].concat(earningsEntries)});setSelCo(u);setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});});}} className={BTN_SM}>+ Add earnings entry</button>
+              <div className="flex gap-2 items-center">
+                <button onClick={function(){ printPage("charts"); }}
+                  className="text-xs px-2.5 py-1 font-medium rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors no-print"
+                  title="Print this view (portrait, multi-page)">🖨 Print</button>
+                <button onClick={function(){var e=blankEarnings();var u=Object.assign({},selCo,{earningsEntries:[e].concat(earningsEntries)});setSelCo(u);setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});});}} className={BTN_SM}>+ Add earnings entry</button>
+              </div>
             </div>
             {earningsEntries.length===0&&<p className="text-sm text-gray-500 dark:text-slate-400">No earnings entries yet. Click "+ Add earnings entry" to get started.</p>}
             {earningsEntries.map(function(entry){return(

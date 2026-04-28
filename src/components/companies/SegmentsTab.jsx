@@ -21,7 +21,7 @@
 import { useState } from 'react';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import { useConfirm } from '../ui/DialogProvider.jsx';
-import { getCurrency } from '../../utils/index.js';
+import { getCurrency, printPage } from '../../utils/index.js';
 import { isFiniteNum } from '../../utils/numbers.js';
 import {
   niceTicks, fmtMoney, fmtMoneyShort, fmtPct, lastFinite, lastFiniteIndex,
@@ -114,7 +114,7 @@ export default function SegmentsTab({ company }) {
   const costCenters  = data.segments.filter(function (s) { return s.isCostCenter; });
 
   return (
-    <div className="mb-6">
+    <div className="mb-6 print-target">
       <div className="flex items-center gap-3 flex-wrap mb-3">
         <div className="text-sm font-medium text-gray-900 dark:text-slate-100">Segments</div>
         {data.updatedAt && (
@@ -123,6 +123,9 @@ export default function SegmentsTab({ company }) {
           </span>
         )}
         <span className="text-[10px] text-gray-400 dark:text-slate-500 italic">Reporting currency: {ccy || "—"}</span>
+        <button onClick={function(){ printPage("charts"); }}
+          className="ml-auto text-xs px-2.5 py-1 font-medium rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors no-print"
+          title="Print this view (portrait, multi-page)">🖨 Print</button>
         {inactiveOps.length > 0 && (
           <span className="text-[10px] text-gray-400 dark:text-slate-500 italic" title={"Hidden (no data in latest FY): " + inactiveOps.map(function(s){return s.name;}).join(", ")}>
             {inactiveOps.length} discontinued segment{inactiveOps.length === 1 ? "" : "s"} hidden

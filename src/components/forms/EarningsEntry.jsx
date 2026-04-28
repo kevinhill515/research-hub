@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { TP_CHANGES, THESIS_STATUSES } from '../../constants/index.js';
 import { apiCall } from '../../api/index.js';
 import { useAlert } from '../ui/DialogProvider.jsx';
@@ -7,6 +7,20 @@ import GuidanceVsActual from '../companies/GuidanceVsActual.jsx';
 function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
   var [e, setE] = useState(entry);
   var [open, setOpen] = useState(entry.open || false);
+  /* Auto-expand for print so all entries are visible in the printout.
+     Restore the user's prior open state once printing finishes so the
+     screen view doesn't change underneath them. */
+  useEffect(function () {
+    var prev = null;
+    function onBefore() { prev = open; setOpen(true); }
+    function onAfter() { if (prev !== null) setOpen(prev); prev = null; }
+    window.addEventListener("ccd-before-print", onBefore);
+    window.addEventListener("ccd-after-print", onAfter);
+    return function () {
+      window.removeEventListener("ccd-before-print", onBefore);
+      window.removeEventListener("ccd-after-print", onAfter);
+    };
+  }, [open]);
   var [aiOpen, setAiOpen] = useState(false);
   var [aiText, setAiText] = useState("");
   var [aiLoading, setAiLoading] = useState(false);

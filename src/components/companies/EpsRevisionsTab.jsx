@@ -18,6 +18,7 @@
 import { useState } from 'react';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import { useConfirm } from '../ui/DialogProvider.jsx';
+import { printPage } from '../../utils/index.js';
 
 const TILE = "rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3";
 const GRID_COLOR = "rgba(100,116,139,0.12)";
@@ -94,7 +95,7 @@ export default function EpsRevisionsTab({ company }) {
   }
 
   return (
-    <div className="mb-6">
+    <div className="mb-6 print-target">
       <div className="flex items-baseline gap-3 flex-wrap mb-3">
         <div className="text-sm font-medium text-gray-900 dark:text-slate-100">EPS Estimate Revisions</div>
         {data.asOf && (
@@ -106,7 +107,10 @@ export default function EpsRevisionsTab({ company }) {
           <span className="text-[11px] text-gray-400 dark:text-slate-500 italic">
             Refresh via Data Hub → E[EPS]
           </span>
-          <button onClick={clearData} className="text-xs px-2.5 py-1.5 font-medium rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">Clear</button>
+          <button onClick={function(){ printPage("charts"); }}
+            className="text-xs px-2.5 py-1.5 font-medium rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors no-print"
+            title="Print this view (portrait, multi-page)">🖨 Print</button>
+          <button onClick={clearData} className="text-xs px-2.5 py-1.5 font-medium rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors no-print">Clear</button>
         </div>
       </div>
 

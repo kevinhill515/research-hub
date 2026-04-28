@@ -80,11 +80,16 @@ export function printPage(mode){
   document.documentElement.style.setProperty("--print-zoom",String(zoom));
   document.body.classList.add("printing");
   if(isCharts) document.body.classList.add("printing-charts");
+  /* Broadcast a custom event so collapsed UI (e.g. EarningsEntry cards)
+     can self-expand for the print run. Listeners that respond should
+     also listen for "ccd-after-print" to optionally restore state. */
+  try{ window.dispatchEvent(new CustomEvent("ccd-before-print")); }catch(e){}
   var cleanup=function(){
     document.body.classList.remove("printing");
     document.body.classList.remove("printing-charts");
     document.documentElement.style.removeProperty("--print-zoom");
     window.removeEventListener("afterprint",cleanup);
+    try{ window.dispatchEvent(new CustomEvent("ccd-after-print")); }catch(e){}
   };
   window.addEventListener("afterprint",cleanup);
   setTimeout(function(){try{window.print();}catch(e){cleanup();}},50);
