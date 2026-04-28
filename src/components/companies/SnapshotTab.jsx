@@ -387,6 +387,80 @@ export default function SnapshotTab({ company }) {
 
 /* ====================== Tile 1: Trailing Performance ===================== */
 
+/* Mini vertical-bar chart for one performance row across the visible
+ * windows. Bars are color-coded (green = up, red = down, gray = ~0),
+ * sized proportionally to the largest absolute value across the row's
+ * own window set. Each bar is annotated with its label below the X
+ * axis and its formatted value above the bar (or below for negatives).
+ *
+ * Lives inside SnapshotTab because it leans on its color/fmt helpers,
+ * but it's self-contained otherwise — easy to lift out if reused. */
+function PerfBarChart({ row, windows, fmt, color }) {
+  if (!row || !windows || windows.length === 0) return null;
+  const values = windows.map(function (w) { return row.values[w.key]; });
+  const finite = values.filter(isFiniteV);
+  if (finite.length === 0) return null;
+
+  /* Y-axis range — symmetric around zero so the baseline is visually
+     in the middle when up/down are roughly balanced. Padded so the
+     value label above each bar doesn't crash into the top edge. */
+  const absMax = Math.max.apply(null, finite.map(function (v) { return Math.abs(v); }));
+  const pad = Math.max(0.005, absMax * 0.18);
+  const yMin = -absMax - pad;
+  const yMax =  absMax + pad;
+  const span = yMax - yMin;
+
+  const W = 600;
+  const H = 110;
+  const PAD_T = 8;
+  const PAD_B = 30;     /* room for window labels */
+  const PAD_L = 4;
+  const PAD_R = 4;
+  const innerW = W - PAD_L - PAD_R;
+  const innerH = H - PAD_T - PAD_B;
+  const groupW = innerW / windows.length;
+  const barW = Math.min(28, groupW * 0.55);
+
+  function yOf(v) { return PAD_T + (1 - (v - yMin) / span) * innerH; }
+  function xCenter(i) { return PAD_L + i * groupW + groupW / 2; }
+  const yZero = yOf(0);
+
+  return (
+    <svg className="block w-full mb-2" height={H} viewBox={"0 0 " + W + " " + H} preserveAspectRatio="none" role="img" aria-label="Trailing returns bar chart">
+      {/* Zero baseline */}
+      <line x1={PAD_L} y1={yZero} x2={W - PAD_R} y2={yZero} stroke="rgba(100,116,139,0.45)" strokeWidth="1"/>
+      {windows.map(function (w, i) {
+        const v = row.values[w.key];
+        const cx = xCenter(i);
+        const labelY = H - PAD_B + 14;
+        if (!isFiniteV(v)) {
+          return (
+            <g key={w.key}>
+              <text x={cx} y={labelY} fontSize="9" textAnchor="middle" fill="#94a3b8">{w.label}</text>
+              <text x={cx} y={yZero - 2} fontSize="8" textAnchor="middle" fill="#cbd5e1">--</text>
+            </g>
+          );
+        }
+        const yv = yOf(v);
+        const top = Math.min(yZero, yv);
+        const h = Math.max(1, Math.abs(yZero - yv));
+        const c = color(v);
+        const valueLabelY = v >= 0 ? yv - 2 : yv + 9;
+        return (
+          <g key={w.key}>
+            <rect x={cx - barW / 2} y={top} width={barW} height={h} fill={c} opacity="0.85" rx="1.5">
+              <title>{w.label + ": " + fmt(v)}</title>
+            </rect>
+            <text x={cx} y={valueLabelY} fontSize="8.5" textAnchor="middle" fill={c} fontWeight="600">{fmt(v)}</text>
+            <text x={cx} y={labelY} fontSize="9" textAnchor="middle" fill="#64748b">{w.label}</text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+
 function TrailingPerformance({ companyName, benchmarkRows, usTicker, usPerf, ordTicker, ordPerf, ordCurrency, legacyPerf, fxRows }) {
   const PERF_WINDOWS = buildPerfWindows();
 
@@ -480,9 +554,14 @@ function TrailingPerformance({ companyName, benchmarkRows, usTicker, usPerf, ord
   }
 
   /* Hide adjacent windows whose value is identical for the FIRST stock
-     row (within rounding). e.g. when MTD == QTD (start of a quarter) or
-     QTD == YTD (start of a year), the redundant column collapses out
-     so the table doesn't waste horizontal space on duplicates. */
+     row (within rounding). e.g. when MTD == QTD (start of a quarter)
+     the redundant column collapses out so the table doesn't waste
+     horizontal space.
+
+     Anchor windows (1D, YTD, 1Y) are always kept regardless of value
+     equality — they're meaningful reference points users expect to
+     see at a glance even if they happen to coincide with a neighbor. */
+  const ANCHOR_KEYS = { "1D": 1, "YTD": 1, "1Y": 1 };
   const dedupeRef = stockRows[0] && stockRows[0].values;
   const visibleWindows = (function () {
     if (!dedupeRef) return PERF_WINDOWS;
@@ -490,7 +569,8 @@ function TrailingPerformance({ companyName, benchmarkRows, usTicker, usPerf, ord
     let prevVal = null;
     PERF_WINDOWS.forEach(function (w) {
       const v = dedupeRef[w.key];
-      if (isFiniteV(v) && isFiniteV(prevVal) && Math.abs(v - prevVal) < 1e-5) {
+      const isAnchor = !!ANCHOR_KEYS[w.key];
+      if (!isAnchor && isFiniteV(v) && isFiniteV(prevVal) && Math.abs(v - prevVal) < 1e-5) {
         return; /* drop this window — same as previous visible */
       }
       out.push(w);
@@ -510,6 +590,13 @@ function TrailingPerformance({ companyName, benchmarkRows, usTicker, usPerf, ord
     return "#64748b";
   }
 
+  /* Mini bar chart showing the first stock row's returns across the
+     visible windows. Vertical bars, one per window, color-coded
+     green/red, with a labeled zero baseline. Sits just above the
+     numeric table so users can scan the shape (e.g. monotonically
+     improving vs choppy) before reading the values. */
+  const chartRow = stockRows[0];
+
   return (
     <div className={TILE}>
       <div className="flex items-baseline justify-between mb-2 gap-2 flex-wrap">
@@ -518,6 +605,14 @@ function TrailingPerformance({ companyName, benchmarkRows, usTicker, usPerf, ord
           {usTicker || ordTicker ? ((usTicker ? usTicker + " · " : "") + (ordTicker && ordTicker !== usTicker ? ordTicker : "")).trim() : ""}
         </div>
       </div>
+      {chartRow && (
+        <PerfBarChart
+          row={chartRow}
+          windows={visibleWindows}
+          fmt={fmt}
+          color={color}
+        />
+      )}
       <div className="overflow-x-auto">
         <div style={{ display: "grid", gridTemplateColumns: "minmax(180px, 1.6fr) repeat(" + visibleWindows.length + ", minmax(56px, 1fr))" }}>
           {/* Header row */}
