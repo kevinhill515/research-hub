@@ -69,6 +69,11 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
   var tpFixedVal = getTpFixed(val);
   var mosFixed = tpFixedVal !== null ? calcMOS(tpFixedVal, val.price) : null;
   var mosFixedStyle = mosBg(mosFixed);
+  /* Divergence flag: MOS vs MOS Fixed differ by > 10pp. Surfaced as a
+     small amber dot next to MOS Fixed and a hover tooltip explaining
+     the gap. Mirrors the "mos-divergence" alerts rule. */
+  var mosGap = (mos !== null && mosFixed !== null) ? Math.abs(mos - mosFixed) : null;
+  var mosDiverges = mosGap !== null && mosGap > 10;
 
   var tdBase = compact
     ? "table-cell align-middle pr-1.5 py-0.5 whitespace-nowrap cursor-pointer transition-colors text-xs"
@@ -209,8 +214,13 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
       {show("MOS Fixed") && (
         <div className={tdBase} style={rowBg ? { background: rowBg } : undefined}>
           {mosFixedStyle ? (
-            <span title="MOS using fixed TP" className="text-[10px] px-1.5 rounded-full font-bold whitespace-nowrap" style={{ background: mosFixedStyle.bg, color: mosFixedStyle.color }}>
-              {fmtMOS0(mosFixed)}
+            <span className="inline-flex items-center gap-1 whitespace-nowrap">
+              <span title={mosDiverges ? "MOS using fixed TP — diverges from current MOS by " + mosGap.toFixed(1) + "pp; review fixed TP" : "MOS using fixed TP"} className="text-[10px] px-1.5 rounded-full font-bold whitespace-nowrap" style={{ background: mosFixedStyle.bg, color: mosFixedStyle.color }}>
+                {fmtMOS0(mosFixed)}
+              </span>
+              {mosDiverges && (
+                <span title={"MOS Fixed diverges from MOS by " + mosGap.toFixed(1) + "pp — fixed TP may be stale"} className="inline-block w-2 h-2 rounded-full bg-amber-500 dark:bg-amber-400 shrink-0"/>
+              )}
             </span>
           ) : (
             <span className="text-xs text-gray-400 dark:text-slate-500">--</span>

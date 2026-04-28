@@ -27,7 +27,7 @@
  */
 
 import { isFiniteNum } from "./numbers.js";
-import { parseDate } from "./index.js";
+import { parseDate, getCompanyMOS, getCompanyMOSFixed } from "./index.js";
 import { getDataStatus } from "./dataStatus.js";
 
 /* Default per-rule parameters used when meta.alertRules has no entry
@@ -51,6 +51,11 @@ export const DEFAULT_RULES = {
      only when the user enables info-level alerts (the panel filters
      to warn-only by default). */
   "earnings-imminent":  { enabled: true,  params: { withinDays: 7 } },
+
+  /* MOS computed (current PE × normalized EPS) and MOS Fixed (frozen
+     TP) diverge by more than `thresholdPp` percentage points. Surfaces
+     stale fixed TPs that no longer reflect the live valuation. */
+  "mos-divergence":     { enabled: true,  params: { thresholdPp: 10 } },
 
   /* Stale data — already badged as ⚠ on each per-tab heading, so off
      here to avoid double-warning. */
@@ -216,6 +221,26 @@ function evalEarningsImminent(company, params) {
   };
 }
 
+/* MOS vs MOS Fixed divergence. MOS comes from the current PE × normalized
+ * EPS path; MOS Fixed uses a manually-frozen TP. When the user-frozen TP
+ * has drifted from the live computation by enough percentage points, the
+ * fixed TP is likely stale and should be reviewed. Both values are stored
+ * as percent numbers (e.g. 25.0 means 25%), so threshold is in pp. */
+function evalMosDivergence(company, params) {
+  const t = (params && params.thresholdPp) || 10;
+  const mos = getCompanyMOS(company);
+  const mosFixed = getCompanyMOSFixed(company);
+  if (!isFiniteNum(mos) || !isFiniteNum(mosFixed)) return null;
+  const diff = mos - mosFixed;
+  if (Math.abs(diff) < t) return null;
+  function fmt(v) { return (v >= 0 ? "+" : "") + v.toFixed(1) + "%"; }
+  return {
+    severity: "warn",
+    message: "MOS " + fmt(mos) + " vs Fixed " + fmt(mosFixed) + " (" + Math.abs(diff).toFixed(1) + "pp gap)",
+    context: null,
+  };
+}
+
 /* Stale data: any major data store more than one FY behind. Off by
  * default — the same info is already badged as ⚠ on individual tabs.
  * Surfaced as an alert mostly for triage views ("which 5 names need a
@@ -238,11 +263,21 @@ function evalStaleData(company, _params) {
 }
 
 const RULE_DEFS = {
-  "price-1d":            { eval: evalPrice1D,            label: "Stock moved >= threshold on the day" },
-  "guidance-revised":    { eval: evalGuidanceRevised,    label: "Guidance revised in the configured direction(s)" },
-  "eps-revisions-trend": { eval: evalEpsRevisionsTrend,  label: "Consecutive monthly EPS revisions in one direction" },
-  "earnings-imminent":   { eval: evalEarningsImminent,   label: "Earnings report within N days" },
-  "stale-data":          { eval: evalStaleData,          label: "One or more data sources is one FY behind" },
+  "price-1d":            { eval: evalPrice1D,            label: "Stock fell by 8%+ on the day" },
+  "guidance-revised":    { eval: evalGuidanceRevised,    label: "Guidance revised down on any tracked metric" },
+  "eps-revisions-trend": { eval: evalEpsRevisionsTrend,  label: "FY+1 EPS revised down for 2+ consecutive months (cumulative >= 2%)" },
+  "mos-divergence":      { eval: evalMosDivergence,      label: "MOS and MOS Fixed differ by more than 10pp" },
+  "earnings-imminent":   { eval: evalEarningsImminent,   label: "Earnings report within 7 days (info)" },
+  "stale-data":          { eval: evalStaleData,          label: "One or more data sources is one FY behind (off by default)" },
+};
+
+/* Subset shown in the panel footer — only the warn-level rules so the
+ * description matches what the panel actually displays. */
+export const WARN_RULE_LABELS = {
+  "price-1d":            RULE_DEFS["price-1d"].label,
+  "guidance-revised":    RULE_DEFS["guidance-revised"].label,
+  "eps-revisions-trend": RULE_DEFS["eps-revisions-trend"].label,
+  "mos-divergence":      RULE_DEFS["mos-divergence"].label,
 };
 
 /* Public: evaluate all enabled rules across all companies. */

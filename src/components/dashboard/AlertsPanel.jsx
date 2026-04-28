@@ -11,7 +11,7 @@
 
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
-import { evaluateAlerts } from '../../utils/alerts.js';
+import { evaluateAlerts, WARN_RULE_LABELS } from '../../utils/alerts.js';
 
 export default function AlertsPanel({ onJumpToCompany }) {
   const { companies, alertRules } = useCompanyContext();
@@ -70,10 +70,22 @@ export default function AlertsPanel({ onJumpToCompany }) {
             </div>
           </div>
           {count === 0 && (
-            <div className="px-3 py-6 text-xs text-gray-400 dark:text-slate-500 italic text-center">
+            <div className="px-3 py-4 text-xs text-gray-400 dark:text-slate-500 italic text-center">
               No flags active.
             </div>
           )}
+          {/* Always-visible footer: lists the warn rules so the user
+              knows what triggers a flag without leaving the panel. */}
+          <div className="px-3 py-2 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+            <div className="text-[10px] uppercase tracking-wide text-gray-400 dark:text-slate-500 font-semibold mb-1">Active rules</div>
+            <ul className="space-y-0.5">
+              {Object.keys(WARN_RULE_LABELS).map(function (k) {
+                return (
+                  <li key={k} className="text-[10px] text-gray-500 dark:text-slate-400 leading-tight">· {WARN_RULE_LABELS[k]}</li>
+                );
+              })}
+            </ul>
+          </div>
           {count > 0 && (
             <div className="divide-y divide-slate-100 dark:divide-slate-800">
               {alerts.map(function (a, i) {
