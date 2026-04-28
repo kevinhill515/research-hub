@@ -21,6 +21,7 @@ import { BENCHMARKS } from '../../constants/index.js';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import { isFiniteNum } from '../../utils/numbers.js';
 import { parseDate } from '../../utils/index.js';
+import { fmtMoney } from '../../utils/chart.js';
 
 const TILE = "rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3";
 const SECTION = "mb-2 last:mb-0";
@@ -163,7 +164,12 @@ export default function PreEarningsBrief({ company }) {
         else if (lastMid < prevMid * 0.999) arrow = "▼";
         else arrow = "—";
       }
-      return { metric: metric, yoy: yoy, arrow: arrow, count: entries.length, lastDate: last && last.date };
+      return {
+        metric: metric, yoy: yoy, arrow: arrow,
+        count: entries.length, lastDate: last && last.date,
+        lastLow: last && last.low, lastHigh: last && last.high,
+        lastMid: lastMid, baseline: baseline,
+      };
     }).sort(function (a, b) { return b.count - a.count; }).slice(0, 4);
     return { period: upcomingPeriod, rows: rows };
   })();
@@ -331,17 +337,38 @@ export default function PreEarningsBrief({ company }) {
           </div>
           {upcomingFyRows && upcomingFyRows.rows.length > 0 ? (
             <div className="space-y-1">
-              {upcomingFyRows.rows.map(function (r) {
-                return (
-                  <div key={r.metric} className="flex items-center gap-2 text-[12px]">
-                    <span className="flex-1 text-gray-700 dark:text-slate-300 truncate" title={r.metric}>{r.metric}</span>
-                    <span style={{ color: arrowColor(r.arrow) }} className="text-[11px] font-semibold w-4 text-center">{r.arrow}</span>
-                    <span className={"tabular-nums font-semibold w-16 text-right " + (isFiniteNum(r.yoy) ? (r.yoy >= 0 ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400") : "text-gray-400 dark:text-slate-500")}>
-                      {isFiniteNum(r.yoy) ? fmtPct(r.yoy) : "—"}
-                    </span>
-                  </div>
-                );
-              })}
+              {(function(){
+                /* Reporting currency for absolute tooltip — use the ord
+                   ticker's currency so JPY/EUR/etc. labels are right.  */
+                const reportingCcy = (function(){
+                  const ord = (company.tickers || []).find(function(t){return t.isOrdinary;});
+                  if (ord && ord.currency) return ord.currency.toUpperCase();
+                  if (company.valuation && company.valuation.currency) return company.valuation.currency.toUpperCase();
+                  return "";
+                })();
+                return upcomingFyRows.rows.map(function (r) {
+                  /* Absolute tooltip: show low–high range or single mid,
+                     plus the prior FY actual baseline used for the Y/Y. */
+                  const lowAbs  = isFiniteNum(r.lastLow)  ? fmtMoney(r.lastLow,  reportingCcy) : null;
+                  const highAbs = isFiniteNum(r.lastHigh) ? fmtMoney(r.lastHigh, reportingCcy) : null;
+                  const midAbs  = isFiniteNum(r.lastMid)  ? fmtMoney(r.lastMid,  reportingCcy) : null;
+                  let absText = "";
+                  if (r.lastLow !== r.lastHigh && lowAbs && highAbs) absText = lowAbs + " – " + highAbs;
+                  else if (midAbs) absText = midAbs;
+                  let title = r.metric;
+                  if (absText) title += "\nLatest mid-guidance: " + absText;
+                  if (isFiniteNum(r.baseline)) title += "\nPrior FY actual: " + fmtMoney(r.baseline, reportingCcy);
+                  return (
+                    <div key={r.metric} className="flex items-center gap-2 text-[12px]" title={title}>
+                      <span className="flex-1 text-gray-700 dark:text-slate-300 truncate">{r.metric}</span>
+                      <span style={{ color: arrowColor(r.arrow) }} className="text-[11px] font-semibold w-4 text-center">{r.arrow}</span>
+                      <span className={"tabular-nums font-semibold w-16 text-right " + (isFiniteNum(r.yoy) ? (r.yoy >= 0 ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400") : "text-gray-400 dark:text-slate-500")}>
+                        {isFiniteNum(r.yoy) ? fmtPct(r.yoy) : "—"}
+                      </span>
+                    </div>
+                  );
+                });
+              })()}
               <div className="text-[10px] text-gray-400 dark:text-slate-500 italic mt-1">
                 Y/Y vs prior FY actual · ▲ revised up since last announcement · ▼ revised down · open the Guidance tab for the full timeline
               </div>

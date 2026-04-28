@@ -2,8 +2,9 @@ import { useState } from "react";
 import { TP_CHANGES, THESIS_STATUSES } from '../../constants/index.js';
 import { apiCall } from '../../api/index.js';
 import { useAlert } from '../ui/DialogProvider.jsx';
+import GuidanceVsActual from '../companies/GuidanceVsActual.jsx';
 
-function EarningsEntry({ entry, onSave, onDelete, currency }) {
+function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
   var [e, setE] = useState(entry);
   var [open, setOpen] = useState(entry.open || false);
   var [aiOpen, setAiOpen] = useState(false);
@@ -104,6 +105,12 @@ function EarningsEntry({ entry, onSave, onDelete, currency }) {
 
       {open && (
         <div className="p-3.5 bg-white dark:bg-slate-900">
+          {/* Guidance vs Actual — renders only when this entry's reportDate
+              falls within ~90 days after a closed FY-end in c.guidance.history
+              (i.e. this is the FY-end report). For mid-FY quarterly reports
+              this is null and the form looks unchanged. */}
+          <GuidanceVsActual company={company} entry={e} currency={currency}/>
+
           {/* AI auto-fill */}
           <div className="mb-3.5 border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
             <div

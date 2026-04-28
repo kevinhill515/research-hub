@@ -587,6 +587,7 @@ export function CompanyDetail(props){
             {earningsEntries.length===0&&<p className="text-sm text-gray-500 dark:text-slate-400">No earnings entries yet. Click "+ Add earnings entry" to get started.</p>}
             {earningsEntries.map(function(entry){return(
               <EarningsEntry key={entry.id} entry={entry} currency={activeCurrency} valuation={selCo.valuation||{}}
+                company={selCo}
                 onSave={function(saved){saveEarningsEntry(selCo,saved);}}
                 onDelete={function(){deleteEarningsEntry(selCo,entry.id);}}
               />
