@@ -2,6 +2,12 @@
 @import "./print.css";
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Hide scrollbar but keep scroll functional. Used on horizontal tab
+ * strips at small breakpoints — tabs scroll left/right but the
+ * scrollbar doesn't eat vertical space. */
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
 @theme {
   --color-surface: #ffffff;
   --color-surface-sec: #f8fafc;

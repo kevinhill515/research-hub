@@ -75,11 +75,36 @@ const RULE_EDITOR_SCHEMA = [
   },
 ];
 
+const STATUS_FILTER_DEFAULT = ["Own", "Focus", "Watch"];
+const STATUS_FILTER_KEY = "ccd:alertStatusFilter";
+const ALL_STATUSES = ["Own", "Focus", "Watch", "Sold"];
+
 export default function AlertsPanel({ onJumpToCompany }) {
   const { companies, alertRules, setAlertRules } = useCompanyContext();
   const [open, setOpen] = useState(false);
   const [view, setView] = useState("alerts"); /* "alerts" | "rules" */
   const [activeRuleFilter, setActiveRuleFilter] = useState("all"); /* "all" or a ruleId */
+  /* Status filter — defaults to active book (Own + Focus + Watch).
+     Sold names usually aren't worth alerting on, so they're off by
+     default but available to toggle on. Persists across reloads. */
+  const [statusFilter, setStatusFilter] = useState(function(){
+    try {
+      const saved = localStorage.getItem(STATUS_FILTER_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {}
+    return STATUS_FILTER_DEFAULT.slice();
+  });
+  function toggleStatus(s) {
+    setStatusFilter(function(prev){
+      const cur = prev || [];
+      const next = cur.indexOf(s) >= 0 ? cur.filter(function(x){return x !== s;}) : cur.concat([s]);
+      try { localStorage.setItem(STATUS_FILTER_KEY, JSON.stringify(next)); } catch (e) {}
+      return next;
+    });
+  }
   /* Draft rule state — buffered so the user can tweak fields without
      causing every keystroke to recompute alerts + write to supabase.
      Saved on click. */
@@ -156,13 +181,26 @@ export default function AlertsPanel({ onJumpToCompany }) {
     return function () { document.removeEventListener("mousedown", onDoc); };
   }, [open]);
 
+  /* Pre-filter the company pool by status so alerts only fire for the
+     subset the user cares about. Companies without a status set are
+     included only when "Own" is in the filter (Own is the default
+     "actively held" bucket). */
+  const filteredCompanies = useMemo(function(){
+    const set = new Set(statusFilter || []);
+    return (companies || []).filter(function(c){
+      const s = c && c.status;
+      if (!s) return set.has("Own"); /* unset status treated as Own-ish */
+      return set.has(s);
+    });
+  }, [companies, statusFilter]);
+
   /* Warn-severity alerts only. Apply the rule filter when set, then
      sort by magnitude (largest first) so the most-actionable items
      bubble up regardless of company name. */
   const allWarns = useMemo(function () {
-    return evaluateAlerts(companies || [], alertRules || {})
+    return evaluateAlerts(filteredCompanies, alertRules || {})
       .filter(function (a) { return a.severity === "warn"; });
-  }, [companies, alertRules]);
+  }, [filteredCompanies, alertRules]);
 
   /* Per-rule counts power the filter pills (so the user can see at a
      glance which rules currently have alerts firing). */
@@ -208,7 +246,7 @@ export default function AlertsPanel({ onJumpToCompany }) {
         🚩 Flags{totalCount > 0 ? " (" + totalCount + ")" : ""}
       </button>
       {open && (
-        <div className="absolute right-0 mt-1 w-[480px] max-h-[600px] overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xl z-50">
+        <div className="fixed sm:absolute right-2 sm:right-0 left-2 sm:left-auto top-12 sm:top-auto sm:mt-1 sm:w-[480px] max-h-[80vh] sm:max-h-[600px] overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xl z-50">
           <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2">
             <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">
               {view === "rules" ? "Alert Rules" : "Active Flags"}
@@ -230,6 +268,31 @@ export default function AlertsPanel({ onJumpToCompany }) {
           </div>
           {view === "alerts" && (
             <>
+              {/* Status filter — Own / Focus / Watch / Sold pills.
+                  Defaults to Own + Focus + Watch (active book); Sold
+                  off by default but available. Persisted to localStorage. */}
+              <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-700 flex flex-wrap gap-1.5 items-center">
+                <span className="text-[9px] uppercase tracking-wide text-gray-400 dark:text-slate-500 font-semibold mr-1">Status</span>
+                {ALL_STATUSES.map(function(s){
+                  const on = (statusFilter || []).indexOf(s) >= 0;
+                  /* Status-specific colors so the pills read like the
+                     status pills used elsewhere in the app. */
+                  const cfg = { Own: ["#dcfce7","#166534","#86efac"], Focus: ["#dbeafe","#1e40af","#93c5fd"], Watch: ["#fef9c3","#854d0e","#fde047"], Sold: ["#fee2e2","#991b1b","#fca5a5"] }[s];
+                  const style = on
+                    ? { background: cfg[0], color: cfg[1], borderColor: cfg[2] }
+                    : {};
+                  return (
+                    <button
+                      key={s}
+                      onClick={function(){ toggleStatus(s); }}
+                      className={"text-[10px] px-2 py-0.5 rounded-full border cursor-pointer " + (on ? "font-semibold" : "bg-white dark:bg-slate-900 text-gray-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800")}
+                      style={style}
+                    >
+                      {s}
+                    </button>
+                  );
+                })}
+              </div>
               {/* Rule filter pills — All + one per rule that's currently
                   firing. Click a pill to scope the list to that rule. */}
               <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-700 flex flex-wrap gap-1.5 items-center">

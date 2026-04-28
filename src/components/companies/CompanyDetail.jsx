@@ -240,9 +240,10 @@ export function CompanyDetail(props){
               </div>
             </div>);
           })()}
-          {/* Tabs */}
-          <div className="flex gap-1 mb-3.5 flex-wrap">
-            {coTabs.map(function(t){return <button key={t.id} title={t.title||undefined} className={coView===t.id?TABSM_ACTIVE:TABSM_INACTIVE} onClick={function(){setCoView(t.id);}}>{t.label}</button>;})}
+          {/* Tabs — horizontally scrollable on small screens (16+ tabs
+              would otherwise wrap to 4-5 rows on a phone). */}
+          <div className="flex gap-1 mb-3.5 overflow-x-auto sm:flex-wrap sm:overflow-visible no-scrollbar">
+            {coTabs.map(function(t){return <button key={t.id} title={t.title||undefined} className={(coView===t.id?TABSM_ACTIVE:TABSM_INACTIVE)+" whitespace-nowrap shrink-0"} onClick={function(){setCoView(t.id);}}>{t.label}</button>;})}
           </div>
 
           {/* TEMPLATE TAB */}

@@ -317,6 +317,12 @@ function MetricTile({ company, metric, rowsByMetric, currency }) {
                 <span className="text-gray-400 dark:text-slate-500 font-normal"> · baseline {fmtMoney(g.baseline.value, currency)} <span className="italic">({g.baseline.source})</span></span>
               )}
             </div>
+            {/* Wraps all per-FY rows in a horizontal-scroll container
+                so the 5-column layout stays intact on mobile (just
+                scrolls). min-w ensures the columns keep their pixel
+                widths instead of squishing. */}
+            <div className="overflow-x-auto sm:overflow-visible">
+            <div className="min-w-[480px]">
             {/* Column header strip — clarifies what each column is. */}
             <div className={"grid " + COLS + " gap-1.5 items-end mb-0.5 text-[10px] uppercase tracking-wide text-gray-400 dark:text-slate-500"}>
               <div>Date</div>
@@ -382,6 +388,8 @@ function MetricTile({ company, metric, rowsByMetric, currency }) {
                 </div>
               );
             })}
+            </div>
+            </div>
             {g.closedSummary && (
               <div className="mt-1 text-[11px] text-gray-500 dark:text-slate-400 italic" title={"The Actual value is read from the FactSet upload's 'Actual' column. Sourced from the row issued " + dateLabel(g.closedSummary.sourceDate) + ". Verify in your FactSet sheet: filter Item=" + metric + " AND Period=" + g.period + ", look at the Actual column."}>
                 Closed: actual {fmtMoney(g.closedSummary.actual, currency)}
