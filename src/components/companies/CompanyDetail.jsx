@@ -24,6 +24,7 @@ import CompanyDashboard from './CompanyDashboard.jsx';
 import SegmentsTab from './SegmentsTab.jsx';
 import EpsRevisionsTab from './EpsRevisionsTab.jsx';
 import GuidanceTab from './GuidanceTab.jsx';
+import PreEarningsBrief from './PreEarningsBrief.jsx';
 import SnapshotTab from './SnapshotTab.jsx';
 
 const INP = "text-sm px-2 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:outline-none";
@@ -578,6 +579,7 @@ export function CompanyDetail(props){
 
           {/* EARNINGS & THESIS CHECK TAB */}
           {coView==="earnings"&&(<div>
+            <PreEarningsBrief company={selCo}/>
             <div className="flex items-center justify-between mb-4">
               <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">Earnings & Thesis Check</div>
               <button onClick={function(){var e=blankEarnings();var u=Object.assign({},selCo,{earningsEntries:[e].concat(earningsEntries)});setSelCo(u);setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});});}} className={BTN_SM}>+ Add earnings entry</button>
