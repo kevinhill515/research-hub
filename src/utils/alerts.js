@@ -34,11 +34,27 @@ import { getDataStatus } from "./dataStatus.js";
  * for the rule yet. Keeps the UI working before the user customizes
  * any thresholds. */
 export const DEFAULT_RULES = {
-  "price-1d":           { enabled: true, params: { threshold: 0.05 } },          /* |1D return| >= 5% */
-  "guidance-revised":   { enabled: true, params: { directions: ["down"] } },     /* guidance revised down on any tracked metric */
-  "eps-revisions-trend":{ enabled: true, params: { months: 3, threshold: 0.02, consecutive: 2 } }, /* 2+ consecutive monthly downward revisions on FY+1, total drop >= 2% */
-  "earnings-imminent":  { enabled: true, params: { withinDays: 7 } },
-  "stale-data":         { enabled: false, params: {} },                          /* off by default — already shown as ⚠ on tabs */
+  /* Stock fell >= threshold on the day. Only fires on declines (not
+     rallies) — a sharp drop is a triage signal; a sharp rally rarely
+     needs immediate review. Set direction="any" if you want both. */
+  "price-1d":           { enabled: true,  params: { threshold: 0.08, direction: "down" } },
+
+  /* Guidance revised in a configured direction on any tracked metric.
+     Only "down" by default since upward revisions are usually benign. */
+  "guidance-revised":   { enabled: true,  params: { directions: ["down"] } },
+
+  /* N+ consecutive monthly EPS revisions in one direction with
+     cumulative magnitude above threshold. Default: 2 months, 2%, down. */
+  "eps-revisions-trend":{ enabled: true,  params: { consecutive: 2, threshold: 0.02 } },
+
+  /* Earnings report within N days. Severity is "info" so it surfaces
+     only when the user enables info-level alerts (the panel filters
+     to warn-only by default). */
+  "earnings-imminent":  { enabled: true,  params: { withinDays: 7 } },
+
+  /* Stale data — already badged as ⚠ on each per-tab heading, so off
+     here to avoid double-warning. */
+  "stale-data":         { enabled: false, params: {} },
 };
 
 /* Helper: read a window from a ticker's perf object with USD-preference
@@ -58,16 +74,25 @@ function readUsdPerf(company, key) {
 
 /* ----------------------------- Rule evaluators ----------------------------- */
 
-/* Stock moved ≥ threshold on the day. */
+/* Stock moved ≥ threshold on the day in the configured direction.
+ *   direction = "down" (default) — fires only when v <= -threshold
+ *   direction = "up"             — fires only when v >= threshold
+ *   direction = "any"            — fires when |v| >= threshold (legacy) */
 function evalPrice1D(company, params) {
-  const t = (params && params.threshold) || 0.05;
+  const t = (params && params.threshold) || 0.08;
+  const dir = (params && params.direction) || "down";
   const v = readUsdPerf(company, "1D");
-  if (!isFiniteNum(v) || Math.abs(v) < t) return null;
-  const dir = v >= 0 ? "up" : "down";
+  if (!isFiniteNum(v)) return null;
+  let fires = false;
+  if (dir === "up")        fires = v >=  t;
+  else if (dir === "any")  fires = Math.abs(v) >= t;
+  else /* down (default) */ fires = v <= -t;
+  if (!fires) return null;
+  const verb = v >= 0 ? "Rallied +" : "Fell ";
   return {
     severity: "warn",
-    message: "Moved " + (v >= 0 ? "+" : "") + (v * 100).toFixed(1) + "% today",
-    context: dir === "up" ? "above" : "below",
+    message: verb + (v * 100).toFixed(1) + "% today",
+    context: null,
   };
 }
 
