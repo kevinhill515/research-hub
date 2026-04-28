@@ -59,8 +59,7 @@ export default function ThisWeekEarnings({ companies, onSelectCompany }) {
   }
 
   return (
-    <div className="mb-2 px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex items-center gap-2 flex-wrap">
-      <span className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-semibold">This week</span>
+    <div className="flex items-center gap-2 flex-wrap">
       {upcoming.map(function (u) {
         const dn = parseDate(u.iso);
         const dow = dn ? DAY_NAMES[dn.getDay()] : "";

@@ -29,7 +29,17 @@ function lastDayOfMonth(year, monthNum) {
   return new Date(year, monthNum, 0).getDate();
 }
 
-/* Year of the most recently completed FY for a company. */
+/* Reporting-lag window in days. After an FY closes the company has
+ * this much time to report and re-import before the stale-data badge
+ * starts firing — covers the typical 4-8 weeks between FY-end and
+ * earnings call. Without this, a Mar-FY name flips to ⚠ on April 1
+ * even though they don't report until mid-May. */
+const FY_REPORT_LAG_DAYS = 30;
+
+/* Year of the most recently completed FY for a company, with a
+ * `FY_REPORT_LAG_DAYS` grace period: an FY isn't treated as "should be
+ * imported by now" until that many days have passed since its
+ * fiscal-year-end. */
 export function expectedLatestFYYear(company, today) {
   const t = today || new Date();
   const fyMonthRaw = (company && company.valuation && company.valuation.fyMonth) || "Dec";
@@ -37,7 +47,13 @@ export function expectedLatestFYYear(company, today) {
   const monthNum = MONTH_FROM_NAME[monthKey] || 12;
   const lastDay = lastDayOfMonth(t.getFullYear(), monthNum);
   const fyEndThisYear = new Date(t.getFullYear(), monthNum - 1, lastDay, 23, 59, 59);
-  return t >= fyEndThisYear ? t.getFullYear() : t.getFullYear() - 1;
+  /* Apply lag: only treat the FY as "should be imported" once we're
+     `FY_REPORT_LAG_DAYS` past its end. Until then, the prior FY is the
+     latest one we expect to see in the data. */
+  const lagMs = FY_REPORT_LAG_DAYS * 24 * 3600 * 1000;
+  return (t.getTime() - lagMs) >= fyEndThisYear.getTime()
+    ? t.getFullYear()
+    : t.getFullYear() - 1;
 }
 
 /* Pull a 4-digit year from any string-ish year/period value. */
@@ -147,5 +163,5 @@ export function statusBadge(status) {
 /* Tooltip text to surface why ⚠ shows. */
 export function staleReason(company, kind, today) {
   const expected = expectedLatestFYYear(company, today);
-  return "Latest imported data is one or more fiscal years behind. Expected FY ending in " + expected + " has closed — re-import to refresh.";
+  return "Latest imported data is one or more fiscal years behind. Expected FY ending in " + expected + " closed > 30 days ago — re-import to refresh.";
 }

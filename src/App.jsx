@@ -67,6 +67,14 @@ export default function App(){
   const [showGlobalSearch,setShowGlobalSearch]=useState(false);
   const [dashPort,setDashPort]=useState("All");
   const [dashSubTab,setDashSubTab]=useState("markets");
+  /* Collapsible Companies-tab notice panels — defaults to false so the
+     view stays clean; localStorage persists the user's preference. */
+  const [showFyMonthMissing,setShowFyMonthMissing]=useState(function(){
+    try { return localStorage.getItem("ccd:showFyMonthMissing") === "1"; } catch (e) { return false; }
+  });
+  const [showThisWeek,setShowThisWeek]=useState(function(){
+    try { return localStorage.getItem("ccd:showThisWeek") === "1"; } catch (e) { return false; }
+  });
   const [companiesView,setCompaniesView]=useState("standard"); /* "standard" | "metrics" */
   const [metricsVisibleCols,setMetricsVisibleCols]=useState(DEFAULT_METRICS_VISIBLE);
   const [calFilter,setCalFilter]=useState("All");
@@ -219,33 +227,79 @@ export default function App(){
       {tab==="companies"&&!selCo&&(<div>
         {(function(){var owners={};var dupes={};companies.forEach(function(c){(c.tickers||[]).forEach(function(t){var tk=(t.ticker||"").toUpperCase();if(!tk)return;if(owners[tk]&&owners[tk]!==c.id){if(!dupes[tk])dupes[tk]=[owners[tk]];if(dupes[tk].indexOf(c.id)<0)dupes[tk].push(c.id);}else if(!owners[tk]){owners[tk]=c.id;}});});var dupeList=Object.keys(dupes);if(dupeList.length===0)return null;return(<div className="mb-2 px-3.5 py-2 bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800 rounded-lg"><div className="text-xs font-semibold text-amber-800 dark:text-amber-300 mb-1">⚠ Duplicate tickers detected ({dupeList.length})</div><div className="text-[11px] text-amber-700 dark:text-amber-400 mb-1">Each ticker should belong to only one company. The same ticker on multiple companies can cause incorrect rep weight attribution. Click a name to fix.</div><div className="flex flex-col gap-1">{dupeList.map(function(tk){var ids=dupes[tk];var names=ids.map(function(id){var c=companies.find(function(x){return x.id===id;});return c?c.name:"?";});return(<div key={tk} className="text-[11px]"><span className="font-mono font-semibold text-amber-900 dark:text-amber-200">{tk}</span><span className="text-amber-700 dark:text-amber-400"> on: </span>{names.map(function(n,i){var co=companies.find(function(x){return x.name===n;});return <span key={i}>{i>0&&", "}<span onClick={function(){if(co){setSelCo(co);setCoView("section:Overview");}}} className="underline cursor-pointer hover:text-amber-900 dark:hover:text-amber-200">{n}</span></span>;})}</div>);})}</div></div>);})()}
         {(function(){var byName={};companies.forEach(function(c){var key=(c.name||"").trim().toLowerCase();if(!key)return;if(!byName[key])byName[key]=[];byName[key].push(c);});var nameDupes=Object.keys(byName).filter(function(k){return byName[k].length>1;});if(nameDupes.length===0)return null;return(<div className="mb-2 px-3.5 py-2 bg-rose-50 dark:bg-rose-950/30 border border-rose-300 dark:border-rose-800 rounded-lg"><div className="flex items-center justify-between mb-1"><div className="text-xs font-semibold text-rose-800 dark:text-rose-300">⚠ Duplicate company names ({nameDupes.length})</div><button onClick={function(){var firstDupes=nameDupes.map(function(k){return byName[k][0].name;});if(window.confirm("Auto-merge duplicates?\n\nFor each set of duplicate names, the most recently updated copy will be kept (preferring entries with sections/portfolios populated). Older duplicates will be deleted.\n\nAffected: "+firstDupes.slice(0,5).join(", ")+(firstDupes.length>5?" +"+(firstDupes.length-5)+" more":""))){setCompanies(function(prev){var byNameLocal={};prev.forEach(function(c){var k=(c.name||"").trim().toLowerCase();if(!k)return;if(!byNameLocal[k])byNameLocal[k]=[];byNameLocal[k].push(c);});var keepIds=new Set();Object.keys(byNameLocal).forEach(function(k){var group=byNameLocal[k];if(group.length===1){keepIds.add(group[0].id);return;}var best=group.reduce(function(a,b){var sa=Object.keys(a.sections||{}).length+(a.updateLog||[]).length+(a.portfolios||[]).length+(a.tickers||[]).length;var sb=Object.keys(b.sections||{}).length+(b.updateLog||[]).length+(b.portfolios||[]).length+(b.tickers||[]).length;return sb>sa?b:a;});keepIds.add(best.id);});return prev.filter(function(c){return keepIds.has(c.id);});});}}} className="text-[11px] px-2 py-0.5 rounded-md bg-rose-600 dark:bg-rose-700 text-white hover:bg-rose-700 dark:hover:bg-rose-600 transition-colors">Auto-merge duplicates</button></div><div className="text-[11px] text-rose-700 dark:text-rose-400 mb-1">Multiple company entries share the same name. This can cause double-counting in rep weights and confused price imports. Click a name to open it.</div><div className="flex flex-col gap-1 max-h-48 overflow-y-auto">{nameDupes.map(function(k){var group=byName[k];return(<div key={k} className="text-[11px]"><span className="font-medium text-rose-900 dark:text-rose-200">{group[0].name}</span><span className="text-rose-700 dark:text-rose-400"> \u00d7 {group.length} entries: </span>{group.map(function(c,i){return <span key={c.id}>{i>0&&", "}<span onClick={function(){setSelCo(c);setCoView("section:Overview");}} className="underline cursor-pointer hover:text-rose-900 dark:hover:text-rose-200">[{(c.tier||"no tier")}{c.status?" \u00b7 "+c.status:""}]</span></span>;})}</div>);})}</div></div>);})()}
-        {/* Data-health: companies missing valuation.fyMonth. fyMonth is
-            needed by stale-data badges, the Earnings cycle Q1-Q4 grid,
-            year-header rendering on Financials/Ratios, and the FY
-            arithmetic in the Pre-Earnings Brief. Companies created via
-            bulk import sometimes don't get this field populated; the
-            notice surfaces them so they can be fixed. */}
+        {/* Data-health: companies missing valuation.fyMonth. Collapsed
+            by default — open via the small chevron header. Persisted
+            state lives in localStorage so the user's preference survives
+            tab switches and page reloads. */}
         {(function(){
           var missing = companies.filter(function(c){
             return !(c && c.valuation && c.valuation.fyMonth);
           });
           if(missing.length === 0) return null;
           return (
-            <div className="mb-2 px-3.5 py-2 bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800 rounded-lg">
-              <div className="text-xs font-semibold text-amber-800 dark:text-amber-300 mb-1">⚠ {missing.length} compan{missing.length===1?"y":"ies"} missing FY-end month</div>
-              <div className="text-[11px] text-amber-700 dark:text-amber-400 mb-1">Set <code>valuation.fyMonth</code> (e.g. <code>Mar</code>, <code>Sep</code>, defaults to <code>Dec</code>) on each. Stale-data badges, the Q1-Q4 grid, and Pre-Earnings Brief math all depend on this. Click a name to fix.</div>
-              <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
-                {missing.slice(0, 100).map(function(c){
-                  return (
-                    <span key={c.id} onClick={function(){setSelCo(c);setCoView("section:Valuation");}} className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 cursor-pointer hover:bg-amber-200 dark:hover:bg-amber-900/60">{c.name}</span>
-                  );
-                })}
-                {missing.length > 100 && <span className="text-[11px] text-amber-700 dark:text-amber-400 italic self-center">+ {missing.length - 100} more</span>}
+            <div className="mb-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800">
+              <div onClick={function(){setShowFyMonthMissing(function(v){var nv=!v;try{localStorage.setItem("ccd:showFyMonthMissing",nv?"1":"0");}catch(e){}return nv;});}} className="px-3.5 py-2 cursor-pointer flex items-center gap-2">
+                <span className="text-[11px] text-amber-700 dark:text-amber-400">{showFyMonthMissing?"▼":"▶"}</span>
+                <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">⚠ {missing.length} compan{missing.length===1?"y":"ies"} missing FY-end month</span>
+                <span className="text-[10px] text-amber-700 dark:text-amber-400 italic ml-auto">{showFyMonthMissing?"click to collapse":"click to expand"}</span>
               </div>
+              {showFyMonthMissing&&(
+                <div className="px-3.5 pb-2">
+                  <div className="text-[11px] text-amber-700 dark:text-amber-400 mb-1">Set <code>valuation.fyMonth</code> (e.g. <code>Mar</code>, <code>Sep</code>, defaults to <code>Dec</code>) on each. Stale-data badges, the Q1-Q4 grid, and Pre-Earnings Brief math all depend on this. Click a name to fix.</div>
+                  <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
+                    {missing.slice(0, 100).map(function(c){
+                      return (
+                        <span key={c.id} onClick={function(){setSelCo(c);setCoView("section:Valuation");}} className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 cursor-pointer hover:bg-amber-200 dark:hover:bg-amber-900/60">{c.name}</span>
+                      );
+                    })}
+                    {missing.length > 100 && <span className="text-[11px] text-amber-700 dark:text-amber-400 italic self-center">+ {missing.length - 100} more</span>}
+                  </div>
+                </div>
+              )}
             </div>
           );
         })()}
-        <ThisWeekEarnings companies={displayedCos} onSelectCompany={function(c){setSelCo(c);setCoView("dashboard");}}/>
+        {/* This-week earnings — collapsible. Header summarizes count
+            even when collapsed so the user can see "5 reports this week"
+            without opening it. */}
+        {(function(){
+          var t0=new Date();t0.setHours(0,0,0,0);
+          function dayOf(iso){
+            if(!iso)return null;
+            var d=parseDate(iso);
+            if(!d)return null;
+            return Math.round((d.getTime()-t0.getTime())/(24*3600*1000));
+          }
+          var thisWeekCount=displayedCos.filter(function(c){
+            var iso=(c.guidance&&c.guidance.nextReportDate)||null;
+            if(!iso){
+              ((c.earningsEntries)||[]).forEach(function(e){
+                if(!e.reportDate)return;
+                var d=parseDate(e.reportDate);
+                if(!d||d<t0)return;
+                if(!iso||d<parseDate(iso))iso=e.reportDate;
+              });
+            }
+            var n=dayOf(iso);
+            return n!=null&&n>=0&&n<=7;
+          }).length;
+          if(thisWeekCount===0)return null;
+          return (
+            <div className="mb-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
+              <div onClick={function(){setShowThisWeek(function(v){var nv=!v;try{localStorage.setItem("ccd:showThisWeek",nv?"1":"0");}catch(e){}return nv;});}} className="px-3 py-2 cursor-pointer flex items-center gap-2">
+                <span className="text-[11px] text-gray-500 dark:text-slate-400">{showThisWeek?"▼":"▶"}</span>
+                <span className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-semibold">This week</span>
+                <span className="text-[11px] text-gray-700 dark:text-slate-300 font-medium">{thisWeekCount} report{thisWeekCount===1?"":"s"}</span>
+                <span className="text-[10px] text-gray-400 dark:text-slate-500 italic ml-auto">{showThisWeek?"click to collapse":"click to expand"}</span>
+              </div>
+              {showThisWeek&&(
+                <div className="px-3 pb-2 -mt-1">
+                  <ThisWeekEarnings companies={displayedCos} onSelectCompany={function(c){setSelCo(c);setCoView("dashboard");}}/>
+                </div>
+              )}
+            </div>
+          );
+        })()}
         <div className="flex gap-2 flex-wrap mb-1.5 items-center">
           <input ref={searchRef} value={coSearch} onChange={function(e){setCoSearch(e.target.value);}} placeholder="Search... (/ to focus)" className={INP + " flex-1 min-w-[120px] !text-xs !px-2 !py-1"}/>
           <select value={coSort} onChange={function(e){var v=e.target.value;setCoSort(v);var descByDefault=v==="Last Reviewed"||v==="Last Updated"||v==="5D%"||v==="MOS";setCoSortDir(descByDefault?"desc":"asc");}} className={INP + " !text-xs !px-2 !py-1"}>{CO_SORTS.map(function(s){return <option key={s}>{s}</option>;})}</select>
