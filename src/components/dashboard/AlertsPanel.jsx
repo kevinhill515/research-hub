@@ -70,6 +70,7 @@ const RULE_EDITOR_SCHEMA = [
   {
     id: "stale-data",
     title: "Data source stale",
+    description: "Fires when any of Financials / Ratios / EPS Revisions / Guidance is one or more FYs behind the calendar (with a 30-day reporting-lag grace period). Off by default because the same condition is already badged ⚠ on each per-tab heading; turn on if you want the Flags pill to also serve as a 're-import this week' triage list.",
     fields: [],
   },
 ];
@@ -321,6 +322,9 @@ export default function AlertsPanel({ onJumpToCompany }) {
                           <span className="text-xs font-semibold text-gray-900 dark:text-slate-100">{rule.title}</span>
                         </label>
                       </div>
+                      {rule.description && (
+                        <div className="text-[10px] text-gray-500 dark:text-slate-400 italic mb-1 leading-snug">{rule.description}</div>
+                      )}
                       {r.enabled && rule.fields.length > 0 && (
                         <div className="grid grid-cols-2 gap-2 mt-1.5">
                           {rule.fields.map(function(f){
