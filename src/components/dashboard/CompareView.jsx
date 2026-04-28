@@ -89,7 +89,7 @@ const ROWS = [
      object (USD-preferred — the US ticker gets priority since side-by-
      side comparison only makes sense in a single currency). Falls back
      to legacy ord.perf5d / company.metrics.perf for un-refreshed data. */
-  { group: "Trailing",  label: "1D",   kind: "pct", polarity: "higher", get: function (c) { return readTickerPerf(c, "TODAY"); } },
+  { group: "Trailing",  label: "1D",   kind: "pct", polarity: "higher", get: function (c) { return readTickerPerf(c, "1D"); } },
   { group: "Trailing",  label: "5D",   kind: "pct", polarity: "higher", get: function (c) { return readTickerPerf(c, "5D"); } },
   { group: "Trailing",  label: "MTD",  kind: "pct", polarity: "higher", get: function (c) { return readTickerPerf(c, "MTD"); } },
   { group: "Trailing",  label: "1M",   kind: "pct", polarity: "higher", get: function (c) { return readTickerPerf(c, "1M"); } },
@@ -104,7 +104,9 @@ const ROWS = [
 
 /* Resolve a trailing-return value for `key` ("5D", "1Y", etc.). USD
  * first via the US ticker, then ord, then legacy company.metrics.perf,
- * then legacy ord.perf5d for the 5D-only special case. */
+ * then legacy ord.perf5d for the 5D-only special case. Includes a
+ * 1D ↔ TODAY back-compat fallback for data imported during the brief
+ * window when "TODAY" was the storage key for 1D. */
 function readTickerPerf(c, key) {
   const tickers = (c && c.tickers) || [];
   const ord = tickers.find(function (t) { return t.isOrdinary; }) || {};
@@ -113,6 +115,7 @@ function readTickerPerf(c, key) {
   const src = usd || ord;
   const p = src && src.perf;
   if (p && p[key] !== undefined && p[key] !== null && isFiniteNum(p[key])) return p[key];
+  if (key === "1D" && p && isFiniteNum(p.TODAY)) return p.TODAY;
   const legacy = parseFloatOrNull(((c.metrics || {}).perf || {})[key]);
   if (legacy !== null) return legacy;
   if (key === "5D") {
