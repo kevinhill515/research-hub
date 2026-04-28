@@ -3,7 +3,6 @@ import { PORTFOLIOS, TIER_ORDER, COUNTRY_ORDER, SECTOR_ORDER } from '../../const
 import { shortSector, sectorStyle, countryStyle, getTiers, tierPillStyle, tierBg, reviewedColor, daysSince, todayStr, calcNormEPS, calcTP, calcMOS, fmtMOS, fmtMOS0, mosBg, getTpFixed, tierToStatus, truncName } from '../../utils/index.js';
 import { evaluateAlertsForCompany } from '../../utils/alerts.js';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
-import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import StatusPill from '../ui/StatusPill.jsx';
 import NotesCell from '../forms/NotesCell.jsx';
 import ActionCell from '../forms/ActionCell.jsx';
