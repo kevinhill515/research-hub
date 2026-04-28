@@ -111,7 +111,16 @@ function AnnotationCard({ ann, onReply, onResolve, onUnresolve, onDelete, onUpda
   }
 
   var scopeLabel = "";
-  if(ann.scope === "portfolio") scopeLabel = "Portfolio: " + (PORT_NAMES[ann.portfolio] || ann.portfolio);
+  if(ann.scope === "portfolio") {
+    /* Multi-portfolio Portfolio scope: list all when array set;
+       legacy single-portfolio annotations still use the string. */
+    var pPorts = Array.isArray(ann.portfolios) && ann.portfolios.length > 0
+      ? ann.portfolios
+      : (ann.portfolio ? [ann.portfolio] : []);
+    scopeLabel = "Portfolio: " + (pPorts.length > 0
+      ? pPorts.map(function(p){return PORT_NAMES[p] || p;}).join(" & ")
+      : "—");
+  }
   else if(ann.scope === "company") scopeLabel = "Company-wide";
   else if(ann.scope === "row") {
     /* "Row" was renamed "Holding" per IC. New annotations carry a
@@ -212,10 +221,11 @@ export default function DiscussionsPanel({ open, onClose, initialScope, initialP
     var s = initialScope || "portfolio";
     return s === "row" ? "holding" : s;
   });
-  var [newPortfolio, setNewPortfolio] = useState(initialPortfolio || "GL");
-  /* Holding scope can target multiple portfolios. Initial state seeded
-     with the single initialPortfolio (when discussion was opened from
-     a specific portfolio-row context). */
+  /* Both Portfolio and Holding scopes support multi-portfolio
+     targeting via a chip selector. Initial state seeded with the
+     single initialPortfolio when the panel was opened from a specific
+     portfolio context, else default to GL for Portfolio scope. */
+  var [newPortfolio, setNewPortfolio] = useState(initialPortfolio || "GL"); /* legacy single-port write */
   var [newPortfolios, setNewPortfolios] = useState(function(){
     return initialPortfolio ? [initialPortfolio] : [];
   });
@@ -248,13 +258,17 @@ export default function DiscussionsPanel({ open, onClose, initialScope, initialP
 
   function submitNew(){
     if(!newText.trim()) return;
-    /* Persist "holding" scope as legacy "row" + portfolios[] array.
-       Existing readers that look at `a.portfolio` continue to work
-       (we still write the first portfolio there for a holding pinned
-       to one); new readers can use `a.portfolios` for multi-portfolio
-       targeting. */
+    /* Persist "holding" scope as legacy "row" + portfolios[] array
+       so existing readers that look at `a.portfolio` keep working
+       (we write the first portfolio there); new readers consume the
+       portfolios[] array for multi-portfolio targeting. */
     var ann = { scope: newScope === "holding" ? "row" : newScope, text: newText.trim(), color: TEAM_COLORS[currentUser] || "#2563eb" };
-    if(newScope === "portfolio") ann.portfolio = newPortfolio;
+    if(newScope === "portfolio"){
+      var pp = (newPortfolios || []).filter(Boolean);
+      if(pp.length === 0) pp = [newPortfolio];
+      ann.portfolio = pp[0];
+      ann.portfolios = pp;
+    }
     if(newScope === "company") ann.companyId = newCompanyId;
     if(newScope === "holding"){
       var ports = (newPortfolios || []).filter(Boolean);
@@ -311,22 +325,44 @@ export default function DiscussionsPanel({ open, onClose, initialScope, initialP
               <option value="company">Company-wide</option>
               <option value="holding">Holding</option>
             </select>
-            {(newScope === "portfolio") && (
-              <select value={newPortfolio} onChange={function(e){setNewPortfolio(e.target.value);}} className="text-xs px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100">
-                {PORTFOLIOS.map(function(p){return <option key={p} value={p}>{p}</option>;})}
-              </select>
-            )}
-            {(newScope === "company" || newScope === "holding") && (
-              <select value={newCompanyId || ""} onChange={function(e){setNewCompanyId(parseFloat(e.target.value) || e.target.value);}} className="text-xs px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 flex-1 min-w-0">
-                <option value="">Select company...</option>
-                {(companies || []).map(function(c){return <option key={c.id} value={c.id}>{c.name}</option>;})}
-              </select>
-            )}
+            {/* Company dropdown for Company-wide / Holding scopes.
+                Companies sorted alphabetically by name, with a context
+                tag showing portfolio membership (Own) or status (Focus
+                / Watch) so the user can scan to the right name —
+                instead of being shown the alphabetically-first name
+                (Luckin Coffee) by accident. */}
+            {(newScope === "company" || newScope === "holding") && (function(){
+              /* Companies eligible for discussions: any non-Sold
+                 company. Sorted by name. Each option labelled
+                 "{name} — {ports}" (when in portfolios) or
+                 "{name} — Focus" / "{name} — Watch". */
+              var sorted = (companies || [])
+                .filter(function(c){return c && c.name;})
+                .slice()
+                .sort(function(a, b){ return (a.name || "").localeCompare(b.name || ""); });
+              function contextTag(c){
+                if(Array.isArray(c.portfolios) && c.portfolios.length > 0) return c.portfolios.join(", ");
+                if(c.status === "Focus") return "Focus";
+                if(c.status === "Watch") return "Watch";
+                if(c.status === "Sold") return "Sold";
+                return "";
+              }
+              return (
+                <select value={newCompanyId || ""} onChange={function(e){var v = e.target.value; setNewCompanyId(parseFloat(v) || v);}} className="text-xs px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 flex-1 min-w-0">
+                  <option value="">Select company...</option>
+                  {sorted.map(function(c){
+                    var tag = contextTag(c);
+                    return <option key={c.id} value={c.id}>{c.name}{tag ? "  —  " + tag : ""}</option>;
+                  })}
+                </select>
+              );
+            })()}
           </div>
-          {/* Holding scope: pick one or more portfolios this holding
-              spans. Click each to toggle. The portfolios list reflects
-              the company's current portfolios first, then any others. */}
-          {newScope === "holding" && (
+          {/* Multi-portfolio chip selector — applies to Portfolio scope
+              ('FGL & GL: Reduce Energy exposure') and Holding scope
+              ('Sony oversize in FGL + GL'). One or more pills can be
+              active. */}
+          {(newScope === "portfolio" || newScope === "holding") && (
             <div className="mb-2">
               <div className="text-[10px] text-gray-500 dark:text-slate-400 uppercase tracking-wide mb-1">Portfolio(s)</div>
               <div className="flex gap-1 flex-wrap">
@@ -348,13 +384,11 @@ export default function DiscussionsPanel({ open, onClose, initialScope, initialP
               </div>
             </div>
           )}
-          {/* Inline scope-explainer with a concrete example. Three
-              examples, one per scope choice, so the dropdown isn't
-              opaque. */}
+          {/* Inline scope-explainer with concrete examples. */}
           <div className="mb-2 px-2 py-1.5 rounded-md bg-slate-50 dark:bg-slate-800/50 text-[10px] text-gray-500 dark:text-slate-400 leading-snug">
-            {newScope === "portfolio" && (<><span className="font-semibold text-gray-700 dark:text-slate-300">Portfolio:</span> a portfolio-wide thread that doesn't pertain to one company. <em>e.g. "FGL needs more cash exposure ahead of Fed."</em></>)}
-            {newScope === "company" && (<><span className="font-semibold text-gray-700 dark:text-slate-300">Company-wide:</span> applies to a company across all portfolios it sits in. <em>e.g. "Sony Q4 reaction looks excessive — bull-case still intact."</em></>)}
-            {newScope === "holding" && (<><span className="font-semibold text-gray-700 dark:text-slate-300">Holding:</span> a company's position in one or more specific portfolios. <em>e.g. "Sony oversize in FGL + GL — trim 50bp on each."</em></>)}
+            {newScope === "portfolio" && (<><span className="font-semibold text-gray-700 dark:text-slate-300">Portfolio:</span> a portfolio-wide thread that doesn&apos;t pertain to one company. <em>e.g. &ldquo;FGL: Reduce Energy exposure&rdquo; or &ldquo;FGL &amp; GL: Reduce Energy exposure&rdquo;.</em></>)}
+            {newScope === "company" && (<><span className="font-semibold text-gray-700 dark:text-slate-300">Company-wide:</span> applies to a company across all portfolios it sits in. <em>e.g. &ldquo;Sony Q4 reaction looks excessive — bull-case still intact.&rdquo;</em></>)}
+            {newScope === "holding" && (<><span className="font-semibold text-gray-700 dark:text-slate-300">Holding:</span> a company&apos;s position in one or more specific portfolios. <em>e.g. &ldquo;Sony oversize in FGL + GL — trim 50bp on each.&rdquo;</em></>)}
           </div>
           <MentionInput value={newText} onChange={setNewText} onSubmit={submitNew}/>
           <div className="flex gap-2 mt-1.5">

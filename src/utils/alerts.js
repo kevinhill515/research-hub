@@ -40,8 +40,12 @@ export const DEFAULT_RULES = {
   "price-1d":           { enabled: true,  params: { threshold: 0.08, direction: "down" } },
 
   /* Guidance revised in a configured direction on any tracked metric.
-     Only "down" by default since upward revisions are usually benign. */
-  "guidance-revised":   { enabled: true,  params: { directions: ["down"] } },
+     Only "down" by default since upward revisions are usually benign.
+     `withinDays` bounds how recent the latest announcement must be —
+     default 100 days covers the typical quarterly cadence (≈90 days
+     between earnings), with a small buffer for late reporters. Set
+     higher to widen the window, lower to tighten it. */
+  "guidance-revised":   { enabled: true,  params: { directions: ["down"], withinDays: 100 } },
 
   /* N+ consecutive monthly EPS revisions in one direction with
      cumulative magnitude above threshold. Default: 2 months, 2%, down. */
@@ -105,9 +109,15 @@ function evalPrice1D(company, params) {
 
 /* Guidance revised in the configured direction(s) on any tracked
  * metric since the prior announcement. Looks at the most recent two
- * dates within the upcoming/just-closed FY group per metric. */
+ * dates within the upcoming/just-closed FY group per metric.
+ * `withinDays` bounds how recent the latest announcement is — only
+ * fires when the latest guidance row's date is within this many days
+ * of today. Default 100 days (typical quarterly cadence + buffer);
+ * set lower to require fresher revisions, higher to allow older. */
 function evalGuidanceRevised(company, params) {
   const dirs = (params && params.directions) || ["down"];
+  const withinDays = (params && params.withinDays) || 100;
+  const cutoffMs = Date.now() - withinDays * 24 * 3600 * 1000;
   const history = company && company.guidance && company.guidance.history;
   if (!history || history.length === 0) return null;
 
@@ -137,6 +147,11 @@ function evalGuidanceRevised(company, params) {
     if (arr.length < 2) return;
     const last = arr[arr.length - 1];
     const prev = arr[arr.length - 2];
+    /* Bound by recency — skip the metric when the latest announcement
+       is older than withinDays. Otherwise stale revisions from many
+       months ago would keep firing the flag. */
+    const lastDate = parseDate(last && last.date);
+    if (!lastDate || lastDate.getTime() < cutoffMs) return;
     function mid(r) {
       if (!r) return null;
       if (isFiniteNum(r.low) && isFiniteNum(r.high)) return (r.low + r.high) / 2;
@@ -269,7 +284,7 @@ function evalStaleData(company, _params) {
 
 const RULE_DEFS = {
   "price-1d":            { eval: evalPrice1D,            label: "Stock fell by 8%+ on the day" },
-  "guidance-revised":    { eval: evalGuidanceRevised,    label: "Guidance revised down on any tracked metric" },
+  "guidance-revised":    { eval: evalGuidanceRevised,    label: "Guidance revised down vs the prior announcement (within 100 days)" },
   "eps-revisions-trend": { eval: evalEpsRevisionsTrend,  label: "FY+1 EPS revised down for 2+ consecutive months (cumulative >= 2%)" },
   "mos-divergence":      { eval: evalMosDivergence,      label: "MOS and MOS Fixed differ by more than 10pp" },
   "earnings-imminent":   { eval: evalEarningsImminent,   label: "Earnings report within 7 days (info)" },
