@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import { PORTFOLIOS, TIER_ORDER, COUNTRY_ORDER, SECTOR_ORDER } from '../../constants/index.js';
 import { shortSector, sectorStyle, countryStyle, getTiers, tierPillStyle, tierBg, reviewedColor, daysSince, todayStr, calcNormEPS, calcTP, calcMOS, fmtMOS, fmtMOS0, mosBg, getTpFixed, tierToStatus, truncName } from '../../utils/index.js';
+import { evaluateAlertsForCompany } from '../../utils/alerts.js';
+import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import StatusPill from '../ui/StatusPill.jsx';
 import NotesCell from '../forms/NotesCell.jsx';
@@ -12,7 +14,11 @@ import PillEl from '../ui/PillEl.jsx';
 import FpeRangeMini from '../ui/FpeRangeMini.jsx';
 
 function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, selected, onToggleSelect, onQuickUpload }) {
-  var { dark } = useCompanyContext();
+  var { dark, alertRules } = useCompanyContext();
+  /* Active warn-level alerts for this company. Surfaced as a red flag
+     icon next to the name; tooltip lists what triggered. */
+  var rowAlerts = evaluateAlertsForCompany(company, alertRules || {})
+    .filter(function(a){ return a.severity === "warn"; });
   var [editName, setEditName] = useState(false);
   var [nameVal, setNameVal] = useState(company.name);
   var [editCountry, setEditCountry] = useState(false);
@@ -140,6 +146,12 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
               </span>
             )}
 
+            {rowAlerts.length > 0 && (
+              <span
+                title={rowAlerts.map(function(a){return "• " + a.message;}).join("\n")}
+                className="text-[11px] text-red-600 dark:text-red-400 shrink-0 font-bold"
+              >🚩</span>
+            )}
             {hasTemplate && (
               <span title="Template loaded" className="text-[8px] text-emerald-500 dark:text-emerald-400 shrink-0">&#x25CF;</span>
             )}

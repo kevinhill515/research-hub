@@ -27,6 +27,7 @@ import { PORTFOLIO_COLUMNS, ASC_SORTS } from "./portfolioColumns.js";
 import PortfolioRow from "./PortfolioRow.jsx";
 import PortfolioSpecialRow from "./PortfolioSpecialRow.jsx";
 import PortfolioTotalRow from "./PortfolioTotalRow.jsx";
+import { evaluateAlertsForCompany } from "../../utils/alerts.js";
 
 const BTN_SM = "text-xs px-2.5 py-1.5 font-medium rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors";
 
@@ -119,7 +120,7 @@ export function PortfoliosTable(props) {
   } = props;
   const {
     companies, repData, fxRates, specialWeights, annotations, dark,
-    updateTargetWeight,
+    updateTargetWeight, alertRules,
   } = useCompanyContext();
 
   /* ---- Derive portfolio data ---- */
@@ -461,6 +462,8 @@ export function PortfoliosTable(props) {
 
         {/* Company rows */}
         {portCos.map(function (c, rowIdx) {
+          var rowAlerts = evaluateAlertsForCompany(c, alertRules || {})
+            .filter(function(a){ return a.severity === "warn"; });
           return (
             <PortfolioRow
               key={c.id}
@@ -469,6 +472,7 @@ export function PortfoliosTable(props) {
               rowIdx={rowIdx}
               rowData={perRowData[c.id]}
               annotations={annotations}
+              alertsForCompany={rowAlerts}
               dark={dark}
               editingTarget={editingTarget}
               setEditingTarget={setEditingTarget}

@@ -82,7 +82,8 @@ function readUsdPerf(company, key) {
 /* Stock moved ≥ threshold on the day in the configured direction.
  *   direction = "down" (default) — fires only when v <= -threshold
  *   direction = "up"             — fires only when v >= threshold
- *   direction = "any"            — fires when |v| >= threshold (legacy) */
+ *   direction = "any"            — fires when |v| >= threshold (legacy)
+ * `magnitude` = absolute % change, used by the panel for rank sorting. */
 function evalPrice1D(company, params) {
   const t = (params && params.threshold) || 0.08;
   const dir = (params && params.direction) || "down";
@@ -98,6 +99,7 @@ function evalPrice1D(company, params) {
     severity: "warn",
     message: verb + (v * 100).toFixed(1) + "% today",
     context: null,
+    magnitude: Math.abs(v),
   };
 }
 
@@ -157,6 +159,7 @@ function evalGuidanceRevised(company, params) {
     severity: top.dir === "down" ? "warn" : "info",
     message: top.metric + " guidance revised " + top.dir + " " + (top.change >= 0 ? "+" : "") + (top.change * 100).toFixed(1) + "%",
     context: flagged.length > 1 ? (flagged.length - 1) + " other metric" + (flagged.length > 2 ? "s" : "") + " also revised" : null,
+    magnitude: Math.abs(top.change),
   };
 }
 
@@ -189,6 +192,7 @@ function evalEpsRevisionsTrend(company, params) {
     severity: "warn",
     message: "FY+1 EPS revised down " + count + "M in a row, total " + (total * 100).toFixed(1) + "%",
     context: null,
+    magnitude: Math.abs(total),
   };
 }
 
@@ -238,6 +242,7 @@ function evalMosDivergence(company, params) {
     severity: "warn",
     message: "MOS " + fmt(mos) + " vs Fixed " + fmt(mosFixed) + " (" + Math.abs(diff).toFixed(1) + "pp gap)",
     context: null,
+    magnitude: Math.abs(diff) / 100, /* normalize to decimal so it sorts vs other rules */
   };
 }
 
@@ -280,6 +285,36 @@ export const WARN_RULE_LABELS = {
   "mos-divergence":      RULE_DEFS["mos-divergence"].label,
 };
 
+/* Evaluate enabled rules for ONE company. Returns the array of
+ * fired-rule alerts (warn-only filter is the caller's responsibility,
+ * since portfolio/company rows render only when severity === "warn"). */
+export function evaluateAlertsForCompany(company, rules) {
+  if (!company) return [];
+  const merged = Object.assign({}, DEFAULT_RULES);
+  if (rules && typeof rules === "object") {
+    Object.keys(rules).forEach(function (k) {
+      merged[k] = Object.assign({}, merged[k] || {}, rules[k]);
+    });
+  }
+  const out = [];
+  Object.keys(RULE_DEFS).forEach(function (ruleId) {
+    const rule = merged[ruleId];
+    if (!rule || rule.enabled === false) return;
+    const result = RULE_DEFS[ruleId].eval(company, rule.params || {});
+    if (!result) return;
+    out.push({
+      companyId: company.id,
+      companyName: company.name,
+      ruleId: ruleId,
+      severity: result.severity,
+      message: result.message,
+      context: result.context,
+      magnitude: result.magnitude == null ? 0 : result.magnitude,
+    });
+  });
+  return out;
+}
+
 /* Public: evaluate all enabled rules across all companies. */
 export function evaluateAlerts(companies, rules) {
   const merged = Object.assign({}, DEFAULT_RULES);
@@ -302,6 +337,7 @@ export function evaluateAlerts(companies, rules) {
         severity: result.severity,
         message: result.message,
         context: result.context,
+        magnitude: result.magnitude == null ? 0 : result.magnitude,
       });
     });
   });

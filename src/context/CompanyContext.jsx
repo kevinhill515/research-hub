@@ -102,6 +102,8 @@ export function CompanyProvider({children}){
         var newTier=tiers.join(", ");
         if(newTier!==upd.tier){upd.tier=newTier;changed=true;}
       }
+      // Migrate country: "Britain" -> "United Kingdom" (post-IC standardization).
+      if(upd.country==="Britain"){upd.country="United Kingdom";changed=true;}
       return upd;
     });
     return{data:migrated,changed:changed};

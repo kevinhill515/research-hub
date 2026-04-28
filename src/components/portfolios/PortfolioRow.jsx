@@ -29,7 +29,7 @@ function Dash() {
 
 export default function PortfolioRow(props) {
   const {
-    company, portTab, rowIdx, rowData, annotations, dark,
+    company, portTab, rowIdx, rowData, annotations, alertsForCompany, dark,
     editingTarget, setEditingTarget, updateTargetWeight,
     openDiscussions, onOpenCompany, onOpenTransactions, onAddTransaction,
   } = props;
@@ -79,6 +79,12 @@ export default function PortfolioRow(props) {
       <Cell className="text-sm font-medium text-gray-900 dark:text-slate-100" style={cellStyle}>
         <span className="inline-flex items-center gap-1.5" title={c.name}>
           {truncName(c.name, 15)}
+          {(alertsForCompany || []).length > 0 && (
+            <span
+              title={alertsForCompany.map(function(a){return "• " + a.message;}).join("\n")}
+              className="text-[11px] text-red-600 dark:text-red-400 shrink-0 font-bold"
+            >🚩</span>
+          )}
           {rowAnnotations.length > 0 && (
             <span
               onClick={function (e) {
@@ -236,13 +242,24 @@ export default function PortfolioRow(props) {
           : "--"}
       </Cell>
 
-      {/* MOS Fixed */}
+      {/* MOS Fixed — amber dot when |mos - mosFixed| > 10pp (matches the
+          mos-divergence alert rule). Mirrors CoRow's behavior on the
+          Companies table so divergence is consistent across views. */}
       <Cell className="text-sm text-gray-900 dark:text-slate-100" style={cellStyle}>
         {mosFixedStyle
-          ? <span className="text-[11px] px-1.5 py-0.5 rounded-full font-semibold"
-                  style={{ background: mosFixedStyle.bg, color: mosFixedStyle.color }}>
-              {fmtMOS0(mosFixed)}
-            </span>
+          ? (function(){
+              var gap = (mos !== null && mosFixed !== null) ? Math.abs(mos - mosFixed) : null;
+              var diverges = gap !== null && gap > 10;
+              return (
+                <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                  <span title={diverges ? "MOS Fixed diverges from MOS by " + gap.toFixed(1) + "pp — fixed TP may be stale" : "MOS using fixed TP"} className="text-[11px] px-1.5 py-0.5 rounded-full font-semibold"
+                        style={{ background: mosFixedStyle.bg, color: mosFixedStyle.color }}>
+                    {fmtMOS0(mosFixed)}
+                  </span>
+                  {diverges && <span title={"Diverges from MOS by " + gap.toFixed(1) + "pp"} className="inline-block w-2 h-2 rounded-full bg-amber-500 dark:bg-amber-400 shrink-0"/>}
+                </span>
+              );
+            })()
           : "--"}
       </Cell>
 
