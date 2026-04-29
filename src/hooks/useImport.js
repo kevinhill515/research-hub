@@ -58,7 +58,12 @@ export function useImport(){
       if(parts.length>=6){
         var date=parts[0];
         var name=parts[1];
-        var portfolio=parts[2].toUpperCase();
+        var portRaw=parts[2].toUpperCase();
+        /* Map LW account code → portfolio short code (e.g. LWFOCGL1 → FGL).
+           applyRepImport does the same. Fall back to the raw value if the
+           code isn't in REP_ACCOUNTS so the row still uploads (and shows
+           up as "unmatched portfolio" rather than getting silently dropped). */
+        var portfolio=REP_ACCOUNTS[portRaw]||portRaw;
         var shares=parseFloat(parts[3]);
         var price=parseFloat(parts[4]);
         var amount=parseFloat((parts[5]||"").replace(/,/g,""));

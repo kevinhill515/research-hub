@@ -27,6 +27,7 @@ import { PORTFOLIO_COLUMNS, ASC_SORTS } from "./portfolioColumns.js";
 import PortfolioRow from "./PortfolioRow.jsx";
 import PortfolioSpecialRow from "./PortfolioSpecialRow.jsx";
 import PortfolioTotalRow from "./PortfolioTotalRow.jsx";
+import MobilePortfolioCard from "./MobilePortfolioCard.jsx";
 import { evaluateAlertsForCompany } from "../../utils/alerts.js";
 
 const BTN_SM = "text-xs px-2.5 py-1.5 font-medium rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors";
@@ -423,7 +424,56 @@ export function PortfoliosTable(props) {
         })}
       </div>
 
-      {/* Table */}
+      {/* Mobile: stacked card layout (one card per company). Hidden on
+          sm+ so the existing desktop grid table renders unchanged. */}
+      <div className="sm:hidden">
+        {portCos.map(function (c) {
+          var rowAlerts = evaluateAlertsForCompany(c, alertRules || {})
+            .filter(function(a){ return a.severity === "warn"; });
+          return (
+            <MobilePortfolioCard
+              key={c.id}
+              company={c}
+              rowData={perRowData[c.id]}
+              alertsForCompany={rowAlerts}
+              dark={dark}
+              onOpenCompany={onOpenCompany}
+              onOpenTransactions={onOpenTransactions}
+            />
+          );
+        })}
+        {/* Mobile TOTAL summary — compact: target/rep/diff trio + AUM */}
+        {totalMV > 0 && (
+          <div className="rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-800/70 px-3 py-2.5 mt-2">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-sm font-bold text-gray-900 dark:text-slate-100">TOTAL</span>
+              <span className="text-[10px] text-gray-500 dark:text-slate-400">
+                ${totalMV.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-1.5">
+              <div className="rounded bg-white/60 dark:bg-slate-900/40 px-2 py-1.5">
+                <div className="text-[9px] uppercase tracking-wide text-gray-500 dark:text-slate-400">Target</div>
+                <div className="text-sm font-semibold tabular-nums text-gray-900 dark:text-slate-100">{totalTarget.toFixed(1)}%</div>
+              </div>
+              <div className="rounded bg-white/60 dark:bg-slate-900/40 px-2 py-1.5">
+                <div className="text-[9px] uppercase tracking-wide text-gray-500 dark:text-slate-400">Rep</div>
+                <div className="text-sm font-semibold tabular-nums text-gray-900 dark:text-slate-100">{totalRep.toFixed(1)}%</div>
+              </div>
+              <div className="rounded bg-white/60 dark:bg-slate-900/40 px-2 py-1.5">
+                <div className="text-[9px] uppercase tracking-wide text-gray-500 dark:text-slate-400">MOS</div>
+                <div className="text-sm font-semibold tabular-nums text-gray-900 dark:text-slate-100">
+                  {wMos !== null && isFinite(wMos) ? wMos.toFixed(0) : "--"}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Desktop: full grid table — unchanged from before. Wrapper carries
+          the responsive hide; inner div keeps its display:table for the grid. */}
+      <div className="hidden sm:block">
       <div style={{ display: "table", width: "100%", borderCollapse: "separate", borderSpacing: "0 2px" }}>
         {/* Header row */}
         <div
@@ -511,6 +561,7 @@ export function PortfoliosTable(props) {
             wFpeVal={wFpeVal}
           />
         )}
+      </div>
       </div>
     </div>
   );

@@ -88,8 +88,25 @@ def _supa_req(method: str, path: str, body: bytes | None = None,
     if accept_object:
         headers["Accept"] = "application/vnd.pgrst.object+json"
     req = urllib.request.Request(url, data=body, method=method, headers=headers)
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return r.read()
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return r.read()
+    except urllib.error.HTTPError as e:
+        # Surface PostgREST's error body so 4xx/5xx are diagnosable. Without
+        # this, all the script logs is "HTTP Error 500: Internal Server Error"
+        # with no hint what the DB actually objected to.
+        try:
+            err_body = e.read().decode("utf-8", errors="replace")[:1000]
+        except Exception:
+            err_body = "(could not read error body)"
+        body_preview = ""
+        if body:
+            try:
+                body_preview = f" body_bytes={len(body)}"
+            except Exception:
+                pass
+        log(f"  Supabase {method} {path} -> {e.code}{body_preview}: {err_body}")
+        raise
 
 
 def supa_get_companies() -> list[dict]:
@@ -399,18 +416,159 @@ class ExcelSession:
                 log(f"    Run '{host}'!{name} failed: {e}")
                 return False
 
-        # LoadPositions is written against ActiveSheet (uses Range("DATA_START")
-        # and Range("A4:I...").ClearContents on whatever sheet is active). When
-        # the user clicks the button manually, ActiveSheet is Rep Holdings;
-        # when Python calls via COM, ActiveSheet is whatever was last shown —
-        # usually the wrong sheet, causing a 1004. Explicitly activate the
-        # Rep Holdings sheet first so the macro resolves correctly.
-        try:
-            self.wb.Activate()
-            self.wb.Sheets("Rep Holdings").Activate()
-            log("  Activated Rep Holdings sheet for macro context")
-        except Exception as e:
-            log(f"  Could not activate Rep Holdings sheet: {e}")
+        # CRITICAL: must target MASTER LIST's sheets, not the main workbook's.
+        # Both workbooks have tabs called "Rep Holdings" and "Tx" (the main
+        # workbook receives processed data the script writes), so mixing
+        # them up silently runs the macros against the wrong workbook's
+        # named ranges. We Activate explicitly so LoadPositions/LoadTransactions
+        # — which read Range("DATA_START") off ActiveSheet — find the right
+        # range.
+        #
+        # Note: the activate must happen AFTER OpenConnection. Trying to
+        # Activate Master List's Rep Holdings sheet before the FactSet
+        # connection is open throws a generic COM exception (-2147352567).
+        # Once OpenConnection has brought Master List forward, subsequent
+        # Activate calls succeed.
+        master_name = self.master_wb.Name if self.master_wb is not None else None
+        main_name = self.wb.Name if self.wb is not None else None
+
+        # Re-acquire a workbook proxy by NAME from xl.Workbooks each call.
+        # The cached COM proxies go stale after long-running macros like
+        # OpenConnection's FactSet refresh, throwing -2147352567 even on
+        # Sheets() lookups. Iterating Workbooks gives us a fresh proxy.
+        def fresh_wb_by_name(target_name: str):
+            if target_name is None:
+                return None
+            for _ in range(3):
+                try:
+                    for wb in self.xl.Workbooks:
+                        try:
+                            if wb.Name == target_name:
+                                return wb
+                        except Exception:
+                            continue
+                    return None
+                except Exception:
+                    time.sleep(1)
+            return None
+
+        # COM retry: Excel returns -2147418111 ("Call was rejected by callee",
+        # RPC_E_SERVERCALL_RETRYLATER) when busy. Standard fix: retry with
+        # a small backoff. Most other COM errors don't recover from a retry,
+        # but it's cheap and only fires on this specific code.
+        def com_retry(fn, attempts=5, delay=1.0):
+            last = None
+            for i in range(attempts):
+                try:
+                    return fn()
+                except Exception as e:
+                    last = e
+                    msg = str(e)
+                    # Retry only on "call rejected" / "server busy" patterns;
+                    # propagate other errors immediately.
+                    if "-2147418111" in msg or "rejected" in msg.lower() or "busy" in msg.lower():
+                        time.sleep(delay * (i + 1))
+                        continue
+                    raise
+            raise last  # type: ignore[misc]
+
+        # Robust sheet-activator: tries several COM paths in order. Plain
+        # Workbook.Activate() / Worksheet.Activate() reliably throws
+        # -2147352567 ("Exception occurred") on Master List sheets when
+        # called from python COM, even though the same calls work from
+        # button click handlers. Application.Goto is the documented
+        # navigation API and tends to succeed where Activate doesn't;
+        # Window.Activate is a fallback for cases where the workbook
+        # window is in some non-standard state. We log which path won so
+        # we can simplify later. Returns True if any path left the right
+        # sheet active.
+        def force_active(sheet_name: str, target_wb_name: str) -> bool:
+            wb = com_retry(lambda: fresh_wb_by_name(target_wb_name))
+            if wb is None:
+                log(f"  WARNING: workbook {target_wb_name} not found in xl.Workbooks")
+                return False
+
+            # Resolve the requested sheet name case-insensitively against the
+            # workbook's actual sheet names. Master List uses "TX" (all caps)
+            # while we ask for "Tx" — Sheets("Tx") then either fails or
+            # returns something whose .Name doesn't match our verification
+            # check, leading us to skip the macro on a sheet that *was*
+            # already correctly active.
+            actual_name = None
+            try:
+                names = []
+                for s in wb.Sheets:
+                    try: names.append(s.Name)
+                    except Exception: continue
+                for n in names:
+                    if n.strip().lower() == sheet_name.strip().lower():
+                        actual_name = n
+                        break
+                if actual_name is None:
+                    log(f"  {target_wb_name}!{sheet_name} not found. "
+                        f"Available sheets: {names}")
+                    return False
+                if actual_name != sheet_name:
+                    log(f"  Resolved {sheet_name!r} -> actual name {actual_name!r}")
+            except Exception as e:
+                log(f"  Could not enumerate sheets on {target_wb_name}: {e}")
+                return False
+
+            try:
+                sh = com_retry(lambda: wb.Sheets(actual_name))
+            except Exception as e:
+                log(f"  {target_wb_name}!{actual_name} not found: {e}")
+                return False
+
+            def check_active() -> bool:
+                try:
+                    ash = self.xl.ActiveSheet
+                    # Case-insensitive comparison so "TX" == "Tx" passes.
+                    return (ash.Name.strip().lower() == actual_name.strip().lower()
+                            and ash.Parent.Name == target_wb_name)
+                except Exception:
+                    return False
+
+            # Path 1: Application.Goto (canonical) — switches workbook,
+            # sheet, AND scroll position in one call.
+            try:
+                com_retry(lambda: self.xl.Goto(sh.Range("A1"), True))
+                if check_active():
+                    log(f"  Activated {target_wb_name}!{actual_name} via Application.Goto")
+                    return True
+            except Exception as e:
+                log(f"    Goto {target_wb_name}!{actual_name} failed: {e}")
+
+            # Path 2: activate the workbook's window first, then the sheet.
+            try:
+                for w in self.xl.Windows:
+                    try:
+                        if w.Parent and w.Parent.Name == target_wb_name:
+                            com_retry(lambda: w.Activate())
+                            break
+                    except Exception:
+                        continue
+                com_retry(lambda: sh.Activate())
+                if check_active():
+                    log(f"  Activated {target_wb_name}!{actual_name} via Window.Activate+Sheet.Activate")
+                    return True
+            except Exception as e:
+                log(f"    Window+Sheet activate {target_wb_name}!{actual_name} failed: {e}")
+
+            # Path 3: original Workbook.Activate + Sheet.Activate.
+            try:
+                com_retry(lambda: wb.Activate())
+                com_retry(lambda: sh.Activate())
+                if check_active():
+                    log(f"  Activated {target_wb_name}!{actual_name} via Workbook.Activate+Sheet.Activate")
+                    return True
+            except Exception as e:
+                log(f"    Workbook+Sheet activate {target_wb_name}!{actual_name} failed: {e}")
+
+            log(f"  WARNING: could not activate {target_wb_name}!{actual_name} — "
+                f"macro will likely 1004 because ActiveSheet is wrong; "
+                f"current ActiveSheet={getattr(getattr(self.xl, 'ActiveSheet', None), 'Name', '?')}")
+            return False
 
         log("Running OpenConnection macro...")
         opened = run_macro("OpenConnection")
@@ -420,40 +578,47 @@ class ExcelSession:
         else:
             log("  OpenConnection couldn't be run — trying LoadPositions anyway (connection may already be open)")
 
-        log("Running LoadPositions macro...")
-        if not run_macro("LoadPositions"):
-            log("  LoadPositions failed — continuing with cached Rep Holdings data")
-            # Still try LoadTransactions before closing — they're independent.
+        # LoadPositions writes into the MAIN workbook's "Rep Holdings" tab
+        # (Master List has no such sheet — confirmed by enumerating its
+        # sheets). The macro lives in Master List but reads/writes via
+        # ActiveSheet, so we must activate the main workbook's sheet.
+        if main_name and force_active("Rep Holdings", main_name):
+            log("Running LoadPositions macro...")
+            if not run_macro("LoadPositions"):
+                log("  LoadPositions failed — continuing with cached Rep Holdings data")
+            else:
+                log(f"Waiting {REP_WAIT_SECONDS}s for positions to populate...")
+                time.sleep(REP_WAIT_SECONDS)
         else:
-            log(f"Waiting {REP_WAIT_SECONDS}s for positions to populate...")
-            time.sleep(REP_WAIT_SECONDS)
+            log("  SKIPPING LoadPositions — Rep Holdings not active "
+                "(running it now would corrupt the wrong sheet)")
 
-        # LoadTransactions writes into the Tx sheet (A:G). Like LoadPositions
-        # it targets ActiveSheet via Range("DATA_START").ClearContents so
-        # we activate the Tx sheet first. The transaction list is tiny
-        # (typically 0-20 rows of yesterday's trades) so a short wait is
-        # plenty.
-        try:
-            self.wb.Sheets("Tx").Activate()
-            log("  Activated Tx sheet for LoadTransactions")
-        except Exception as e:
-            log(f"  Could not activate Tx sheet: {e}")
-        log("Running LoadTransactions macro...")
-        if run_macro("LoadTransactions"):
-            log("  Waiting 10s for transactions to populate...")
-            time.sleep(10)
-            try:
-                self.wb.Sheets("Tx").Calculate()
-                log("  Tx sheet recalc done")
-            except Exception as e:
-                log(f"  Tx recalc failed: {e}")
-            try:
-                stamp = self.wb.Sheets("Tx").Cells(1, 4).Value
-                log(f"  Tx D1: {stamp}")
-            except Exception:
-                pass
+        # LoadTransactions writes into the MAIN workbook's "Tx" tab — same
+        # workbook as Rep Holdings. The L:Q helper-formula upload block
+        # that read_transactions() reads from lives there. (Master List
+        # also has a "TX" sheet but it's unrelated; activating it caused
+        # the script to read stale data from main!Tx because main!Tx
+        # never got refreshed.)
+        if main_name and force_active("Tx", main_name):
+            log("Running LoadTransactions macro...")
+            if run_macro("LoadTransactions"):
+                log("  Waiting 10s for transactions to populate...")
+                time.sleep(10)
+                wb_for_read = com_retry(lambda: fresh_wb_by_name(main_name))
+                if wb_for_read is not None:
+                    try:
+                        com_retry(lambda: wb_for_read.Sheets("Tx").Calculate())
+                        log("  Tx sheet recalc done")
+                    except Exception as e:
+                        log(f"  Tx recalc failed: {e}")
+                    try:
+                        stamp = com_retry(lambda: wb_for_read.Sheets("Tx").Cells(1, 4).Value)
+                        log(f"  Tx D1: {stamp}")
+                    except Exception:
+                        pass
         else:
-            log("  LoadTransactions failed — skipping transaction pull")
+            log("  SKIPPING LoadTransactions — Tx not active "
+                "(running it now would corrupt the wrong sheet)")
 
         if opened and run_macro("CloseConnection"):
             log("  CloseConnection done")
