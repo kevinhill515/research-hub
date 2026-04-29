@@ -102,12 +102,46 @@ function buildData(history, primaryName, benchName, bucket, mode) {
   });
 }
 
-/* Compact legend used when the chart is grouped (country view). One row
-   per group, with the group's color swatch on the left and the comma-
-   separated member labels on the right. */
-function GroupLegend({ labels, groupBy, colorFor }) {
-  /* Aggregate labels into ordered groups, preserving the visual order
-     they appear in the stack (i.e. the order produced by rankLabels). */
+/* Compact legend for stacked charts. Replaces recharts' built-in legend
+   so we can show the most-recent quarter's value next to each entry —
+   the read of "where is this today" matters more than the path itself
+   on the chart.
+ *
+ * Two modes, controlled by `groupBy`:
+ *   - Without groupBy (sector view): one row per label, with that label's
+ *     latest weight. e.g.  ▮ Information Technology      24.3%
+ *   - With groupBy (country view): one row per group (region), with the
+ *     SUM of latest values for all member countries in that region, and
+ *     the comma-separated member list. e.g.
+ *         ▮ Asia/Pacific  18.7%   Japan, Australia, Hong Kong, ...
+ *
+ * `data` is the recharts data array; the last row is the most recent
+ * quarter (data is sorted ascending by date). */
+function ValueLegend({ labels, data, groupBy, colorFor }) {
+  const latest = (data && data.length > 0) ? data[data.length - 1] : null;
+  const fmt = function (v) { return (v >= 0 ? "" : "") + v.toFixed(1) + "%"; };
+
+  /* Sector mode — straight row per label. Reverse so legend reads
+     top-down matching the visual stack order. */
+  if (!groupBy) {
+    return (
+      <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
+        {labels.slice().reverse().map(function (k) {
+          const color = colorFor ? colorFor(k) : "#334155";
+          const v = latest ? (latest[k] || 0) : 0;
+          return (
+            <div key={k} className="flex items-center gap-2">
+              <span className="inline-block w-3 h-3 rounded-sm shrink-0" style={{ background: color }} />
+              <span className="text-gray-700 dark:text-slate-300 flex-1 truncate" title={k}>{k}</span>
+              <span className="font-mono tabular-nums text-gray-700 dark:text-slate-300">{fmt(v)}</span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  /* Country mode — one row per region with summed total. */
   const seen = {};
   const groups = [];
   labels.forEach(function (k) {
@@ -115,21 +149,26 @@ function GroupLegend({ labels, groupBy, colorFor }) {
     if (!seen[g]) { seen[g] = []; groups.push(g); }
     seen[g].push(k);
   });
-  /* Reverse so the legend reads top-down matching the stack order
-     (rankLabels was reversed for stack rendering). */
+  /* Sum each region's latest values. */
+  const totals = {};
+  Object.keys(seen).forEach(function (g) {
+    let s = 0;
+    seen[g].forEach(function (k) { s += latest ? (latest[k] || 0) : 0; });
+    totals[g] = s;
+  });
+  /* Reverse so the legend reads top-down matching the stack order. */
   const orderedGroups = groups.slice().reverse();
   return (
-    <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
+    <div className="mt-2 grid grid-cols-1 gap-y-1 text-[11px]">
       {orderedGroups.map(function (g) {
         const sample = seen[g][0];
         const color = colorFor ? colorFor(sample) : "#334155";
         return (
           <div key={g} className="flex items-start gap-2">
             <span className="inline-block w-3 h-3 mt-0.5 rounded-sm shrink-0" style={{ background: color }} />
-            <span className="text-gray-700 dark:text-slate-300">
-              <span className="font-semibold">{g}:</span>{" "}
-              <span className="text-gray-500 dark:text-slate-400">{seen[g].join(", ")}</span>
-            </span>
+            <span className="font-semibold text-gray-800 dark:text-slate-200 shrink-0 w-24 truncate" title={g}>{g}</span>
+            <span className="font-mono tabular-nums text-gray-700 dark:text-slate-300 shrink-0 w-12 text-right">{fmt(totals[g])}</span>
+            <span className="text-gray-500 dark:text-slate-400 flex-1">{seen[g].join(", ")}</span>
           </div>
         );
       })}
@@ -202,11 +241,10 @@ export default function BreakdownHistoryChart({
   };
 
   if (mode === "single") {
-    /* When groupBy is supplied (country view), suppress the built-in legend
-       — it would list 20+ items all sharing region colors, which is noisy.
-       Render a compact group-level legend below the chart instead, with
-       each region listed once next to its members. */
-    const showInlineLegend = !groupBy;
+    /* Custom ValueLegend below replaces recharts' default — it shows the
+       most-recent quarter's value next to each label (or summed-by-region
+       value when groupBy is provided), which is what readers actually
+       want to know at a glance. */
     return (
       <div>
         <ResponsiveContainer width="100%" height={height}>
@@ -223,7 +261,6 @@ export default function BreakdownHistoryChart({
               labelFormatter={function (l) { return quarterLabel(l) + " (" + l + ")"; }}
               contentStyle={{ fontSize: 12 }}
             />
-            {showInlineLegend && <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />}
             {labels.map(function (k) {
               const c = colorFor ? colorFor(k) : "#334155";
               return (
@@ -241,9 +278,7 @@ export default function BreakdownHistoryChart({
             })}
           </AreaChart>
         </ResponsiveContainer>
-        {!showInlineLegend && (
-          <GroupLegend labels={labels} groupBy={groupBy} colorFor={colorFor} />
-        )}
+        <ValueLegend labels={labels} data={data} groupBy={groupBy} colorFor={colorFor} />
       </div>
     );
   }
