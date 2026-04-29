@@ -442,7 +442,13 @@ export default function BreakdownView({ kind }) {
  *   3. Diff line chart (portKey - benchName, only renders if both exist)
  *
  * Each section has its own empty-state pointer so it's obvious which data
- * is missing. We use ranked sort/legend internally; the X axis is quarters. */
+ * is missing. We use ranked sort/legend internally; the X axis is quarters.
+ *
+ * For the country view we pass a region-based grouping + coloring so the
+ * sand chart bands cluster countries by region (all "Asia/Pacific" in one
+ * color block, all "Europe" in another, etc.) instead of interleaving
+ * country bands by raw weight. The diff chart keeps per-country styling
+ * since each line is individually meaningful there. */
 function HistoryBlock({ kind, portKey, benchName, history, colorFor }) {
   const bucket = kind === "sectors" ? "sectors" : "countries";
   const portHistory = history && history[portKey];
@@ -451,6 +457,33 @@ function HistoryBlock({ kind, portKey, benchName, history, colorFor }) {
   const benchCount = benchHistory ? Object.keys(benchHistory).length : 0;
   const overlapCount = portHistory && benchHistory
     ? Object.keys(portHistory).filter(function (d) { return benchHistory[d]; }).length : 0;
+
+  /* Country -> region map for grouping in the sand charts. Built once. */
+  const regionByCountry = useMemo(function () {
+    if (kind !== "countries") return null;
+    const regionByGroup = {};
+    Object.keys(REGION_GROUPS).forEach(function (region) {
+      REGION_GROUPS[region].forEach(function (g) { regionByGroup[g] = region; });
+    });
+    const out = {};
+    Object.keys(COUNTRY_GROUPS).forEach(function (country) {
+      const g = COUNTRY_GROUPS[country];
+      const r = regionByGroup[g];
+      if (r) out[country] = r;
+    });
+    return out;
+  }, [kind]);
+
+  /* For country sand charts: same color for all countries in a region. */
+  const stackedColorFor = kind === "countries"
+    ? function (label) {
+        const r = regionByCountry && regionByCountry[label];
+        return (r && REGION_COLORS[r]) || "#334155";
+      }
+    : colorFor;
+  const stackedGroupBy = kind === "countries"
+    ? function (label) { return (regionByCountry && regionByCountry[label]) || "Other"; }
+    : null;
 
   const HEADER_CLS = "text-[11px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-semibold mb-1 mt-3 flex items-center gap-2";
   const COUNT_CLS  = "text-[10px] font-normal text-gray-400 dark:text-slate-500";
@@ -468,7 +501,8 @@ function HistoryBlock({ kind, portKey, benchName, history, colorFor }) {
           benchName={benchName}
           bucket={bucket}
           view="stacked-port"
-          colorFor={colorFor}
+          colorFor={stackedColorFor}
+          groupBy={stackedGroupBy}
         />
       ) : (
         <div className="text-xs italic text-gray-500 dark:text-slate-400 py-3">
@@ -487,7 +521,8 @@ function HistoryBlock({ kind, portKey, benchName, history, colorFor }) {
           benchName={benchName}
           bucket={bucket}
           view="stacked-bench"
-          colorFor={colorFor}
+          colorFor={stackedColorFor}
+          groupBy={stackedGroupBy}
         />
       ) : (
         <div className="text-xs italic text-gray-500 dark:text-slate-400 py-3">

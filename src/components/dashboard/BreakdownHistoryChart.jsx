@@ -23,9 +23,18 @@ import {
   Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
 
-/* Sort labels for stacked-area legend so the largest band is on top
-   (visual hierarchy: most-weighted sectors render last/most prominent). */
-function rankLabels(history, name, bucket) {
+/* Order labels for the stacked-area legend.
+ *
+ * Without `groupBy`: rank by total weight across history, biggest first
+ * (visual hierarchy — dominant sectors render most prominently).
+ *
+ * With `groupBy(label) -> groupKey`: cluster all labels in the same group
+ * together first, then sort within each group by total weight. This is
+ * what the country chart uses to keep all "Asia/Pacific" countries
+ * adjacent (and shared region color) in the stack instead of interleaved
+ * with European countries by raw weight. Group order itself is ranked by
+ * group total weight so the heaviest region anchors the chart. */
+function rankLabels(history, name, bucket, groupBy) {
   const sums = {};
   const byDate = (history && history[name]) || {};
   Object.keys(byDate).forEach(function (d) {
@@ -35,7 +44,24 @@ function rankLabels(history, name, bucket) {
       sums[k] = (sums[k] || 0) + (slice[k] || 0);
     });
   });
-  return Object.keys(sums).sort(function (a, b) { return sums[b] - sums[a]; });
+  const labels = Object.keys(sums);
+  if (!groupBy) {
+    return labels.sort(function (a, b) { return sums[b] - sums[a]; });
+  }
+  /* Bucket per group, then concatenate groups in descending group-total order. */
+  const byGroup = {};
+  const groupSums = {};
+  labels.forEach(function (k) {
+    const g = groupBy(k) || "_other";
+    (byGroup[g] = byGroup[g] || []).push(k);
+    groupSums[g] = (groupSums[g] || 0) + sums[k];
+  });
+  const orderedGroups = Object.keys(byGroup).sort(function (a, b) { return groupSums[b] - groupSums[a]; });
+  const out = [];
+  orderedGroups.forEach(function (g) {
+    byGroup[g].sort(function (a, b) { return sums[b] - sums[a]; }).forEach(function (k) { out.push(k); });
+  });
+  return out;
 }
 
 /* Build the recharts data array.
@@ -76,6 +102,41 @@ function buildData(history, primaryName, benchName, bucket, mode) {
   });
 }
 
+/* Compact legend used when the chart is grouped (country view). One row
+   per group, with the group's color swatch on the left and the comma-
+   separated member labels on the right. */
+function GroupLegend({ labels, groupBy, colorFor }) {
+  /* Aggregate labels into ordered groups, preserving the visual order
+     they appear in the stack (i.e. the order produced by rankLabels). */
+  const seen = {};
+  const groups = [];
+  labels.forEach(function (k) {
+    const g = groupBy(k) || "Other";
+    if (!seen[g]) { seen[g] = []; groups.push(g); }
+    seen[g].push(k);
+  });
+  /* Reverse so the legend reads top-down matching the stack order
+     (rankLabels was reversed for stack rendering). */
+  const orderedGroups = groups.slice().reverse();
+  return (
+    <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
+      {orderedGroups.map(function (g) {
+        const sample = seen[g][0];
+        const color = colorFor ? colorFor(sample) : "#334155";
+        return (
+          <div key={g} className="flex items-start gap-2">
+            <span className="inline-block w-3 h-3 mt-0.5 rounded-sm shrink-0" style={{ background: color }} />
+            <span className="text-gray-700 dark:text-slate-300">
+              <span className="font-semibold">{g}:</span>{" "}
+              <span className="text-gray-500 dark:text-slate-400">{seen[g].join(", ")}</span>
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /* Format ISO YYYY-MM-DD as "Q1 '26" for the X axis. */
 function quarterLabel(iso) {
   if (!iso || iso.length < 7) return iso || "";
@@ -87,6 +148,12 @@ function quarterLabel(iso) {
 
 export default function BreakdownHistoryChart({
   history, primaryName, benchName, bucket, view, colorFor,
+  /* Optional group function for the country view. When supplied, the
+     stacked-area legend is ordered by group (region) and labels in the
+     same group cluster adjacently — combined with a region-coloring
+     `colorFor`, this turns the country sand chart into a region-banded
+     view while keeping country-level granularity in tooltips. */
+  groupBy,
   height = 280,
 }) {
   /* Pick which name's history feeds the chart, and which mode buildData uses. */
@@ -102,7 +169,10 @@ export default function BreakdownHistoryChart({
      order by total absolute diff so dominant lines are on top in legend. */
   const labels = useMemo(function () {
     if (mode === "single") {
-      return rankLabels(history, sourceName, bucket).reverse(); /* small first → big on top of stack */
+      /* rankLabels returns top-down (biggest/most-weighted group first).
+         For the stack we reverse so the biggest band sits at the top of
+         the chart (rendered last by recharts). */
+      return rankLabels(history, sourceName, bucket, groupBy).reverse();
     }
     /* diff: rank by sum of |diff| across dates */
     const absSum = {};
@@ -132,35 +202,49 @@ export default function BreakdownHistoryChart({
   };
 
   if (mode === "single") {
+    /* When groupBy is supplied (country view), suppress the built-in legend
+       — it would list 20+ items all sharing region colors, which is noisy.
+       Render a compact group-level legend below the chart instead, with
+       each region listed once next to its members. */
+    const showInlineLegend = !groupBy;
     return (
-      <ResponsiveContainer width="100%" height={height}>
-        <AreaChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 4 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" strokeOpacity={0.4} />
-          <XAxis dataKey="date" tickFormatter={xTickFmt} tick={{ fontSize: 11 }} />
-          <YAxis tickFormatter={yTickFmt} tick={{ fontSize: 11 }} />
-          <Tooltip
-            formatter={tooltipFmt}
-            labelFormatter={function (l) { return quarterLabel(l) + " (" + l + ")"; }}
-            contentStyle={{ fontSize: 12 }}
-          />
-          <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
-          {labels.map(function (k) {
-            const c = colorFor ? colorFor(k) : "#334155";
-            return (
-              <Area
-                key={k}
-                type="monotone"
-                dataKey={k}
-                stackId="weights"
-                stroke={c}
-                fill={c}
-                fillOpacity={0.85}
-                isAnimationActive={false}
-              />
-            );
-          })}
-        </AreaChart>
-      </ResponsiveContainer>
+      <div>
+        <ResponsiveContainer width="100%" height={height}>
+          <AreaChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 4 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" strokeOpacity={0.4} />
+            <XAxis dataKey="date" tickFormatter={xTickFmt} tick={{ fontSize: 11 }} />
+            {/* Cap stacked weights at 100% — sector/country mixes shouldn't
+                exceed 100. Hard domain stops recharts from auto-scaling
+                up past 100 if uploaded values sum slightly over due to
+                rounding. */}
+            <YAxis tickFormatter={yTickFmt} tick={{ fontSize: 11 }} domain={[0, 100]} allowDataOverflow />
+            <Tooltip
+              formatter={tooltipFmt}
+              labelFormatter={function (l) { return quarterLabel(l) + " (" + l + ")"; }}
+              contentStyle={{ fontSize: 12 }}
+            />
+            {showInlineLegend && <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />}
+            {labels.map(function (k) {
+              const c = colorFor ? colorFor(k) : "#334155";
+              return (
+                <Area
+                  key={k}
+                  type="monotone"
+                  dataKey={k}
+                  stackId="weights"
+                  stroke={c}
+                  fill={c}
+                  fillOpacity={0.85}
+                  isAnimationActive={false}
+                />
+              );
+            })}
+          </AreaChart>
+        </ResponsiveContainer>
+        {!showInlineLegend && (
+          <GroupLegend labels={labels} groupBy={groupBy} colorFor={colorFor} />
+        )}
+      </div>
     );
   }
   /* diff mode */
