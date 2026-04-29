@@ -230,12 +230,15 @@ export function useImport(){
         lines.shift();
       }
     }
-    /* CURRENT layout (35 cols): Company, Ord Ticker, then current+1+2
-       triplets per metric. Trailing returns now live on the Prices
-       upload (per-ticker, with USD context from the US ticker), so the
-       Metrics upload no longer carries them. The parser still tolerates
-       the OLD 41-col layout (silently ignores AJ:AO if present) and the
-       even-older 31-col layout (no "current" fields). */
+    /* CURRENT layout (44 cols): Company, Ord Ticker, then current+1+2
+       triplets per metric, ending with two new triplets (P/B, ROE) and
+       three singles (Internal Growth, 5Y / 1Y ADPS Growth). Trailing
+       returns now live on the Prices upload (per-ticker, with USD context
+       from the US ticker), so the Metrics upload no longer carries them.
+       The parser still tolerates the legacy 35-col layout (no P/B, ROE,
+       growth columns), the OLD 41-col layout (silently ignores AJ:AO if
+       present) and the even-older 31-col layout (no "current" fields).
+       New columns are at the END so older pastes still parse cleanly. */
     var METRIC_KEYS_NEW = [
       null, null,  // Company, Ticker — not stored on metrics
       "mktCap",
@@ -250,6 +253,13 @@ export function useImport(){
       "gpAss","gpAss1","gpAss2",
       "npAss","npAss1","npAss2",
       "opROE","opROE1","opROE2",
+      /* New ratio-comparison columns (cols 36..44 in the 1-indexed paste).
+         P/B and ROE are triplets so they can show up in the +1 / 0 / +2
+         horizon toggle alongside fpe etc. The three growth rates are
+         single-snapshot — no horizon variant. */
+      "pb","pb1","pb2",
+      "roe","roe1","roe2",
+      "intGr","adpsGr5","adpsGr1",
     ];
     var METRIC_KEYS_OLD = [
       null, null,
@@ -276,6 +286,10 @@ export function useImport(){
       gpAss:1,  gpAss1:1,  gpAss2:1,
       npAss:1,  npAss1:1,  npAss2:1,
       opROE:1,  opROE1:1,  opROE2:1,
+      /* New ratio columns: ROE and growth rates are percent-form on the
+         paste; P/B is a multiple (raw number, like P/E). */
+      roe:1,    roe1:1,    roe2:1,
+      intGr:1,  adpsGr5:1, adpsGr1:1,
     };
     var count=0;
     setCompanies(function(prev){
@@ -302,6 +316,10 @@ export function useImport(){
            is the current 35-col format (and the 41-col legacy with
            trailing perf cols we now ignore). Single-value "old" layout
            is the 31-col legacy (or 25-col without perf). */
+        /* useNew triggers for both the 35-col layout (no ratio cols) and
+           the 44-col layout (with ratio cols). Both share the same
+           METRIC_KEYS_NEW prefix, so the loop just stops earlier when the
+           paste is 35 cols and reads ratios when it's 44. */
         var useNew = parts.length >= 35;
         var METRIC_KEYS = useNew ? METRIC_KEYS_NEW : METRIC_KEYS_OLD;
         /* Percent-kind fields go through pctToDecimal (shared helper in
@@ -350,7 +368,38 @@ export function useImport(){
      * by 100 so benchmark metrics are stored in the same decimal
      * convention as company metrics (0.072 = 7.2%). x/ratio/bn keys are
      * stored raw (e.g. fpe1 = 19.2 not 0.192). */
-    var PCT_METRIC_RE=/^(fcfYld|divYld|payout|netDE|ltEPS|grMgn|netMgn|gpAss|npAss|opROE)[12]?$/;
+    var PCT_METRIC_RE=/^(fcfYld|divYld|payout|netDE|ltEPS|grMgn|netMgn|gpAss|npAss|opROE|roe|intGr|adpsGr1|adpsGr5)[12]?$/;
+    /* Ratio Item labels accepted on the dated benchmark import, with the
+       canonical key + display kind they map to. Aliases are matched
+       case-insensitively against the trimmed Item cell. The "kind" is
+       used by the Characteristics view to format and to know whether the
+       value should be percent-converted on import. Keep the keys distinct
+       from the metric bucket's keys so the same name can mean different
+       things in different buckets if needed. */
+    var RATIO_ALIASES = [
+      { aliases: ["AVERAGE MKTCAP", "AVERAGE MKTCAP (M USD)", "AVG MKTCAP", "AVG MARKET CAP"],         key: "avgMktCap", kind: "musd" },
+      { aliases: ["MEDIAN MKTCAP",  "MEDIAN MKTCAP (M USD)",  "MED MKTCAP", "MEDIAN MARKET CAP"],      key: "medMktCap", kind: "musd" },
+      { aliases: ["PRICE TO EARNINGS", "P/E", "PE"],                                                    key: "pe",        kind: "x"    },
+      { aliases: ["PRICE TO BOOK VALUE", "P/B", "PB", "PRICE TO BOOK"],                                 key: "pb",        kind: "x"    },
+      { aliases: ["ROE", "RETURN ON EQUITY"],                                                           key: "roe",       kind: "pct"  },
+      { aliases: ["FWD PRICE TO EARN", "FWD P/E", "FORWARD P/E", "FORWARD PRICE TO EARNINGS"],          key: "fwdPe",     kind: "x"    },
+      { aliases: ["CURR INTERNAL GROWTH RATE", "INTERNAL GROWTH", "INTERNAL GROWTH RATE", "INT GROWTH"], key: "intGr",     kind: "pct"  },
+      { aliases: ["5 YEARS ADPS GROWTH RATE", "5YR ADPS GROWTH", "5Y ADPS GROWTH", "ADPS 5Y"],          key: "adpsGr5",   kind: "pct"  },
+      { aliases: ["1 YEAR ADPS GROWTH RATE",  "1YR ADPS GROWTH", "1Y ADPS GROWTH", "ADPS 1Y"],          key: "adpsGr1",   kind: "pct"  },
+      { aliases: ["PAYOUT RATIO", "PAYOUT"],                                                            key: "payout",    kind: "pct"  },
+      { aliases: ["MONTHLY YIELD", "DIV YLD", "DIVIDEND YIELD", "DIV YIELD"],                           key: "divYld",    kind: "pct"  },
+    ];
+    function resolveRatioKey(itemRaw) {
+      const u = (itemRaw||"").trim().toUpperCase();
+      if (!u) return null;
+      for (let i = 0; i < RATIO_ALIASES.length; i++) {
+        const def = RATIO_ALIASES[i];
+        for (let j = 0; j < def.aliases.length; j++) {
+          if (def.aliases[j] === u) return def;
+        }
+      }
+      return null;
+    }
     /* m/d/yyyy or mm/dd/yyyy → ISO YYYY-MM-DD. Returns null if not a date. */
     function parseDateMDY(s){
       if(!s)return null;
@@ -383,30 +432,43 @@ export function useImport(){
       var bucket=type.indexOf("country")>=0?"countries"
               :type.indexOf("sector") >=0?"sectors"
               :type.indexOf("metric") >=0?"metrics"
+              :type.indexOf("ratio")  >=0?"ratios"
               :null;
       if(!bucket){dropped++;return;}
+      /* Bucket-specific normalization. metrics already use a fixed
+         decimal/percent-form rule. Ratios get the same treatment but
+         resolved via RATIO_ALIASES so users can paste FactSet-style
+         human labels ("PRICE TO BOOK VALUE") instead of canonical keys. */
+      var storedName = name;
       if(bucket==="metrics" && PCT_METRIC_RE.test(name)) w=w/100;
+      if(bucket==="ratios"){
+        var def = resolveRatioKey(name);
+        if(!def){dropped++;return;}
+        storedName = def.key;
+        if(def.kind==="pct") w=w/100;
+      }
       if(dateIso){
         if(!historyRows[bm])historyRows[bm]={};
-        if(!historyRows[bm][dateIso])historyRows[bm][dateIso]={sectors:{},countries:{},metrics:{}};
-        historyRows[bm][dateIso][bucket][name]=w;
+        if(!historyRows[bm][dateIso])historyRows[bm][dateIso]={sectors:{},countries:{},metrics:{},ratios:{}};
+        historyRows[bm][dateIso][bucket][storedName]=w;
       } else {
-        if(!affected[bm])affected[bm]={sectors:{},countries:{},metrics:{},asOf:benchmarkAsOf||""};
-        affected[bm][bucket][name]=w;
+        if(!affected[bm])affected[bm]={sectors:{},countries:{},metrics:{},ratios:{},asOf:benchmarkAsOf||""};
+        affected[bm][bucket][storedName]=w;
       }
     });
     if(Object.keys(affected).length===0 && Object.keys(historyRows).length===0){
       alertFn("No valid rows parsed. Formats:\n"
-            + "  Current snapshot: Benchmark, Type (Sector|Country|Metric), Name, Value\n"
+            + "  Current snapshot: Benchmark, Type (Sector|Country|Metric|Ratio), Name, Value\n"
             + "  Quarterly history: Date (m/d/yyyy), Name, Type, Item, Value\n"
-            + "Name in the dated format may be either a benchmark (e.g. MSCI ACWI) or a portfolio code (FGL, GL, FIN, IN, EM, SC).");
+            + "Name in the dated format may be either a benchmark (e.g. MSCI ACWI) or a portfolio code (FGL, GL, FIN, IN, EM, SC).\n"
+            + "Type=Ratio accepts the 11 FactSet labels (AVERAGE MKTCAP, PRICE TO EARNINGS, PRICE TO BOOK VALUE, ROE, FWD PRICE TO EARN, CURR INTERNAL GROWTH RATE, 5 YEARS ADPS GROWTH RATE, 1 YEAR ADPS GROWTH RATE, PAYOUT RATIO, MONTHLY YIELD, MEDIAN MKTCAP).");
       return;
     }
     if(Object.keys(affected).length>0){
       setBenchmarkWeights(function(prev){
         var next=Object.assign({},prev);
         Object.keys(affected).forEach(function(bm){
-          var cur=next[bm]||{sectors:{},countries:{},metrics:{},asOf:""};
+          var cur=next[bm]||{sectors:{},countries:{},metrics:{},ratios:{},asOf:""};
           /* Merge: for each bucket, incoming REPLACES existing when the
            * paste included that bucket. Untouched buckets are preserved so
            * you can upload sectors/countries one week and metrics the
@@ -416,6 +478,7 @@ export function useImport(){
             sectors:   Object.keys(inc.sectors  ).length>0 ? inc.sectors   : (cur.sectors  ||{}),
             countries: Object.keys(inc.countries).length>0 ? inc.countries : (cur.countries||{}),
             metrics:   Object.keys(inc.metrics  ).length>0 ? inc.metrics   : (cur.metrics  ||{}),
+            ratios:    Object.keys(inc.ratios   ).length>0 ? inc.ratios    : (cur.ratios   ||{}),
             asOf: inc.asOf || cur.asOf || "",
           };
         });

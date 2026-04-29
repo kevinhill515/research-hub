@@ -118,3 +118,88 @@ export function buildCompaniesById(companies) {
   (companies || []).forEach(function (c) { if (c && c.id != null) out[c.id] = c; });
   return out;
 }
+
+/* Definition of the 11 quarterly Ratios shown in the Characteristics ->
+ * Ratios comparison section. Each entry knows:
+ *   - key:           canonical key used both in benchmark uploads (Ratio
+ *                    type) and in storage at breakdownHistory[name][date].ratios[key]
+ *   - label:         display label
+ *   - portMetric:    company.metrics field used for the portfolio side
+ *   - aggregator:    "weighted" | "avg" | "median" — how to combine
+ *                    per-holding values into a portfolio aggregate
+ *   - kind:          "musd" (millions USD), "x" (multiple), "pct" (decimal x100)
+ *
+ * For "musd" mktCap rows, the portfolio side multiplies by 1000 because
+ * company.metrics.mktCap is stored in $B; the comparison is in $M. */
+export const RATIO_DEFS = [
+  { key: "avgMktCap", label: "Average Mkt Cap",        portMetric: "mktCap", aggregator: "avg",      kind: "musd" },
+  { key: "medMktCap", label: "Median Mkt Cap",         portMetric: "mktCap", aggregator: "median",   kind: "musd" },
+  { key: "pe",        label: "P/E",                    portMetric: "fpe",    aggregator: "weighted", kind: "x"    },
+  { key: "pb",        label: "P/B",                    portMetric: "pb",     aggregator: "weighted", kind: "x"    },
+  { key: "roe",       label: "ROE",                    portMetric: "roe",    aggregator: "weighted", kind: "pct"  },
+  { key: "fwdPe",     label: "Fwd P/E",                portMetric: "fpe1",   aggregator: "weighted", kind: "x"    },
+  { key: "intGr",     label: "Internal Growth Rate",   portMetric: "intGr",  aggregator: "weighted", kind: "pct"  },
+  { key: "adpsGr5",   label: "ADPS Growth (5Y)",       portMetric: "adpsGr5",aggregator: "weighted", kind: "pct"  },
+  { key: "adpsGr1",   label: "ADPS Growth (1Y)",       portMetric: "adpsGr1",aggregator: "weighted", kind: "pct"  },
+  { key: "payout",    label: "Payout Ratio",           portMetric: "payout", aggregator: "weighted", kind: "pct"  },
+  { key: "divYld",    label: "Dividend Yield",         portMetric: "divYld", aggregator: "weighted", kind: "pct"  },
+];
+
+/* Aggregate the portfolio side for a single ratio definition.
+ *   weighted -> Rep MV-weighted average (uses weightedAvg above)
+ *   avg      -> simple unweighted mean (one vote per company with a finite val)
+ *   median   -> unweighted median (same)
+ *
+ * Returns the same shape as weightedAvg() so the caller treats both
+ * aggregator types uniformly. For musd-kind ratios with mktCap source,
+ * the value is multiplied by 1000 to convert from stored $B to $M.
+ */
+export function aggregatePortfolioRatio(byCompany, companiesById, def) {
+  if (def.aggregator === "weighted") {
+    const wa = weightedAvg(byCompany, companiesById, def.portMetric);
+    return wa;
+  }
+  /* avg / median — unweighted simple stats. */
+  const values = [];
+  let total = 0;
+  (byCompany || []).forEach(function (c) {
+    total++;
+    const m = companiesById && companiesById[c.id] && companiesById[c.id].metrics;
+    if (!m) return;
+    const raw = m[def.portMetric];
+    const v = (typeof raw === "number") ? raw : parseFloat(raw);
+    if (isFinite(v)) values.push(v);
+  });
+  let value;
+  if (values.length === 0) {
+    value = null;
+  } else if (def.aggregator === "avg") {
+    value = values.reduce(function (s, x) { return s + x; }, 0) / values.length;
+  } else {
+    /* median */
+    values.sort(function (a, b) { return a - b; });
+    const n = values.length;
+    value = (n % 2 === 1) ? values[(n - 1) / 2] : (values[n / 2 - 1] + values[n / 2]) / 2;
+  }
+  /* Convert $B -> $M for mktCap-sourced musd ratios so portfolio matches
+     benchmark units on display. */
+  if (value !== null && def.kind === "musd") value = value * 1000;
+  return {
+    value: value,
+    coverage: { used: values.length, total: total, weightUsed: 0, weightTotal: 0 },
+  };
+}
+
+/* Pick the most-recent uploaded ratios snapshot for a benchmark from
+ * breakdownHistory. Returns { date, ratios } or null when no history exists. */
+export function latestRatiosSnapshot(breakdownHistory, benchName) {
+  if (!breakdownHistory || !benchName) return null;
+  const byDate = breakdownHistory[benchName];
+  if (!byDate) return null;
+  const dates = Object.keys(byDate).filter(function (d) {
+    return byDate[d] && byDate[d].ratios && Object.keys(byDate[d].ratios).length > 0;
+  }).sort();
+  if (dates.length === 0) return null;
+  const latest = dates[dates.length - 1];
+  return { date: latest, ratios: byDate[latest].ratios };
+}

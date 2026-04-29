@@ -18,6 +18,7 @@ import { calcBreakdowns } from '../../utils/portfolioMath.js';
 import {
   CHARACTERISTIC_METRICS, weightedAvg, mktCapStats,
   resolveField, buildCompaniesById,
+  RATIO_DEFS, aggregatePortfolioRatio, latestRatiosSnapshot,
 } from '../../utils/characteristics.js';
 
 const TABST_ACTIVE   = "text-[13px] px-3 py-1.5 border-b-2 border-blue-600 text-gray-900 dark:text-slate-100 font-semibold cursor-pointer bg-transparent";
@@ -30,6 +31,9 @@ function fmtMetric(v, kind) {
   if (!isFinite(n)) return "--";
   switch (kind) {
     case "bn":    return "$" + n.toFixed(1) + "B";
+    /* musd = millions USD with thousands separators (e.g. $412,350M) —
+       used by the Ratios section where benchmark uploads are in M. */
+    case "musd":  return "$" + Math.round(n).toLocaleString() + "M";
     case "x":     return n.toFixed(1) + "x";
     case "pct":   return (n * 100).toFixed(1) + "%";
     case "ratio": return n.toFixed(1);
@@ -46,6 +50,7 @@ function fmtDelta(port, bench, kind) {
   const sign = d >= 0 ? "+" : "";
   switch (kind) {
     case "bn":    return sign + d.toFixed(1) + "B";
+    case "musd":  return sign + Math.round(d).toLocaleString() + "M";
     case "x":     return sign + d.toFixed(1) + "x";
     case "pct":   return sign + (d * 100).toFixed(1) + "pp";
     case "ratio": return sign + d.toFixed(1);
@@ -57,8 +62,12 @@ function deltaColor(port, bench, kind) {
   if (port === null || port === undefined || bench === null || bench === undefined) return undefined;
   const d = port - bench;
   if (!isFinite(d)) return undefined;
-  /* Tiny thresholds so visual noise is dampened */
-  const eps = kind === "pct" ? 0.0025 /* 0.25pp */ : (kind === "x" || kind === "ratio") ? 0.1 : 0.5;
+  /* Tiny thresholds so visual noise is dampened. musd values are in
+     millions of USD, where ±$500M is roughly within rounding/timing noise. */
+  const eps = kind === "pct" ? 0.0025 /* 0.25pp */
+            : (kind === "x" || kind === "ratio") ? 0.1
+            : kind === "musd" ? 500
+            : 0.5;
   if (d >  eps) return "#166534";
   if (d < -eps) return "#dc2626";
   return "#64748b";
@@ -100,7 +109,7 @@ function Tile({ label, value, sub }) {
 }
 
 export default function CharacteristicsView() {
-  const { companies, repData, fxRates, benchmarkWeights } = useCompanyContext();
+  const { companies, repData, fxRates, benchmarkWeights, breakdownHistory } = useCompanyContext();
   const [portKey, setPortKey] = useState(PORTFOLIOS[0] || "GL");
   const [variant, setVariant] = useState("1"); /* default +1 */
   const [bmType, setBmType] = useState("core"); /* "core" | "value" */
@@ -163,6 +172,29 @@ export default function CharacteristicsView() {
     });
     return order.map(function (g) { return { group: g, rows: map[g] }; });
   }, [metricRows]);
+
+  /* Ratios section. Pulls the most-recent uploaded benchmark ratios from
+     breakdownHistory[benchName] (Type=Ratio quarterly history) and pairs
+     each with the portfolio aggregate computed from the appropriate
+     metric field. Hidden entirely when there is no ratio history yet. */
+  const ratioSnapshot = useMemo(function () {
+    return latestRatiosSnapshot(breakdownHistory, benchName);
+  }, [breakdownHistory, benchName]);
+  const hasRatios = !!(ratioSnapshot && Object.keys(ratioSnapshot.ratios).length > 0);
+  const ratioRows = useMemo(function () {
+    return RATIO_DEFS.map(function (def) {
+      const port = aggregatePortfolioRatio(breakdown.byCompany, companiesById, def);
+      const bm = ratioSnapshot && (def.key in ratioSnapshot.ratios) ? ratioSnapshot.ratios[def.key] : null;
+      return {
+        key: def.key,
+        label: def.label,
+        kind: def.kind,
+        portfolio: port.value,
+        coverage: port.coverage,
+        benchmark: bm,
+      };
+    });
+  }, [breakdown, companiesById, ratioSnapshot]);
 
   const empty = breakdown.byCompany.length === 0;
 
@@ -306,6 +338,70 @@ export default function CharacteristicsView() {
               No benchmark metric data uploaded for "{benchName || "—"}". To enable the comparison column, paste rows into Data Hub → Benchmarks with Type = Metric (e.g. <span className="font-mono">ACWI{"\t"}Metric{"\t"}fpe1{"\t"}19.2</span>). Percent metrics like fcfYld, divYld, margins accept percent form — the importer divides by 100.
             </div>
           )}
+
+          {/* Ratios — quarterly-history comparison.
+              The benchmark column reads the most-recent uploaded snapshot
+              from breakdownHistory[benchName].ratios (populated via Data
+              Hub -> Benchmarks with Type=Ratio). The portfolio column is
+              freshly computed from current holdings using the aggregator
+              specified in RATIO_DEFS (weighted/avg/median). */}
+          <div className="mt-4">
+            <div className="flex items-center justify-between mb-1">
+              <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-semibold">
+                Ratios
+              </div>
+              {ratioSnapshot && (
+                <div className="text-[10px] text-gray-400 dark:text-slate-500 italic">
+                  benchmark as of {ratioSnapshot.date}
+                </div>
+              )}
+            </div>
+            <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+              <div className={"grid gap-2 px-3 py-2 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 " +
+                (hasRatios ? "grid-cols-[1fr_120px_120px_90px_70px]" : "grid-cols-[1fr_140px_70px]")}>
+                <div>Ratio</div>
+                <div className="text-right">Portfolio</div>
+                {hasRatios && <div className="text-right">Benchmark</div>}
+                {hasRatios && <div className="text-right">+/−</div>}
+                <div className="text-right">Coverage</div>
+              </div>
+              {ratioRows.map(function (r) {
+                const dc = hasRatios ? deltaColor(r.portfolio, r.benchmark, r.kind) : undefined;
+                const dtxt = hasRatios ? fmtDelta(r.portfolio, r.benchmark, r.kind) : null;
+                return (
+                  <div
+                    key={r.key}
+                    className={"grid gap-2 px-3 py-1.5 text-xs items-center border-b border-slate-100 dark:border-slate-800 " +
+                      (hasRatios ? "grid-cols-[1fr_120px_120px_90px_70px]" : "grid-cols-[1fr_140px_70px]")}
+                  >
+                    <div className="text-gray-900 dark:text-slate-100">{r.label}</div>
+                    <div className="text-right font-medium text-gray-900 dark:text-slate-100 tabular-nums">
+                      {fmtMetric(r.portfolio, r.kind)}
+                    </div>
+                    {hasRatios && (
+                      <div className="text-right text-gray-500 dark:text-slate-400 tabular-nums">
+                        {r.benchmark === null || r.benchmark === undefined ? "--" : fmtMetric(r.benchmark, r.kind)}
+                      </div>
+                    )}
+                    {hasRatios && (
+                      <div className="text-right font-medium tabular-nums" style={{ color: dc }}>
+                        {dtxt || "--"}
+                      </div>
+                    )}
+                    <div className="text-right text-[10px] text-gray-400 dark:text-slate-500 tabular-nums">
+                      {r.coverage.used}/{r.coverage.total}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {!hasRatios && (
+              <div className="text-[11px] text-gray-500 dark:text-slate-400 italic mt-2 px-2 py-1 rounded bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+                No benchmark ratio data uploaded for "{benchName || "—"}" yet. Paste rows into Data Hub → Benchmarks with the dated 5-col format and Type = Ratio
+                (e.g. <span className="font-mono">3/31/2026{"\t"}{benchName || "ACWI"}{"\t"}Ratio{"\t"}PRICE TO BOOK VALUE{"\t"}3.4</span>).
+              </div>
+            )}
+          </div>
         </>
       )}
     </div>
