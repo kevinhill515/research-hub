@@ -181,11 +181,9 @@ export function aggregatePortfolioRatio(byCompany, companiesById, def) {
     const n = values.length;
     value = (n % 2 === 1) ? values[(n - 1) / 2] : (values[n / 2 - 1] + values[n / 2]) / 2;
   }
-  /* Portfolio mktCap is uploaded with a thousand-larger unit than the
-     benchmark's "M USD" convention, so divide by 1000 for musd-kind
-     ratios on the portfolio side. (Benchmark column is left untouched
-     and displays exactly the value uploaded.) */
-  if (value !== null && def.kind === "musd") value = value / 1000;
+  /* Portfolio mktCap is stored in $B; benchmark uploads in $M. Multiply
+     portfolio side by 1000 so both columns display in $M. */
+  if (value !== null && def.kind === "musd") value = value * 1000;
   return {
     value: value,
     coverage: { used: values.length, total: total, weightUsed: 0, weightTotal: 0 },

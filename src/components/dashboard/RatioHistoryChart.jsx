@@ -1,20 +1,15 @@
 /* Inline chart for one ratio, opened by clicking a row in the
- * Characteristics → Ratios table. Plots the portfolio side and the
- * benchmark side as two lines through the available quarters.
- *
- * Both series come from the same breakdownHistory[name][date].ratios[key]
- * source — `name` may be the portfolio code (FGL/GL/...) for the port
- * line and the benchmark name (e.g. MSCI ACWI) for the bench line.
- *
- * Empty / single-point series still render — recharts is fine with one
- * point — but we render a friendlier hint when neither side has any
- * uploaded data.
+ * Characteristics → Ratios table. Plots up to three lines through the
+ * available quarters: portfolio (solid), Core benchmark (dashed gray),
+ * Value benchmark (dashed amber). All three pull from the same
+ * breakdownHistory[name][date].ratios[key] source — caller supplies the
+ * three names.
  */
 
+import { useMemo } from 'react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
-import { ratioHistorySeries } from '../../utils/characteristics.js';
 
 /* Format ISO YYYY-MM-DD as "Q1 '26" for compact X-axis ticks. */
 function quarterLabel(iso) {
@@ -25,17 +20,45 @@ function quarterLabel(iso) {
   return "Q" + q + " '" + y;
 }
 
+/* Build a 3-line history series for one ratio across portKey, coreBench,
+ * and valueBench. Each row is { date, portfolio, core, value } with
+ * missing sides as null. */
+function buildSeries(history, portKey, coreBench, valueBench, ratioKey) {
+  const get = function (name, d) {
+    const slot = history && history[name] && history[name][d];
+    if (!slot || !slot.ratios) return null;
+    return ratioKey in slot.ratios ? slot.ratios[ratioKey] : null;
+  };
+  const dateSet = new Set();
+  [portKey, coreBench, valueBench].forEach(function (n) {
+    if (!n || !history || !history[n]) return;
+    Object.keys(history[n]).forEach(function (d) { dateSet.add(d); });
+  });
+  return Array.from(dateSet).sort().map(function (d) {
+    return {
+      date: d,
+      portfolio: get(portKey, d),
+      core: get(coreBench, d),
+      value: get(valueBench, d),
+    };
+  }).filter(function (row) {
+    return row.portfolio !== null || row.core !== null || row.value !== null;
+  });
+}
+
 export default function RatioHistoryChart({
-  history, portKey, benchName, ratioKey, kind,
+  history, portKey, coreBench, valueBench, ratioKey, kind,
   height = 220,
 }) {
-  const data = ratioHistorySeries(history, portKey, benchName, ratioKey);
+  const data = useMemo(function () {
+    return buildSeries(history, portKey, coreBench, valueBench, ratioKey);
+  }, [history, portKey, coreBench, valueBench, ratioKey]);
 
   if (data.length === 0) {
     return (
       <div className="text-xs italic text-gray-500 dark:text-slate-400 py-4 text-center bg-slate-50 dark:bg-slate-800/40 rounded">
         No history uploaded for this ratio yet. Upload via Data Hub → Benchmarks
-        with Type=Ratio (dated 5-col format) using either the benchmark name
+        with Type=Ratio (dated 5-col format) using either a benchmark name
         or a portfolio code.
       </div>
     );
@@ -84,11 +107,23 @@ export default function RatioHistoryChart({
           />
           <Line
             type="monotone"
-            dataKey="benchmark"
-            name={benchName || "Benchmark"}
+            dataKey="core"
+            name={(coreBench || "Core") + " (Core)"}
             stroke="#64748b"
             strokeWidth={2}
             strokeDasharray="4 3"
+            dot={{ r: 2 }}
+            activeDot={{ r: 4 }}
+            isAnimationActive={false}
+            connectNulls
+          />
+          <Line
+            type="monotone"
+            dataKey="value"
+            name={(valueBench || "Value") + " (Value)"}
+            stroke="#d97706"
+            strokeWidth={2}
+            strokeDasharray="2 4"
             dot={{ r: 2 }}
             activeDot={{ r: 4 }}
             isAnimationActive={false}
