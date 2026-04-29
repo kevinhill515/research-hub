@@ -145,10 +145,11 @@ export function buildCompaniesById(companies) {
 export const RATIO_DEFS = [
   { key: "avgMktCap", label: "Average Mkt Cap",        portMetric: "mktCap", aggregator: "avg",      kind: "musd", direction: "neutral" },
   { key: "medMktCap", label: "Median Mkt Cap",         portMetric: "mktCap", aggregator: "median",   kind: "musd", direction: "neutral" },
+  /* Fwd P/E above P/E by request — easier to read forward-looking first. */
+  { key: "fwdPe",     label: "Fwd P/E",                portMetric: "fpe1",   aggregator: "weighted", kind: "x",    direction: "lower"   },
   { key: "pe",        label: "P/E",                    portMetric: "fpe",    aggregator: "weighted", kind: "x",    direction: "lower"   },
   { key: "pb",        label: "P/B",                    portMetric: "pb",     aggregator: "weighted", kind: "x",    direction: "lower"   },
   { key: "roe",       label: "ROE",                    portMetric: "roe",    aggregator: "weighted", kind: "pct",  direction: "higher"  },
-  { key: "fwdPe",     label: "Fwd P/E",                portMetric: "fpe1",   aggregator: "weighted", kind: "x",    direction: "lower"   },
   { key: "intGr",     label: "Internal Growth Rate",   portMetric: "intGr",  aggregator: "weighted", kind: "pct",  direction: "higher"  },
   { key: "adpsGr5",   label: "ADPS Growth (5Y)",       portMetric: "adpsGr5",aggregator: "weighted", kind: "pct",  direction: "higher"  },
   { key: "adpsGr1",   label: "ADPS Growth (1Y)",       portMetric: "adpsGr1",aggregator: "weighted", kind: "pct",  direction: "higher"  },

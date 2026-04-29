@@ -70,29 +70,37 @@ function signColor(d) {
   return undefined; /* exactly equal — leave default */
 }
 
-/* Bench-cell color for the Metrics table. Convention (flipped from the
- * prior version): GREEN on the bench cell = the BENCHMARK is "ahead" of
- * us on the metric's natural reading (just sign(port-bench), no
- * direction adjustment). RED = bench is behind. The user explicitly
- * asked to flip; this is the simplest read.
- */
-function deltaColor(port, bench, kind) {
+/* Metric keys where LOWER is better (cheaper). For these the bench cell
+ * coloring inverts: green when bench < port (bench is cheaper). All
+ * other metrics use higher-is-better coloring (green when bench > port). */
+const LOWER_IS_BETTER_METRICS = new Set([
+  "fpe",  "fpe1",  "fpe2",   /* P/E */
+  "pb",   "pb1",   "pb2",    /* P/B */
+  "netDE","netDE1","netDE2", /* Net D/E (less leverage = better) */
+]);
+
+/* Bench-cell color for the Metrics table.
+ * Default: GREEN when bench > port (bench is "above" portfolio).
+ * For lower-is-better metrics: GREEN when bench < port (bench is cheaper). */
+function deltaColor(port, bench, kind, key) {
   if (port === null || port === undefined || bench === null || bench === undefined) return undefined;
-  /* Flipped: green when bench > port (positive delta on bench - port). */
-  return signColor((bench || 0) - (port || 0));
+  const flip = LOWER_IS_BETTER_METRICS.has(key);
+  const d = flip ? (port - bench) : (bench - port);
+  return signColor(d);
 }
 
 /* Bench-cell color for one Ratios row.
- *   - neutral direction (avg/median mkt cap, payout): no color.
- *   - all other directions: same flipped sign as deltaColor — green
- *     when bench > port, red when bench < port. The flip is uniform
- *     across "higher" and "lower" directions per the user's "flip all
- *     of the current red/greens" request.
+ *   - neutral : no color.
+ *   - lower   : green when bench < port (bench is cheaper) — applies to
+ *               P/E, P/B, Fwd P/E.
+ *   - higher  : green when bench > port (bench is ahead on the metric's
+ *               positive direction) — ROE, growth rates, div yield.
  */
 function ratioBenchColor(port, bench, kind, direction) {
   if (direction === "neutral") return undefined;
   if (port === null || port === undefined || bench === null || bench === undefined) return undefined;
-  return signColor((bench || 0) - (port || 0));
+  const d = direction === "lower" ? (port - bench) : (bench - port);
+  return signColor(d);
 }
 
 export default function CharacteristicsView() {
@@ -448,7 +456,7 @@ export default function CharacteristicsView() {
                         {g.group}
                       </div>
                       {g.rows.map(function (r) {
-                        function HorizonCell({ h }) {
+                        function HorizonCell({ h, fieldKey }) {
                           if (!h) {
                             return <div className="text-right text-gray-300 dark:text-slate-600 text-[10px]">—</div>;
                           }
@@ -461,14 +469,14 @@ export default function CharacteristicsView() {
                                 <>
                                   <div
                                     className="text-[10px] tabular-nums"
-                                    style={{ color: deltaColor(h.portfolio, h.core, r.kind) || "#94a3b8" }}
+                                    style={{ color: deltaColor(h.portfolio, h.core, r.kind, fieldKey) || "#94a3b8" }}
                                     title={"Core: Δ port − bench " + (fmtDelta(h.portfolio, h.core, r.kind) || "--")}
                                   >
                                     {h.core === null || h.core === undefined ? "--" : fmtMetric(h.core, r.kind)}
                                   </div>
                                   <div
                                     className="text-[10px] tabular-nums"
-                                    style={{ color: deltaColor(h.portfolio, h.value, r.kind) || "#94a3b8" }}
+                                    style={{ color: deltaColor(h.portfolio, h.value, r.kind, fieldKey) || "#94a3b8" }}
                                     title={"Value: Δ port − bench " + (fmtDelta(h.portfolio, h.value, r.kind) || "--")}
                                   >
                                     {h.value === null || h.value === undefined ? "--" : fmtMetric(h.value, r.kind)}
@@ -485,9 +493,9 @@ export default function CharacteristicsView() {
                             className="grid gap-1 px-2 py-1.5 text-xs items-start border-b border-slate-100 dark:border-slate-800 grid-cols-[1fr_70px_70px_70px_45px]"
                           >
                             <div className="text-gray-900 dark:text-slate-100 truncate pt-0.5" title={r.label}>{r.label}</div>
-                            <HorizonCell h={r.ltm} />
-                            <HorizonCell h={r.plus1} />
-                            <HorizonCell h={r.plus2} />
+                            <HorizonCell h={r.ltm}   fieldKey={r.hasVariants ? r.key      : r.key} />
+                            <HorizonCell h={r.plus1} fieldKey={r.hasVariants ? r.key + "1" : r.key} />
+                            <HorizonCell h={r.plus2} fieldKey={r.hasVariants ? r.key + "2" : r.key} />
                             <div className="text-right text-[10px] text-gray-400 dark:text-slate-500 tabular-nums pt-0.5">
                               {ltmCov ? (ltmCov.used + "/" + ltmCov.total) : "--"}
                             </div>
