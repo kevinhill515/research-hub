@@ -59,50 +59,40 @@ function fmtDelta(port, bench, kind) {
   }
 }
 
-function deltaColor(port, bench, kind) {
-  if (port === null || port === undefined || bench === null || bench === undefined) return undefined;
-  const d = port - bench;
+/* Sign-only color: any positive delta → green, any negative → red.
+ * No gray band — even small differences get colored, since the user
+ * was seeing legitimate but small diffs (e.g. div yield 2.0 vs 2.1)
+ * fall into a gray no-man's-land. */
+function signColor(d) {
   if (!isFinite(d)) return undefined;
-  /* Tiny thresholds so visual noise is dampened. musd values are in
-     millions of USD, where ±$500M is roughly within rounding/timing noise. */
-  const eps = kind === "pct" ? 0.0025 /* 0.25pp */
-            : (kind === "x" || kind === "ratio") ? 0.1
-            : kind === "musd" ? 500
-            : 0.5;
-  if (d >  eps) return "#166534";
-  if (d < -eps) return "#dc2626";
-  return "#64748b";
+  if (d > 0) return "#166534"; /* green */
+  if (d < 0) return "#dc2626"; /* red */
+  return undefined; /* exactly equal — leave default */
 }
 
-/* Color for a bench cell, applied per ratio direction:
- *   - neutral : no color (returns undefined)
- *   - lower   : standard delta — bench cell green when port < bench (we
- *               are below the bench on a lower-is-better metric, so bench
- *               is "ahead", which is bad for us → red on bench actually).
- *               To keep "green = good for us", we flip the standard
- *               deltaColor here so green = bench worse than us.
- *   - higher  : bench cell green when port > bench (we're ahead on a
- *               higher-is-better metric — same flip applied).
- *
- * Net result for both colored directions: bench-cell GREEN means
- * portfolio is winning vs. bench, RED means losing.
+/* Bench-cell color for the Metrics table. Convention (flipped from the
+ * prior version): GREEN on the bench cell = the BENCHMARK is "ahead" of
+ * us on the metric's natural reading (just sign(port-bench), no
+ * direction adjustment). RED = bench is behind. The user explicitly
+ * asked to flip; this is the simplest read.
+ */
+function deltaColor(port, bench, kind) {
+  if (port === null || port === undefined || bench === null || bench === undefined) return undefined;
+  /* Flipped: green when bench > port (positive delta on bench - port). */
+  return signColor((bench || 0) - (port || 0));
+}
+
+/* Bench-cell color for one Ratios row.
+ *   - neutral direction (avg/median mkt cap, payout): no color.
+ *   - all other directions: same flipped sign as deltaColor — green
+ *     when bench > port, red when bench < port. The flip is uniform
+ *     across "higher" and "lower" directions per the user's "flip all
+ *     of the current red/greens" request.
  */
 function ratioBenchColor(port, bench, kind, direction) {
   if (direction === "neutral") return undefined;
   if (port === null || port === undefined || bench === null || bench === undefined) return undefined;
-  const d = port - bench;
-  if (!isFinite(d)) return undefined;
-  const eps = kind === "pct" ? 0.0025
-            : (kind === "x" || kind === "ratio") ? 0.1
-            : kind === "musd" ? 500
-            : 0.5;
-  /* For "higher is better": port > bench → portfolio winning → green on bench.
-     For "lower is better":  port < bench → portfolio winning → green on bench. */
-  const portWins = direction === "higher" ? (d > eps) : (-d > eps);
-  const portLoses = direction === "higher" ? (-d > eps) : (d > eps);
-  if (portWins)  return "#166534"; /* green */
-  if (portLoses) return "#dc2626"; /* red */
-  return "#64748b"; /* gray (within noise band) */
+  return signColor((bench || 0) - (port || 0));
 }
 
 export default function CharacteristicsView() {
@@ -158,63 +148,56 @@ export default function CharacteristicsView() {
   const hasValueMetrics = !!(valueMetrics && Object.keys(valueMetrics).length > 0);
   const hasBenchmark    = hasCoreMetrics || hasValueMetrics;
 
-  /* Build the metric rows. For variant metrics we now emit THREE rows
-     (LTM, +1, +2) instead of one toggled row, so the user sees all three
-     horizons at a glance. The +1 row keeps the bare label (default
-     primary horizon); LTM and +2 are labelled explicitly. */
+  /* Build the metric rows. One row per metric; the three horizon variants
+     (LTM, +1, +2) are exposed as separate columns inside each row, each
+     carrying its own port / core / value tuple. Non-variant metrics
+     (mktCap, intCov, ltEPS) only populate the LTM column; the +1 and +2
+     columns render "—" for those. */
   const metricRows = useMemo(function () {
-    const out = [];
-    CHARACTERISTIC_METRICS.forEach(function (m) {
-      function buildRow(variant, suffixLabel) {
+    return CHARACTERISTIC_METRICS.map(function (m) {
+      function buildHorizon(variant) {
         const field = resolveField(m.key, variant, m.hasVariants);
         const wa = weightedAvg(breakdown.byCompany, companiesById, field);
         const core  = coreMetrics  && field in coreMetrics  ? coreMetrics[field]  : null;
         const value = valueMetrics && field in valueMetrics ? valueMetrics[field] : null;
-        return {
-          key: m.key + (m.hasVariants ? "_" + variant : ""),
-          group: m.group,
-          label: m.label + (suffixLabel ? " " + suffixLabel : ""),
-          kind: m.kind,
-          portfolio: wa.value,
-          coverage: wa.coverage,
-          core: core,
-          value: value,
-        };
+        return { portfolio: wa.value, coverage: wa.coverage, core: core, value: value };
       }
-      if (!m.hasVariants) {
-        out.push(buildRow("0", ""));
-      } else {
-        /* Order: LTM, +1, +2 — chronological. */
-        out.push(buildRow("0", "(LTM)"));
-        out.push(buildRow("1", "+1"));
-        out.push(buildRow("2", "+2"));
-      }
+      const ltm = buildHorizon("0");
+      /* Skip +1/+2 for non-variant metrics — same value would just repeat. */
+      const plus1 = m.hasVariants ? buildHorizon("1") : null;
+      const plus2 = m.hasVariants ? buildHorizon("2") : null;
+      return {
+        key: m.key,
+        group: m.group,
+        label: m.label,
+        kind: m.kind,
+        hasVariants: m.hasVariants,
+        ltm: ltm,
+        plus1: plus1,
+        plus2: plus2,
+      };
     });
-    return out;
   }, [breakdown, companiesById, coreMetrics, valueMetrics]);
 
   /* Insert the two unweighted mkt-cap rows (Avg and Median) at the
      top of the Size group, alongside the existing weighted Mkt Cap row.
-     User explicitly asked to retire the standalone tiles in favor of
-     these inline rows. */
+     New shape: one row per metric, with .ltm / .plus1 / .plus2 horizon
+     tuples. Avg/Median are non-variant so they only have ltm. */
   const augmentedMetricRows = useMemo(function () {
     const out = [];
     metricRows.forEach(function (r, idx) {
       if (idx === 0 && r.group === "Size") {
-        /* The first row is "Mkt Cap" (weighted). Add unweighted siblings
-           AFTER it so the order is Wtd / Avg / Median. */
         out.push(r);
+        const cov = { used: mcStats.count, total: breakdown.byCompany.length };
         out.push({
-          key: "_avgMktCap", group: "Size", label: "Avg Mkt Cap", kind: "bn",
-          portfolio: mcStats.avg,
-          coverage: { used: mcStats.count, total: breakdown.byCompany.length },
-          core: null, value: null,
+          key: "_avgMktCap", group: "Size", label: "Avg Mkt Cap", kind: "bn", hasVariants: false,
+          ltm: { portfolio: mcStats.avg,    coverage: cov, core: null, value: null },
+          plus1: null, plus2: null,
         });
         out.push({
-          key: "_medMktCap", group: "Size", label: "Median Mkt Cap", kind: "bn",
-          portfolio: mcStats.median,
-          coverage: { used: mcStats.count, total: breakdown.byCompany.length },
-          core: null, value: null,
+          key: "_medMktCap", group: "Size", label: "Median Mkt Cap", kind: "bn", hasVariants: false,
+          ltm: { portfolio: mcStats.median, coverage: cov, core: null, value: null },
+          plus1: null, plus2: null,
         });
       } else {
         out.push(r);
@@ -438,22 +421,23 @@ export default function CharacteristicsView() {
               </div>
             </div>
 
-            {/* Metrics — grouped by category. Both Core and Value benchmark
-                columns render side-by-side; cells colored by Δ vs portfolio
-                (green = bench above portfolio, red = bench below). The
-                Avg/Median Mkt Cap rows in the Size group replace the old
-                standalone tiles. */}
+            {/* Metrics — grouped by category. Three horizon columns
+                (LTM, +1, +2) shown for every metric; non-variant metrics
+                (Mkt Cap, Int Cov, LT EPS) populate only the LTM column.
+                Each horizon cell stacks Port (top, bold) over Core and
+                Value bench numbers (smaller, gray) so the user gets the
+                full Port/Core/Value picture without 9 separate columns.
+                Bench numbers colored green = bench above port, red = below. */}
             <div>
               <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-semibold mb-1">
                 Metrics
               </div>
               <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
-                <div className={"grid gap-1 px-2 py-2 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 " +
-                  (hasBenchmark ? "grid-cols-[1fr_55px_55px_55px_45px]" : "grid-cols-[1fr_75px_50px]")}>
+                <div className="grid gap-1 px-2 py-2 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 grid-cols-[1fr_70px_70px_70px_45px]">
                   <div>Metric</div>
-                  <div className="text-right">Port.</div>
-                  {hasBenchmark && <div className="text-right" title={coreBench  || "Core"}>Core</div>}
-                  {hasBenchmark && <div className="text-right" title={valueBench || "Value"}>Value</div>}
+                  <div className="text-right">LTM</div>
+                  <div className="text-right">+1</div>
+                  <div className="text-right">+2</div>
                   <div className="text-right">Cov.</div>
                 </div>
 
@@ -464,36 +448,48 @@ export default function CharacteristicsView() {
                         {g.group}
                       </div>
                       {g.rows.map(function (r) {
+                        function HorizonCell({ h }) {
+                          if (!h) {
+                            return <div className="text-right text-gray-300 dark:text-slate-600 text-[10px]">—</div>;
+                          }
+                          return (
+                            <div className="text-right text-[11px] leading-tight">
+                              <div className="font-medium text-gray-900 dark:text-slate-100 tabular-nums">
+                                {fmtMetric(h.portfolio, r.kind)}
+                              </div>
+                              {hasBenchmark && (
+                                <>
+                                  <div
+                                    className="text-[10px] tabular-nums"
+                                    style={{ color: deltaColor(h.portfolio, h.core, r.kind) || "#94a3b8" }}
+                                    title={"Core: Δ port − bench " + (fmtDelta(h.portfolio, h.core, r.kind) || "--")}
+                                  >
+                                    {h.core === null || h.core === undefined ? "--" : fmtMetric(h.core, r.kind)}
+                                  </div>
+                                  <div
+                                    className="text-[10px] tabular-nums"
+                                    style={{ color: deltaColor(h.portfolio, h.value, r.kind) || "#94a3b8" }}
+                                    title={"Value: Δ port − bench " + (fmtDelta(h.portfolio, h.value, r.kind) || "--")}
+                                  >
+                                    {h.value === null || h.value === undefined ? "--" : fmtMetric(h.value, r.kind)}
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          );
+                        }
+                        const ltmCov = r.ltm && r.ltm.coverage;
                         return (
                           <div
                             key={r.key}
-                            className={"grid gap-1 px-2 py-1.5 text-xs items-center border-b border-slate-100 dark:border-slate-800 " +
-                              (hasBenchmark ? "grid-cols-[1fr_55px_55px_55px_45px]" : "grid-cols-[1fr_75px_50px]")}
+                            className="grid gap-1 px-2 py-1.5 text-xs items-start border-b border-slate-100 dark:border-slate-800 grid-cols-[1fr_70px_70px_70px_45px]"
                           >
-                            <div className="text-gray-900 dark:text-slate-100 truncate" title={r.label}>{r.label}</div>
-                            <div className="text-right font-medium text-gray-900 dark:text-slate-100 tabular-nums">
-                              {fmtMetric(r.portfolio, r.kind)}
-                            </div>
-                            {hasBenchmark && (
-                              <div
-                                className="text-right tabular-nums"
-                                style={{ color: deltaColor(r.portfolio, r.core, r.kind) }}
-                                title={"Δ vs portfolio: " + (fmtDelta(r.portfolio, r.core, r.kind) || "--")}
-                              >
-                                {r.core === null || r.core === undefined ? "--" : fmtMetric(r.core, r.kind)}
-                              </div>
-                            )}
-                            {hasBenchmark && (
-                              <div
-                                className="text-right tabular-nums"
-                                style={{ color: deltaColor(r.portfolio, r.value, r.kind) }}
-                                title={"Δ vs portfolio: " + (fmtDelta(r.portfolio, r.value, r.kind) || "--")}
-                              >
-                                {r.value === null || r.value === undefined ? "--" : fmtMetric(r.value, r.kind)}
-                              </div>
-                            )}
-                            <div className="text-right text-[10px] text-gray-400 dark:text-slate-500 tabular-nums">
-                              {r.coverage.used}/{r.coverage.total}
+                            <div className="text-gray-900 dark:text-slate-100 truncate pt-0.5" title={r.label}>{r.label}</div>
+                            <HorizonCell h={r.ltm} />
+                            <HorizonCell h={r.plus1} />
+                            <HorizonCell h={r.plus2} />
+                            <div className="text-right text-[10px] text-gray-400 dark:text-slate-500 tabular-nums pt-0.5">
+                              {ltmCov ? (ltmCov.used + "/" + ltmCov.total) : "--"}
                             </div>
                           </div>
                         );
@@ -502,6 +498,11 @@ export default function CharacteristicsView() {
                   );
                 })}
               </div>
+              {hasBenchmark && (
+                <div className="text-[10px] text-gray-400 dark:text-slate-500 italic mt-1">
+                  Each cell stacks Port (bold) / Core / Value. Hover for exact deltas.
+                </div>
+              )}
               {!hasBenchmark && (
                 <div className="text-[11px] text-gray-500 dark:text-slate-400 italic mt-2 px-2 py-1 rounded bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
                   No benchmark metric data uploaded yet. Upload via Data Hub → Benchmarks with Type = Metric for either {coreBench || "Core"} or {valueBench || "Value"}.
