@@ -11,15 +11,16 @@
  * Math is in utils/characteristics.js; this component is wiring + render.
  */
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import { BENCHMARKS, PORTFOLIOS } from '../../constants/index.js';
 import { calcBreakdowns } from '../../utils/portfolioMath.js';
 import {
   CHARACTERISTIC_METRICS, weightedAvg, mktCapStats,
   resolveField, buildCompaniesById,
-  RATIO_DEFS, aggregatePortfolioRatio, latestRatiosSnapshot,
+  RATIO_DEFS, aggregatePortfolioRatio, latestRatiosSnapshot, ratioDates,
 } from '../../utils/characteristics.js';
+import RatioHistoryChart from './RatioHistoryChart.jsx';
 
 const TABST_ACTIVE   = "text-[13px] px-3 py-1.5 border-b-2 border-blue-600 text-gray-900 dark:text-slate-100 font-semibold cursor-pointer bg-transparent";
 const TABST_INACTIVE = "text-[13px] px-3 py-1.5 border-b-2 border-transparent text-gray-500 dark:text-slate-400 cursor-pointer bg-transparent hover:text-gray-700 dark:hover:text-slate-300";
@@ -113,6 +114,18 @@ export default function CharacteristicsView() {
   const [portKey, setPortKey] = useState(PORTFOLIOS[0] || "GL");
   const [variant, setVariant] = useState("1"); /* default +1 */
   const [bmType, setBmType] = useState("core"); /* "core" | "value" */
+  /* Ratios — selected date for the benchmark "as of" snapshot, and the
+     set of expanded rows showing inline history charts (multi-open like
+     the Companies → Financials tab). */
+  const [ratioDate, setRatioDate] = useState(null);
+  const [openRatios, setOpenRatios] = useState(function () { return new Set(); });
+  function toggleRatio(key) {
+    setOpenRatios(function (prev) {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
 
   const availablePorts = useMemo(function () {
     return PORTFOLIOS.filter(function (p) {
@@ -173,13 +186,36 @@ export default function CharacteristicsView() {
     return order.map(function (g) { return { group: g, rows: map[g] }; });
   }, [metricRows]);
 
-  /* Ratios section. Pulls the most-recent uploaded benchmark ratios from
-     breakdownHistory[benchName] (Type=Ratio quarterly history) and pairs
-     each with the portfolio aggregate computed from the appropriate
-     metric field. Hidden entirely when there is no ratio history yet. */
-  const ratioSnapshot = useMemo(function () {
-    return latestRatiosSnapshot(breakdownHistory, benchName);
+  /* Ratios section. Pulls a benchmark snapshot from breakdownHistory[
+     benchName] (Type=Ratio quarterly history) and pairs each with the
+     portfolio aggregate computed from current holdings.
+
+     The user can switch between any uploaded date via the date selector;
+     defaulting to the most-recent quarter on first render or when the
+     benchmark changes. */
+  const benchDates = useMemo(function () {
+    return ratioDates(breakdownHistory, benchName);
   }, [breakdownHistory, benchName]);
+  /* Auto-select the latest date when no explicit selection or when the
+     selection doesn't exist for the current benchmark. */
+  useEffect(function () {
+    if (benchDates.length === 0) {
+      if (ratioDate !== null) setRatioDate(null);
+      return;
+    }
+    const latest = benchDates[benchDates.length - 1];
+    if (!ratioDate || benchDates.indexOf(ratioDate) === -1) {
+      setRatioDate(latest);
+    }
+  }, [benchDates, ratioDate]);
+  const ratioSnapshot = useMemo(function () {
+    if (!benchName || !ratioDate || !breakdownHistory || !breakdownHistory[benchName]) {
+      return latestRatiosSnapshot(breakdownHistory, benchName);
+    }
+    const slot = breakdownHistory[benchName][ratioDate];
+    if (!slot || !slot.ratios) return latestRatiosSnapshot(breakdownHistory, benchName);
+    return { date: ratioDate, ratios: slot.ratios };
+  }, [breakdownHistory, benchName, ratioDate]);
   const hasRatios = !!(ratioSnapshot && Object.keys(ratioSnapshot.ratios).length > 0);
   const ratioRows = useMemo(function () {
     return RATIO_DEFS.map(function (def) {
@@ -282,125 +318,164 @@ export default function CharacteristicsView() {
             />
           </div>
 
-          {/* Metrics table — grouped */}
-          <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
-            <div className={"grid gap-2 px-3 py-2 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 " +
-              (hasBenchmark ? "grid-cols-[1fr_100px_100px_80px_70px]" : "grid-cols-[1fr_110px_80px]")}>
-              <div>Metric</div>
-              <div className="text-right">Portfolio</div>
-              {hasBenchmark && <div className="text-right">Benchmark</div>}
-              {hasBenchmark && <div className="text-right">+/−</div>}
-              <div className="text-right">Coverage</div>
-            </div>
-
-            {grouped.map(function (g) {
-              return (
-                <div key={g.group}>
-                  <div className="px-3 py-1 text-[11px] font-semibold text-gray-700 dark:text-slate-300 bg-slate-50/50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800">
-                    {g.group}
+          {/* Side-by-side: Ratios on the left, Metrics on the right. Both
+              tables tightened so the label column doesn't waste horizontal
+              space — that's what the user was complaining about with the
+              old single-column layout. Stacks vertically on narrow widths. */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Ratios — quarterly-history comparison. The benchmark column
+                reads the date-selected snapshot from breakdownHistory[benchName]
+                .ratios (Type=Ratio quarterly history). The portfolio column
+                is freshly computed from current holdings using the aggregator
+                specified in RATIO_DEFS (weighted/avg/median). Click a row to
+                expand an inline history chart underneath. */}
+            <div>
+              <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
+                <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-semibold">
+                  Ratios
+                </div>
+                {benchDates.length > 0 && (
+                  <div className="flex items-center gap-1 text-[10px] text-gray-500 dark:text-slate-400">
+                    <span>as of</span>
+                    <select
+                      value={ratioDate || ""}
+                      onChange={function (e) { setRatioDate(e.target.value); }}
+                      className="text-[10px] px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-700 dark:text-slate-300"
+                      title={"All quarters with benchmark ratio data for " + (benchName || "—") + ". Currently " + benchDates.length + " uploaded."}
+                    >
+                      {benchDates.slice().reverse().map(function (d) {
+                        return <option key={d} value={d}>{d}</option>;
+                      })}
+                    </select>
                   </div>
-                  {g.rows.map(function (r) {
-                    const dc = hasBenchmark ? deltaColor(r.portfolio, r.benchmark, r.kind) : undefined;
-                    const dtxt = hasBenchmark ? fmtDelta(r.portfolio, r.benchmark, r.kind) : null;
-                    return (
+                )}
+              </div>
+              <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+                <div className={"grid gap-1 px-2 py-2 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 " +
+                  (hasRatios ? "grid-cols-[1fr_70px_70px_60px]" : "grid-cols-[1fr_90px]")}>
+                  <div>Ratio</div>
+                  <div className="text-right">Port.</div>
+                  {hasRatios && <div className="text-right">Bench.</div>}
+                  {hasRatios && <div className="text-right">+/−</div>}
+                </div>
+                {ratioRows.map(function (r) {
+                  const dc = hasRatios ? deltaColor(r.portfolio, r.benchmark, r.kind) : undefined;
+                  const dtxt = hasRatios ? fmtDelta(r.portfolio, r.benchmark, r.kind) : null;
+                  const isOpen = openRatios.has(r.key);
+                  return (
+                    <div key={r.key}>
                       <div
-                        key={r.key}
-                        className={"grid gap-2 px-3 py-1.5 text-xs items-center border-b border-slate-100 dark:border-slate-800 " +
-                          (hasBenchmark ? "grid-cols-[1fr_100px_100px_80px_70px]" : "grid-cols-[1fr_110px_80px]")}
+                        onClick={function () { toggleRatio(r.key); }}
+                        className={"grid gap-1 px-2 py-1.5 text-xs items-center border-b border-slate-100 dark:border-slate-800 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 " +
+                          (hasRatios ? "grid-cols-[1fr_70px_70px_60px]" : "grid-cols-[1fr_90px]")}
+                        title="Click to toggle history chart"
                       >
-                        <div className="text-gray-900 dark:text-slate-100">{r.label}</div>
+                        <div className="text-gray-900 dark:text-slate-100 truncate flex items-center gap-1">
+                          <span className="text-gray-400 dark:text-slate-500 text-[9px]">{isOpen ? "▼" : "▶"}</span>
+                          <span className="truncate" title={r.label}>{r.label}</span>
+                        </div>
                         <div className="text-right font-medium text-gray-900 dark:text-slate-100 tabular-nums">
                           {fmtMetric(r.portfolio, r.kind)}
                         </div>
-                        {hasBenchmark && (
+                        {hasRatios && (
                           <div className="text-right text-gray-500 dark:text-slate-400 tabular-nums">
                             {r.benchmark === null || r.benchmark === undefined ? "--" : fmtMetric(r.benchmark, r.kind)}
                           </div>
                         )}
-                        {hasBenchmark && (
+                        {hasRatios && (
                           <div className="text-right font-medium tabular-nums" style={{ color: dc }}>
                             {dtxt || "--"}
                           </div>
                         )}
-                        <div className="text-right text-[10px] text-gray-400 dark:text-slate-500 tabular-nums">
-                          {r.coverage.used}/{r.coverage.total}
-                        </div>
                       </div>
-                    );
-                  })}
-                </div>
-              );
-            })}
-          </div>
-
-          {!hasBenchmark && (
-            <div className="text-[11px] text-gray-500 dark:text-slate-400 italic mt-2 px-2 py-1 rounded bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
-              No benchmark metric data uploaded for "{benchName || "—"}". To enable the comparison column, paste rows into Data Hub → Benchmarks with Type = Metric (e.g. <span className="font-mono">ACWI{"\t"}Metric{"\t"}fpe1{"\t"}19.2</span>). Percent metrics like fcfYld, divYld, margins accept percent form — the importer divides by 100.
-            </div>
-          )}
-
-          {/* Ratios — quarterly-history comparison.
-              The benchmark column reads the most-recent uploaded snapshot
-              from breakdownHistory[benchName].ratios (populated via Data
-              Hub -> Benchmarks with Type=Ratio). The portfolio column is
-              freshly computed from current holdings using the aggregator
-              specified in RATIO_DEFS (weighted/avg/median). */}
-          <div className="mt-4">
-            <div className="flex items-center justify-between mb-1">
-              <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-semibold">
-                Ratios
+                      {isOpen && (
+                        <div className="px-2 py-1 border-b border-slate-100 dark:border-slate-800">
+                          <RatioHistoryChart
+                            history={breakdownHistory}
+                            portKey={portKey}
+                            benchName={benchName}
+                            ratioKey={r.key}
+                            kind={r.kind}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-              {ratioSnapshot && (
-                <div className="text-[10px] text-gray-400 dark:text-slate-500 italic">
-                  benchmark as of {ratioSnapshot.date}
+              {!hasRatios && (
+                <div className="text-[11px] text-gray-500 dark:text-slate-400 italic mt-2 px-2 py-1 rounded bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+                  No benchmark ratio data uploaded for "{benchName || "—"}" yet. Paste rows into Data Hub → Benchmarks with the dated 5-col format and Type = Ratio
+                  (e.g. <span className="font-mono">3/31/2026{"\t"}{benchName || "ACWI"}{"\t"}Ratio{"\t"}PRICE TO BOOK VALUE{"\t"}3.4</span>).
+                </div>
+              )}
+              <div className="text-[10px] text-gray-400 dark:text-slate-500 italic mt-1">
+                Click a ratio to open its history chart. Portfolio history requires uploading rows with Name = portfolio code (e.g. {portKey}).
+              </div>
+            </div>
+
+            {/* Metrics — grouped by category. Tightened from the previous
+                full-width layout; values are now adjacent to their labels
+                instead of separated by a wide 1fr column. */}
+            <div>
+              <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-semibold mb-1">
+                Metrics
+              </div>
+              <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+                <div className={"grid gap-1 px-2 py-2 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 " +
+                  (hasBenchmark ? "grid-cols-[1fr_60px_60px_55px_45px]" : "grid-cols-[1fr_75px_50px]")}>
+                  <div>Metric</div>
+                  <div className="text-right">Port.</div>
+                  {hasBenchmark && <div className="text-right">Bench.</div>}
+                  {hasBenchmark && <div className="text-right">+/−</div>}
+                  <div className="text-right">Cov.</div>
+                </div>
+
+                {grouped.map(function (g) {
+                  return (
+                    <div key={g.group}>
+                      <div className="px-2 py-1 text-[11px] font-semibold text-gray-700 dark:text-slate-300 bg-slate-50/50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800">
+                        {g.group}
+                      </div>
+                      {g.rows.map(function (r) {
+                        const dc = hasBenchmark ? deltaColor(r.portfolio, r.benchmark, r.kind) : undefined;
+                        const dtxt = hasBenchmark ? fmtDelta(r.portfolio, r.benchmark, r.kind) : null;
+                        return (
+                          <div
+                            key={r.key}
+                            className={"grid gap-1 px-2 py-1.5 text-xs items-center border-b border-slate-100 dark:border-slate-800 " +
+                              (hasBenchmark ? "grid-cols-[1fr_60px_60px_55px_45px]" : "grid-cols-[1fr_75px_50px]")}
+                          >
+                            <div className="text-gray-900 dark:text-slate-100 truncate" title={r.label}>{r.label}</div>
+                            <div className="text-right font-medium text-gray-900 dark:text-slate-100 tabular-nums">
+                              {fmtMetric(r.portfolio, r.kind)}
+                            </div>
+                            {hasBenchmark && (
+                              <div className="text-right text-gray-500 dark:text-slate-400 tabular-nums">
+                                {r.benchmark === null || r.benchmark === undefined ? "--" : fmtMetric(r.benchmark, r.kind)}
+                              </div>
+                            )}
+                            {hasBenchmark && (
+                              <div className="text-right font-medium tabular-nums" style={{ color: dc }}>
+                                {dtxt || "--"}
+                              </div>
+                            )}
+                            <div className="text-right text-[10px] text-gray-400 dark:text-slate-500 tabular-nums">
+                              {r.coverage.used}/{r.coverage.total}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+              {!hasBenchmark && (
+                <div className="text-[11px] text-gray-500 dark:text-slate-400 italic mt-2 px-2 py-1 rounded bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+                  No benchmark metric data uploaded for "{benchName || "—"}". Upload via Data Hub → Benchmarks with Type = Metric.
                 </div>
               )}
             </div>
-            <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
-              <div className={"grid gap-2 px-3 py-2 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 " +
-                (hasRatios ? "grid-cols-[1fr_120px_120px_90px_70px]" : "grid-cols-[1fr_140px_70px]")}>
-                <div>Ratio</div>
-                <div className="text-right">Portfolio</div>
-                {hasRatios && <div className="text-right">Benchmark</div>}
-                {hasRatios && <div className="text-right">+/−</div>}
-                <div className="text-right">Coverage</div>
-              </div>
-              {ratioRows.map(function (r) {
-                const dc = hasRatios ? deltaColor(r.portfolio, r.benchmark, r.kind) : undefined;
-                const dtxt = hasRatios ? fmtDelta(r.portfolio, r.benchmark, r.kind) : null;
-                return (
-                  <div
-                    key={r.key}
-                    className={"grid gap-2 px-3 py-1.5 text-xs items-center border-b border-slate-100 dark:border-slate-800 " +
-                      (hasRatios ? "grid-cols-[1fr_120px_120px_90px_70px]" : "grid-cols-[1fr_140px_70px]")}
-                  >
-                    <div className="text-gray-900 dark:text-slate-100">{r.label}</div>
-                    <div className="text-right font-medium text-gray-900 dark:text-slate-100 tabular-nums">
-                      {fmtMetric(r.portfolio, r.kind)}
-                    </div>
-                    {hasRatios && (
-                      <div className="text-right text-gray-500 dark:text-slate-400 tabular-nums">
-                        {r.benchmark === null || r.benchmark === undefined ? "--" : fmtMetric(r.benchmark, r.kind)}
-                      </div>
-                    )}
-                    {hasRatios && (
-                      <div className="text-right font-medium tabular-nums" style={{ color: dc }}>
-                        {dtxt || "--"}
-                      </div>
-                    )}
-                    <div className="text-right text-[10px] text-gray-400 dark:text-slate-500 tabular-nums">
-                      {r.coverage.used}/{r.coverage.total}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            {!hasRatios && (
-              <div className="text-[11px] text-gray-500 dark:text-slate-400 italic mt-2 px-2 py-1 rounded bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
-                No benchmark ratio data uploaded for "{benchName || "—"}" yet. Paste rows into Data Hub → Benchmarks with the dated 5-col format and Type = Ratio
-                (e.g. <span className="font-mono">3/31/2026{"\t"}{benchName || "ACWI"}{"\t"}Ratio{"\t"}PRICE TO BOOK VALUE{"\t"}3.4</span>).
-              </div>
-            )}
           </div>
         </>
       )}

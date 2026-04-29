@@ -181,9 +181,11 @@ export function aggregatePortfolioRatio(byCompany, companiesById, def) {
     const n = values.length;
     value = (n % 2 === 1) ? values[(n - 1) / 2] : (values[n / 2 - 1] + values[n / 2]) / 2;
   }
-  /* Convert $B -> $M for mktCap-sourced musd ratios so portfolio matches
-     benchmark units on display. */
-  if (value !== null && def.kind === "musd") value = value * 1000;
+  /* Portfolio mktCap is uploaded with a thousand-larger unit than the
+     benchmark's "M USD" convention, so divide by 1000 for musd-kind
+     ratios on the portfolio side. (Benchmark column is left untouched
+     and displays exactly the value uploaded.) */
+  if (value !== null && def.kind === "musd") value = value / 1000;
   return {
     value: value,
     coverage: { used: values.length, total: total, weightUsed: 0, weightTotal: 0 },
@@ -202,4 +204,38 @@ export function latestRatiosSnapshot(breakdownHistory, benchName) {
   if (dates.length === 0) return null;
   const latest = dates[dates.length - 1];
   return { date: latest, ratios: byDate[latest].ratios };
+}
+
+/* All dates with at least one ratio uploaded for `name` (benchmark or
+ * portfolio code), sorted ascending. Empty array when nothing exists. */
+export function ratioDates(breakdownHistory, name) {
+  if (!breakdownHistory || !name) return [];
+  const byDate = breakdownHistory[name];
+  if (!byDate) return [];
+  return Object.keys(byDate)
+    .filter(function (d) {
+      return byDate[d] && byDate[d].ratios && Object.keys(byDate[d].ratios).length > 0;
+    })
+    .sort();
+}
+
+/* Build a 2-line history series for a single ratio key, drawing from
+ * breakdownHistory for both the portfolio code (e.g. "FGL") and the
+ * benchmark name (e.g. "MSCI ACWI"). Each row is { date, portfolio,
+ * benchmark } where either side is null when absent. Returned ascending
+ * by date — recharts plots cleanly without further sorting. */
+export function ratioHistorySeries(breakdownHistory, portKey, benchName, ratioKey) {
+  const portByDate = (breakdownHistory && breakdownHistory[portKey]) || {};
+  const benchByDate = (breakdownHistory && breakdownHistory[benchName]) || {};
+  const dateSet = new Set([
+    ...Object.keys(portByDate),
+    ...Object.keys(benchByDate),
+  ]);
+  return Array.from(dateSet).sort().map(function (d) {
+    const p = portByDate[d] && portByDate[d].ratios && (ratioKey in portByDate[d].ratios)
+      ? portByDate[d].ratios[ratioKey] : null;
+    const b = benchByDate[d] && benchByDate[d].ratios && (ratioKey in benchByDate[d].ratios)
+      ? benchByDate[d].ratios[ratioKey] : null;
+    return { date: d, portfolio: p, benchmark: b };
+  }).filter(function (row) { return row.portfolio !== null || row.benchmark !== null; });
 }
