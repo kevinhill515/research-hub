@@ -15,6 +15,7 @@ import { useMemo, useState } from 'react';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import { BENCHMARKS, PORTFOLIOS, SECTOR_COLORS, SECTOR_ORDER, COUNTRY_GROUPS, COUNTRY_COLORS, REGION_GROUPS, REGION_COLORS } from '../../constants/index.js';
 import { calcBreakdowns } from '../../utils/portfolioMath.js';
+import BreakdownHistoryChart from './BreakdownHistoryChart.jsx';
 
 const TABST_ACTIVE = "text-[13px] px-3 py-1.5 border-b-2 border-blue-600 text-gray-900 dark:text-slate-100 font-semibold cursor-pointer bg-transparent";
 const TABST_INACTIVE = "text-[13px] px-3 py-1.5 border-b-2 border-transparent text-gray-500 dark:text-slate-400 cursor-pointer bg-transparent hover:text-gray-700 dark:hover:text-slate-300";
@@ -147,7 +148,7 @@ function aggregateToRegions(countryMap) {
 
 export default function BreakdownView({ kind }) {
   /* kind = "sectors" | "countries" */
-  const { companies, repData, fxRates, benchmarkWeights } = useCompanyContext();
+  const { companies, repData, fxRates, benchmarkWeights, breakdownHistory } = useCompanyContext();
   const [portKey, setPortKey] = useState(PORTFOLIOS[0] || "GL");
   const [bmType, setBmType] = useState("core"); /* "core" | "value" */
   /* Column sort: null = default (portfolio weight desc). Otherwise
@@ -156,6 +157,10 @@ export default function BreakdownView({ kind }) {
      and (on country view) the region table above it. */
   const [sort, setSort] = useState(null);
   const [regionSort, setRegionSort] = useState(null);
+  /* History view mode. "current" shows the existing single-snapshot
+     comparison bars. "history" reveals the three quarterly-history charts
+     (portfolio sand chart, benchmark sand chart, diff lines). */
+  const [viewMode, setViewMode] = useState("current");
 
   /* Figure out which portfolios exist with any rep data (to avoid showing
    * empty tabs). */
@@ -307,16 +312,43 @@ export default function BreakdownView({ kind }) {
           {benchData && benchData.asOf && (
             <span className="text-[10px] text-gray-400 dark:text-slate-500 italic">as of {benchData.asOf}</span>
           )}
+          <span className="text-gray-300 dark:text-slate-600 mx-1">|</span>
+          {/* Current vs. history toggle. Disabled if no history exists for
+              either side, with a note pointing at the upload format. */}
+          {["current", "history"].map(function (m) {
+            const active = viewMode === m;
+            return (
+              <button
+                key={m}
+                type="button"
+                onClick={function () { setViewMode(m); }}
+                className={"px-2 py-0.5 rounded-full border transition-colors " +
+                  (active
+                    ? "bg-slate-700 dark:bg-slate-200 text-white dark:text-slate-900 border-slate-700 dark:border-slate-200"
+                    : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-gray-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800")}
+              >
+                {m === "current" ? "Current" : "History"}
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {!hasBenchmark && (
+      {!hasBenchmark && viewMode === "current" && (
         <div className="text-[11px] text-gray-500 dark:text-slate-400 italic mb-2 px-2 py-1 rounded bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
           No {kind} weights uploaded for "{benchName || "—"}" yet. Upload via Data Hub → Benchmarks to see the comparison.
         </div>
       )}
 
-      {rows.length === 0 ? (
+      {viewMode === "history" ? (
+        <HistoryBlock
+          kind={kind}
+          portKey={portKey}
+          benchName={benchName}
+          history={breakdownHistory}
+          colorFor={colorFor}
+        />
+      ) : rows.length === 0 ? (
         <div className="text-sm text-gray-500 dark:text-slate-400 italic py-4">
           No rep holdings for this portfolio yet.
         </div>
@@ -398,6 +430,87 @@ export default function BreakdownView({ kind }) {
               />
             );
           })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* History view — three stacked sections:
+ *   1. Portfolio sand chart (history[portKey])
+ *   2. Benchmark sand chart (history[benchName])
+ *   3. Diff line chart (portKey - benchName, only renders if both exist)
+ *
+ * Each section has its own empty-state pointer so it's obvious which data
+ * is missing. We use ranked sort/legend internally; the X axis is quarters. */
+function HistoryBlock({ kind, portKey, benchName, history, colorFor }) {
+  const bucket = kind === "sectors" ? "sectors" : "countries";
+  const portHistory = history && history[portKey];
+  const benchHistory = benchName && history && history[benchName];
+  const portCount = portHistory ? Object.keys(portHistory).length : 0;
+  const benchCount = benchHistory ? Object.keys(benchHistory).length : 0;
+  const overlapCount = portHistory && benchHistory
+    ? Object.keys(portHistory).filter(function (d) { return benchHistory[d]; }).length : 0;
+
+  const HEADER_CLS = "text-[11px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-semibold mb-1 mt-3 flex items-center gap-2";
+  const COUNT_CLS  = "text-[10px] font-normal text-gray-400 dark:text-slate-500";
+
+  return (
+    <div>
+      <div className={HEADER_CLS}>
+        Portfolio: {portKey} — {kind === "sectors" ? "Sector" : "Country"} weights through time
+        <span className={COUNT_CLS}>{portCount} quarter(s)</span>
+      </div>
+      {portCount > 0 ? (
+        <BreakdownHistoryChart
+          history={history}
+          primaryName={portKey}
+          benchName={benchName}
+          bucket={bucket}
+          view="stacked-port"
+          colorFor={colorFor}
+        />
+      ) : (
+        <div className="text-xs italic text-gray-500 dark:text-slate-400 py-3">
+          No history uploaded for portfolio "{portKey}" yet.
+        </div>
+      )}
+
+      <div className={HEADER_CLS}>
+        Benchmark: {benchName || "—"} — {kind === "sectors" ? "Sector" : "Country"} weights through time
+        <span className={COUNT_CLS}>{benchCount} quarter(s)</span>
+      </div>
+      {benchCount > 0 ? (
+        <BreakdownHistoryChart
+          history={history}
+          primaryName={benchName}
+          benchName={benchName}
+          bucket={bucket}
+          view="stacked-bench"
+          colorFor={colorFor}
+        />
+      ) : (
+        <div className="text-xs italic text-gray-500 dark:text-slate-400 py-3">
+          No history uploaded for benchmark "{benchName || "—"}" yet.
+        </div>
+      )}
+
+      <div className={HEADER_CLS}>
+        Over/Under-weight vs {benchName || "benchmark"} — {kind === "sectors" ? "by sector" : "by country"}
+        <span className={COUNT_CLS}>{overlapCount} matching quarter(s)</span>
+      </div>
+      {overlapCount > 0 ? (
+        <BreakdownHistoryChart
+          history={history}
+          primaryName={portKey}
+          benchName={benchName}
+          bucket={bucket}
+          view="diff"
+          colorFor={colorFor}
+        />
+      ) : (
+        <div className="text-xs italic text-gray-500 dark:text-slate-400 py-3">
+          Need history for both {portKey} and {benchName || "—"} on the same date(s) to draw the diff.
         </div>
       )}
     </div>

@@ -14,7 +14,7 @@ import { REP_ACCOUNTS } from '../constants/index.js';
 
 export function useImport(){
   const ctx = useCompanyContext();
-  const { companies, setCompanies, saved, setSaved, setCopied, currentUser, repData, setRepData, fxRates, setFxRates, specialWeights, setSpecialWeights, benchmarkWeights, setBenchmarkWeights, calLastUpdated, setCalLastUpdated, calLastUpdatedBy, setCalLastUpdatedBy, repLastUpdated, setRepLastUpdated, fxLastUpdated, setFxLastUpdated, applyPerfBulk } = ctx;
+  const { companies, setCompanies, saved, setSaved, setCopied, currentUser, repData, setRepData, fxRates, setFxRates, specialWeights, setSpecialWeights, benchmarkWeights, setBenchmarkWeights, breakdownHistory, setBreakdownHistory, calLastUpdated, setCalLastUpdated, calLastUpdatedBy, setCalLastUpdatedBy, repLastUpdated, setRepLastUpdated, fxLastUpdated, setFxLastUpdated, applyPerfBulk } = ctx;
   /* All import functions surface results / errors via the in-app
      alert dialog (instead of native window.alert). Keeps look + feel
      consistent with the rest of the app and unblocks Test/CI environments
@@ -335,12 +335,14 @@ export function useImport(){
   function applyBenchmarkImport(){
     if(!benchmarkImportText.trim())return;
     var lines=benchmarkImportText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});
-    /* Skip header if present: first cell is "Benchmark" or not a known benchmark name */
+    /* Skip header if present. Header heuristic: first cell is "Benchmark"
+       or "Date", or any of the type tokens appears in cols 1-2. */
     var first=lines[0];
     if(first){
       var delim0=first.indexOf("\t")>=0?"\t":",";
       var firstParts=first.split(delim0).map(function(s){return s.trim().replace(/^"|"$/g,"");});
-      if(/^benchmark$/i.test(firstParts[0]||"") || /^sector$|^country$|^metric$/i.test(firstParts[1]||"") || /^type$/i.test(firstParts[1]||"")) {
+      var c0=firstParts[0]||"", c1=firstParts[1]||"", c2=firstParts[2]||"";
+      if(/^benchmark$|^date$|^name$/i.test(c0) || /^benchmark$|^name$|^type$/i.test(c1) || /^sector$|^country$|^metric$/i.test(c1) || /^type$/i.test(c2)) {
         lines.shift();
       }
     }
@@ -349,46 +351,101 @@ export function useImport(){
      * convention as company metrics (0.072 = 7.2%). x/ratio/bn keys are
      * stored raw (e.g. fpe1 = 19.2 not 0.192). */
     var PCT_METRIC_RE=/^(fcfYld|divYld|payout|netDE|ltEPS|grMgn|netMgn|gpAss|npAss|opROE)[12]?$/;
+    /* m/d/yyyy or mm/dd/yyyy → ISO YYYY-MM-DD. Returns null if not a date. */
+    function parseDateMDY(s){
+      if(!s)return null;
+      var m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+      if(!m)return null;
+      var mm=parseInt(m[1],10),dd=parseInt(m[2],10),yy=parseInt(m[3],10);
+      if(yy<100)yy+=2000;
+      if(mm<1||mm>12||dd<1||dd>31)return null;
+      return yy+"-"+(mm<10?"0":"")+mm+"-"+(dd<10?"0":"")+dd;
+    }
+    /* current snapshot rows (4-col), keyed by bm name */
     var affected={};
+    /* dated history rows (5-col), keyed by [bm][isoDate] */
+    var historyRows={};
     var dropped=0;
     lines.forEach(function(line){
       var delim=line.indexOf("\t")>=0?"\t":",";
       var p=line.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});
       if(p.length<4){dropped++;return;}
-      var bm=p[0];
-      var type=(p[1]||"").toLowerCase();
-      var name=p[2];
-      var w=parseFloat(p[3]);
+      /* Detect 5-col dated format: first cell parses as a date. Otherwise
+         treat as the legacy 4-col (current-snapshot) format. */
+      var dateIso=parseDateMDY(p[0]);
+      var bm,type,name,w;
+      if(dateIso && p.length>=5){
+        bm=p[1]; type=(p[2]||"").toLowerCase(); name=p[3]; w=parseFloat(p[4]);
+      } else {
+        bm=p[0]; type=(p[1]||"").toLowerCase(); name=p[2]; w=parseFloat(p[3]);
+      }
       if(!bm||!name||isNaN(w)){dropped++;return;}
       var bucket=type.indexOf("country")>=0?"countries"
               :type.indexOf("sector") >=0?"sectors"
               :type.indexOf("metric") >=0?"metrics"
               :null;
       if(!bucket){dropped++;return;}
-      if(!affected[bm])affected[bm]={sectors:{},countries:{},metrics:{},asOf:benchmarkAsOf||""};
       if(bucket==="metrics" && PCT_METRIC_RE.test(name)) w=w/100;
-      affected[bm][bucket][name]=w;
+      if(dateIso){
+        if(!historyRows[bm])historyRows[bm]={};
+        if(!historyRows[bm][dateIso])historyRows[bm][dateIso]={sectors:{},countries:{},metrics:{}};
+        historyRows[bm][dateIso][bucket][name]=w;
+      } else {
+        if(!affected[bm])affected[bm]={sectors:{},countries:{},metrics:{},asOf:benchmarkAsOf||""};
+        affected[bm][bucket][name]=w;
+      }
     });
-    if(Object.keys(affected).length===0){alertFn("No valid rows parsed. Format: Benchmark, Type (Sector|Country|Metric), Name, Value. For metrics, Name is a metric key like fpe1, fcfYld1, mktCap.");return;}
-    setBenchmarkWeights(function(prev){
-      var next=Object.assign({},prev);
-      Object.keys(affected).forEach(function(bm){
-        var cur=next[bm]||{sectors:{},countries:{},metrics:{},asOf:""};
-        /* Merge: for each bucket, incoming REPLACES existing when the
-         * paste included that bucket. Untouched buckets are preserved so
-         * you can upload sectors/countries one week and metrics the
-         * next without clobbering. */
-        var inc=affected[bm];
-        next[bm]={
-          sectors:   Object.keys(inc.sectors  ).length>0 ? inc.sectors   : (cur.sectors  ||{}),
-          countries: Object.keys(inc.countries).length>0 ? inc.countries : (cur.countries||{}),
-          metrics:   Object.keys(inc.metrics  ).length>0 ? inc.metrics   : (cur.metrics  ||{}),
-          asOf: inc.asOf || cur.asOf || "",
-        };
+    if(Object.keys(affected).length===0 && Object.keys(historyRows).length===0){
+      alertFn("No valid rows parsed. Formats:\n"
+            + "  Current snapshot: Benchmark, Type (Sector|Country|Metric), Name, Value\n"
+            + "  Quarterly history: Date (m/d/yyyy), Name, Type, Item, Value\n"
+            + "Name in the dated format may be either a benchmark (e.g. MSCI ACWI) or a portfolio code (FGL, GL, FIN, IN, EM, SC).");
+      return;
+    }
+    if(Object.keys(affected).length>0){
+      setBenchmarkWeights(function(prev){
+        var next=Object.assign({},prev);
+        Object.keys(affected).forEach(function(bm){
+          var cur=next[bm]||{sectors:{},countries:{},metrics:{},asOf:""};
+          /* Merge: for each bucket, incoming REPLACES existing when the
+           * paste included that bucket. Untouched buckets are preserved so
+           * you can upload sectors/countries one week and metrics the
+           * next without clobbering. */
+          var inc=affected[bm];
+          next[bm]={
+            sectors:   Object.keys(inc.sectors  ).length>0 ? inc.sectors   : (cur.sectors  ||{}),
+            countries: Object.keys(inc.countries).length>0 ? inc.countries : (cur.countries||{}),
+            metrics:   Object.keys(inc.metrics  ).length>0 ? inc.metrics   : (cur.metrics  ||{}),
+            asOf: inc.asOf || cur.asOf || "",
+          };
+        });
+        return next;
       });
-      return next;
-    });
-    var msg="Updated "+Object.keys(affected).length+" benchmark(s): "+Object.keys(affected).join(", ");
+    }
+    /* History upserts. Each (name, date) bucket is REPLACED when present
+       in the paste — so re-uploading 2026-03-31 with a different sector
+       set overwrites that quarter rather than merging. Other quarters and
+       other names are untouched. */
+    if(Object.keys(historyRows).length>0){
+      setBreakdownHistory(function(prev){
+        var next=Object.assign({},prev||{});
+        Object.keys(historyRows).forEach(function(name){
+          var byDate=Object.assign({},next[name]||{});
+          Object.keys(historyRows[name]).forEach(function(d){
+            byDate[d]=historyRows[name][d];
+          });
+          next[name]=byDate;
+        });
+        return next;
+      });
+    }
+    var n_curr=Object.keys(affected).length;
+    var n_hist=Object.keys(historyRows).reduce(function(s,k){return s+Object.keys(historyRows[k]).length;},0);
+    var n_hist_names=Object.keys(historyRows).length;
+    var parts=[];
+    if(n_curr>0)parts.push("current snapshot for "+n_curr+" benchmark(s): "+Object.keys(affected).join(", "));
+    if(n_hist>0)parts.push("history: "+n_hist+" quarter(s) across "+n_hist_names+" name(s) ("+Object.keys(historyRows).join(", ")+")");
+    var msg="Updated "+parts.join("; ");
     if(dropped>0)msg+="  ("+dropped+" row(s) skipped)";
     setTimeout(function(){alertFn(msg);setBenchmarkImportText("");},100);
   }
@@ -473,6 +530,7 @@ export function useImport(){
       repData:             { get: ctx.repData,             set: ctx.setRepData,             supaKey: "repData" },
       specialWeights:      { get: ctx.specialWeights,      set: ctx.setSpecialWeights,      supaKey: "specialWeights" },
       benchmarkWeights:    { get: ctx.benchmarkWeights,    set: ctx.setBenchmarkWeights,    supaKey: "benchmarkWeights" },
+      breakdownHistory:    { get: ctx.breakdownHistory,    set: ctx.setBreakdownHistory,    supaKey: "breakdownHistory" },
       marketsSnapshot:     { get: ctx.marketsSnapshot,     set: ctx.setMarketsSnapshot,     supaKey: "marketsSnapshot" },
       perfData:            { get: ctx.perfData,            set: ctx.setPerfData,            supaKey: "perfData" },
       alertRules:          { get: ctx.alertRules,          set: ctx.setAlertRules,          supaKey: "alertRules" },
