@@ -260,6 +260,11 @@ export default function BreakdownHistoryChart({
               formatter={tooltipFmt}
               labelFormatter={function (l) { return quarterLabel(l) + " (" + l + ")"; }}
               contentStyle={{ fontSize: 12 }}
+              /* Sort hover entries greatest -> smallest by signed value.
+                 In stacked mode this puts the heaviest sector/country at
+                 the top of the popover; in diff mode it puts the most-
+                 overweight first and most-underweight at the bottom. */
+              itemSorter={function (item) { return -(item.value || 0); }}
             />
             {labels.map(function (k) {
               const c = colorFor ? colorFor(k) : "#334155";
