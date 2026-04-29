@@ -74,45 +74,40 @@ function deltaColor(port, bench, kind) {
   return "#64748b";
 }
 
-function VariantToggle({ variant, setVariant }) {
-  const opts = [["1", "+1"], ["0", "LTM"], ["2", "+2"]];
-  return (
-    <div className="flex items-center gap-1 text-xs">
-      <span className="text-gray-500 dark:text-slate-400">Horizon:</span>
-      {opts.map(function (o) {
-        const active = variant === o[0];
-        return (
-          <button
-            key={o[0]}
-            type="button"
-            onClick={function () { setVariant(o[0]); }}
-            className={"px-2 py-0.5 rounded-full border transition-colors " +
-              (active
-                ? "bg-blue-700 text-white border-blue-700"
-                : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-gray-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800")}
-          >
-            {o[1]}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-function Tile({ label, value, sub }) {
-  return (
-    <div className={CARD + " min-w-[150px]"}>
-      <div className="text-[11px] text-gray-500 dark:text-slate-400 uppercase tracking-wide">{label}</div>
-      <div className="text-xl font-semibold text-gray-900 dark:text-slate-100">{value}</div>
-      {sub && <div className="text-[10px] text-gray-400 dark:text-slate-500">{sub}</div>}
-    </div>
-  );
+/* Color for a bench cell, applied per ratio direction:
+ *   - neutral : no color (returns undefined)
+ *   - lower   : standard delta — bench cell green when port < bench (we
+ *               are below the bench on a lower-is-better metric, so bench
+ *               is "ahead", which is bad for us → red on bench actually).
+ *               To keep "green = good for us", we flip the standard
+ *               deltaColor here so green = bench worse than us.
+ *   - higher  : bench cell green when port > bench (we're ahead on a
+ *               higher-is-better metric — same flip applied).
+ *
+ * Net result for both colored directions: bench-cell GREEN means
+ * portfolio is winning vs. bench, RED means losing.
+ */
+function ratioBenchColor(port, bench, kind, direction) {
+  if (direction === "neutral") return undefined;
+  if (port === null || port === undefined || bench === null || bench === undefined) return undefined;
+  const d = port - bench;
+  if (!isFinite(d)) return undefined;
+  const eps = kind === "pct" ? 0.0025
+            : (kind === "x" || kind === "ratio") ? 0.1
+            : kind === "musd" ? 500
+            : 0.5;
+  /* For "higher is better": port > bench → portfolio winning → green on bench.
+     For "lower is better":  port < bench → portfolio winning → green on bench. */
+  const portWins = direction === "higher" ? (d > eps) : (-d > eps);
+  const portLoses = direction === "higher" ? (-d > eps) : (d > eps);
+  if (portWins)  return "#166534"; /* green */
+  if (portLoses) return "#dc2626"; /* red */
+  return "#64748b"; /* gray (within noise band) */
 }
 
 export default function CharacteristicsView() {
-  const { companies, repData, fxRates, benchmarkWeights, breakdownHistory, setBreakdownHistory } = useCompanyContext();
+  const { companies, repData, fxRates, benchmarkWeights, breakdownHistory } = useCompanyContext();
   const [portKey, setPortKey] = useState(PORTFOLIOS[0] || "GL");
-  const [variant, setVariant] = useState("1"); /* default +1 */
   /* Ratios — selected date for the benchmark "as of" snapshot, and the
      set of expanded rows showing inline history charts (multi-open like
      the Companies → Financials tab). */
@@ -163,25 +158,40 @@ export default function CharacteristicsView() {
   const hasValueMetrics = !!(valueMetrics && Object.keys(valueMetrics).length > 0);
   const hasBenchmark    = hasCoreMetrics || hasValueMetrics;
 
-  /* Compute all weighted averages in one pass. */
+  /* Build the metric rows. For variant metrics we now emit THREE rows
+     (LTM, +1, +2) instead of one toggled row, so the user sees all three
+     horizons at a glance. The +1 row keeps the bare label (default
+     primary horizon); LTM and +2 are labelled explicitly. */
   const metricRows = useMemo(function () {
-    return CHARACTERISTIC_METRICS.map(function (m) {
-      const field = resolveField(m.key, variant, m.hasVariants);
-      const wa = weightedAvg(breakdown.byCompany, companiesById, field);
-      const core  = coreMetrics  && field in coreMetrics  ? coreMetrics[field]  : null;
-      const value = valueMetrics && field in valueMetrics ? valueMetrics[field] : null;
-      return {
-        key: m.key,
-        group: m.group,
-        label: m.label + (m.hasVariants && variant !== "0" ? " +" + variant : (m.hasVariants && variant === "0" ? " (LTM)" : "")),
-        kind: m.kind,
-        portfolio: wa.value,
-        coverage: wa.coverage,
-        core: core,
-        value: value,
-      };
+    const out = [];
+    CHARACTERISTIC_METRICS.forEach(function (m) {
+      function buildRow(variant, suffixLabel) {
+        const field = resolveField(m.key, variant, m.hasVariants);
+        const wa = weightedAvg(breakdown.byCompany, companiesById, field);
+        const core  = coreMetrics  && field in coreMetrics  ? coreMetrics[field]  : null;
+        const value = valueMetrics && field in valueMetrics ? valueMetrics[field] : null;
+        return {
+          key: m.key + (m.hasVariants ? "_" + variant : ""),
+          group: m.group,
+          label: m.label + (suffixLabel ? " " + suffixLabel : ""),
+          kind: m.kind,
+          portfolio: wa.value,
+          coverage: wa.coverage,
+          core: core,
+          value: value,
+        };
+      }
+      if (!m.hasVariants) {
+        out.push(buildRow("0", ""));
+      } else {
+        /* Order: LTM, +1, +2 — chronological. */
+        out.push(buildRow("0", "(LTM)"));
+        out.push(buildRow("1", "+1"));
+        out.push(buildRow("2", "+2"));
+      }
     });
-  }, [breakdown, companiesById, variant, coreMetrics, valueMetrics]);
+    return out;
+  }, [breakdown, companiesById, coreMetrics, valueMetrics]);
 
   /* Insert the two unweighted mkt-cap rows (Avg and Median) at the
      top of the Size group, alongside the existing weighted Mkt Cap row.
@@ -271,6 +281,7 @@ export default function CharacteristicsView() {
         key: def.key,
         label: def.label,
         kind: def.kind,
+        direction: def.direction,
         portfolio: port.value,
         coverage: port.coverage,
         core: cv,
@@ -278,21 +289,6 @@ export default function CharacteristicsView() {
       };
     });
   }, [breakdown, companiesById, coreRatios, valueRatios]);
-
-  /* Delete a single uploaded date from breakdownHistory for one of the
-     two benchmarks. Used to clean up stray uploads (e.g. a 6/30/26 row
-     pasted by mistake) without going to the database directly. */
-  function deleteRatioDate(name, date) {
-    if (!name || !date) return;
-    if (!confirm("Delete all ratios for " + name + " on " + date + "?")) return;
-    setBreakdownHistory(function (prev) {
-      const next = Object.assign({}, prev || {});
-      const byDate = Object.assign({}, next[name] || {});
-      delete byDate[date];
-      next[name] = byDate;
-      return next;
-    });
-  }
 
   const empty = breakdown.byCompany.length === 0;
 
@@ -314,9 +310,9 @@ export default function CharacteristicsView() {
         })}
       </div>
 
-      {/* Header row: AUM + horizon toggle. The Core/Value toggle is gone
-          — both benchmarks now render side-by-side in the tables and on
-          the inline history chart. */}
+      {/* Header row: AUM + benchmarks shown. Core/Value toggle and
+          LTM/+1/+2 horizon toggle are both gone — every variant renders
+          as its own row so all values are visible at once. */}
       <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
         <div className="text-sm text-gray-700 dark:text-slate-300">
           <span className="font-semibold">{portKey}</span>
@@ -329,7 +325,6 @@ export default function CharacteristicsView() {
             Core: {coreBench || "—"} · Value: {valueBench || "—"}
           </span>
         </div>
-        <VariantToggle variant={variant} setVariant={setVariant} />
       </div>
 
       {empty && (
@@ -369,24 +364,6 @@ export default function CharacteristicsView() {
                         return <option key={d} value={d}>{d}</option>;
                       })}
                     </select>
-                    {/* Tiny "x" deletes the currently-selected date from
-                        BOTH benchmarks. Useful for cleaning up a stray
-                        upload (e.g. a wrong date typed in). Confirms before
-                        wiping. */}
-                    {ratioDate && (
-                      <button
-                        type="button"
-                        onClick={function () {
-                          if (!confirm("Delete all ratios for " + ratioDate + " across Core (" + (coreBench || "—") + ") and Value (" + (valueBench || "—") + ")?")) return;
-                          if (coreBench)  setBreakdownHistory(function (prev) { const n = Object.assign({}, prev || {}); const bd = Object.assign({}, n[coreBench]  || {}); delete bd[ratioDate]; n[coreBench]  = bd; return n; });
-                          if (valueBench) setBreakdownHistory(function (prev) { const n = Object.assign({}, prev || {}); const bd = Object.assign({}, n[valueBench] || {}); delete bd[ratioDate]; n[valueBench] = bd; return n; });
-                        }}
-                        className="text-[10px] px-1.5 py-0.5 rounded border border-red-200 dark:border-red-900 bg-white dark:bg-slate-900 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30"
-                        title="Delete this date from breakdownHistory (both Core and Value benchmarks)"
-                      >
-                        ✕
-                      </button>
-                    )}
                   </div>
                 )}
               </div>
@@ -418,8 +395,8 @@ export default function CharacteristicsView() {
                         {hasRatios && (
                           <div
                             className="text-right tabular-nums"
-                            style={{ color: deltaColor(r.portfolio, r.core, r.kind) }}
-                            title={"Δ vs portfolio: " + (fmtDelta(r.portfolio, r.core, r.kind) || "--")}
+                            style={{ color: ratioBenchColor(r.portfolio, r.core, r.kind, r.direction) }}
+                            title={"Δ port − bench: " + (fmtDelta(r.portfolio, r.core, r.kind) || "--")}
                           >
                             {r.core === null || r.core === undefined ? "--" : fmtMetric(r.core, r.kind)}
                           </div>
@@ -427,8 +404,8 @@ export default function CharacteristicsView() {
                         {hasRatios && (
                           <div
                             className="text-right tabular-nums"
-                            style={{ color: deltaColor(r.portfolio, r.value, r.kind) }}
-                            title={"Δ vs portfolio: " + (fmtDelta(r.portfolio, r.value, r.kind) || "--")}
+                            style={{ color: ratioBenchColor(r.portfolio, r.value, r.kind, r.direction) }}
+                            title={"Δ port − bench: " + (fmtDelta(r.portfolio, r.value, r.kind) || "--")}
                           >
                             {r.value === null || r.value === undefined ? "--" : fmtMetric(r.value, r.kind)}
                           </div>

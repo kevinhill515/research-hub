@@ -131,18 +131,29 @@ export function buildCompaniesById(companies) {
  *
  * For "musd" mktCap rows, the portfolio side multiplies by 1000 because
  * company.metrics.mktCap is stored in $B; the comparison is in $M. */
+/* `direction` controls the green/red coloring on the bench-cell delta:
+ *   - "lower"   : lower portfolio than bench is BETTER for us (P/E, P/B,
+ *                 Fwd P/E). Bench cell green when port < bench; red when
+ *                 port > bench. (Standard deltaColor convention.)
+ *   - "higher"  : higher portfolio than bench is BETTER for us (ROE, growth
+ *                 rates, dividend yield). Bench cell green when port > bench;
+ *                 red when port < bench. The view INVERTS the standard
+ *                 deltaColor for these.
+ *   - "neutral" : avg/median mkt cap, payout — neither direction is
+ *                 strictly better, so no color is applied.
+ */
 export const RATIO_DEFS = [
-  { key: "avgMktCap", label: "Average Mkt Cap",        portMetric: "mktCap", aggregator: "avg",      kind: "musd" },
-  { key: "medMktCap", label: "Median Mkt Cap",         portMetric: "mktCap", aggregator: "median",   kind: "musd" },
-  { key: "pe",        label: "P/E",                    portMetric: "fpe",    aggregator: "weighted", kind: "x"    },
-  { key: "pb",        label: "P/B",                    portMetric: "pb",     aggregator: "weighted", kind: "x"    },
-  { key: "roe",       label: "ROE",                    portMetric: "roe",    aggregator: "weighted", kind: "pct"  },
-  { key: "fwdPe",     label: "Fwd P/E",                portMetric: "fpe1",   aggregator: "weighted", kind: "x"    },
-  { key: "intGr",     label: "Internal Growth Rate",   portMetric: "intGr",  aggregator: "weighted", kind: "pct"  },
-  { key: "adpsGr5",   label: "ADPS Growth (5Y)",       portMetric: "adpsGr5",aggregator: "weighted", kind: "pct"  },
-  { key: "adpsGr1",   label: "ADPS Growth (1Y)",       portMetric: "adpsGr1",aggregator: "weighted", kind: "pct"  },
-  { key: "payout",    label: "Payout Ratio",           portMetric: "payout", aggregator: "weighted", kind: "pct"  },
-  { key: "divYld",    label: "Dividend Yield",         portMetric: "divYld", aggregator: "weighted", kind: "pct"  },
+  { key: "avgMktCap", label: "Average Mkt Cap",        portMetric: "mktCap", aggregator: "avg",      kind: "musd", direction: "neutral" },
+  { key: "medMktCap", label: "Median Mkt Cap",         portMetric: "mktCap", aggregator: "median",   kind: "musd", direction: "neutral" },
+  { key: "pe",        label: "P/E",                    portMetric: "fpe",    aggregator: "weighted", kind: "x",    direction: "lower"   },
+  { key: "pb",        label: "P/B",                    portMetric: "pb",     aggregator: "weighted", kind: "x",    direction: "lower"   },
+  { key: "roe",       label: "ROE",                    portMetric: "roe",    aggregator: "weighted", kind: "pct",  direction: "higher"  },
+  { key: "fwdPe",     label: "Fwd P/E",                portMetric: "fpe1",   aggregator: "weighted", kind: "x",    direction: "lower"   },
+  { key: "intGr",     label: "Internal Growth Rate",   portMetric: "intGr",  aggregator: "weighted", kind: "pct",  direction: "higher"  },
+  { key: "adpsGr5",   label: "ADPS Growth (5Y)",       portMetric: "adpsGr5",aggregator: "weighted", kind: "pct",  direction: "higher"  },
+  { key: "adpsGr1",   label: "ADPS Growth (1Y)",       portMetric: "adpsGr1",aggregator: "weighted", kind: "pct",  direction: "higher"  },
+  { key: "payout",    label: "Payout Ratio",           portMetric: "payout", aggregator: "weighted", kind: "pct",  direction: "neutral" },
+  { key: "divYld",    label: "Dividend Yield",         portMetric: "divYld", aggregator: "weighted", kind: "pct",  direction: "higher"  },
 ];
 
 /* Aggregate the portfolio side for a single ratio definition.
@@ -181,9 +192,8 @@ export function aggregatePortfolioRatio(byCompany, companiesById, def) {
     const n = values.length;
     value = (n % 2 === 1) ? values[(n - 1) / 2] : (values[n / 2 - 1] + values[n / 2]) / 2;
   }
-  /* Portfolio mktCap is stored in $B; benchmark uploads in $M. Multiply
-     portfolio side by 1000 so both columns display in $M. */
-  if (value !== null && def.kind === "musd") value = value * 1000;
+  /* No unit adjustment: portfolio mktCap and benchmark mktCap are
+     uploaded in compatible units already. */
   return {
     value: value,
     coverage: { used: values.length, total: total, weightUsed: 0, weightTotal: 0 },
