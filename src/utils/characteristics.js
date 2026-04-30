@@ -142,19 +142,52 @@ export function buildCompaniesById(companies) {
  *   - "neutral" : avg/median mkt cap, payout — neither direction is
  *                 strictly better, so no color is applied.
  */
+/* Aggregator semantics on the portfolio side:
+ *   weighted  - Rep MV-weighted average (heavy holdings dominate)
+ *   avg       - simple unweighted mean
+ *   median    - unweighted median
+ *   max / min - largest/smallest finite value across holdings
+ *   count     - number of holdings with a finite value (or all rep'd companies)
+ *   null      - not computable from holdings; portfolio side falls back to
+ *               an uploaded breakdownHistory[portKey].ratios value at the
+ *               selected date. Used for portfolio-level metrics like
+ *               Active Share that have no per-company source.
+ */
 export const RATIO_DEFS = [
-  { key: "avgMktCap", label: "Average Mkt Cap",        portMetric: "mktCap", aggregator: "avg",      kind: "musd", direction: "neutral" },
-  { key: "medMktCap", label: "Median Mkt Cap",         portMetric: "mktCap", aggregator: "median",   kind: "musd", direction: "neutral" },
-  /* Fwd P/E above P/E by request — easier to read forward-looking first. */
-  { key: "fwdPe",     label: "Fwd P/E",                portMetric: "fpe1",   aggregator: "weighted", kind: "x",    direction: "lower"   },
-  { key: "pe",        label: "P/E",                    portMetric: "fpe",    aggregator: "weighted", kind: "x",    direction: "lower"   },
-  { key: "pb",        label: "P/B",                    portMetric: "pb",     aggregator: "weighted", kind: "x",    direction: "lower"   },
-  { key: "roe",       label: "ROE",                    portMetric: "roe",    aggregator: "weighted", kind: "pct",  direction: "higher"  },
-  { key: "intGr",     label: "Internal Growth Rate",   portMetric: "intGr",  aggregator: "weighted", kind: "pct",  direction: "higher"  },
-  { key: "adpsGr5",   label: "ADPS Growth (5Y)",       portMetric: "adpsGr5",aggregator: "weighted", kind: "pct",  direction: "higher"  },
-  { key: "adpsGr1",   label: "ADPS Growth (1Y)",       portMetric: "adpsGr1",aggregator: "weighted", kind: "pct",  direction: "higher"  },
-  { key: "payout",    label: "Payout Ratio",           portMetric: "payout", aggregator: "weighted", kind: "pct",  direction: "neutral" },
-  { key: "divYld",    label: "Dividend Yield",         portMetric: "divYld", aggregator: "weighted", kind: "pct",  direction: "higher"  },
+  /* Size — uses mktCap from per-company metrics; weighted by Rep MV
+     when applicable. Largest/Smallest are unweighted extremes. */
+  { key: "mcWtdAvg",   label: "Mkt Cap (Wtd Avg)",     portMetric: "mktCap", aggregator: "weighted", kind: "musd", direction: "neutral" },
+  { key: "avgMktCap",  label: "Average Mkt Cap",       portMetric: "mktCap", aggregator: "avg",      kind: "musd", direction: "neutral" },
+  { key: "medMktCap",  label: "Median Mkt Cap",        portMetric: "mktCap", aggregator: "median",   kind: "musd", direction: "neutral" },
+  { key: "mcLargest",  label: "Mkt Cap (Largest)",     portMetric: "mktCap", aggregator: "max",      kind: "musd", direction: "neutral" },
+  { key: "mcSmallest", label: "Mkt Cap (Smallest)",    portMetric: "mktCap", aggregator: "min",      kind: "musd", direction: "neutral" },
+  { key: "nHoldings",  label: "Number of Holdings",    portMetric: "mktCap", aggregator: "count",    kind: "int",  direction: "neutral" },
+  /* Concentration — only available on the portfolio upload, not derivable
+     from per-holding metrics. */
+  { key: "activeShare",label: "Active Share",          portMetric: null,     aggregator: null,       kind: "pct",  direction: "neutral" },
+  /* Valuation — lower is better. Fwd P/E first (forward-looking). */
+  { key: "fwdPe",      label: "Fwd P/E",               portMetric: "fpe1",   aggregator: "weighted", kind: "x",    direction: "lower"   },
+  { key: "pe",         label: "P/E",                   portMetric: "fpe",    aggregator: "weighted", kind: "x",    direction: "lower"   },
+  { key: "peExcl",     label: "P/E (Excl. Neg.)",      portMetric: null,     aggregator: null,       kind: "x",    direction: "lower"   },
+  { key: "pb",         label: "P/B",                   portMetric: "pb",     aggregator: "weighted", kind: "x",    direction: "lower"   },
+  { key: "pbLtm",      label: "P/B (LTM)",             portMetric: null,     aggregator: null,       kind: "x",    direction: "lower"   },
+  { key: "ps",         label: "P/S",                   portMetric: null,     aggregator: null,       kind: "x",    direction: "lower"   },
+  { key: "pcf",        label: "P/CF",                  portMetric: null,     aggregator: null,       kind: "x",    direction: "lower"   },
+  /* Returns — higher is better. */
+  { key: "roe",        label: "ROE",                   portMetric: "roe",    aggregator: "weighted", kind: "pct",  direction: "higher"  },
+  { key: "roe5y",      label: "ROE (5Y)",              portMetric: null,     aggregator: null,       kind: "pct",  direction: "higher"  },
+  /* Growth — higher is better. */
+  { key: "epsGrFwd1",  label: "EPS Growth (1Y Fwd)",   portMetric: null,     aggregator: null,       kind: "pct",  direction: "higher"  },
+  { key: "epsGrFwd35", label: "EPS Growth (3-5Y Fwd)", portMetric: "ltEPS",  aggregator: "weighted", kind: "pct",  direction: "higher"  },
+  { key: "epsGrHist3", label: "EPS Growth (3Y Hist)",  portMetric: null,     aggregator: null,       kind: "pct",  direction: "higher"  },
+  { key: "adpsGr5",    label: "ADPS Growth (5Y Hist)", portMetric: "adpsGr5",aggregator: "weighted", kind: "pct",  direction: "higher"  },
+  { key: "adpsGr1",    label: "ADPS Growth (1Y Hist)", portMetric: "adpsGr1",aggregator: "weighted", kind: "pct",  direction: "higher"  },
+  { key: "intGr",      label: "Internal Growth Rate",  portMetric: "intGr",  aggregator: "weighted", kind: "pct",  direction: "higher"  },
+  /* Yield / payout — yield higher is better; payout neutral. */
+  { key: "divYld",     label: "Dividend Yield",        portMetric: "divYld", aggregator: "weighted", kind: "pct",  direction: "higher"  },
+  { key: "payout",     label: "Payout Ratio",          portMetric: "payout", aggregator: "weighted", kind: "pct",  direction: "neutral" },
+  /* Leverage — lower is better. */
+  { key: "debtCap",    label: "Debt to Capital",       portMetric: null,     aggregator: null,       kind: "pct",  direction: "lower"   },
 ];
 
 /* Aggregate the portfolio side for a single ratio definition.
@@ -167,11 +200,17 @@ export const RATIO_DEFS = [
  * the value is multiplied by 1000 to convert from stored $B to $M.
  */
 export function aggregatePortfolioRatio(byCompany, companiesById, def) {
-  if (def.aggregator === "weighted") {
-    const wa = weightedAvg(byCompany, companiesById, def.portMetric);
-    return wa;
+  /* Ratios with no per-company source — Active Share, Number of Holdings'
+     true upload, P/S, P/CF, etc. Caller is expected to fall back to an
+     uploaded breakdownHistory[portKey].ratios value. */
+  if (!def.portMetric || def.aggregator === null) {
+    return { value: null, coverage: { used: 0, total: (byCompany || []).length, weightUsed: 0, weightTotal: 0 } };
   }
-  /* avg / median — unweighted simple stats. */
+  if (def.aggregator === "weighted") {
+    return weightedAvg(byCompany, companiesById, def.portMetric);
+  }
+  /* Collect finite values from each holding's metrics field. Used by every
+     non-weighted aggregator below. */
   const values = [];
   let total = 0;
   (byCompany || []).forEach(function (c) {
@@ -187,18 +226,35 @@ export function aggregatePortfolioRatio(byCompany, companiesById, def) {
     value = null;
   } else if (def.aggregator === "avg") {
     value = values.reduce(function (s, x) { return s + x; }, 0) / values.length;
+  } else if (def.aggregator === "max") {
+    value = values.reduce(function (m, x) { return x > m ? x : m; }, values[0]);
+  } else if (def.aggregator === "min") {
+    value = values.reduce(function (m, x) { return x < m ? x : m; }, values[0]);
+  } else if (def.aggregator === "count") {
+    /* Count of holdings with a finite value for the source metric.
+       Approximates "Number of Holdings" — uses mktCap availability as
+       the proxy for "is this a real position". */
+    value = values.length;
   } else {
     /* median */
     values.sort(function (a, b) { return a - b; });
     const n = values.length;
     value = (n % 2 === 1) ? values[(n - 1) / 2] : (values[n / 2 - 1] + values[n / 2]) / 2;
   }
-  /* No unit adjustment: portfolio mktCap and benchmark mktCap are
-     uploaded in compatible units already. */
   return {
     value: value,
     coverage: { used: values.length, total: total, weightUsed: 0, weightTotal: 0 },
   };
+}
+
+/* Look up a portfolio-side ratio value from breakdownHistory. Used as
+ * a fallback when aggregatePortfolioRatio returns null because the ratio
+ * has no portMetric (e.g. Active Share). */
+export function uploadedPortfolioRatio(breakdownHistory, portKey, dateIso, key) {
+  if (!breakdownHistory || !portKey || !dateIso) return null;
+  const slot = breakdownHistory[portKey] && breakdownHistory[portKey][dateIso];
+  if (!slot || !slot.ratios) return null;
+  return key in slot.ratios ? slot.ratios[key] : null;
 }
 
 /* Pick the most-recent uploaded ratios snapshot for a benchmark from

@@ -19,6 +19,7 @@ import {
   CHARACTERISTIC_METRICS, weightedAvg, mktCapStats,
   resolveField, buildCompaniesById,
   RATIO_DEFS, aggregatePortfolioRatio, latestRatiosSnapshot, ratioDates,
+  uploadedPortfolioRatio,
 } from '../../utils/characteristics.js';
 import RatioHistoryChart from './RatioHistoryChart.jsx';
 
@@ -35,6 +36,8 @@ function fmtMetric(v, kind) {
     /* musd = millions USD with thousands separators (e.g. $412,350M) —
        used by the Ratios section where benchmark uploads are in M. */
     case "musd":  return "$" + Math.round(n).toLocaleString() + "M";
+    /* int = whole-number count (Number of Holdings, etc.) */
+    case "int":   return Math.round(n).toLocaleString();
     case "x":     return n.toFixed(1) + "x";
     case "pct":   return (n * 100).toFixed(1) + "%";
     case "ratio": return n.toFixed(1);
@@ -52,6 +55,7 @@ function fmtDelta(port, bench, kind) {
   switch (kind) {
     case "bn":    return sign + d.toFixed(1) + "B";
     case "musd":  return sign + Math.round(d).toLocaleString() + "M";
+    case "int":   return sign + Math.round(d).toLocaleString();
     case "x":     return sign + d.toFixed(1) + "x";
     case "pct":   return sign + (d * 100).toFixed(1) + "pp";
     case "ratio": return sign + d.toFixed(1);
@@ -265,7 +269,16 @@ export default function CharacteristicsView() {
   const hasRatios = hasCoreRatios || hasValueRatios;
   const ratioRows = useMemo(function () {
     return RATIO_DEFS.map(function (def) {
-      const port = aggregatePortfolioRatio(breakdown.byCompany, companiesById, def);
+      let port = aggregatePortfolioRatio(breakdown.byCompany, companiesById, def);
+      /* Fallback to uploaded portfolio history when there's no per-company
+         source for this ratio (e.g. Active Share, P/S, P/CF). Reads at the
+         same date the user picked for the benchmarks so periods match. */
+      if (port.value === null) {
+        const uploaded = uploadedPortfolioRatio(breakdownHistory, portKey, ratioDate, def.key);
+        if (uploaded !== null && uploaded !== undefined) {
+          port = { value: uploaded, coverage: { used: 1, total: 1, weightUsed: 0, weightTotal: 0 } };
+        }
+      }
       const cv = coreRatios  && (def.key in coreRatios)  ? coreRatios[def.key]  : null;
       const vv = valueRatios && (def.key in valueRatios) ? valueRatios[def.key] : null;
       return {
@@ -279,7 +292,7 @@ export default function CharacteristicsView() {
         value: vv,
       };
     });
-  }, [breakdown, companiesById, coreRatios, valueRatios]);
+  }, [breakdown, companiesById, coreRatios, valueRatios, breakdownHistory, portKey, ratioDate]);
 
   const empty = breakdown.byCompany.length === 0;
 

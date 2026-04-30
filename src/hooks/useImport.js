@@ -377,17 +377,51 @@ export function useImport(){
        from the metric bucket's keys so the same name can mean different
        things in different buckets if needed. */
     var RATIO_ALIASES = [
-      { aliases: ["AVERAGE MKTCAP", "AVERAGE MKTCAP (M USD)", "AVG MKTCAP", "AVG MARKET CAP"],         key: "avgMktCap", kind: "musd" },
-      { aliases: ["MEDIAN MKTCAP",  "MEDIAN MKTCAP (M USD)",  "MED MKTCAP", "MEDIAN MARKET CAP"],      key: "medMktCap", kind: "musd" },
-      { aliases: ["PRICE TO EARNINGS", "P/E", "PE"],                                                    key: "pe",        kind: "x"    },
-      { aliases: ["PRICE TO BOOK VALUE", "P/B", "PB", "PRICE TO BOOK"],                                 key: "pb",        kind: "x"    },
-      { aliases: ["ROE", "RETURN ON EQUITY"],                                                           key: "roe",       kind: "pct"  },
-      { aliases: ["FWD PRICE TO EARN", "FWD P/E", "FORWARD P/E", "FORWARD PRICE TO EARNINGS"],          key: "fwdPe",     kind: "x"    },
-      { aliases: ["CURR INTERNAL GROWTH RATE", "INTERNAL GROWTH", "INTERNAL GROWTH RATE", "INT GROWTH"], key: "intGr",     kind: "pct"  },
-      { aliases: ["5 YEARS ADPS GROWTH RATE", "5YR ADPS GROWTH", "5Y ADPS GROWTH", "ADPS 5Y"],          key: "adpsGr5",   kind: "pct"  },
-      { aliases: ["1 YEAR ADPS GROWTH RATE",  "1YR ADPS GROWTH", "1Y ADPS GROWTH", "ADPS 1Y"],          key: "adpsGr1",   kind: "pct"  },
-      { aliases: ["PAYOUT RATIO", "PAYOUT"],                                                            key: "payout",    kind: "pct"  },
-      { aliases: ["MONTHLY YIELD", "DIV YLD", "DIVIDEND YIELD", "DIV YIELD"],                           key: "divYld",    kind: "pct"  },
+      /* Mkt cap variants — extreme values + weighted/median/average. */
+      { aliases: ["MARKET CAP (LARGEST)", "MKT CAP LARGEST", "LARGEST MKTCAP", "MAX MKTCAP", "LARGEST MARKET CAP"],
+                                                                                                          key: "mcLargest", kind: "musd" },
+      { aliases: ["MARKET CAP (SMALLEST)", "MKT CAP SMALLEST", "SMALLEST MKTCAP", "MIN MKTCAP", "SMALLEST MARKET CAP"],
+                                                                                                          key: "mcSmallest", kind: "musd" },
+      { aliases: ["MARKET CAP (WGT. AVERAGE)", "MARKET CAP (WGT AVERAGE)", "WGT AVG MKTCAP", "WEIGHTED AVERAGE MARKET CAP", "MARKET CAP WGT AVG"],
+                                                                                                          key: "mcWtdAvg",   kind: "musd" },
+      { aliases: ["AVERAGE MKTCAP", "AVERAGE MKTCAP (M USD)", "AVG MKTCAP", "AVG MARKET CAP", "AVERAGE MARKET CAP"],
+                                                                                                          key: "avgMktCap", kind: "musd" },
+      { aliases: ["MEDIAN MKTCAP",  "MEDIAN MKTCAP (M USD)",  "MED MKTCAP", "MEDIAN MARKET CAP"],         key: "medMktCap", kind: "musd" },
+      /* Concentration / count. */
+      { aliases: ["NUMBER OF HOLDINGS", "# HOLDINGS", "HOLDINGS COUNT", "N HOLDINGS"],                    key: "nHoldings",  kind: "int"  },
+      { aliases: ["ACTIVE SHARE"],                                                                        key: "activeShare",kind: "pct"  },
+      /* Valuation. */
+      { aliases: ["PRICE TO EARNINGS", "PRICE TO EARNINGS (LAST 12 MOS.)", "PRICE TO EARNINGS (LAST 12 MOS)", "P/E LTM", "P/E (LAST 12 MOS.)", "P/E", "PE"],
+                                                                                                          key: "pe",        kind: "x"    },
+      { aliases: ["PRICE TO EARNINGS (EXCL. NEGATIVES)", "PRICE TO EARNINGS EXCL NEGATIVES", "P/E EXCL NEGATIVES", "P/E (EXCL. NEG.)", "PE EXCL NEG"],
+                                                                                                          key: "peExcl",    kind: "x"    },
+      { aliases: ["PRICE TO BOOK VALUE", "PRICE TO BOOK", "P/B", "PB"],                                   key: "pb",        kind: "x"    },
+      { aliases: ["PRICE TO BOOK (LAST 12 MOS.)", "PRICE TO BOOK (LAST 12 MOS)", "P/B LTM", "P/B (LTM)"], key: "pbLtm",     kind: "x"    },
+      { aliases: ["PRICE TO SALES", "P/S", "PS"],                                                         key: "ps",        kind: "x"    },
+      { aliases: ["PRICE TO CASH FLOW", "P/CF", "PCF"],                                                   key: "pcf",       kind: "x"    },
+      { aliases: ["FWD PRICE TO EARN", "FORWARD PRICE TO EARNINGS", "PRICE TO EARNINGS (FWD. 12 MOS.)", "PRICE TO EARNINGS (FWD 12 MOS)", "FWD P/E", "FORWARD P/E"],
+                                                                                                          key: "fwdPe",     kind: "x"    },
+      /* Returns. */
+      { aliases: ["ROE", "RETURN ON EQUITY", "RETURN ON EQUITY (1Y)", "ROE 1Y"],                          key: "roe",       kind: "pct"  },
+      { aliases: ["RETURN ON EQUITY (5Y)", "ROE 5Y", "ROE (5Y)"],                                         key: "roe5y",     kind: "pct"  },
+      /* Growth. */
+      { aliases: ["EPS GROWTH (1Y FWD.)", "EPS GROWTH (1Y FWD)", "EPS GROWTH 1Y FWD", "1YR EPS GROWTH FWD"],
+                                                                                                          key: "epsGrFwd1", kind: "pct"  },
+      { aliases: ["EPS GROWTH (3-5Y FWD.)", "EPS GROWTH (3-5Y FWD)", "EPS GROWTH 3-5Y FWD", "EPS LT GROWTH"],
+                                                                                                          key: "epsGrFwd35",kind: "pct"  },
+      { aliases: ["EPS GROWTH (3Y HIST.)", "EPS GROWTH (3Y HIST)", "EPS GROWTH 3Y HIST", "3YR HIST EPS GROWTH"],
+                                                                                                          key: "epsGrHist3",kind: "pct"  },
+      { aliases: ["EPS GROWTH (5Y HIST.)", "EPS GROWTH (5Y HIST)", "5 YEARS ADPS GROWTH RATE", "5YR ADPS GROWTH", "5Y ADPS GROWTH", "ADPS 5Y"],
+                                                                                                          key: "adpsGr5",   kind: "pct"  },
+      { aliases: ["EPS GROWTH (1Y HIST.)", "EPS GROWTH (1Y HIST)", "1 YEAR ADPS GROWTH RATE", "1YR ADPS GROWTH", "1Y ADPS GROWTH", "ADPS 1Y"],
+                                                                                                          key: "adpsGr1",   kind: "pct"  },
+      { aliases: ["CURR INTERNAL GROWTH RATE", "INTERNAL GROWTH", "INTERNAL GROWTH RATE", "INT GROWTH"],  key: "intGr",     kind: "pct"  },
+      /* Yield / payout. */
+      { aliases: ["DIVIDEND YIELD", "MONTHLY YIELD", "DIV YLD", "DIV YIELD"],                             key: "divYld",    kind: "pct"  },
+      { aliases: ["PAYOUT RATIO", "PAYOUT"],                                                              key: "payout",    kind: "pct"  },
+      /* Leverage. */
+      { aliases: ["DEBT TO CAPITAL", "DEBT/CAPITAL", "DEBT-TO-CAP"],                                      key: "debtCap",   kind: "pct"  },
+      { aliases: ["NET DEBT TO EQUITY", "NET DEBT/EQUITY", "NET D/E"],                                    key: "netDE",     kind: "pct"  },
     ];
     function resolveRatioKey(itemRaw) {
       const u = (itemRaw||"").trim().toUpperCase();
