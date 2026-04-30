@@ -384,9 +384,10 @@ export function useImport(){
                                                                                                           key: "mcSmallest", kind: "musd" },
       { aliases: ["MARKET CAP (WGT. AVERAGE)", "MARKET CAP (WGT AVERAGE)", "WGT AVG MKTCAP", "WEIGHTED AVERAGE MARKET CAP", "MARKET CAP WGT AVG"],
                                                                                                           key: "mcWtdAvg",   kind: "musd" },
-      { aliases: ["AVERAGE MKTCAP", "AVERAGE MKTCAP (M USD)", "AVG MKTCAP", "AVG MARKET CAP", "AVERAGE MARKET CAP"],
+      { aliases: ["MARKET CAP (AVERAGE)", "AVERAGE MKTCAP", "AVERAGE MKTCAP (M USD)", "AVG MKTCAP", "AVG MARKET CAP", "AVERAGE MARKET CAP"],
                                                                                                           key: "avgMktCap", kind: "musd" },
-      { aliases: ["MEDIAN MKTCAP",  "MEDIAN MKTCAP (M USD)",  "MED MKTCAP", "MEDIAN MARKET CAP"],         key: "medMktCap", kind: "musd" },
+      { aliases: ["MARKET CAP (MEDIAN)", "MEDIAN MKTCAP", "MEDIAN MKTCAP (M USD)", "MED MKTCAP", "MEDIAN MARKET CAP"],
+                                                                                                          key: "medMktCap", kind: "musd" },
       /* Concentration / count. */
       { aliases: ["NUMBER OF HOLDINGS", "# HOLDINGS", "HOLDINGS COUNT", "N HOLDINGS"],                    key: "nHoldings",  kind: "int"  },
       { aliases: ["ACTIVE SHARE"],                                                                        key: "activeShare",kind: "pct"  },
