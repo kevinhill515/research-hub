@@ -207,7 +207,13 @@ export function aggregatePortfolioRatio(byCompany, companiesById, def) {
     return { value: null, coverage: { used: 0, total: (byCompany || []).length, weightUsed: 0, weightTotal: 0 } };
   }
   if (def.aggregator === "weighted") {
-    return weightedAvg(byCompany, companiesById, def.portMetric);
+    const wa = weightedAvg(byCompany, companiesById, def.portMetric);
+    /* Convert stored $B to $M so portfolio matches benchmark display unit;
+       fmtMUSD auto-scales M/B/T from there. */
+    if (wa.value !== null && def.kind === "musd") {
+      return { value: wa.value * 1000, coverage: wa.coverage };
+    }
+    return wa;
   }
   /* Collect finite values from each holding's metrics field. Used by every
      non-weighted aggregator below. */
@@ -240,6 +246,11 @@ export function aggregatePortfolioRatio(byCompany, companiesById, def) {
     values.sort(function (a, b) { return a - b; });
     const n = values.length;
     value = (n % 2 === 1) ? values[(n - 1) / 2] : (values[n / 2 - 1] + values[n / 2]) / 2;
+  }
+  /* Same $B → $M conversion for non-weighted aggregators (avg/median/
+     max/min). count is a unit-less integer, leave alone. */
+  if (value !== null && def.kind === "musd" && def.aggregator !== "count") {
+    value = value * 1000;
   }
   return {
     value: value,

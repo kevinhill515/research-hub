@@ -192,6 +192,62 @@ export function CompanyProvider({children}){
          });
          supaUpsert("meta",{key:"cleanup_acwiexus_2025_q2_x100",value:"1"});
        }}catch(e){}
+       try{var rFlag3=await supaGet("meta","key","cleanup_bench_scale_v3");if(!(rFlag3&&rFlag3.value)){
+         /* Broad benchmark scale fix. The user pasted FactSet-export
+            data in decimal form (0.243 for 24.3%, 0.179 for 17.9%) and
+            the importer's /100 step on pct-kind ratios compounded the
+            wrong scale. Multiply by 100 to bring back to expected form,
+            for benchmark names only (skip portfolio codes). Heuristics
+            keep the migration safe to re-run on partially-correct data:
+              - sectors / countries: ×100 only if max value < 1
+              - pct-kind ratios:     ×100 only if value < 0.5
+              - x-kind fwdPe:        ×100 only if value < 1 */
+         var PORT_CODES = ["FIN","IN","FGL","GL","EM","SC"];
+         /* "ROE on down" per the user — everything from ROE through Debt
+            to Capital. Active Share is intentionally not in this set; it
+            gets fixed independently if ever uploaded with wrong scale. */
+         var PCT_RATIO_KEYS = ["roe","roe5y","epsGrFwd1","epsGrFwd35","epsGrHist3",
+                               "adpsGr5","adpsGr1","intGr","divYld","payout","debtCap"];
+         function fixBucketIfDecimal(map, threshold) {
+           if (!map) return false;
+           var keys = Object.keys(map);
+           if (keys.length === 0) return false;
+           var maxV = keys.reduce(function (m, k) {
+             var v = parseFloat(map[k]);
+             return isFinite(v) && v > m ? v : m;
+           }, 0);
+           if (maxV >= threshold) return false;
+           keys.forEach(function (k) {
+             var v = parseFloat(map[k]);
+             if (isFinite(v)) map[k] = v * 100;
+           });
+           return true;
+         }
+         Object.keys(bh).forEach(function (name) {
+           if (PORT_CODES.indexOf(name) >= 0) return; /* skip portfolios */
+           Object.keys(bh[name] || {}).forEach(function (date) {
+             var slot = bh[name][date];
+             if (!slot) return;
+             if (fixBucketIfDecimal(slot.sectors, 1))   bhChanged = true;
+             if (fixBucketIfDecimal(slot.countries, 1)) bhChanged = true;
+             if (slot.ratios) {
+               PCT_RATIO_KEYS.forEach(function (k) {
+                 var v = parseFloat(slot.ratios[k]);
+                 if (isFinite(v) && Math.abs(v) > 0 && Math.abs(v) < 0.5) {
+                   slot.ratios[k] = v * 100;
+                   bhChanged = true;
+                 }
+               });
+               var fp = parseFloat(slot.ratios.fwdPe);
+               if (isFinite(fp) && Math.abs(fp) > 0 && Math.abs(fp) < 1) {
+                 slot.ratios.fwdPe = fp * 100;
+                 bhChanged = true;
+               }
+             }
+           });
+         });
+         supaUpsert("meta",{key:"cleanup_bench_scale_v3",value:"1"});
+       }}catch(e){}
        setBreakdownHistory(bh);
        if(bhChanged)supaUpsert("meta",{key:"breakdownHistory",value:JSON.stringify(bh)});
      }}}catch(e){}     setLoadStatus({companies:coOk,library:libOk});setReady(true);return coOk||libOk;}
