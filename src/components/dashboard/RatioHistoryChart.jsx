@@ -64,20 +64,31 @@ export default function RatioHistoryChart({
     );
   }
 
+  /* Auto-scale musd values for display. Without this a $1T+ cap shows
+     as "1,000,000" on the Y axis which is unreadable. */
+  function fmtMUSD(v) {
+    const abs = Math.abs(v);
+    const sign = v < 0 ? "-" : "";
+    if (abs >= 1e6) return sign + "$" + (abs / 1e6).toFixed(2) + "T";
+    if (abs >= 1e3) return sign + "$" + (abs / 1e3).toFixed(1) + "B";
+    return sign + "$" + Math.round(abs).toLocaleString() + "M";
+  }
   /* Format Y-axis ticks per ratio kind. pct values are stored as decimals
-     (0.184 → 18.4%); musd is plain millions; x is a multiple. */
+     (0.184 → 18.4%); musd is auto-scaled M/B/T; x is a multiple. */
   const yFmt = function (v) {
     if (v === null || v === undefined) return "";
     if (kind === "pct") return (v * 100).toFixed(1) + "%";
-    if (kind === "musd") return Math.round(v).toLocaleString();
+    if (kind === "musd") return fmtMUSD(v);
     if (kind === "x") return v.toFixed(1) + "x";
+    if (kind === "int") return Math.round(v).toLocaleString();
     return String(v);
   };
   const tipFmt = function (v, name) {
     if (v === null || v === undefined) return ["--", name];
     if (kind === "pct") return [(v * 100).toFixed(2) + "%", name];
-    if (kind === "musd") return ["$" + Math.round(v).toLocaleString() + "M", name];
+    if (kind === "musd") return [fmtMUSD(v), name];
     if (kind === "x") return [v.toFixed(2) + "x", name];
+    if (kind === "int") return [Math.round(v).toLocaleString(), name];
     return [String(v), name];
   };
 

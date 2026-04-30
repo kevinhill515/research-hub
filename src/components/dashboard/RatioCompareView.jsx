@@ -23,13 +23,21 @@ import {
   buildCompaniesById,
 } from '../../utils/characteristics.js';
 
+function fmtMUSD(n) {
+  const abs = Math.abs(n);
+  const sign = n < 0 ? "-" : "";
+  if (abs >= 1e6) return sign + "$" + (abs / 1e6).toFixed(2) + "T";
+  if (abs >= 1e3) return sign + "$" + (abs / 1e3).toFixed(1) + "B";
+  return sign + "$" + Math.round(abs).toLocaleString() + "M";
+}
+
 function fmtMetric(v, kind) {
   if (v === null || v === undefined || (typeof v === "number" && !isFinite(v))) return "--";
   const n = typeof v === "number" ? v : parseFloat(v);
   if (!isFinite(n)) return "--";
   switch (kind) {
     case "bn":    return "$" + n.toFixed(1) + "B";
-    case "musd":  return "$" + Math.round(n).toLocaleString() + "M";
+    case "musd":  return fmtMUSD(n);
     case "int":   return Math.round(n).toLocaleString();
     case "x":     return n.toFixed(1) + "x";
     case "pct":   return (n * 100).toFixed(1) + "%";

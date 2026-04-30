@@ -27,15 +27,27 @@ const TABST_ACTIVE   = "text-[13px] px-3 py-1.5 border-b-2 border-blue-600 text-
 const TABST_INACTIVE = "text-[13px] px-3 py-1.5 border-b-2 border-transparent text-gray-500 dark:text-slate-400 cursor-pointer bg-transparent hover:text-gray-700 dark:hover:text-slate-300";
 const CARD = "rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2";
 
+/* Auto-scale dollars stored in millions to the most readable unit.
+ *   < 1,000    → "$nnnM"          (under $1B, show in M)
+ *   < 1,000,000 → "$n.nB"          ($1B–$999B)
+ *   ≥ 1,000,000 → "$n.nT"          ($1T+)
+ * Used by both Characteristics and the inline ratio history chart so
+ * a $1.2T cap doesn't display as "$1,200,000M". */
+export function fmtMUSD(n) {
+  const abs = Math.abs(n);
+  const sign = n < 0 ? "-" : "";
+  if (abs >= 1e6) return sign + "$" + (abs / 1e6).toFixed(2) + "T";
+  if (abs >= 1e3) return sign + "$" + (abs / 1e3).toFixed(1) + "B";
+  return sign + "$" + Math.round(abs).toLocaleString() + "M";
+}
+
 function fmtMetric(v, kind) {
   if (v === null || v === undefined || (typeof v === "number" && !isFinite(v))) return "--";
   const n = typeof v === "number" ? v : parseFloat(v);
   if (!isFinite(n)) return "--";
   switch (kind) {
     case "bn":    return "$" + n.toFixed(1) + "B";
-    /* musd = millions USD with thousands separators (e.g. $412,350M) —
-       used by the Ratios section where benchmark uploads are in M. */
-    case "musd":  return "$" + Math.round(n).toLocaleString() + "M";
+    case "musd":  return fmtMUSD(n);
     /* int = whole-number count (Number of Holdings, etc.) */
     case "int":   return Math.round(n).toLocaleString();
     case "x":     return n.toFixed(1) + "x";

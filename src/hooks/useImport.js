@@ -450,10 +450,22 @@ export function useImport(){
     /* dated history rows (5-col), keyed by [bm][isoDate] */
     var historyRows={};
     var dropped=0;
+    /* Track WHY rows were dropped + sample the offending rows. Without
+       this the user has no way to debug a "206 rows skipped" message
+       beyond manually scanning their paste. */
+    var dropReasons = {}; /* { reason: count } */
+    var dropSamples = {}; /* { reason: [first 3 raw lines] } */
+    var unknownItems = {}; /* { upper-cased item label: count } — for ratios specifically */
+    function recordDrop(reason, line) {
+      dropped++;
+      dropReasons[reason] = (dropReasons[reason] || 0) + 1;
+      if (!dropSamples[reason]) dropSamples[reason] = [];
+      if (dropSamples[reason].length < 3) dropSamples[reason].push(line);
+    }
     lines.forEach(function(line){
       var delim=line.indexOf("\t")>=0?"\t":",";
       var p=line.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});
-      if(p.length<4){dropped++;return;}
+      if(p.length<4){recordDrop("too few columns (<4)", line); return;}
       /* Detect 5-col dated format: first cell parses as a date. Otherwise
          treat as the legacy 4-col (current-snapshot) format. */
       var dateIso=parseDateMDY(p[0]);
@@ -463,13 +475,15 @@ export function useImport(){
       } else {
         bm=p[0]; type=(p[1]||"").toLowerCase(); name=p[2]; w=parseFloat(p[3]);
       }
-      if(!bm||!name||isNaN(w)){dropped++;return;}
+      if(!bm){recordDrop("missing benchmark/portfolio name", line); return;}
+      if(!name){recordDrop("missing item name", line); return;}
+      if(isNaN(w)){recordDrop("non-numeric value", line); return;}
       var bucket=type.indexOf("country")>=0?"countries"
               :type.indexOf("sector") >=0?"sectors"
               :type.indexOf("metric") >=0?"metrics"
               :type.indexOf("ratio")  >=0?"ratios"
               :null;
-      if(!bucket){dropped++;return;}
+      if(!bucket){recordDrop("unknown type '"+type+"' (expected Sector/Country/Metric/Ratio)", line); return;}
       /* Bucket-specific normalization. metrics already use a fixed
          decimal/percent-form rule. Ratios get the same treatment but
          resolved via RATIO_ALIASES so users can paste FactSet-style
@@ -478,7 +492,12 @@ export function useImport(){
       if(bucket==="metrics" && PCT_METRIC_RE.test(name)) w=w/100;
       if(bucket==="ratios"){
         var def = resolveRatioKey(name);
-        if(!def){dropped++;return;}
+        if(!def){
+          var k=(name||"").trim().toUpperCase();
+          unknownItems[k]=(unknownItems[k]||0)+1;
+          recordDrop("unrecognized ratio item label", line);
+          return;
+        }
         storedName = def.key;
         if(def.kind==="pct") w=w/100;
       }
@@ -491,6 +510,19 @@ export function useImport(){
         affected[bm][bucket][storedName]=w;
       }
     });
+    /* Surface drop diagnostics — console for the full breakdown, alert
+       for a quick read. The console block is most useful when the user
+       has a few hundred drops; a curated alert summary mentions the top
+       reasons + unrecognized items. */
+    if (dropped > 0) {
+      /* eslint-disable no-console */
+      console.warn("[Benchmark import] "+dropped+" rows skipped. Reasons:", dropReasons);
+      console.warn("[Benchmark import] sample skipped rows by reason:", dropSamples);
+      if (Object.keys(unknownItems).length > 0) {
+        console.warn("[Benchmark import] unrecognized ratio Item labels (counts):", unknownItems);
+      }
+      /* eslint-enable no-console */
+    }
     if(Object.keys(affected).length===0 && Object.keys(historyRows).length===0){
       alertFn("No valid rows parsed. Formats:\n"
             + "  Current snapshot: Benchmark, Type (Sector|Country|Metric|Ratio), Name, Value\n"
@@ -544,7 +576,22 @@ export function useImport(){
     if(n_curr>0)parts.push("current snapshot for "+n_curr+" benchmark(s): "+Object.keys(affected).join(", "));
     if(n_hist>0)parts.push("history: "+n_hist+" quarter(s) across "+n_hist_names+" name(s) ("+Object.keys(historyRows).join(", ")+")");
     var msg="Updated "+parts.join("; ");
-    if(dropped>0)msg+="  ("+dropped+" row(s) skipped)";
+    if(dropped>0){
+      msg+="\n\n"+dropped+" row(s) skipped. Top reasons:\n";
+      Object.keys(dropReasons)
+        .sort(function(a,b){return dropReasons[b]-dropReasons[a];})
+        .slice(0,4)
+        .forEach(function(r){
+          msg+="  • "+dropReasons[r]+"× "+r+"\n";
+        });
+      var unkKeys=Object.keys(unknownItems);
+      if(unkKeys.length>0){
+        msg+="\nUnrecognized Ratio Item labels (paste these EXACTLY as shown if FactSet uses them, or tell me to add aliases):\n";
+        unkKeys.slice(0,8).forEach(function(k){msg+="  • "+k+" ("+unknownItems[k]+"×)\n";});
+        if(unkKeys.length>8)msg+="  …+"+(unkKeys.length-8)+" more (see browser console)\n";
+      }
+      msg+="\n(Open browser console for full sample list.)";
+    }
     setTimeout(function(){alertFn(msg);setBenchmarkImportText("");},100);
   }
 
