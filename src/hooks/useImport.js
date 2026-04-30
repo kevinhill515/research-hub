@@ -400,7 +400,9 @@ export function useImport(){
       { aliases: ["PRICE TO BOOK (LAST 12 MOS.)", "PRICE TO BOOK (LAST 12 MOS)", "P/B LTM", "P/B (LTM)"], key: "pbLtm",     kind: "x"    },
       { aliases: ["PRICE TO SALES", "P/S", "PS"],                                                         key: "ps",        kind: "x"    },
       { aliases: ["PRICE TO CASH FLOW", "P/CF", "PCF"],                                                   key: "pcf",       kind: "x"    },
-      { aliases: ["FWD PRICE TO EARN", "FORWARD PRICE TO EARNINGS", "PRICE TO EARNINGS (FWD. 12 MOS.)", "PRICE TO EARNINGS (FWD 12 MOS)", "FWD P/E", "FORWARD P/E"],
+      { aliases: ["FWD PRICE TO EARN", "FORWARD PRICE TO EARNINGS", "PRICE TO EARNINGS (FWD. 12 MOS.)", "PRICE TO EARNINGS (FWD 12 MOS)", "FWD P/E", "FORWARD P/E",
+                  /* FactSet's actual export has a typo: "EARNIGS" without the 'N'. */
+                  "PRICE TO EARNIGS (FWD. 12 MOS.)", "PRICE TO EARNIGS (FWD 12 MOS)"],
                                                                                                           key: "fwdPe",     kind: "x"    },
       /* Returns. */
       { aliases: ["ROE", "RETURN ON EQUITY", "RETURN ON EQUITY (1Y)", "ROE 1Y"],                          key: "roe",       kind: "pct"  },
@@ -477,7 +479,22 @@ export function useImport(){
       }
       if(!bm){recordDrop("missing benchmark/portfolio name", line); return;}
       if(!name){recordDrop("missing item name", line); return;}
-      if(isNaN(w)){recordDrop("non-numeric value", line); return;}
+      if(isNaN(w)){
+        /* Distinguish "data not available" sentinels from real parse
+           failures. FactSet leaves blanks, "--", "N/A" etc. for periods
+           where a metric isn't reported — those aren't user errors and
+           shouldn't surface in the panic list. We silently skip them
+           by not calling recordDrop(); the row is still excluded from
+           storage but the count doesn't appear in the alert. */
+        var raw = (dateIso && p.length>=5) ? (p[4]||"") : (p[3]||"");
+        var rawTrim = raw.trim();
+        if (rawTrim === "" || /^(--|—|n\/?a|#n\/?a|null|#ref!?|@na)$/i.test(rawTrim)) {
+          /* Missing data — silent skip. */
+          return;
+        }
+        recordDrop("non-numeric value '"+rawTrim+"'", line);
+        return;
+      }
       var bucket=type.indexOf("country")>=0?"countries"
               :type.indexOf("sector") >=0?"sectors"
               :type.indexOf("metric") >=0?"metrics"
