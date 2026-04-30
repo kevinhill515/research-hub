@@ -15,6 +15,9 @@
  */
 
 import { useMemo, useState, useEffect } from 'react';
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+} from 'recharts';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import { BENCHMARKS, PORTFOLIOS, PORT_NAMES } from '../../constants/index.js';
 import { calcBreakdowns } from '../../utils/portfolioMath.js';
@@ -22,6 +25,26 @@ import {
   RATIO_DEFS, aggregatePortfolioRatio, uploadedPortfolioRatio,
   buildCompaniesById,
 } from '../../utils/characteristics.js';
+
+/* Distinct colors for the 6 portfolios on the history chart. Same color
+   gets used in the row pill in the table for consistency. */
+const PORT_COLORS = {
+  FIN: "#1d4ed8",   /* blue */
+  IN:  "#7c3aed",   /* purple */
+  FGL: "#059669",   /* green */
+  GL:  "#16a34a",   /* light green */
+  EM:  "#d97706",   /* amber */
+  SC:  "#dc2626",   /* red */
+};
+
+/* Format ISO YYYY-MM-DD as "Q1 '26" for X-axis ticks. */
+function quarterLabel(iso) {
+  if (!iso || iso.length < 7) return iso || "";
+  const y = iso.slice(2, 4);
+  const m = parseInt(iso.slice(5, 7), 10);
+  const q = m <= 3 ? 1 : m <= 6 ? 2 : m <= 9 ? 3 : 4;
+  return "Q" + q + " '" + y;
+}
 
 function fmtMUSD(n) {
   const abs = Math.abs(n);
@@ -141,6 +164,72 @@ export default function RatioCompareView() {
       };
     });
   }, [companies, repData, fxRates, def, breakdownHistory, ratioDate, companiesById]);
+
+  /* History series for the chart. One column per portfolio, plus
+     optionally one column per unique benchmark (toggle below). Each row
+     is { date, FGL, GL, FIN, IN, EM, SC, [bench keys] }. */
+  const [includeBench, setIncludeBench] = useState(false);
+  const chartData = useMemo(function () {
+    const dateSet = new Set();
+    /* Union of all dates from portfolios + (optionally) benchmarks. */
+    PORTFOLIOS.forEach(function (p) {
+      const byDate = (breakdownHistory && breakdownHistory[p]) || {};
+      Object.keys(byDate).forEach(function (d) {
+        if (byDate[d] && byDate[d].ratios && (def.key in byDate[d].ratios)) dateSet.add(d);
+      });
+    });
+    const benchNames = [];
+    if (includeBench) {
+      PORTFOLIOS.forEach(function (p) {
+        const cb = (BENCHMARKS[p] || {}).core;
+        const vb = (BENCHMARKS[p] || {}).value;
+        if (cb && benchNames.indexOf(cb) < 0) benchNames.push(cb);
+        if (vb && benchNames.indexOf(vb) < 0) benchNames.push(vb);
+      });
+      benchNames.forEach(function (b) {
+        const byDate = (breakdownHistory && breakdownHistory[b]) || {};
+        Object.keys(byDate).forEach(function (d) {
+          if (byDate[d] && byDate[d].ratios && (def.key in byDate[d].ratios)) dateSet.add(d);
+        });
+      });
+    }
+    const dates = Array.from(dateSet).sort();
+    return {
+      benchNames: benchNames,
+      rows: dates.map(function (d) {
+        const row = { date: d };
+        PORTFOLIOS.forEach(function (p) {
+          const slot = breakdownHistory && breakdownHistory[p] && breakdownHistory[p][d];
+          row[p] = (slot && slot.ratios && def.key in slot.ratios) ? slot.ratios[def.key] : null;
+        });
+        if (includeBench) {
+          benchNames.forEach(function (b) {
+            const slot = breakdownHistory && breakdownHistory[b] && breakdownHistory[b][d];
+            row[b] = (slot && slot.ratios && def.key in slot.ratios) ? slot.ratios[def.key] : null;
+          });
+        }
+        return row;
+      }),
+    };
+  }, [breakdownHistory, def, includeBench]);
+
+  /* Y-axis formatter — auto-scale musd, percent-aware pct, etc. */
+  function chartYFmt(v) {
+    if (v === null || v === undefined) return "";
+    if (def.kind === "pct") return (v * 100).toFixed(1) + "%";
+    if (def.kind === "musd") return fmtMUSD(v);
+    if (def.kind === "x") return v.toFixed(1) + "x";
+    if (def.kind === "int") return Math.round(v).toLocaleString();
+    return String(v);
+  }
+  function chartTipFmt(v, name) {
+    if (v === null || v === undefined) return ["--", name];
+    if (def.kind === "pct") return [(v * 100).toFixed(2) + "%", name];
+    if (def.kind === "musd") return [fmtMUSD(v), name];
+    if (def.kind === "x") return [v.toFixed(2) + "x", name];
+    if (def.kind === "int") return [Math.round(v).toLocaleString(), name];
+    return [String(v), name];
+  }
 
   /* Group RATIO_DEFS by direction-bucketed category so the picker dropdown
      reads as Size / Valuation / Returns / Growth / Yield / Leverage /
@@ -267,6 +356,81 @@ export default function RatioCompareView() {
               ? "Lower is better — bench cell green when bench < portfolio."
               : "Higher is better — bench cell green when bench > portfolio.")}
         {" "}Portfolio aggregate is {def.aggregator || "from upload"} when computable from holdings; otherwise reads from breakdownHistory at the selected date.
+      </div>
+
+      {/* Cross-portfolio history chart for the selected ratio. One line
+          per portfolio; optional benchmark overlay via toggle. Plots only
+          quarters where at least one portfolio has uploaded data for
+          this ratio key. */}
+      <div className="mt-4">
+        <div className="flex items-center justify-between mb-1">
+          <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-semibold">
+            History — {def.label}
+          </div>
+          <label className="flex items-center gap-1 text-[10px] text-gray-500 dark:text-slate-400 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={includeBench}
+              onChange={function (e) { setIncludeBench(e.target.checked); }}
+              className="cursor-pointer"
+            />
+            Include benchmarks
+          </label>
+        </div>
+        {chartData.rows.length === 0 ? (
+          <div className="text-xs italic text-gray-500 dark:text-slate-400 py-6 text-center bg-slate-50 dark:bg-slate-800/40 rounded">
+            No portfolio history uploaded for this ratio yet. Paste rows with Type=Ratio and Name=portfolio code (FGL, GL, FIN, IN, EM, SC) in Data Hub → Benchmarks.
+          </div>
+        ) : (
+          <div className="bg-slate-50 dark:bg-slate-800/40 rounded p-2">
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={chartData.rows} margin={{ top: 8, right: 16, left: 0, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" strokeOpacity={0.3} />
+                <XAxis dataKey="date" tickFormatter={quarterLabel} tick={{ fontSize: 11 }} />
+                <YAxis tickFormatter={chartYFmt} tick={{ fontSize: 11 }} width={70} />
+                <Tooltip
+                  formatter={chartTipFmt}
+                  labelFormatter={function (l) { return quarterLabel(l) + " (" + l + ")"; }}
+                  contentStyle={{ fontSize: 12 }}
+                  itemSorter={function (item) { return -(item.value || 0); }}
+                />
+                <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
+                {PORTFOLIOS.map(function (p) {
+                  return (
+                    <Line
+                      key={p}
+                      type="monotone"
+                      dataKey={p}
+                      name={p}
+                      stroke={PORT_COLORS[p] || "#334155"}
+                      strokeWidth={2}
+                      dot={{ r: 2 }}
+                      activeDot={{ r: 4 }}
+                      isAnimationActive={false}
+                      connectNulls
+                    />
+                  );
+                })}
+                {includeBench && chartData.benchNames.map(function (b) {
+                  return (
+                    <Line
+                      key={b}
+                      type="monotone"
+                      dataKey={b}
+                      name={b}
+                      stroke="#94a3b8"
+                      strokeWidth={1.5}
+                      strokeDasharray="4 3"
+                      dot={{ r: 2 }}
+                      isAnimationActive={false}
+                      connectNulls
+                    />
+                  );
+                })}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </div>
     </div>
   );
