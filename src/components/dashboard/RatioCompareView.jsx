@@ -103,6 +103,19 @@ export default function RatioCompareView() {
   const { companies, repData, fxRates, breakdownHistory } = useCompanyContext();
   const [ratioKey, setRatioKey] = useState("fwdPe");
   const [ratioDate, setRatioDate] = useState(null);
+  /* Which portfolios are visible on the chart. Defaults to all checked.
+     Toggling adds/removes a key. Lines for unchecked portfolios are
+     skipped at render. */
+  const [visiblePorts, setVisiblePorts] = useState(function () {
+    return new Set(PORTFOLIOS);
+  });
+  function togglePort(p) {
+    setVisiblePorts(function (prev) {
+      const next = new Set(prev);
+      if (next.has(p)) next.delete(p); else next.add(p);
+      return next;
+    });
+  }
 
   const def = useMemo(function () {
     return RATIO_DEFS.find(function (d) { return d.key === ratioKey; }) || RATIO_DEFS[0];
@@ -363,19 +376,44 @@ export default function RatioCompareView() {
           quarters where at least one portfolio has uploaded data for
           this ratio key. */}
       <div className="mt-4">
-        <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
           <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-semibold">
             History — {def.label}
           </div>
-          <label className="flex items-center gap-1 text-[10px] text-gray-500 dark:text-slate-400 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={includeBench}
-              onChange={function (e) { setIncludeBench(e.target.checked); }}
-              className="cursor-pointer"
-            />
-            Include benchmarks
-          </label>
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Per-portfolio show/hide checkboxes — colored swatch
+                matches the line color so the user can map quickly. */}
+            <div className="flex items-center gap-2 flex-wrap text-[10px] text-gray-700 dark:text-slate-300">
+              {PORTFOLIOS.map(function (p) {
+                const on = visiblePorts.has(p);
+                return (
+                  <label key={p} className="flex items-center gap-1 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={function () { togglePort(p); }}
+                      className="cursor-pointer"
+                    />
+                    <span
+                      className="inline-block w-2.5 h-2.5 rounded-sm"
+                      style={{ background: on ? (PORT_COLORS[p] || "#334155") : "transparent",
+                               border: "1px solid " + (PORT_COLORS[p] || "#334155") }}
+                    />
+                    <span style={{ color: on ? undefined : "#94a3b8" }}>{p}</span>
+                  </label>
+                );
+              })}
+            </div>
+            <label className="flex items-center gap-1 text-[10px] text-gray-500 dark:text-slate-400 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeBench}
+                onChange={function (e) { setIncludeBench(e.target.checked); }}
+                className="cursor-pointer"
+              />
+              Include benchmarks
+            </label>
+          </div>
         </div>
         {chartData.rows.length === 0 ? (
           <div className="text-xs italic text-gray-500 dark:text-slate-400 py-6 text-center bg-slate-50 dark:bg-slate-800/40 rounded">
@@ -395,7 +433,7 @@ export default function RatioCompareView() {
                   itemSorter={function (item) { return -(item.value || 0); }}
                 />
                 <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
-                {PORTFOLIOS.map(function (p) {
+                {PORTFOLIOS.filter(function (p) { return visiblePorts.has(p); }).map(function (p) {
                   return (
                     <Line
                       key={p}
