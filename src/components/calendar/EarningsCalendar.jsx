@@ -1,27 +1,27 @@
 import { MONTHS } from '../../constants/index.js';
 import { parseDate, sectorStyle, shortSector, inferQuarter } from '../../utils/index.js';
+import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import StatusPill from '../ui/StatusPill.jsx';
 
-/* Format a sales value (uploaded in MILLIONS) with auto unit scaling.
- * FactSet's earnings template exports sales in millions, so a value of
- * 24,800 means $24.8B. Scale up by 1e6 then bucket into M/B/T.
- *   < 1 (i.e. < $1M raw)  → "$nnnK"  (rare for sales, common for surprise nominal)
- *   < 1,000 (< $1B)        → "$n.nM"
- *   < 1,000,000 (< $1T)    → "$n.nB"
- *   ≥ 1,000,000 (≥ $1T)    → "$n.nnT"
+/* Format a sales value (uploaded in MILLIONS of local currency) with
+ * auto unit scaling. Prefix is the local currency code (e.g. "CAD"),
+ * not "$" — earlier "$" hardcode misled when the company reports in
+ * a non-USD currency. Bucket: K / M / B / T.
  */
-function fmtSalesM(n) {
+function fmtSales(n, prefix) {
   if (n === null || n === undefined || !isFinite(n)) return null;
   const a = Math.abs(n), s = n < 0 ? "-" : "";
-  if (a >= 1e6) return s + "$" + (a / 1e6).toFixed(2) + "T";
-  if (a >= 1e3) return s + "$" + (a / 1e3).toFixed(1) + "B";
-  if (a >= 1)   return s + "$" + a.toFixed(1) + "M";
-  return s + "$" + Math.round(a * 1000) + "K";
+  let body;
+  if (a >= 1e6) body = (a / 1e6).toFixed(2) + "T";
+  else if (a >= 1e3) body = (a / 1e3).toFixed(1) + "B";
+  else if (a >= 1) body = a.toFixed(1) + "M";
+  else body = Math.round(a * 1000) + "K";
+  return s + prefix + " " + body;
 }
-/* EPS / per-share dollar amount. */
-function fmtEps(n) {
+/* EPS / per-share local currency amount. */
+function fmtEps(n, prefix) {
   if (n === null || n === undefined || !isFinite(n)) return null;
-  return "$" + n.toFixed(2);
+  return prefix + " " + n.toFixed(2);
 }
 /* Signed percent surprise (e.g. "+3.6%" / "−1.2%"). Value is stored
  * as a plain percent number (3.6 means 3.6%), not a decimal. */
@@ -34,48 +34,78 @@ function surpColor(n) {
   return n > 0 ? "#166534" : "#dc2626";
 }
 
-/* Small two-row stats block under the company name on each calendar tile.
- * Recent: "Sales 1,234M / 1,200M est (+2.8%)" + "EPS $2.10 / $2.05 est (+2.4%)".
- * Upcoming: "Cons: Sales 1,234M est · EPS $2.20 est". */
-function StatsBlock({ entry, variant }) {
+/* Stats block under the company name on each calendar tile. Renders
+ * sales and EPS in the company's local currency (with a USD-converted
+ * line below when the currency isn't USD and an FX rate is available).
+ *
+ *   currency: company.valuation.currency (e.g. "CAD")
+ *   fxRates:  { CAD: 1.36, ... } — local-per-USD; USD = ÷ rate
+ */
+function StatsBlock({ entry, variant, currency, fxRates }) {
   if (!entry) return null;
   const has = function (k) { return entry[k] !== null && entry[k] !== undefined && isFinite(entry[k]); };
+  const ccy = (currency || "USD").toUpperCase();
+  const fx = ccy === "USD" ? 1 : (fxRates && parseFloat(fxRates[ccy])) || null;
+  const hasUsd = ccy !== "USD" && fx && fx > 0;
+  const fmtSalesUsd = (n) => (hasUsd && n !== null && n !== undefined && isFinite(n)) ? fmtSales(n / fx, "$") : null;
+  const fmtEpsUsd   = (n) => (hasUsd && n !== null && n !== undefined && isFinite(n)) ? "$" + (n / fx).toFixed(2) : null;
 
   if (variant === "upcoming") {
-    /* Consensus heading INTO the report. Show only when at least one
-       of the two consensus estimates is populated. */
     if (!has("salesEst") && !has("epsEst")) return null;
     return (
-      <div className="text-[10px] text-gray-600 dark:text-slate-400 mt-0.5 flex flex-wrap gap-x-3">
-        <span className="uppercase tracking-wide text-gray-400 dark:text-slate-500">Consensus</span>
-        {has("salesEst") && <span>Sales <span className="font-mono tabular-nums text-gray-700 dark:text-slate-300">{fmtSalesM(entry.salesEst)}</span></span>}
-        {has("epsEst")   && <span>EPS <span className="font-mono tabular-nums text-gray-700 dark:text-slate-300">{fmtEps(entry.epsEst)}</span></span>}
+      <div className="mt-1 text-xs leading-tight space-y-0.5">
+        <div className="flex flex-wrap gap-x-2 items-baseline">
+          <span className="uppercase tracking-wide text-gray-500 dark:text-slate-400">Consensus</span>
+          {has("salesEst") && <span>Sales <span className="font-mono tabular-nums text-gray-700 dark:text-slate-300 font-semibold">{fmtSales(entry.salesEst, ccy)}</span></span>}
+          {has("epsEst")   && <span>EPS <span className="font-mono tabular-nums text-gray-700 dark:text-slate-300 font-semibold">{fmtEps(entry.epsEst, ccy)}</span></span>}
+        </div>
+        {hasUsd && (has("salesEst") || has("epsEst")) && (
+          <div className="flex flex-wrap gap-x-2 items-baseline text-[10px] text-gray-500 dark:text-slate-400 pl-[58px]">
+            {has("salesEst") && <span>≈ {fmtSalesUsd(entry.salesEst)} USD</span>}
+            {has("epsEst")   && <span>EPS ≈ {fmtEpsUsd(entry.epsEst)} USD</span>}
+          </div>
+        )}
       </div>
     );
   }
-  /* Recent — show estimate vs actual + surprise per metric. Only render
-     a row if at least one field on that side has data. */
+  /* Recent — show estimate vs actual + surprise per metric. */
   const showSales = has("salesActual") || has("salesEst") || has("salesSurpPct");
   const showEps   = has("epsActual")   || has("epsEst")   || has("epsSurpPct");
   if (!showSales && !showEps) return null;
   return (
-    <div className="mt-0.5 text-[10px] leading-tight space-y-0.5">
+    <div className="mt-1 text-xs leading-tight space-y-1">
       {showSales && (
-        <div className="flex flex-wrap gap-x-1.5 items-baseline">
-          <span className="uppercase tracking-wide text-gray-400 dark:text-slate-500 w-9">Sales</span>
-          <span className="font-mono tabular-nums text-gray-900 dark:text-slate-100 font-semibold">{fmtSalesM(entry.salesActual) || "—"}</span>
-          {has("salesEst") && <span className="text-gray-500 dark:text-slate-400">vs {fmtSalesM(entry.salesEst)} est</span>}
-          {has("salesSurpPct") && <span className="font-mono tabular-nums font-semibold" style={{ color: surpColor(entry.salesSurpPct) }}>{fmtSurpPct(entry.salesSurpPct)}</span>}
-          {has("salesSurpNom") && <span className="font-mono tabular-nums text-gray-500 dark:text-slate-400">({fmtSalesM(entry.salesSurpNom)})</span>}
+        <div>
+          <div className="flex flex-wrap gap-x-1.5 items-baseline">
+            <span className="uppercase tracking-wide text-gray-500 dark:text-slate-400 w-10">Sales</span>
+            <span className="font-mono tabular-nums text-gray-900 dark:text-slate-100 font-semibold">{fmtSales(entry.salesActual, ccy) || "—"}</span>
+            {has("salesEst") && <span className="text-gray-500 dark:text-slate-400">vs {fmtSales(entry.salesEst, ccy)} est</span>}
+            {has("salesSurpPct") && <span className="font-mono tabular-nums font-semibold" style={{ color: surpColor(entry.salesSurpPct) }}>{fmtSurpPct(entry.salesSurpPct)}</span>}
+            {has("salesSurpNom") && <span className="font-mono tabular-nums text-gray-500 dark:text-slate-400">({fmtSales(entry.salesSurpNom, ccy)})</span>}
+          </div>
+          {hasUsd && (has("salesActual") || has("salesEst")) && (
+            <div className="flex flex-wrap gap-x-1.5 items-baseline text-[10px] text-gray-500 dark:text-slate-400 pl-10">
+              <span>≈ {fmtSalesUsd(entry.salesActual) || "—"} USD</span>
+              {has("salesEst") && <span>vs {fmtSalesUsd(entry.salesEst)} est</span>}
+            </div>
+          )}
         </div>
       )}
       {showEps && (
-        <div className="flex flex-wrap gap-x-1.5 items-baseline">
-          <span className="uppercase tracking-wide text-gray-400 dark:text-slate-500 w-9">EPS</span>
-          <span className="font-mono tabular-nums text-gray-900 dark:text-slate-100 font-semibold">{fmtEps(entry.epsActual) || "—"}</span>
-          {has("epsEst") && <span className="text-gray-500 dark:text-slate-400">vs {fmtEps(entry.epsEst)} est</span>}
-          {has("epsSurpPct") && <span className="font-mono tabular-nums font-semibold" style={{ color: surpColor(entry.epsSurpPct) }}>{fmtSurpPct(entry.epsSurpPct)}</span>}
-          {has("epsSurpNom") && <span className="font-mono tabular-nums text-gray-500 dark:text-slate-400">({fmtEps(entry.epsSurpNom)})</span>}
+        <div>
+          <div className="flex flex-wrap gap-x-1.5 items-baseline">
+            <span className="uppercase tracking-wide text-gray-500 dark:text-slate-400 w-10">EPS</span>
+            <span className="font-mono tabular-nums text-gray-900 dark:text-slate-100 font-semibold">{fmtEps(entry.epsActual, ccy) || "—"}</span>
+            {has("epsEst") && <span className="text-gray-500 dark:text-slate-400">vs {fmtEps(entry.epsEst, ccy)} est</span>}
+            {has("epsSurpPct") && <span className="font-mono tabular-nums font-semibold" style={{ color: surpColor(entry.epsSurpPct) }}>{fmtSurpPct(entry.epsSurpPct)}</span>}
+            {has("epsSurpNom") && <span className="font-mono tabular-nums text-gray-500 dark:text-slate-400">({fmtEps(entry.epsSurpNom, ccy)})</span>}
+          </div>
+          {hasUsd && (has("epsActual") || has("epsEst")) && (
+            <div className="flex flex-wrap gap-x-1.5 items-baseline text-[10px] text-gray-500 dark:text-slate-400 pl-10">
+              <span>≈ {fmtEpsUsd(entry.epsActual) || "—"} USD</span>
+              {has("epsEst") && <span>vs {fmtEpsUsd(entry.epsEst)} est</span>}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -86,7 +116,7 @@ function StatsBlock({ entry, variant }) {
  * `variant` = "upcoming" or "recent" controls the day-label wording and
  * urgency tinting (upcoming uses today/soon red/amber; recent uses a
  * calmer neutral palette). */
-function Row({ c, date, daysAway, entry, variant, onClick }) {
+function Row({ c, date, daysAway, entry, variant, onClick, fxRates }) {
   const ss = c.sector ? sectorStyle(c.sector) : null;
 
   let borderStyle = "4px solid transparent";
@@ -157,7 +187,7 @@ function Row({ c, date, daysAway, entry, variant, onClick }) {
           }
           return label ? <div className="text-xs text-gray-500 dark:text-slate-400">{label}</div> : null;
         })()}
-        <StatsBlock entry={entry} variant={variant} />
+        <StatsBlock entry={entry} variant={variant} currency={c.valuation && c.valuation.currency} fxRates={fxRates} />
       </div>
 
       <div className="text-xs font-semibold whitespace-nowrap" style={{ color: labelColor }}>
@@ -169,6 +199,7 @@ function Row({ c, date, daysAway, entry, variant, onClick }) {
 }
 
 function EarningsCalendar({ companies, onSelectCompany }) {
+  const { fxRates } = useCompanyContext();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const upcomingCutoff = new Date(today); upcomingCutoff.setDate(upcomingCutoff.getDate() + 30);
@@ -250,7 +281,7 @@ function EarningsCalendar({ companies, onSelectCompany }) {
         {upcoming.length === 0 ? (
           <p className="text-sm text-gray-500 dark:text-slate-400">No earnings scheduled in the next 30 days.</p>
         ) : upcoming.map(function (u, i) {
-          return <Row key={"u"+i} c={u.company} date={u.date} daysAway={u.daysAway} entry={u.entry} variant="upcoming" onClick={onSelectCompany ? function(){onSelectCompany(u.company);} : undefined} />;
+          return <Row key={"u"+i} c={u.company} date={u.date} daysAway={u.daysAway} entry={u.entry} variant="upcoming" fxRates={fxRates} onClick={onSelectCompany ? function(){onSelectCompany(u.company);} : undefined} />;
         })}
       </div>
       <div>
@@ -258,7 +289,7 @@ function EarningsCalendar({ companies, onSelectCompany }) {
         {recent.length === 0 ? (
           <p className="text-sm text-gray-500 dark:text-slate-400">No earnings reported in the last 30 days. Run the daily FactSet pull or paste into the Earnings Dates upload (now accepts a 3rd column: Last Rpt Date).</p>
         ) : recent.map(function (r, i) {
-          return <Row key={"r"+i} c={r.company} date={r.date} daysAway={r.daysAway} entry={r.entry} variant="recent" onClick={onSelectCompany ? function(){onSelectCompany(r.company);} : undefined} />;
+          return <Row key={"r"+i} c={r.company} date={r.date} daysAway={r.daysAway} entry={r.entry} variant="recent" fxRates={fxRates} onClick={onSelectCompany ? function(){onSelectCompany(r.company);} : undefined} />;
         })}
       </div>
     </div>
