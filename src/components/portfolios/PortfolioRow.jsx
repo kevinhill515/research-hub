@@ -2,8 +2,13 @@
  *
  * All per-row math is done in the parent's useMemo and handed in via the
  * `rowData` prop. This component is a pure render: no computation, no
- * hooks, no context reads — easy to reason about, cheap to re-render. */
+ * hooks, no context reads — easy to reason about, cheap to re-render.
+ *
+ * Wrapped in React.memo so unrelated parent re-renders (e.g. a different
+ * row's edit, a tab toggle elsewhere in App) don't re-render every row.
+ * Only re-renders when one of the props' shallow identity changes. */
 
+import { memo } from "react";
 import {
   fmtPrice, fmtMOS, fmtMOS0, shortSector, sectorStyle, countryStyle, truncName,
 } from "../../utils/index.js";
@@ -27,7 +32,7 @@ function Dash() {
   return <span className="text-gray-400 dark:text-slate-500">--</span>;
 }
 
-export default function PortfolioRow(props) {
+function PortfolioRow(props) {
   const {
     company, portTab, rowIdx, rowData, annotations, alertsForCompany, dark,
     editingTarget, setEditingTarget, updateTargetWeight,
@@ -318,3 +323,5 @@ export default function PortfolioRow(props) {
     </div>
   );
 }
+
+export default memo(PortfolioRow);

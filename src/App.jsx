@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, lazy, Suspense } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback, lazy, Suspense } from "react";
+import { evaluateAlertsForCompany } from './utils/alerts.js';
 import { PORTFOLIOS, TIER_ORDER, SECTOR_ORDER, COUNTRY_ORDER, SECTOR_COLORS, SECTOR_SHORT, COUNTRY_GROUPS, COUNTRY_COLORS, REGION_COLORS, REGION_GROUPS, STATUS_RANK, CURRENCY_MAP, ALL_CURRENCIES, MONTHS, CO_SORTS, FORMATS, TONES, LIB_SORTS, PRESET_TAGS, UPLOAD_TYPES, TEMPLATE_SECTIONS, SECTION_SUBHEADINGS, THESIS_STATUSES, TP_CHANGES, AVG_WPM, ALL_COLS, COMPACT_COLS, COMPANY_COLUMNS, SHORTCUTS, CONF_BG, CONF_COLOR, ACTIONS, TEAM_MEMBERS, TEAM_COLORS, REP_ACCOUNTS, PORT_NAMES, FLAG_STYLES } from './constants/index.js';
 import { shortSector, sectorStyle, countryStyle, getRegion, getTiers, getCurrency, calcNormEPS, calcTP, calcMOS, fmtPrice, fmtTP, fmtMOS, mosBg, impliedFYLabel, tierPillStyle, tierBg, fmtTime, getCore, getConf, escHTML, toHTML, toMD, simScore, downloadMD, detectCompanyTags, todayStr, parseDate, daysSince, reviewedColor, getStatusRank, getTierIndex, getCompanyMOS, blankEarnings, sortCos, synPrompt, tierToStatus, repShares, repAvgCost, getInitiatedDate, monthsSince, isInitiationTx, printPage } from './utils/index.js';
 import { supaGet, supaUpsert, ANTHROPIC_KEY, apiCall } from './api/index.js';
@@ -35,7 +36,30 @@ import { FeedbackTab } from './components/feedback/FeedbackTab.jsx';
 
 /* Components extracted to src/components/ — see barrel index.js files in each subdirectory */
 export default function App(){
-  const { companies, setCompanies, saved, setSaved, ready, setReady, loadStatus, setLoadStatus, lastPriceUpdate, setLastPriceUpdate, entryComments, setEntryComments, newCommentText, setNewCommentText, repData, setRepData, fxRates, setFxRates, specialWeights, setSpecialWeights, benchmarkWeights, currentUser, setCurrentUser, dark, setDark, authed, setAuthed, showUserPicker, setShowUserPicker, calLastUpdated, setCalLastUpdated, calLastUpdatedBy, setCalLastUpdatedBy, repLastUpdated, setRepLastUpdated, fxLastUpdated, setFxLastUpdated, copied, setCopied, loadFromStorage, addComment, deleteComment, updateCo, cp, annotations, updateTargetWeight, addTargetHistoryEntry, deleteTargetHistoryEntry, addTransaction, deleteTransaction, setTxInitOverride, updateInitiatedDate } = useCompanyContext();
+  const { companies, setCompanies, saved, setSaved, ready, setReady, loadStatus, setLoadStatus, lastPriceUpdate, setLastPriceUpdate, entryComments, setEntryComments, newCommentText, setNewCommentText, repData, setRepData, fxRates, setFxRates, specialWeights, setSpecialWeights, benchmarkWeights, alertRules, currentUser, setCurrentUser, dark, setDark, authed, setAuthed, showUserPicker, setShowUserPicker, calLastUpdated, setCalLastUpdated, calLastUpdatedBy, setCalLastUpdatedBy, repLastUpdated, setRepLastUpdated, fxLastUpdated, setFxLastUpdated, copied, setCopied, loadFromStorage, addComment, deleteComment, updateCo, cp, annotations, updateTargetWeight, addTargetHistoryEntry, deleteTargetHistoryEntry, addTransaction, deleteTransaction, setTxInitOverride, updateInitiatedDate } = useCompanyContext();
+
+  /* Memoize the per-company warn-alerts map so CoRow can read its own
+     entry without re-evaluating alerts on every render. Recomputes only
+     when companies or alertRules actually change. */
+  const coAlertsByCoId = useMemo(function () {
+    const out = {};
+    (companies || []).forEach(function (c) {
+      out[c.id] = evaluateAlertsForCompany(c, alertRules || {})
+        .filter(function (a) { return a.severity === "warn"; });
+    });
+    return out;
+  }, [companies, alertRules]);
+
+  /* Stable handlers so React.memo on CoRow is effective — without
+     useCallback, every parent render creates a new function ref and
+     defeats the memo's prop-equality check. */
+  const handleCoSelect = useCallback(function (co) {
+    setSelCo(co); setCoView("dashboard"); setTmplHighlight(""); setFlashSections({});
+  }, []);
+  const handleCoDelete = useCallback(function (id) {
+    setCompanies(function (cs) { return cs.filter(function (c) { return c.id !== id; }); });
+  }, [setCompanies]);
+  const handleCoQuickUpload = useCallback(function (c) { setQuickUploadCo(c); }, []);
 
   const INP = "text-sm px-2 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:outline-none";
   const CARD = "bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 px-3.5 py-3 mb-2";
@@ -391,7 +415,7 @@ export default function App(){
               <div style={{display:"table-cell",paddingBottom:4,paddingRight:6,position:"sticky",top:0,background:"var(--tw-prose-body,#fff)",zIndex:10}} className="bg-white dark:bg-slate-950"><span onClick={function(e){e.stopPropagation();if(selectedIds.size>0){clearSelected();}else{selectAll();}}} className="cursor-pointer inline-flex items-center justify-center w-4 h-4 rounded border border-slate-300 dark:border-slate-600 text-[10px] leading-none select-none hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" style={{background:selectedIds.size===displayedCos.length&&displayedCos.length>0?"#2563eb":selectedIds.size>0?"#93c5fd":undefined,color:selectedIds.size>0?"#fff":undefined}}>{selectedIds.size===displayedCos.length&&displayedCos.length>0?"\u2713":selectedIds.size>0?"\u2013":""}</span></div>
               {HEADER_COLS.filter(function(col){return col.label===""||visibleCols.has(col.label);}).map(function(col,i){var cs=col.sort;var active=cs&&coSort===cs;var arrow=active?(coSortDir==="asc"?" \u2191":" \u2193"):"";return(<div key={i} onClick={cs?function(){handleSortClick(cs);}:undefined} className={"text-[10px] uppercase tracking-wide pb-1 pr-2.5 whitespace-nowrap select-none sticky top-0 bg-white dark:bg-slate-950 z-10 " + (active?"font-semibold text-gray-900 dark:text-slate-100":"font-normal text-gray-500 dark:text-slate-400") + (cs?" cursor-pointer":" cursor-default")} style={{display:"table-cell"}}>{col.label}{arrow}</div>);})}
             </div>
-            {displayedCos.map(function(c,i){return <CoRow key={c.id+"-"+i} company={c} compact={compact} visibleCols={visibleCols} selected={selectedIds.has(c.id)} onToggleSelect={toggleSelect} onSelect={function(co){setSelCo(co);setCoView("dashboard");setTmplHighlight("");setFlashSections({});}} onDelete={function(id){setCompanies(function(cs){return cs.filter(function(c){return c.id!==id;});});}} onUpdate={updateCo} onQuickUpload={function(c){setQuickUploadCo(c);}}/>;  })}
+            {displayedCos.map(function(c,i){return <CoRow key={c.id+"-"+i} company={c} compact={compact} visibleCols={visibleCols} selected={selectedIds.has(c.id)} onToggleSelect={toggleSelect} onSelect={handleCoSelect} onDelete={handleCoDelete} onUpdate={updateCo} onQuickUpload={handleCoQuickUpload} dark={dark} rowAlerts={coAlertsByCoId[c.id]}/>;  })}
           </div>
         )}</div>)}
       </div>)}

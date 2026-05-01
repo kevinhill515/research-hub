@@ -7,6 +7,7 @@
  * Renders only at <sm; PortfoliosTable hides this layout on desktop
  * and shows the existing grid table instead. */
 
+import { memo } from 'react';
 import { fmtPrice, fmtMOS0, sectorStyle, countryStyle } from '../../utils/index.js';
 import { isFiniteNum } from '../../utils/numbers.js';
 
@@ -33,7 +34,7 @@ function fmtDateShort(d) {
   return d;
 }
 
-export default function MobilePortfolioCard(props) {
+function MobilePortfolioCard(props) {
   const { company, rowData, alertsForCompany, dark, onOpenCompany, onOpenTransactions } = props;
   const c = company;
   const {
@@ -149,3 +150,7 @@ export default function MobilePortfolioCard(props) {
     </div>
   );
 }
+
+/* Memo: skip re-renders when this card's props are referentially unchanged.
+   Parent already memoizes alertsForCompany and rowData per company id. */
+export default memo(MobilePortfolioCard);

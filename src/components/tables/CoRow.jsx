@@ -1,8 +1,6 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, memo } from "react";
 import { PORTFOLIOS, TIER_ORDER, COUNTRY_ORDER, SECTOR_ORDER } from '../../constants/index.js';
 import { shortSector, sectorStyle, countryStyle, getTiers, tierPillStyle, tierBg, reviewedColor, daysSince, todayStr, calcNormEPS, calcTP, calcMOS, fmtMOS, fmtMOS0, mosBg, getTpFixed, tierToStatus, truncName } from '../../utils/index.js';
-import { evaluateAlertsForCompany } from '../../utils/alerts.js';
-import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import StatusPill from '../ui/StatusPill.jsx';
 import NotesCell from '../forms/NotesCell.jsx';
 import ActionCell from '../forms/ActionCell.jsx';
@@ -12,12 +10,13 @@ import PortPicker from '../ui/PortPicker.jsx';
 import PillEl from '../ui/PillEl.jsx';
 import FpeRangeMini from '../ui/FpeRangeMini.jsx';
 
-function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, selected, onToggleSelect, onQuickUpload }) {
-  var { dark, alertRules } = useCompanyContext();
-  /* Active warn-level alerts for this company. Surfaced as a red flag
-     icon next to the name; tooltip lists what triggered. */
-  var rowAlerts = evaluateAlertsForCompany(company, alertRules || {})
-    .filter(function(a){ return a.severity === "warn"; });
+function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, selected, onToggleSelect, onQuickUpload, dark, rowAlerts }) {
+  /* `rowAlerts` and `dark` are now lifted to props so this component
+     doesn't subscribe to the global context. Combined with React.memo
+     below, that means a context update unrelated to this row (e.g. a
+     tab switch, an unrelated company edit) doesn't re-render every
+     CoRow in the table — significant on the 325-company list. */
+  rowAlerts = rowAlerts || [];
   var [editName, setEditName] = useState(false);
   var [nameVal, setNameVal] = useState(company.name);
   var [editCountry, setEditCountry] = useState(false);
@@ -403,4 +402,4 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
   );
 }
 
-export default CoRow;
+export default memo(CoRow);
