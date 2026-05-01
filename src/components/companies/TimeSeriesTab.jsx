@@ -21,7 +21,11 @@ import RatioLineChart from '../ui/RatioLineChart.jsx';
 
 const BTN_SM = "text-xs px-2.5 py-1.5 font-medium rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
 
-const LABEL_W    = 340;
+/* Label column width tightened so more year columns fit on a single
+   screen. Previously 340px which left only ~5 years visible on a
+   typical laptop and ~3 on a phone. 200px keeps the longest line-item
+   names readable while doubling the visible year count. */
+const LABEL_W    = 200;
 const YEAR_W     = 64;
 const COMMENT_W  = 320;  /* px — team comment column on the right */
 const SPARK_W    = 48;

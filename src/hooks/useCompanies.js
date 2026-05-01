@@ -6,7 +6,7 @@ import { ANTHROPIC_KEY, apiCall, supaUpsert } from '../api/index.js';
 import { useAlert } from '../components/ui/DialogProvider.jsx';
 
 export function useCompanies(){
-  const { companies, setCompanies, saved, setSaved, lastPriceUpdate, setLastPriceUpdate, currentUser, setCopied, updateCo, cp, T, fxRates, setFxRates, fxLastUpdated, setFxLastUpdated, repData, setRepData, repLastUpdated, setRepLastUpdated, specialWeights, setSpecialWeights, calLastUpdated, setCalLastUpdated, calLastUpdatedBy, setCalLastUpdatedBy } = useCompanyContext();
+  const { companies, setCompanies, saved, setSaved, lastPriceUpdate, setLastPriceUpdate, lastPriceUpdatedBy, setLastPriceUpdatedBy, currentUser, setCopied, updateCo, cp, T, fxRates, setFxRates, fxLastUpdated, setFxLastUpdated, repData, setRepData, repLastUpdated, setRepLastUpdated, specialWeights, setSpecialWeights, calLastUpdated, setCalLastUpdated, calLastUpdatedBy, setCalLastUpdatedBy } = useCompanyContext();
   /* In-app dialog instead of native window.alert — keeps the look
      consistent and works in environments that suppress native dialogs. */
   const alertFn = useAlert();
@@ -414,9 +414,15 @@ export function useCompanies(){
     });});
     setPriceImportText("");
     setShowPriceImport(false);
+    /* Persist as "<user> at <timestamp>" so the indicator can show who
+       ran the update. Mirrors the calLastUpdated wire format. Falls
+       back to a bare timestamp when no user is set. */
     var priceUpdateStr = todayStr() + " " + new Date().toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
     setLastPriceUpdate(priceUpdateStr);
-    supaUpsert("meta", { key: "lastPriceUpdate", value: priceUpdateStr });
+    var userName = currentUser || "";
+    setLastPriceUpdatedBy(userName);
+    var stored = userName ? userName + " at " + priceUpdateStr : priceUpdateStr;
+    supaUpsert("meta", { key: "lastPriceUpdate", value: stored });
     setTimeout(function(){ alertFn("Updated prices for " + count + " companies."); }, 100);
   }
   /* Three-state click cycle on column headers:

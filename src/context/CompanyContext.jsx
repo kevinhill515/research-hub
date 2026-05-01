@@ -17,6 +17,10 @@ export function CompanyProvider({children}){
   const [ready,setReady]=useState(false);
   const [loadStatus,setLoadStatus]=useState({companies:null,library:null});
   const [lastPriceUpdate,setLastPriceUpdate]=useState(null);
+  /* Who ran the most recent price update. Mirrors calLastUpdatedBy /
+     repLastUpdated patterns. Empty string when unknown (e.g. updated
+     via a script that didn't set the user). */
+  const [lastPriceUpdatedBy,setLastPriceUpdatedBy]=useState("");
   const [entryComments,setEntryComments]=useState({});
   const [newCommentText,setNewCommentText]=useState({});
   const [repData,setRepData]=useState({});
@@ -185,7 +189,15 @@ export function CompanyProvider({children}){
     ]);
     try{if(r){var d=JSON.parse(r.data);if(Array.isArray(d)&&d.length){var libMig=migrateTags(d);setSaved(libMig.data);libOk=libMig.data.length;if(libMig.changed)supaUpsert("library",{id:"shared",data:JSON.stringify(libMig.data)});}}}catch(e){}
     try{if(r2){var d2=JSON.parse(r2.data);if(Array.isArray(d2)&&d2.length){var coMig=migratePortfolioKeys(d2);setCompanies(coMig.data);coOk=coMig.data.length;if(coMig.changed)supaUpsert("companies",{id:"shared",data:JSON.stringify(coMig.data)});}}}catch(e){}
-    try{if(r3)setLastPriceUpdate(r3.value);}catch(e){}
+    try{if(r3){
+      /* Format on disk: "<user> at <timestamp>" or just "<timestamp>"
+         for backward compat with values written before the by-user
+         field existed. Mirrors calLastUpdated parsing. */
+      var raw=r3.value||"";
+      var parts=raw.split(" at ");
+      if(parts.length>=2){setLastPriceUpdatedBy(parts[0]||"");setLastPriceUpdate(parts[1]||"");}
+      else{setLastPriceUpdate(raw);}
+    }}catch(e){}
     try{if(r4)setEntryComments(JSON.parse(r4.value));}catch(e){}
     try{if(r5&&r5.value){var parts=r5.value.split(" at ");setCalLastUpdatedBy(parts[0]||"");setCalLastUpdated(parts[1]||"");}}catch(e){}
     try{if(r6&&r6.value){var rdRaw=JSON.parse(r6.value);var rdMig=migrateRepData(rdRaw);setRepData(rdMig.data);if(rdMig.changed)supaUpsert("meta",{key:"repData",value:JSON.stringify(rdMig.data)});}}catch(e){}
@@ -667,6 +679,7 @@ export function CompanyProvider({children}){
     ready,setReady,
     loadStatus,setLoadStatus,
     lastPriceUpdate,setLastPriceUpdate,
+    lastPriceUpdatedBy,setLastPriceUpdatedBy,
     entryComments,setEntryComments,
     newCommentText,setNewCommentText,
     repData,setRepData,

@@ -2,7 +2,12 @@ import { useState } from "react";
 import { PORTFOLIOS } from '../../constants/index.js';
 import PillEl from './PillEl.jsx';
 
-function PortPicker({ active, onChange, pillBg, pillColor, plusColor, opts, pillStyleFn, dashedPills }) {
+/* `stack` prop: when true the pills wrap onto multiple lines (column-
+   style layout). Default is single-line nowrap so existing call sites
+   (compact table rows) aren't affected. The Overlap tab's Tier(s)
+   column passes stack so multiple tiers stack vertically and don't
+   blow out the column width. */
+function PortPicker({ active, onChange, pillBg, pillColor, plusColor, opts, pillStyleFn, dashedPills, stack }) {
   var [open, setOpen] = useState(false);
   var allOpts = opts || PORTFOLIOS;
   // Display pills in canonical opts order, not insertion order
@@ -32,7 +37,7 @@ function PortPicker({ active, onChange, pillBg, pillColor, plusColor, opts, pill
   return (
     <div
       onClick={function (e) { e.stopPropagation(); }}
-      className="flex gap-1 items-center flex-nowrap"
+      className={"flex gap-1 items-center " + (stack ? "flex-wrap" : "flex-nowrap")}
     >
       {al.map(function (p) {
         var s = gs(p);

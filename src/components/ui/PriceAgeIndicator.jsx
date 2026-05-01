@@ -1,6 +1,6 @@
 import { parseDate } from '../../utils/index.js';
 
-function PriceAgeIndicator({ lastPriceUpdate }) {
+function PriceAgeIndicator({ lastPriceUpdate, lastPriceUpdatedBy }) {
   if (!lastPriceUpdate)
     return (
       <span className="text-[10px] text-gray-500 dark:text-slate-400">
@@ -20,13 +20,14 @@ function PriceAgeIndicator({ lastPriceUpdate }) {
   var days = Math.round((startOfToday - startOfThen) / 86400000);
   var color = days > 14 ? "#dc2626" : days > 7 ? "#d97706" : "#16a34a";
   var label = days === 0 ? "today" : days === 1 ? "yesterday" : days + "d ago";
+  var byTxt = lastPriceUpdatedBy ? " by " + lastPriceUpdatedBy : "";
 
   return (
     <span
       className="text-[10px]"
       style={{ color, fontWeight: days > 7 ? 600 : 400 }}
     >
-      Prices updated: {lastPriceUpdate} ({label}){days > 14 ? " \u26a0" : ""}
+      Prices updated{byTxt}: {lastPriceUpdate} ({label}){days > 14 ? " \u26a0" : ""}
     </span>
   );
 }

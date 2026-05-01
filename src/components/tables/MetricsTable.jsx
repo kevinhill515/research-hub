@@ -182,11 +182,16 @@ export default function MetricsTable({ companies, search, onSelectCompany, dark,
         {hasMetrics} of {rendered.length} companies have metrics data.
       </div>
 
-      {/* Table — NO overflow wrapper: thead uses position: sticky against
-          the page viewport, so it stays visible when the user scrolls
-          vertically. Horizontal overflow is handled by the page itself
-          if the table is wider than the viewport. */}
-      <div className="border border-slate-200 dark:border-slate-700 rounded-md overflow-hidden">
+      {/* On mobile the metrics table is much wider than the viewport
+          and previously got clipped by overflow-hidden. Allow horizontal
+          scrolling within the bordered container; keep overflow-y visible
+          so the sticky thead still attaches to the page viewport (rather
+          than to this container, which would chop off the head when the
+          page scrolls vertically). */}
+      <div
+        className="border border-slate-200 dark:border-slate-700 rounded-md"
+        style={{ overflowX: "auto", overflowY: "visible" }}
+      >
         <table className="text-xs w-full" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
           <thead>
             <tr>
