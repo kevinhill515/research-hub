@@ -135,7 +135,7 @@ function ValueLegend({ labels, data, groupBy, colorFor, mode }) {
       return vb - va;
     });
     return (
-      <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
+      <div className="mt-2 flex justify-center"><div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1 text-[11px]">
         {sorted.map(function (k) {
           const color = colorFor ? colorFor(k) : "#334155";
           const v = latest ? (latest[k] || 0) : 0;
@@ -148,7 +148,7 @@ function ValueLegend({ labels, data, groupBy, colorFor, mode }) {
             </div>
           );
         })}
-      </div>
+      </div></div>
     );
   }
 
@@ -156,7 +156,7 @@ function ValueLegend({ labels, data, groupBy, colorFor, mode }) {
      Value sits right next to the name (no flex-1 spacer). */
   if (!groupBy) {
     return (
-      <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
+      <div className="mt-2 flex justify-center"><div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1 text-[11px]">
         {labels.map(function (k) {
           const color = colorFor ? colorFor(k) : "#334155";
           const v = latest ? (latest[k] || 0) : 0;
@@ -168,7 +168,7 @@ function ValueLegend({ labels, data, groupBy, colorFor, mode }) {
             </div>
           );
         })}
-      </div>
+      </div></div>
     );
   }
 
