@@ -449,29 +449,41 @@ export function useCompanies(){
     var blob=new Blob([csv],{type:"text/csv"});var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="companies_export.csv";a.click();
   }
 
-  var flaggedCos=companies.filter(function(c){return c.flag;}).sort(function(a,b){return(a.flag==="Urgent"?0:1)-(b.flag==="Urgent"?0:1);});
-  var usedCountries=Array.from(new Set(companies.map(function(c){return c.country;}).filter(Boolean))).sort();
-  var usedSectors=Array.from(new Set(companies.map(function(c){return c.sector;}).filter(Boolean))).sort();
-  var displayedCos=sortCos(companies.filter(function(c){
-    if(coFilter!=="All"&&(c.portfolios||[]).indexOf(coFilter)<0)return false;
-    if(coStatusFilter!=="All"&&c.status!==coStatusFilter)return false;
-    /* Sub-filter contextual to selected status:
-         Own   → portfolio membership (FIN/IN/FGL/GL/EM/SC)
-         Focus → tier contains "F "+sub  (MC, EM, SC)
-         Watch → tier contains "W "+sub  (MC, EM, SC)
-         Sold  → tier contains sub       (Hit TP, Gave Up) */
-    if(coStatusSubFilter!=="All"&&coStatusFilter!=="All"){
-      var ts=getTiers(c.tier);
-      if(coStatusFilter==="Own"){if((c.portfolios||[]).indexOf(coStatusSubFilter)<0)return false;}
-      else if(coStatusFilter==="Focus"){if(ts.indexOf("F "+coStatusSubFilter)<0)return false;}
-      else if(coStatusFilter==="Watch"){if(ts.indexOf("W "+coStatusSubFilter)<0)return false;}
-      else if(coStatusFilter==="Sold"){if(ts.indexOf(coStatusSubFilter)<0)return false;}
-    }
-    if(coFilterCountry!=="All"&&c.country!==coFilterCountry)return false;
-    if(coFilterSector!=="All"&&c.sector!==coFilterSector)return false;
-    if(coSearch){var s=coSearch.toLowerCase();if(c.name.toLowerCase().indexOf(s)<0&&(c.ticker||"").toLowerCase().indexOf(s)<0)return false;}
-    return true;
-  }),coSort,coSortDir);
+  /* Memoized derived lists. Without memoization these recompute on every
+     hook caller render (and useCompanies is consumed at the top of App,
+     so that's "every state change in the app"). 325 companies × 5 passes
+     per render adds up — see perf audit. */
+  var flaggedCos=useMemo(function(){
+    return companies.filter(function(c){return c.flag;}).sort(function(a,b){return(a.flag==="Urgent"?0:1)-(b.flag==="Urgent"?0:1);});
+  },[companies]);
+  var usedCountries=useMemo(function(){
+    return Array.from(new Set(companies.map(function(c){return c.country;}).filter(Boolean))).sort();
+  },[companies]);
+  var usedSectors=useMemo(function(){
+    return Array.from(new Set(companies.map(function(c){return c.sector;}).filter(Boolean))).sort();
+  },[companies]);
+  var displayedCos=useMemo(function(){
+    return sortCos(companies.filter(function(c){
+      if(coFilter!=="All"&&(c.portfolios||[]).indexOf(coFilter)<0)return false;
+      if(coStatusFilter!=="All"&&c.status!==coStatusFilter)return false;
+      /* Sub-filter contextual to selected status:
+           Own   → portfolio membership (FIN/IN/FGL/GL/EM/SC)
+           Focus → tier contains "F "+sub  (MC, EM, SC)
+           Watch → tier contains "W "+sub  (MC, EM, SC)
+           Sold  → tier contains sub       (Hit TP, Gave Up) */
+      if(coStatusSubFilter!=="All"&&coStatusFilter!=="All"){
+        var ts=getTiers(c.tier);
+        if(coStatusFilter==="Own"){if((c.portfolios||[]).indexOf(coStatusSubFilter)<0)return false;}
+        else if(coStatusFilter==="Focus"){if(ts.indexOf("F "+coStatusSubFilter)<0)return false;}
+        else if(coStatusFilter==="Watch"){if(ts.indexOf("W "+coStatusSubFilter)<0)return false;}
+        else if(coStatusFilter==="Sold"){if(ts.indexOf(coStatusSubFilter)<0)return false;}
+      }
+      if(coFilterCountry!=="All"&&c.country!==coFilterCountry)return false;
+      if(coFilterSector!=="All"&&c.sector!==coFilterSector)return false;
+      if(coSearch){var s=coSearch.toLowerCase();if(c.name.toLowerCase().indexOf(s)<0&&(c.ticker||"").toLowerCase().indexOf(s)<0)return false;}
+      return true;
+    }),coSort,coSortDir);
+  },[companies,coFilter,coStatusFilter,coStatusSubFilter,coFilterCountry,coFilterSector,coSearch,coSort,coSortDir]);
 
   return {
     selCo,setSelCo,coView,setCoView,coSort,setCoSort,coSortDir,setCoSortDir,

@@ -64,7 +64,7 @@ function getMosFixedForCompany(c) {
  * the bottom regardless of direction — matches existing behavior. */
 function makeComparator(sortKey, sortDir, ctx) {
   const mult = sortDir === "asc" ? 1 : -1;
-  const { portTab, repData, fxRates, tickerOwners, companies } = ctx;
+  const { portTab, repData, fxRates, tickerOwners, portTotal } = ctx;
 
   function nullCmp(a, b) {
     if (a === null && b === null) return 0;
@@ -87,14 +87,11 @@ function makeComparator(sortKey, sortDir, ctx) {
                   return d ? d.getTime() : null;
                 },
     diff:       function (c) {
+                  /* Use the pre-computed portfolio total instead of
+                     re-summing every comparison — was O(n²) inside sort. */
                   const t = parseFloat((c.portWeights || {})[portTab]) || 0;
                   const mv = calcCompanyRepMV(c, repData[portTab] || {}, fxRates, tickerOwners);
-                  let total = 0;
-                  companies.filter(function (x) { return (x.portfolios || []).indexOf(portTab) >= 0; })
-                           .forEach(function (x) {
-                             total += calcCompanyRepMV(x, repData[portTab] || {}, fxRates, tickerOwners);
-                           });
-                  const rw = calcRepWeight(mv, total);
+                  const rw = calcRepWeight(mv, portTotal);
                   return (rw !== null && t > 0) ? rw - t : null;
                 },
     rep:        function (c) { return calcCompanyRepMV(c, repData[portTab] || {}, fxRates, tickerOwners); },
@@ -124,6 +121,19 @@ export function PortfoliosTable(props) {
     updateTargetWeight, alertRules,
   } = useCompanyContext();
 
+  /* ---- Per-company alerts, memoized so evaluateAlertsForCompany doesn't
+     run twice per row on every parent re-render (mobile + desktop both
+     consume it). Keyed by company id; only the warn-severity ones are
+     surfaced as 🚩 indicators. */
+  const perRowAlerts = useMemo(function () {
+    const out = {};
+    (companies || []).forEach(function (c) {
+      out[c.id] = evaluateAlertsForCompany(c, alertRules || {})
+        .filter(function (a) { return a.severity === "warn"; });
+    });
+    return out;
+  }, [companies, alertRules]);
+
   /* ---- Derive portfolio data ---- */
   const { portCos, portRep, tickerOwners, totalMV, perRowData } = useMemo(function () {
     const pRep = repData[portTab] || {};
@@ -132,9 +142,10 @@ export function PortfoliosTable(props) {
     const owners = buildTickerOwners(inPort, others);
     const total = calcTotalMV(inPort, pRep, fxRates, owners);
 
-    /* Sort the companies */
+    /* Sort the companies. Pass `total` (already computed above) so the
+       diff-getter doesn't re-sum the whole portfolio per pair-comparison. */
     const cmp = makeComparator(portSort, portSortDir, {
-      portTab, repData, fxRates, tickerOwners: owners, companies,
+      portTab, repData, fxRates, tickerOwners: owners, portTotal: total,
     });
     const sorted = inPort.slice().sort(cmp);
 
@@ -428,8 +439,7 @@ export function PortfoliosTable(props) {
           sm+ so the existing desktop grid table renders unchanged. */}
       <div className="sm:hidden">
         {portCos.map(function (c) {
-          var rowAlerts = evaluateAlertsForCompany(c, alertRules || {})
-            .filter(function(a){ return a.severity === "warn"; });
+          var rowAlerts = perRowAlerts[c.id] || [];
           return (
             <MobilePortfolioCard
               key={c.id}
@@ -512,8 +522,7 @@ export function PortfoliosTable(props) {
 
         {/* Company rows */}
         {portCos.map(function (c, rowIdx) {
-          var rowAlerts = evaluateAlertsForCompany(c, alertRules || {})
-            .filter(function(a){ return a.severity === "warn"; });
+          var rowAlerts = perRowAlerts[c.id] || [];
           return (
             <PortfolioRow
               key={c.id}
