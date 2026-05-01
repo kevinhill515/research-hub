@@ -2,21 +2,21 @@ import { MONTHS } from '../../constants/index.js';
 import { parseDate, sectorStyle, shortSector, inferQuarter } from '../../utils/index.js';
 import StatusPill from '../ui/StatusPill.jsx';
 
-/* Format large currency-style numbers with auto unit scaling.
- * Sales come in raw (e.g. 12,743,433 = $12.7B in millions). Scale to
- * the most readable unit and add a unit suffix.
- *   < 1,000     → raw with thousand separators
- *   < 1,000,000 → "X.XX K"  (rare for sales, common for surp nominal)
- *   ≥ 1M        → "X.XX M"
- *   ≥ 1B        → "X.XX B"
+/* Format a sales value (uploaded in MILLIONS) with auto unit scaling.
+ * FactSet's earnings template exports sales in millions, so a value of
+ * 24,800 means $24.8B. Scale up by 1e6 then bucket into M/B/T.
+ *   < 1 (i.e. < $1M raw)  → "$nnnK"  (rare for sales, common for surprise nominal)
+ *   < 1,000 (< $1B)        → "$n.nM"
+ *   < 1,000,000 (< $1T)    → "$n.nB"
+ *   ≥ 1,000,000 (≥ $1T)    → "$n.nnT"
  */
-function fmtBig(n) {
+function fmtSalesM(n) {
   if (n === null || n === undefined || !isFinite(n)) return null;
   const a = Math.abs(n), s = n < 0 ? "-" : "";
-  if (a >= 1e9) return s + (a / 1e9).toFixed(2) + "B";
-  if (a >= 1e6) return s + (a / 1e6).toFixed(2) + "M";
-  if (a >= 1e3) return s + (a / 1e3).toFixed(1) + "K";
-  return s + Math.round(a).toLocaleString();
+  if (a >= 1e6) return s + "$" + (a / 1e6).toFixed(2) + "T";
+  if (a >= 1e3) return s + "$" + (a / 1e3).toFixed(1) + "B";
+  if (a >= 1)   return s + "$" + a.toFixed(1) + "M";
+  return s + "$" + Math.round(a * 1000) + "K";
 }
 /* EPS / per-share dollar amount. */
 function fmtEps(n) {
@@ -48,7 +48,7 @@ function StatsBlock({ entry, variant }) {
     return (
       <div className="text-[10px] text-gray-600 dark:text-slate-400 mt-0.5 flex flex-wrap gap-x-3">
         <span className="uppercase tracking-wide text-gray-400 dark:text-slate-500">Consensus</span>
-        {has("salesEst") && <span>Sales <span className="font-mono tabular-nums text-gray-700 dark:text-slate-300">{fmtBig(entry.salesEst)}</span></span>}
+        {has("salesEst") && <span>Sales <span className="font-mono tabular-nums text-gray-700 dark:text-slate-300">{fmtSalesM(entry.salesEst)}</span></span>}
         {has("epsEst")   && <span>EPS <span className="font-mono tabular-nums text-gray-700 dark:text-slate-300">{fmtEps(entry.epsEst)}</span></span>}
       </div>
     );
@@ -63,10 +63,10 @@ function StatsBlock({ entry, variant }) {
       {showSales && (
         <div className="flex flex-wrap gap-x-1.5 items-baseline">
           <span className="uppercase tracking-wide text-gray-400 dark:text-slate-500 w-9">Sales</span>
-          <span className="font-mono tabular-nums text-gray-900 dark:text-slate-100 font-semibold">{fmtBig(entry.salesActual) || "—"}</span>
-          {has("salesEst") && <span className="text-gray-500 dark:text-slate-400">vs {fmtBig(entry.salesEst)} est</span>}
+          <span className="font-mono tabular-nums text-gray-900 dark:text-slate-100 font-semibold">{fmtSalesM(entry.salesActual) || "—"}</span>
+          {has("salesEst") && <span className="text-gray-500 dark:text-slate-400">vs {fmtSalesM(entry.salesEst)} est</span>}
           {has("salesSurpPct") && <span className="font-mono tabular-nums font-semibold" style={{ color: surpColor(entry.salesSurpPct) }}>{fmtSurpPct(entry.salesSurpPct)}</span>}
-          {has("salesSurpNom") && <span className="font-mono tabular-nums text-gray-500 dark:text-slate-400">({fmtBig(entry.salesSurpNom)})</span>}
+          {has("salesSurpNom") && <span className="font-mono tabular-nums text-gray-500 dark:text-slate-400">({fmtSalesM(entry.salesSurpNom)})</span>}
         </div>
       )}
       {showEps && (

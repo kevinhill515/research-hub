@@ -447,13 +447,16 @@ function EarningsStatsStrip({ entry, currency }) {
   if (!entry) return null;
   const has = function (k) { return entry[k] !== null && entry[k] !== undefined && isFinite(entry[k]); };
 
-  function fmtBig(n) {
+  /* Sales values come from the upload in MILLIONS (FactSet convention).
+     Scale up to absolute dollars then bucket into M/B/T. So 24,800
+     uploaded → "$24.8B". */
+  function fmtSalesM(n) {
     if (n === null || n === undefined || !isFinite(n)) return null;
     const a = Math.abs(n), s = n < 0 ? "-" : "";
-    if (a >= 1e9) return s + (a / 1e9).toFixed(2) + "B";
-    if (a >= 1e6) return s + (a / 1e6).toFixed(2) + "M";
-    if (a >= 1e3) return s + (a / 1e3).toFixed(1) + "K";
-    return s + Math.round(a).toLocaleString();
+    if (a >= 1e6) return s + "$" + (a / 1e6).toFixed(2) + "T";
+    if (a >= 1e3) return s + "$" + (a / 1e3).toFixed(1) + "B";
+    if (a >= 1)   return s + "$" + a.toFixed(1) + "M";
+    return s + "$" + Math.round(a * 1000) + "K";
   }
   function fmtEps(n) {
     if (n === null || n === undefined || !isFinite(n)) return null;
@@ -477,7 +480,7 @@ function EarningsStatsStrip({ entry, currency }) {
     return (
       <div className="px-3.5 py-1.5 bg-blue-50 dark:bg-blue-950/20 border-b border-slate-200 dark:border-slate-700 text-[11px] flex flex-wrap gap-x-3 items-baseline">
         <span className="uppercase tracking-wide text-gray-400 dark:text-slate-500">Consensus</span>
-        {has("salesEst") && <span className="text-gray-700 dark:text-slate-300">Sales <span className="font-mono tabular-nums font-semibold">{fmtBig(entry.salesEst)}</span></span>}
+        {has("salesEst") && <span className="text-gray-700 dark:text-slate-300">Sales <span className="font-mono tabular-nums font-semibold">{fmtSalesM(entry.salesEst)}</span></span>}
         {has("epsEst")   && <span className="text-gray-700 dark:text-slate-300">EPS <span className="font-mono tabular-nums font-semibold">{fmtEps(entry.epsEst)}</span></span>}
       </div>
     );
@@ -490,10 +493,10 @@ function EarningsStatsStrip({ entry, currency }) {
       {showSales && (
         <div className="flex flex-wrap gap-x-2 items-baseline">
           <span className="uppercase tracking-wide text-gray-400 dark:text-slate-500 w-10">Sales</span>
-          <span className="font-mono tabular-nums text-gray-900 dark:text-slate-100 font-semibold">{fmtBig(entry.salesActual) || "—"}</span>
-          {has("salesEst") && <span className="text-gray-500 dark:text-slate-400">vs {fmtBig(entry.salesEst)} est</span>}
+          <span className="font-mono tabular-nums text-gray-900 dark:text-slate-100 font-semibold">{fmtSalesM(entry.salesActual) || "—"}</span>
+          {has("salesEst") && <span className="text-gray-500 dark:text-slate-400">vs {fmtSalesM(entry.salesEst)} est</span>}
           {has("salesSurpPct") && <span className="font-mono tabular-nums font-semibold" style={{ color: surpColor(entry.salesSurpPct) }}>{fmtSurpPct(entry.salesSurpPct)}</span>}
-          {has("salesSurpNom") && <span className="font-mono tabular-nums text-gray-500 dark:text-slate-400">({fmtBig(entry.salesSurpNom)})</span>}
+          {has("salesSurpNom") && <span className="font-mono tabular-nums text-gray-500 dark:text-slate-400">({fmtSalesM(entry.salesSurpNom)})</span>}
         </div>
       )}
       {showEps && (
