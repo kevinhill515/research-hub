@@ -122,6 +122,31 @@ export default function App(){
   const { recallQ,setRecallQ,recall,setRecall,recallLoading,setRecallLoading,recallSrcs,setRecallSrcs,recallHist,setRecallHist,suggestions,setSuggestions,askRecall,genSuggestions } = useRecall();
 
   const { showDataPanel,setShowDataPanel,importText,setImportText,importError,setImportError,dataHubTab,setDataHubTab,valImportText,setValImportText,estImportText,setEstImportText,metricsImportText,setMetricsImportText,applyMetricsImport,benchmarkImportText,setBenchmarkImportText,benchmarkAsOf,setBenchmarkAsOf,applyBenchmarkImport,dashboardImportText,setDashboardImportText,applyDashboardImport,ratioImportText,setRatioImportText,applyRatioImport,financialsImportText,setFinancialsImportText,applyFinancialsImport,segmentsImportText,setSegmentsImportText,applySegmentsImport,epsRevImportText,setEpsRevImportText,applyEpsRevImport,guidanceImportText,setGuidanceImportText,applyGuidanceImport,weightsImportText,setWeightsImportText,calImportText,setCalImportText,repText,setRepText,fxText,setFxText,txText,setTxText,perfPortTargets,setPerfPortTargets,perfText,setPerfText,portTab,setPortTab,portSort,setPortSort,portSortDir,setPortSortDir,applyFxImport,applyRepImport,applyTxImport,applyPerfImport,applyCalImport,applyWeightsImport,applyValImport,applyEstImport,importAll,exportAll } = useImport();
+  /* Pre-warm the dashboard chunks during browser idle time so the first
+     click into a Dashboard subtab doesn't pay the chunk-download cost.
+     Each `import('...')` here matches one of the lazy() calls at the top
+     of this file; the browser caches the response, so when the user
+     clicks Dashboard later React.lazy resolves instantly.
+     Uses requestIdleCallback so we don't compete with user interactions
+     for network/CPU; setTimeout fallback covers Safari. */
+  useEffect(function () {
+    function warm() {
+      import('./components/dashboard/MarketsDashboard.jsx');
+      import('./components/dashboard/BreakdownView.jsx');
+      import('./components/dashboard/CharacteristicsView.jsx');
+      import('./components/dashboard/RatioCompareView.jsx');
+      import('./components/dashboard/GeoRevView.jsx');
+      import('./components/dashboard/CompareView.jsx');
+      import('./components/dashboard/GuidanceCompareView.jsx');
+    }
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+      var id = window.requestIdleCallback(warm, { timeout: 3000 });
+      return function () { try { window.cancelIdleCallback(id); } catch (e) {} };
+    }
+    var t = setTimeout(warm, 1500);
+    return function () { clearTimeout(t); };
+  }, []);
+
   useEffect(function(){
     function onKey(e){
       var tag=document.activeElement.tagName;var typing=tag==="INPUT"||tag==="TEXTAREA"||tag==="SELECT";
