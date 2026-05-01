@@ -12,7 +12,7 @@
  * in isolation. This file is responsible only for wiring and rendering.
  */
 
-import { useMemo, useEffect } from "react";
+import { useMemo, useEffect, useState } from "react";
 import { useCompanyContext } from "../../context/CompanyContext.jsx";
 import { PORT_NAMES } from "../../constants/index.js";
 import {
@@ -112,10 +112,12 @@ function makeComparator(sortKey, sortDir, ctx) {
 export function PortfoliosTable(props) {
   const {
     portTab, portSort, portSortDir, setPortSort, setPortSortDir,
-    editingTarget, setEditingTarget,
     setTxFilter, setSelCoOrigin, setSelCo, setTab, setCoView,
     openDiscussions, onAddTransaction,
   } = props;
+  /* editingTarget is local to this table — was previously hoisted to
+     App.jsx and triggered a top-level re-render on every cell click. */
+  const [editingTarget, setEditingTarget] = useState(null);
   const {
     companies, repData, fxRates, specialWeights, annotations, dark,
     updateTargetWeight, alertRules,
