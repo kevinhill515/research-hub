@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { TP_CHANGES, THESIS_STATUSES } from '../../constants/index.js';
 import { apiCall } from '../../api/index.js';
 import { useAlert } from '../ui/DialogProvider.jsx';
+import { inferQuarter } from '../../utils/index.js';
 import GuidanceVsActual from '../companies/GuidanceVsActual.jsx';
 
 function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
@@ -170,6 +171,21 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
   var inputClasses = "text-xs px-2 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 w-full focus:ring-2 focus:ring-blue-500 focus:outline-none";
   var labelClasses = "text-[10px] text-gray-500 dark:text-slate-400 block mb-1 uppercase";
 
+  /* Build the header title from the report date + inferred quarter.
+     Inference uses company.valuation.fyMonth so cross-fiscal-year ends
+     resolve correctly (e.g. a Sept 30 report for a June-end FY → Q1
+     of next FY). Falls back to entry.quarter (legacy free-text) if
+     inference fails or no fyMonth is set. Empty entries show a "New"
+     placeholder until the user sets a date. */
+  var fyMonth = company && company.valuation && company.valuation.fyMonth;
+  var inferred = inferQuarter(e.reportDate, fyMonth);
+  var titleQuarter = inferred ? inferred.label : (e.quarter || "");
+  var titleDate = e.reportDate || "";
+  var headerTitle = titleQuarter && titleDate ? (titleQuarter + " · " + titleDate)
+                  : titleDate ? titleDate
+                  : titleQuarter ? titleQuarter
+                  : "New Earnings Entry";
+
   return (
     <div className="border-2 border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden mb-3">
       {/* Header bar */}
@@ -178,16 +194,8 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
         className="px-3.5 py-2.5 bg-slate-100 dark:bg-slate-800 cursor-pointer flex items-center gap-2.5 flex-wrap hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
       >
         <span className="text-sm font-bold text-gray-900 dark:text-slate-100 flex-1">
-          {e.quarter || "New Earnings Entry"}
+          {headerTitle}
         </span>
-        {e.reportDate && (
-          <span className="text-xs text-gray-500 dark:text-slate-400">{e.reportDate}</span>
-        )}
-        {e.eps && (
-          <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 font-medium">
-            EPS {currency} {e.eps}
-          </span>
-        )}
         {e.tpChange && e.tpChange !== "Unchanged" && (
           <span
             className="text-xs px-2 py-0.5 rounded-full font-medium"
@@ -277,20 +285,18 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
             )}
           </div>
 
-          {/* Row 1: quarter, date, eps */}
-          <div className="grid grid-cols-3 gap-2.5 mb-3">
-            <div>
-              <label className={labelClasses}>Quarter</label>
-              <input value={e.quarter} onChange={function (ev) { upd({ quarter: ev.target.value }); }} placeholder="e.g. Q2 2026" className={inputClasses} />
-            </div>
-            <div>
-              <label className={labelClasses}>Report Date</label>
-              <input value={e.reportDate} onChange={function (ev) { upd({ reportDate: ev.target.value }); }} placeholder="YYYY-MM-DD" className={inputClasses} />
-            </div>
-            <div>
-              <label className={labelClasses}>EPS ({currency})</label>
-              <input type="number" step="0.01" value={e.eps} onChange={function (ev) { upd({ eps: ev.target.value }); }} placeholder="e.g. 1.85" className={inputClasses} />
-            </div>
+          {/* Report date — only field still in the form, since quarter
+              is auto-inferred from date+fyMonth and EPS is now in the
+              stats strip above (epsActual / epsEst from upload).
+              Shown as a single narrow input so it doesn't dominate. */}
+          <div className="mb-3">
+            <label className={labelClasses}>Report Date</label>
+            <input
+              value={e.reportDate}
+              onChange={function (ev) { upd({ reportDate: ev.target.value }); }}
+              placeholder="YYYY-MM-DD"
+              className={inputClasses + " max-w-[180px]"}
+            />
           </div>
 
           {/* Row 2: TP change */}
@@ -334,28 +340,29 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
             </div>
           </div>
 
-          {/* Takeaways */}
-          <div className="grid grid-cols-2 gap-2.5 mb-3">
-            <div>
-              <label className={labelClasses}>
-                Six-Word Takeaway <span className="text-blue-700 dark:text-blue-400">({"\u2192"} Note)</span>
-              </label>
-              <input value={e.shortTakeaway} onChange={function (ev) { upd({ shortTakeaway: ev.target.value }); }} placeholder="Max 6 words" className={inputClasses} maxLength={60} />
-              {e.shortTakeaway && e.shortTakeaway.split(/\s+/).filter(Boolean).length > 6 && (
-                <div className="text-[10px] text-red-600 dark:text-red-400 mt-0.5">Over 6 words</div>
-              )}
-            </div>
-            <div>
-              <label className={labelClasses}>
-                Extended Takeaway <span className="text-blue-700 dark:text-blue-400">({"\u2192"} Extended Note)</span>
-              </label>
-              <textarea
-                value={e.extendedTakeaway}
-                onChange={function (ev) { upd({ extendedTakeaway: ev.target.value }); }}
-                rows={2}
-                className={inputClasses + " resize-y font-[inherit] leading-normal"}
-              />
-            </div>
+          {/* Takeaways \u2014 short on top (one-liner), extended below
+              taking the full width with a much taller textarea. The
+              prior side-by-side layout left the extended takeaway
+              cramped to 2 rows. */}
+          <div className="mb-3">
+            <label className={labelClasses}>
+              Six-Word Takeaway <span className="text-blue-700 dark:text-blue-400">({"\u2192"} Note)</span>
+            </label>
+            <input value={e.shortTakeaway} onChange={function (ev) { upd({ shortTakeaway: ev.target.value }); }} placeholder="Max 6 words" className={inputClasses} maxLength={60} />
+            {e.shortTakeaway && e.shortTakeaway.split(/\s+/).filter(Boolean).length > 6 && (
+              <div className="text-[10px] text-red-600 dark:text-red-400 mt-0.5">Over 6 words</div>
+            )}
+          </div>
+          <div className="mb-3">
+            <label className={labelClasses}>
+              Extended Takeaway <span className="text-blue-700 dark:text-blue-400">({"\u2192"} Extended Note)</span>
+            </label>
+            <textarea
+              value={e.extendedTakeaway}
+              onChange={function (ev) { upd({ extendedTakeaway: ev.target.value }); }}
+              rows={8}
+              className={inputClasses + " resize-y font-[inherit] leading-normal min-h-[160px]"}
+            />
           </div>
 
           {/* Bullets */}

@@ -27,6 +27,54 @@ export function downloadMD(title,content){var blob=new Blob([content],{type:"tex
 export function detectCompanyTags(text,companies){var found=[];companies.forEach(function(c){if(c.name&&text.toLowerCase().includes(c.name.toLowerCase()))found.push(c.name);});return Array.from(new Set(found)).slice(0,5);}
 export function todayStr(){return new Date().toISOString().slice(0,10);}
 export function parseDate(s){if(!s)return null;var d=new Date(s);if(!isNaN(d.getTime()))return d;var m=s.match(/^(\d{1,2})[-\/]([A-Za-z]{3})[-\/](\d{2,4})$/);if(m){var months={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};var mo=months[m[2].toLowerCase()];if(mo===undefined)return null;var yr=parseInt(m[3]);if(yr<100)yr+=2000;return new Date(yr,mo,parseInt(m[1]));}return null;}
+
+/* Parse a fiscal-year-end month indicator. Accepts 3-letter or full
+   names ("Dec", "December") and numeric strings ("12"). Returns 1-12
+   or null when the input doesn't make sense. */
+export function parseFyMonth(s){
+  if(s===null||s===undefined||s==="")return null;
+  var t=String(s).trim().toLowerCase();
+  var months={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12,
+              january:1,february:2,march:3,april:4,june:6,july:7,august:8,september:9,october:10,november:11,december:12};
+  if(months[t])return months[t];
+  var n=parseInt(t,10);
+  if(n>=1&&n<=12)return n;
+  return null;
+}
+
+/* Infer the fiscal quarter and FY year for an earnings report given the
+   report date and the company's fiscal year-end month. Walks back up to
+   ~180 days from the report date to find the most recent fiscal
+   quarter-end. FY year = the calendar year the FY ends. Returns
+   { qNum, fyYear, label: "Q1 FY26" } or null. */
+export function inferQuarter(reportIso, fyMonthStr){
+  var d=parseDate(reportIso);
+  if(!d)return null;
+  var m=parseFyMonth(fyMonthStr);
+  if(!m)return null;
+  var qEndMonths={};
+  for(var n=1;n<=4;n++){
+    var qm=((m-1+3*n)%12)+1;
+    qEndMonths[qm]=n;
+  }
+  var best=null;
+  for(var yOff=0;yOff>=-1;yOff--){
+    var year=d.getFullYear()+yOff;
+    Object.keys(qEndMonths).forEach(function(qmStr){
+      var qmInt=parseInt(qmStr,10);
+      var qe=new Date(year,qmInt,0); qe.setHours(0,0,0,0);
+      var diffDays=(d-qe)/86400000;
+      if(diffDays>=0&&diffDays<=180){
+        if(!best||qe>best.date) best={date:qe,month:qmInt,year:year};
+      }
+    });
+  }
+  if(!best)return null;
+  var qNum=qEndMonths[best.month];
+  var fyYear=best.month>m?best.year+1:best.year;
+  return {qNum:qNum, fyYear:fyYear, label:"Q"+qNum+" FY"+String(fyYear).slice(2)};
+}
+
 export function daysSince(dateStr){if(!dateStr)return Infinity;var d=parseDate(dateStr);if(!d||isNaN(d.getTime()))return Infinity;return Math.floor((Date.now()-d.getTime())/86400000);}
 export function reviewedColor(dateStr){var d=daysSince(dateStr);if(d===Infinity)return"#dc2626";if(d>90)return"#dc2626";if(d>60)return"#d97706";if(d>30)return"#ca8a04";return"#166534";}
 export function mkTheme(dark){return{dark,bg:dark?"#0f172a":"#ffffff",bgSec:dark?"#1e293b":"#f8fafc",bgTer:dark?"#334155":"#f1f5f9",border:dark?"#334155":"#e2e8f0",borderSec:dark?"#475569":"#d1d5db",text:dark?"#f1f5f9":"#111111",textSec:dark?"#94a3b8":"#6b7280",textDanger:dark?"#f87171":"#dc2626",textSuccess:dark?"#4ade80":"#166534",textInfo:dark?"#60a5fa":"#1e40af",textWarn:dark?"#fbbf24":"#854d0e"};}

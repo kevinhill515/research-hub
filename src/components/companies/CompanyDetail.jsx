@@ -25,7 +25,6 @@ import SegmentsTab from './SegmentsTab.jsx';
 import EpsRevisionsTab from './EpsRevisionsTab.jsx';
 import GuidanceTab from './GuidanceTab.jsx';
 import PreEarningsBrief from './PreEarningsBrief.jsx';
-import EarningsCycleStrip from './EarningsCycleStrip.jsx';
 import SnapshotTab from './SnapshotTab.jsx';
 
 const INP = "text-sm px-2 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:outline-none";
@@ -584,7 +583,6 @@ export function CompanyDetail(props){
           {/* EARNINGS & THESIS CHECK TAB */}
           {coView==="earnings"&&(<div className="print-target">
             <PreEarningsBrief company={selCo}/>
-            <EarningsCycleStrip entries={earningsEntries} company={selCo}/>
             <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
               <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">Earnings & Thesis Check</div>
               <div className="flex gap-2 items-center">
