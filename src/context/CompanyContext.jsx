@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from "react";
+import { createContext, useContext, useState, useEffect, useRef } from "react";
 import { supaGet, supaUpsert } from '../api/index.js';
 import { todayStr } from '../utils/index.js';
 
@@ -298,19 +298,36 @@ export function CompanyProvider({children}){
   },[]);
 
   /* Debounce Supabase writes so rapid edits (typing in an input, ★ toggles, etc.)
-     collapse into a single upsert after 500ms of quiet. Each row type has its
-     own timer so unrelated writes don't block each other. */
+     collapse into a single upsert after the debounce window of quiet.
+     Each row type has its own timer so unrelated writes don't block each other.
+     Heaviest payloads (companies, breakdownHistory) get a longer debounce —
+     fewer round-trips during a burst of edits.
+
+     A small per-key serialization cache (lastSentRef) skips the upsert
+     entirely when the new JSON is byte-equal to what we already sent.
+     This catches the surprisingly-common case of an effect firing without
+     a real content change (e.g. setCompanies(prev => prev) or React 18
+     strict-mode double-fires) and saves a 1-2MB JSON.stringify + network
+     round trip for the companies payload. */
   var DEBOUNCE_MS=500;
-  useEffect(function(){if(!ready)return;var t=setTimeout(function(){supaUpsert("library",{id:"shared",data:JSON.stringify(saved)});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[saved,ready]);
-  useEffect(function(){if(!ready)return;var t=setTimeout(function(){supaUpsert("companies",{id:"shared",data:JSON.stringify(companies)});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[companies,ready]);
-  useEffect(function(){if(!ready||!lastPriceUpdate)return;var t=setTimeout(function(){supaUpsert("meta",{key:"lastPriceUpdate",value:lastPriceUpdate});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[lastPriceUpdate,ready]);
-  useEffect(function(){if(!ready)return;var t=setTimeout(function(){supaUpsert("meta",{key:"entryComments",value:JSON.stringify(entryComments)});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[entryComments,ready]);
-  useEffect(function(){if(!ready)return;var t=setTimeout(function(){supaUpsert("meta",{key:"annotations",value:JSON.stringify(annotations)});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[annotations,ready]);
-  useEffect(function(){if(!ready)return;var t=setTimeout(function(){supaUpsert("meta",{key:"researchAssignments",value:JSON.stringify(researchAssignments)});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[researchAssignments,ready]);
-  useEffect(function(){if(!ready)return;var t=setTimeout(function(){supaUpsert("meta",{key:"perfData",value:JSON.stringify(perfData)});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[perfData,ready]);
-  useEffect(function(){if(!ready)return;var t=setTimeout(function(){supaUpsert("meta",{key:"feedback",value:JSON.stringify(feedback)});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[feedback,ready]);
-  useEffect(function(){if(!ready)return;var t=setTimeout(function(){supaUpsert("meta",{key:"benchmarkWeights",value:JSON.stringify(benchmarkWeights)});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[benchmarkWeights,ready]);
-  useEffect(function(){if(!ready)return;var t=setTimeout(function(){supaUpsert("meta",{key:"breakdownHistory",value:JSON.stringify(breakdownHistory)});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[breakdownHistory,ready]);
+  var DEBOUNCE_HEAVY_MS=1500;
+  var lastSentRef=useRef({});
+  function sendIfChanged(key, fn){
+    var json=fn();
+    if(lastSentRef.current[key]===json)return false;
+    lastSentRef.current[key]=json;
+    return true;
+  }
+  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(saved);if(sendIfChanged("library",function(){return j;}))supaUpsert("library",{id:"shared",data:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[saved,ready]);
+  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(companies);if(sendIfChanged("companies",function(){return j;}))supaUpsert("companies",{id:"shared",data:j});},DEBOUNCE_HEAVY_MS);return function(){clearTimeout(t);};},[companies,ready]);
+  useEffect(function(){if(!ready||!lastPriceUpdate)return;var t=setTimeout(function(){if(sendIfChanged("lastPriceUpdate",function(){return lastPriceUpdate;}))supaUpsert("meta",{key:"lastPriceUpdate",value:lastPriceUpdate});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[lastPriceUpdate,ready]);
+  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(entryComments);if(sendIfChanged("entryComments",function(){return j;}))supaUpsert("meta",{key:"entryComments",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[entryComments,ready]);
+  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(annotations);if(sendIfChanged("annotations",function(){return j;}))supaUpsert("meta",{key:"annotations",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[annotations,ready]);
+  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(researchAssignments);if(sendIfChanged("researchAssignments",function(){return j;}))supaUpsert("meta",{key:"researchAssignments",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[researchAssignments,ready]);
+  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(perfData);if(sendIfChanged("perfData",function(){return j;}))supaUpsert("meta",{key:"perfData",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[perfData,ready]);
+  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(feedback);if(sendIfChanged("feedback",function(){return j;}))supaUpsert("meta",{key:"feedback",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[feedback,ready]);
+  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(benchmarkWeights);if(sendIfChanged("benchmarkWeights",function(){return j;}))supaUpsert("meta",{key:"benchmarkWeights",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[benchmarkWeights,ready]);
+  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(breakdownHistory);if(sendIfChanged("breakdownHistory",function(){return j;}))supaUpsert("meta",{key:"breakdownHistory",value:j});},DEBOUNCE_HEAVY_MS);return function(){clearTimeout(t);};},[breakdownHistory,ready]);
 
   function addComment(entryId,text){   if(!text.trim())return;   var comment={id:Date.now(),text:text.trim(),author:currentUser||"Unknown",date:todayStr()};   setEntryComments(function(prev){return Object.assign({},prev,{[entryId]:([comment].concat(prev[entryId]||[]))});});   setNewCommentText(function(prev){return Object.assign({},prev,{[entryId]:""});}); }
   function deleteComment(entryId,commentId){   setEntryComments(function(prev){return Object.assign({},prev,{[entryId]:(prev[entryId]||[]).filter(function(c){return c.id!==commentId;})});}); }
