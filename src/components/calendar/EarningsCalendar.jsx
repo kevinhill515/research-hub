@@ -1,5 +1,5 @@
 import { MONTHS } from '../../constants/index.js';
-import { parseDate, sectorStyle, shortSector } from '../../utils/index.js';
+import { parseDate, sectorStyle, shortSector, inferQuarter } from '../../utils/index.js';
 import StatusPill from '../ui/StatusPill.jsx';
 
 /* Format large currency-style numbers with auto unit scaling.
@@ -144,7 +144,19 @@ function Row({ c, date, daysAway, entry, variant, onClick }) {
           )}
           {c.status && <StatusPill status={c.status} />}
         </div>
-        {entry && entry.quarter && <div className="text-xs text-gray-500 dark:text-slate-400">{entry.quarter}</div>}
+        {(function () {
+          /* Caption under company name: prefer entry.quarter (legacy
+             free-text from older entries) but fall back to the auto-
+             inferred fiscal quarter from the entry's reportDate +
+             company.valuation.fyMonth. Most upload-created entries
+             have empty quarter strings, so inference fills the gap. */
+          var label = (entry && entry.quarter) ? entry.quarter : "";
+          if (!label && entry && entry.reportDate) {
+            var inf = inferQuarter(entry.reportDate, c.valuation && c.valuation.fyMonth);
+            if (inf) label = inf.label;
+          }
+          return label ? <div className="text-xs text-gray-500 dark:text-slate-400">{label}</div> : null;
+        })()}
         <StatsBlock entry={entry} variant={variant} />
       </div>
 

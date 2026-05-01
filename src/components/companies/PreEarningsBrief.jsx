@@ -20,7 +20,7 @@
 import { BENCHMARKS } from '../../constants/index.js';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import { isFiniteNum } from '../../utils/numbers.js';
-import { parseDate } from '../../utils/index.js';
+import { parseDate, inferQuarter } from '../../utils/index.js';
 import { fmtMoney } from '../../utils/chart.js';
 
 const TILE = "rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3";
@@ -278,7 +278,18 @@ export default function PreEarningsBrief({ company }) {
             {lastReported ? (
               <div className="text-[12px] text-gray-700 dark:text-slate-300">
                 <div className="flex items-center gap-2 flex-wrap mb-0.5">
-                  <span className="font-semibold">{lastReported.quarter || fmtDate(lastReported.reportDate)}</span>
+                  {/* Header label: prefer the legacy quarter free-text
+                      when set, else infer the fiscal quarter from the
+                      report date + fyMonth. Date is always shown to
+                      the right for absolute reference. */}
+                  <span className="font-semibold">{
+                    lastReported.quarter
+                      ? lastReported.quarter
+                      : (function () {
+                          var inf = inferQuarter(lastReported.reportDate, company && company.valuation && company.valuation.fyMonth);
+                          return inf ? inf.label : fmtDate(lastReported.reportDate);
+                        })()
+                  }</span>
                   <span className="text-gray-500 dark:text-slate-400">{fmtDate(lastReported.reportDate)}</span>
                   {statusPill(lastReported.thesisStatus)}
                 </div>
