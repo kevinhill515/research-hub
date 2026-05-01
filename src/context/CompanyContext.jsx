@@ -299,6 +299,24 @@ export function CompanyProvider({children}){
          });
          supaUpsert("meta",{key:"cleanup_bench_scale_v3",value:"1"});
        }}catch(e){}
+       try{var rFlag4=await supaGet("meta","key","cleanup_bench_fwdpe_v4");if(!(rFlag4&&rFlag4.value)){
+         /* Re-run the fwdPe ×100 fix one more time. The user re-uploaded
+            after v3 ran (which set the flag and exited) and the new
+            data was again in decimal form. Idempotent: if value >= 1
+            it's already correct and we skip. */
+         Object.keys(bh).forEach(function (name) {
+           Object.keys(bh[name] || {}).forEach(function (date) {
+             var slot = bh[name][date];
+             if (!slot || !slot.ratios) return;
+             var fp = parseFloat(slot.ratios.fwdPe);
+             if (isFinite(fp) && Math.abs(fp) > 0 && Math.abs(fp) < 1) {
+               slot.ratios.fwdPe = fp * 100;
+               bhChanged = true;
+             }
+           });
+         });
+         supaUpsert("meta",{key:"cleanup_bench_fwdpe_v4",value:"1"});
+       }}catch(e){}
        setBreakdownHistory(bh);
        if(bhChanged)supaUpsert("meta",{key:"breakdownHistory",value:JSON.stringify(bh)});
      }}}catch(e){}     setLoadStatus({companies:coOk,library:libOk});setReady(true);return coOk||libOk;}

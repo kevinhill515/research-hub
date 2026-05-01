@@ -517,6 +517,13 @@ export function useImport(){
         }
         storedName = def.key;
         if(def.kind==="pct") w=w/100;
+        /* Auto-correct decimal-form multiples for x-kind ratios. Real
+           P/E, P/B, Fwd P/E etc. are always >= 1; if the pasted value
+           is < 1 it almost certainly means FactSet exported as a
+           "yield" (1/multiple) or in some other decimal form. Multiply
+           by 100 to recover the multiple. Same convention the migration
+           uses retroactively. */
+        if(def.kind==="x" && Math.abs(w) > 0 && Math.abs(w) < 1) w=w*100;
       }
       if(dateIso){
         if(!historyRows[bm])historyRows[bm]={};

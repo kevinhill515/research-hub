@@ -161,13 +161,39 @@ export default function CharacteristicsView() {
   /* Both Core and Value benchmarks are shown side-by-side rather than
      toggled. Each has its own metric snapshot (current) and ratio
      history. The Has-* flags drive whether each column renders so an
-     empty side simply collapses out. */
+     empty side simply collapses out.
+
+     Metrics resolve in this order:
+       1. benchmarkWeights[name].metrics — the legacy 4-col current
+          snapshot upload.
+       2. breakdownHistory[name][latestDate].metrics — when the user
+          uploads via the dated 5-col format with Type=Metric.
+     #2 fallback was the missing piece — uploads in the dated format
+     populated breakdownHistory but not benchmarkWeights, so this
+     panel showed blank "--" cells everywhere. */
   const coreBench  = (BENCHMARKS[portKey] || {}).core  || null;
   const valueBench = (BENCHMARKS[portKey] || {}).value || null;
   const coreData   = coreBench  && benchmarkWeights ? benchmarkWeights[coreBench]  : null;
   const valueData  = valueBench && benchmarkWeights ? benchmarkWeights[valueBench] : null;
-  const coreMetrics  = (coreData  && coreData.metrics)  || null;
-  const valueMetrics = (valueData && valueData.metrics) || null;
+  function latestMetrics(name) {
+    if (!name || !breakdownHistory || !breakdownHistory[name]) return null;
+    const byDate = breakdownHistory[name];
+    const dates = Object.keys(byDate)
+      .filter(function (d) { return byDate[d] && byDate[d].metrics && Object.keys(byDate[d].metrics).length > 0; })
+      .sort();
+    if (dates.length === 0) return null;
+    return byDate[dates[dates.length - 1]].metrics;
+  }
+  const coreMetricsRaw  = (coreData  && coreData.metrics)  || null;
+  const valueMetricsRaw = (valueData && valueData.metrics) || null;
+  const coreMetrics = useMemo(function () {
+    if (coreMetricsRaw && Object.keys(coreMetricsRaw).length > 0) return coreMetricsRaw;
+    return latestMetrics(coreBench);
+  }, [coreMetricsRaw, coreBench, breakdownHistory]);
+  const valueMetrics = useMemo(function () {
+    if (valueMetricsRaw && Object.keys(valueMetricsRaw).length > 0) return valueMetricsRaw;
+    return latestMetrics(valueBench);
+  }, [valueMetricsRaw, valueBench, breakdownHistory]);
   const hasCoreMetrics  = !!(coreMetrics  && Object.keys(coreMetrics).length  > 0);
   const hasValueMetrics = !!(valueMetrics && Object.keys(valueMetrics).length > 0);
   const hasBenchmark    = hasCoreMetrics || hasValueMetrics;
