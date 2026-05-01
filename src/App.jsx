@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, lazy, Suspense } from "react";
 import { PORTFOLIOS, TIER_ORDER, SECTOR_ORDER, COUNTRY_ORDER, SECTOR_COLORS, SECTOR_SHORT, COUNTRY_GROUPS, COUNTRY_COLORS, REGION_COLORS, REGION_GROUPS, STATUS_RANK, CURRENCY_MAP, ALL_CURRENCIES, MONTHS, CO_SORTS, FORMATS, TONES, LIB_SORTS, PRESET_TAGS, UPLOAD_TYPES, TEMPLATE_SECTIONS, SECTION_SUBHEADINGS, THESIS_STATUSES, TP_CHANGES, AVG_WPM, ALL_COLS, COMPACT_COLS, COMPANY_COLUMNS, SHORTCUTS, CONF_BG, CONF_COLOR, ACTIONS, TEAM_MEMBERS, TEAM_COLORS, REP_ACCOUNTS, PORT_NAMES, FLAG_STYLES } from './constants/index.js';
 import { shortSector, sectorStyle, countryStyle, getRegion, getTiers, getCurrency, calcNormEPS, calcTP, calcMOS, fmtPrice, fmtTP, fmtMOS, mosBg, impliedFYLabel, tierPillStyle, tierBg, fmtTime, getCore, getConf, escHTML, toHTML, toMD, simScore, downloadMD, detectCompanyTags, todayStr, parseDate, daysSince, reviewedColor, getStatusRank, getTierIndex, getCompanyMOS, blankEarnings, sortCos, synPrompt, tierToStatus, repShares, repAvgCost, getInitiatedDate, monthsSince, isInitiationTx, printPage } from './utils/index.js';
 import { supaGet, supaUpsert, ANTHROPIC_KEY, apiCall } from './api/index.js';
@@ -12,13 +12,17 @@ import { CoRow, OverlapMatrix } from './components/tables/index.js';
 import { EarningsCalendar } from './components/calendar/index.js';
 import { useCompanyContext } from './context/CompanyContext.jsx';
 import { ErrorBoundary } from './components/ErrorBoundary.jsx';
-import MarketsDashboard from './components/dashboard/MarketsDashboard.jsx';
-import BreakdownView from './components/dashboard/BreakdownView.jsx';
-import CharacteristicsView from './components/dashboard/CharacteristicsView.jsx';
-import GeoRevView from './components/dashboard/GeoRevView.jsx';
-import CompareView from './components/dashboard/CompareView.jsx';
-import GuidanceCompareView from './components/dashboard/GuidanceCompareView.jsx';
-import RatioCompareView from './components/dashboard/RatioCompareView.jsx';
+/* Dashboard subtabs are lazy-loaded — recharts (~150KB gz) only ships
+   to users who actually open a dashboard view. Each lazy() compiles to
+   its own chunk; vite.config manualChunks then groups recharts/d3 into
+   a single shared "recharts" chunk so multiple subtabs reuse the cache. */
+const MarketsDashboard    = lazy(() => import('./components/dashboard/MarketsDashboard.jsx'));
+const BreakdownView       = lazy(() => import('./components/dashboard/BreakdownView.jsx'));
+const CharacteristicsView = lazy(() => import('./components/dashboard/CharacteristicsView.jsx'));
+const GeoRevView          = lazy(() => import('./components/dashboard/GeoRevView.jsx'));
+const CompareView         = lazy(() => import('./components/dashboard/CompareView.jsx'));
+const GuidanceCompareView = lazy(() => import('./components/dashboard/GuidanceCompareView.jsx'));
+const RatioCompareView    = lazy(() => import('./components/dashboard/RatioCompareView.jsx'));
 import MetricsTable, { METRICS_COLS, DEFAULT_METRICS_VISIBLE } from './components/tables/MetricsTable.jsx';
 import UploadTab from './components/dataHub/UploadTab.jsx';
 import { useCompanies, useSynthesis, useLibrary, useRecall, useImport } from './hooks/index.js';
@@ -210,6 +214,11 @@ export default function App(){
 
       {tab==="dashboard"&&(<div><div className="flex gap-1.5 mb-4 overflow-x-auto sm:flex-wrap sm:overflow-visible no-scrollbar border-b border-slate-200 dark:border-slate-700 pb-2.5">          {[["markets","Markets"],["characteristics","Characteristics"],["ratiocompare","Ratio Compare"],["sectors","Sector Breakdown"],["countries","Country Breakdown"],["georev","GeoRev"],["sidebyside","Side-by-Side"],["guidcompare","Guidance Compare"],["overlap","Portfolio Overlap"],["quality","Data Quality"]].map(function(item){return <button key={item[0]} className={(dashSubTab===item[0]?TABST_ACTIVE:TABST_INACTIVE)+" whitespace-nowrap shrink-0"} onClick={function(){setDashSubTab(item[0]);}}>{item[1]}</button>;})}
         </div>
+        {/* Suspense boundary so the lazy-loaded subtabs (each its own JS
+            chunk) show a small loading hint while the chunk fetches.
+            The chunk is cached after first load so subsequent subtab
+            switches feel instant. */}
+        <Suspense fallback={<div className="text-xs italic text-gray-500 dark:text-slate-400 py-6 text-center">Loading…</div>}>
         {dashSubTab==="markets"&&<MarketsDashboard/>}
         {dashSubTab==="characteristics"&&<CharacteristicsView/>}
         {dashSubTab==="ratiocompare"&&<RatioCompareView/>}
@@ -218,6 +227,7 @@ export default function App(){
         {dashSubTab==="georev"&&<GeoRevView/>}
         {dashSubTab==="sidebyside"&&<CompareView/>}
         {dashSubTab==="guidcompare"&&<GuidanceCompareView onSelectCompany={function(cid){var co=companies.find(function(c){return c.id===cid;});if(co){setSelCo(co);setTab("companies");setCoView("guidance");}}}/>}
+        </Suspense>
         {false&&(<div></div>)}
         {dashSubTab==="overlap"&&(<div><div className="text-sm font-medium mb-3 text-gray-900 dark:text-slate-100">Portfolio Overlap</div><OverlapMatrix companies={companies}/></div>)}
         {dashSubTab==="quality"&&(<div><div className="text-sm font-medium mb-3 text-gray-900 dark:text-slate-100">Data Quality</div><div className="flex gap-2.5 flex-wrap mb-5">{[{label:"Missing country",count:companies.filter(function(c){return !c.country;}).length},{label:"Missing sector",count:companies.filter(function(c){return !c.sector;}).length},{label:"Missing tier",count:companies.filter(function(c){return !c.tier;}).length},{label:"No template",count:companies.filter(function(c){return !Object.keys(c.sections||{}).length;}).length},{label:"Not reviewed 30d+",count:companies.filter(function(c){return daysSince(c.lastReviewed)>30;}).length},{label:"Not reviewed 60d+",count:companies.filter(function(c){return daysSince(c.lastReviewed)>60;}).length},{label:"Watch stale 90d+",count:staleWatchCount}].map(function(item){return(<div key={item.label} className={CARD + " !mb-0 min-w-[140px] flex-1"}><div className="text-xl font-semibold" style={{color:item.count>0?"#d97706":"#16a34a"}}>{item.count}</div><div className="text-xs text-gray-500 dark:text-slate-400">{item.label}</div></div>);})}</div><div className="text-sm font-medium mb-2.5 text-gray-900 dark:text-slate-100">Stale companies (60d+ since review)</div>{companies.filter(function(c){return daysSince(c.lastReviewed)>60;}).sort(function(a,b){return daysSince(b.lastReviewed)-daysSince(a.lastReviewed);}).map(function(c){var d=daysSince(c.lastReviewed);return(<div key={c.id} className={CARD + " !mb-1.5 flex gap-2.5 items-center cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"} onClick={function(){setSelCo(c);setTab("companies");setCoView("upload");}}><span className="text-sm font-medium text-gray-900 dark:text-slate-100 flex-1">{c.name}</span>{c.ticker&&<span className={PILL_BASE}>{c.ticker}</span>}{c.status&&<StatusPill status={c.status}/>}<span className="text-[11px] font-semibold" style={{color:d>90?"#dc2626":d>60?"#d97706":"#ca8a04"}}>{d===Infinity?"never":d+"d ago"}</span></div>);})}</div>)}
