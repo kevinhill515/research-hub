@@ -2,6 +2,86 @@ import { MONTHS } from '../../constants/index.js';
 import { parseDate, sectorStyle, shortSector } from '../../utils/index.js';
 import StatusPill from '../ui/StatusPill.jsx';
 
+/* Format large currency-style numbers with auto unit scaling.
+ * Sales come in raw (e.g. 12,743,433 = $12.7B in millions). Scale to
+ * the most readable unit and add a unit suffix.
+ *   < 1,000     → raw with thousand separators
+ *   < 1,000,000 → "X.XX K"  (rare for sales, common for surp nominal)
+ *   ≥ 1M        → "X.XX M"
+ *   ≥ 1B        → "X.XX B"
+ */
+function fmtBig(n) {
+  if (n === null || n === undefined || !isFinite(n)) return null;
+  const a = Math.abs(n), s = n < 0 ? "-" : "";
+  if (a >= 1e9) return s + (a / 1e9).toFixed(2) + "B";
+  if (a >= 1e6) return s + (a / 1e6).toFixed(2) + "M";
+  if (a >= 1e3) return s + (a / 1e3).toFixed(1) + "K";
+  return s + Math.round(a).toLocaleString();
+}
+/* EPS / per-share dollar amount. */
+function fmtEps(n) {
+  if (n === null || n === undefined || !isFinite(n)) return null;
+  return "$" + n.toFixed(2);
+}
+/* Signed percent surprise (e.g. "+3.6%" / "−1.2%"). Value is stored
+ * as a plain percent number (3.6 means 3.6%), not a decimal. */
+function fmtSurpPct(n) {
+  if (n === null || n === undefined || !isFinite(n)) return null;
+  return (n >= 0 ? "+" : "") + n.toFixed(1) + "%";
+}
+function surpColor(n) {
+  if (n === null || n === undefined || !isFinite(n) || Math.abs(n) < 0.05) return undefined;
+  return n > 0 ? "#166534" : "#dc2626";
+}
+
+/* Small two-row stats block under the company name on each calendar tile.
+ * Recent: "Sales 1,234M / 1,200M est (+2.8%)" + "EPS $2.10 / $2.05 est (+2.4%)".
+ * Upcoming: "Cons: Sales 1,234M est · EPS $2.20 est". */
+function StatsBlock({ entry, variant }) {
+  if (!entry) return null;
+  const has = function (k) { return entry[k] !== null && entry[k] !== undefined && isFinite(entry[k]); };
+
+  if (variant === "upcoming") {
+    /* Consensus heading INTO the report. Show only when at least one
+       of the two consensus estimates is populated. */
+    if (!has("salesEst") && !has("epsEst")) return null;
+    return (
+      <div className="text-[10px] text-gray-600 dark:text-slate-400 mt-0.5 flex flex-wrap gap-x-3">
+        <span className="uppercase tracking-wide text-gray-400 dark:text-slate-500">Consensus</span>
+        {has("salesEst") && <span>Sales <span className="font-mono tabular-nums text-gray-700 dark:text-slate-300">{fmtBig(entry.salesEst)}</span></span>}
+        {has("epsEst")   && <span>EPS <span className="font-mono tabular-nums text-gray-700 dark:text-slate-300">{fmtEps(entry.epsEst)}</span></span>}
+      </div>
+    );
+  }
+  /* Recent — show estimate vs actual + surprise per metric. Only render
+     a row if at least one field on that side has data. */
+  const showSales = has("salesActual") || has("salesEst") || has("salesSurpPct");
+  const showEps   = has("epsActual")   || has("epsEst")   || has("epsSurpPct");
+  if (!showSales && !showEps) return null;
+  return (
+    <div className="mt-0.5 text-[10px] leading-tight space-y-0.5">
+      {showSales && (
+        <div className="flex flex-wrap gap-x-1.5 items-baseline">
+          <span className="uppercase tracking-wide text-gray-400 dark:text-slate-500 w-9">Sales</span>
+          <span className="font-mono tabular-nums text-gray-900 dark:text-slate-100 font-semibold">{fmtBig(entry.salesActual) || "—"}</span>
+          {has("salesEst") && <span className="text-gray-500 dark:text-slate-400">vs {fmtBig(entry.salesEst)} est</span>}
+          {has("salesSurpPct") && <span className="font-mono tabular-nums font-semibold" style={{ color: surpColor(entry.salesSurpPct) }}>{fmtSurpPct(entry.salesSurpPct)}</span>}
+          {has("salesSurpNom") && <span className="font-mono tabular-nums text-gray-500 dark:text-slate-400">({fmtBig(entry.salesSurpNom)})</span>}
+        </div>
+      )}
+      {showEps && (
+        <div className="flex flex-wrap gap-x-1.5 items-baseline">
+          <span className="uppercase tracking-wide text-gray-400 dark:text-slate-500 w-9">EPS</span>
+          <span className="font-mono tabular-nums text-gray-900 dark:text-slate-100 font-semibold">{fmtEps(entry.epsActual) || "—"}</span>
+          {has("epsEst") && <span className="text-gray-500 dark:text-slate-400">vs {fmtEps(entry.epsEst)} est</span>}
+          {has("epsSurpPct") && <span className="font-mono tabular-nums font-semibold" style={{ color: surpColor(entry.epsSurpPct) }}>{fmtSurpPct(entry.epsSurpPct)}</span>}
+          {has("epsSurpNom") && <span className="font-mono tabular-nums text-gray-500 dark:text-slate-400">({fmtEps(entry.epsSurpNom)})</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* Single row used by both the upcoming (left) and recent (right) panels.
  * `variant` = "upcoming" or "recent" controls the day-label wording and
  * urgency tinting (upcoming uses today/soon red/amber; recent uses a
@@ -65,6 +145,7 @@ function Row({ c, date, daysAway, entry, variant, onClick }) {
           {c.status && <StatusPill status={c.status} />}
         </div>
         {entry && entry.quarter && <div className="text-xs text-gray-500 dark:text-slate-400">{entry.quarter}</div>}
+        <StatsBlock entry={entry} variant={variant} />
       </div>
 
       <div className="text-xs font-semibold whitespace-nowrap" style={{ color: labelColor }}>
@@ -98,8 +179,13 @@ function EarningsCalendar({ companies, onSelectCompany }) {
 
   /* Recent: a company's lastReportDate (from FactSet, populated by the
      daily script or the Earnings Dates upload's 3rd col) falling in the
-     last 30 days. Falls back to earningsEntries in that window for
-     companies where lastReportDate hasn't been set yet. */
+     last 30 days. We also look up the earnings entry whose reportDate
+     matches lastReportDate so its sales/eps estimate/actual/surprise
+     fields can render in the row. Falls back to earningsEntries in
+     that window for companies where lastReportDate hasn't been set yet. */
+  function isoOfDate(d) {
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
   const recent = [];
   const seen = {};
   companies.forEach(function (c) {
@@ -109,7 +195,17 @@ function EarningsCalendar({ companies, onSelectCompany }) {
       if (d) {
         d.setHours(0, 0, 0, 0);
         if (d >= recentCutoff && d <= today) {
-          recent.push({ company: c, entry: null, date: d, daysAway: Math.floor((today - d) / 86400000) });
+          /* Find the entry whose reportDate equals lastReportDate so the
+             upload's actuals/surprises render alongside the row. */
+          const targetIso = isoOfDate(d);
+          const matching = (c.earningsEntries || []).find(function (e) {
+            if (!e.reportDate) return false;
+            const ed = parseDate(e.reportDate);
+            if (!ed) return false;
+            ed.setHours(0, 0, 0, 0);
+            return isoOfDate(ed) === targetIso;
+          }) || null;
+          recent.push({ company: c, entry: matching, date: d, daysAway: Math.floor((today - d) / 86400000) });
           seen[c.id] = true;
         }
       }

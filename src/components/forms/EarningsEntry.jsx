@@ -214,6 +214,13 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
         </span>
       </div>
 
+      {/* Sales / EPS estimate / actual / surprise strip. Populated by the
+          Earnings Dates upload (or the daily script) and rendered whether
+          the entry is open or collapsed so the user sees the read at a
+          glance. Different content for "next-quarter" entries (consensus
+          only, no actuals) vs "last-reported" entries (actuals + surprise). */}
+      <EarningsStatsStrip entry={e} currency={currency} />
+
       {open && (
         <div className="p-3.5 bg-white dark:bg-slate-900">
           {/* Guidance vs Actual — renders only when this entry's reportDate
@@ -410,6 +417,85 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
               Delete entry
             </span>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* Estimates / actuals / surprise strip rendered between the entry header
+   and the open body. Two modes:
+   - "result" (entry has actuals): two compact rows per metric showing
+     "Actual vs Est (±%, nominal)" with green/red on the surprise.
+   - "consensus" (entry has only estimates): one row "Consensus: Sales X est ·
+     EPS Y est" — used for upcoming-report entries.
+   Returns null when no relevant fields are populated so the strip is
+   completely invisible until upload data lands.
+
+   Numeric formatting:
+   - Sales: auto-scaled K/M/B (sales come in raw, e.g. 12,743,433).
+   - EPS: per-share dollars with the entry's local currency prefix.
+   - Surprise %: signed with one decimal (e.g. "+3.6%"). */
+function EarningsStatsStrip({ entry, currency }) {
+  if (!entry) return null;
+  const has = function (k) { return entry[k] !== null && entry[k] !== undefined && isFinite(entry[k]); };
+
+  function fmtBig(n) {
+    if (n === null || n === undefined || !isFinite(n)) return null;
+    const a = Math.abs(n), s = n < 0 ? "-" : "";
+    if (a >= 1e9) return s + (a / 1e9).toFixed(2) + "B";
+    if (a >= 1e6) return s + (a / 1e6).toFixed(2) + "M";
+    if (a >= 1e3) return s + (a / 1e3).toFixed(1) + "K";
+    return s + Math.round(a).toLocaleString();
+  }
+  function fmtEps(n) {
+    if (n === null || n === undefined || !isFinite(n)) return null;
+    return (currency ? currency + " " : "") + n.toFixed(2);
+  }
+  function fmtSurpPct(n) {
+    if (n === null || n === undefined || !isFinite(n)) return null;
+    return (n >= 0 ? "+" : "") + n.toFixed(1) + "%";
+  }
+  function surpColor(n) {
+    if (n === null || n === undefined || !isFinite(n) || Math.abs(n) < 0.05) return undefined;
+    return n > 0 ? "#166534" : "#dc2626";
+  }
+
+  const hasActual = has("salesActual") || has("epsActual");
+  const hasAnyEst = has("salesEst") || has("epsEst");
+  if (!hasActual && !hasAnyEst) return null;
+
+  /* Consensus-only mode (next-quarter) — short single line. */
+  if (!hasActual) {
+    return (
+      <div className="px-3.5 py-1.5 bg-blue-50 dark:bg-blue-950/20 border-b border-slate-200 dark:border-slate-700 text-[11px] flex flex-wrap gap-x-3 items-baseline">
+        <span className="uppercase tracking-wide text-gray-400 dark:text-slate-500">Consensus</span>
+        {has("salesEst") && <span className="text-gray-700 dark:text-slate-300">Sales <span className="font-mono tabular-nums font-semibold">{fmtBig(entry.salesEst)}</span></span>}
+        {has("epsEst")   && <span className="text-gray-700 dark:text-slate-300">EPS <span className="font-mono tabular-nums font-semibold">{fmtEps(entry.epsEst)}</span></span>}
+      </div>
+    );
+  }
+  /* Result mode (last-reported) — Sales / EPS actual vs est + surprise. */
+  const showSales = has("salesActual") || has("salesEst") || has("salesSurpPct");
+  const showEps   = has("epsActual")   || has("epsEst")   || has("epsSurpPct");
+  return (
+    <div className="px-3.5 py-1.5 bg-slate-50 dark:bg-slate-800/40 border-b border-slate-200 dark:border-slate-700 text-[11px] space-y-0.5">
+      {showSales && (
+        <div className="flex flex-wrap gap-x-2 items-baseline">
+          <span className="uppercase tracking-wide text-gray-400 dark:text-slate-500 w-10">Sales</span>
+          <span className="font-mono tabular-nums text-gray-900 dark:text-slate-100 font-semibold">{fmtBig(entry.salesActual) || "—"}</span>
+          {has("salesEst") && <span className="text-gray-500 dark:text-slate-400">vs {fmtBig(entry.salesEst)} est</span>}
+          {has("salesSurpPct") && <span className="font-mono tabular-nums font-semibold" style={{ color: surpColor(entry.salesSurpPct) }}>{fmtSurpPct(entry.salesSurpPct)}</span>}
+          {has("salesSurpNom") && <span className="font-mono tabular-nums text-gray-500 dark:text-slate-400">({fmtBig(entry.salesSurpNom)})</span>}
+        </div>
+      )}
+      {showEps && (
+        <div className="flex flex-wrap gap-x-2 items-baseline">
+          <span className="uppercase tracking-wide text-gray-400 dark:text-slate-500 w-10">EPS</span>
+          <span className="font-mono tabular-nums text-gray-900 dark:text-slate-100 font-semibold">{fmtEps(entry.epsActual) || "—"}</span>
+          {has("epsEst") && <span className="text-gray-500 dark:text-slate-400">vs {fmtEps(entry.epsEst)} est</span>}
+          {has("epsSurpPct") && <span className="font-mono tabular-nums font-semibold" style={{ color: surpColor(entry.epsSurpPct) }}>{fmtSurpPct(entry.epsSurpPct)}</span>}
+          {has("epsSurpNom") && <span className="font-mono tabular-nums text-gray-500 dark:text-slate-400">({fmtEps(entry.epsSurpNom)})</span>}
         </div>
       )}
     </div>
