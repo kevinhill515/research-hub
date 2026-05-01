@@ -66,7 +66,10 @@ function MobilePortfolioCard(props) {
     <div
       onClick={function(){ onOpenCompany && onOpenCompany(c); }}
       className="rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2.5 mb-1.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
-      style={tintBg ? { background: tintBg } : undefined}
+      style={Object.assign(
+        { contentVisibility: "auto", containIntrinsicSize: "180px" },
+        tintBg ? { background: tintBg } : null,
+      )}
     >
       {/* Header row: name + alerts + status */}
       <div className="flex items-center gap-2 mb-1.5 min-w-0">

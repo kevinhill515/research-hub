@@ -91,7 +91,15 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
       onMouseEnter={function () { setHovered(true); }}
       onMouseLeave={function () { setHovered(false); }}
       className={"table-row group hover:bg-slate-50 dark:hover:bg-slate-800" + (selected ? " bg-blue-950/30" : "")}
-      style={rowBg ? { background: rowBg } : undefined}
+      /* contentVisibility: "auto" lets the browser skip rendering off-screen
+         rows entirely. contain-intrinsic-size reserves a placeholder height
+         (≈48px per row) so the scroll container stays the right size before
+         rows scroll into view. Native virtualization with zero JS overhead;
+         a fallback no-op on older browsers. */
+      style={Object.assign(
+        { contentVisibility: "auto", containIntrinsicSize: "48px" },
+        rowBg ? { background: rowBg } : null,
+      )}
     >
       {/* Checkbox */}
       <div
