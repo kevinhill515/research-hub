@@ -102,38 +102,49 @@ function buildData(history, primaryName, benchName, bucket, mode) {
   });
 }
 
-/* Compact legend for stacked charts. Replaces recharts' built-in legend
-   so we can show the most-recent quarter's value next to each entry —
-   the read of "where is this today" matters more than the path itself
-   on the chart.
+/* Compact legend for stacked + diff charts. Replaces recharts' built-in
+   legend so we can show the most-recent quarter's value next to each
+   entry — what readers actually want to know at a glance.
  *
- * Two modes, controlled by `groupBy`:
- *   - Without groupBy (sector view): one row per label, with that label's
- *     latest weight. e.g.  ▮ Information Technology      24.3%
- *   - With groupBy (country view): one row per group (region), with the
- *     SUM of latest values for all member countries in that region, and
- *     the comma-separated member list. e.g.
- *         ▮ Asia/Pacific  18.7%   Japan, Australia, Hong Kong, ...
+ * Three modes:
+ *   - Stacked sector (no groupBy, mode "single"): one row per label,
+ *     legend ordered largest -> smallest, value adjacent to the label.
+ *   - Stacked country (groupBy supplied, mode "single"): one row per
+ *     group (region), with the SUM of latest values + comma-separated
+ *     members. Largest region first.
+ *   - Diff (mode "diff"): one row per label, sorted by latest signed
+ *     value descending — so biggest overweight reads at the top and
+ *     biggest underweight at the bottom. Values formatted with leading
+ *     sign for positive diffs.
  *
  * `data` is the recharts data array; the last row is the most recent
  * quarter (data is sorted ascending by date). */
-function ValueLegend({ labels, data, groupBy, colorFor }) {
+function ValueLegend({ labels, data, groupBy, colorFor, mode }) {
   const latest = (data && data.length > 0) ? data[data.length - 1] : null;
-  const fmt = function (v) { return (v >= 0 ? "" : "") + v.toFixed(1) + "%"; };
+  const isDiff = mode === "diff";
+  const fmt = function (v) {
+    if (!isFinite(v)) return "—";
+    return (isDiff && v >= 0 ? "+" : "") + v.toFixed(1) + "%";
+  };
 
-  /* Sector mode — straight row per label. Reverse so legend reads
-     top-down matching the visual stack order. */
-  if (!groupBy) {
+  /* Diff: one flat row per label, sorted by latest value descending. */
+  if (isDiff) {
+    const sorted = labels.slice().sort(function (a, b) {
+      const va = latest ? (latest[a] || 0) : 0;
+      const vb = latest ? (latest[b] || 0) : 0;
+      return vb - va;
+    });
     return (
       <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
-        {labels.slice().reverse().map(function (k) {
+        {sorted.map(function (k) {
           const color = colorFor ? colorFor(k) : "#334155";
           const v = latest ? (latest[k] || 0) : 0;
+          const sign = v >= 0 ? "#166534" : "#dc2626";
           return (
-            <div key={k} className="flex items-center gap-2">
+            <div key={k} className="flex items-center gap-1.5 min-w-0">
               <span className="inline-block w-3 h-3 rounded-sm shrink-0" style={{ background: color }} />
-              <span className="text-gray-700 dark:text-slate-300 flex-1 truncate" title={k}>{k}</span>
-              <span className="font-mono tabular-nums text-gray-700 dark:text-slate-300">{fmt(v)}</span>
+              <span className="text-gray-700 dark:text-slate-300 truncate min-w-0" title={k}>{k}</span>
+              <span className="font-mono tabular-nums shrink-0" style={{ color: sign }}>{fmt(v)}</span>
             </div>
           );
         })}
@@ -141,7 +152,27 @@ function ValueLegend({ labels, data, groupBy, colorFor }) {
     );
   }
 
-  /* Country mode — one row per region with summed total. */
+  /* Stacked sector mode — straight row per label, biggest first.
+     Value sits right next to the name (no flex-1 spacer). */
+  if (!groupBy) {
+    return (
+      <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
+        {labels.map(function (k) {
+          const color = colorFor ? colorFor(k) : "#334155";
+          const v = latest ? (latest[k] || 0) : 0;
+          return (
+            <div key={k} className="flex items-center gap-1.5 min-w-0">
+              <span className="inline-block w-3 h-3 rounded-sm shrink-0" style={{ background: color }} />
+              <span className="text-gray-700 dark:text-slate-300 truncate min-w-0" title={k}>{k}</span>
+              <span className="font-mono tabular-nums text-gray-500 dark:text-slate-400 shrink-0">{fmt(v)}</span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  /* Stacked country mode — one row per region with summed total. */
   const seen = {};
   const groups = [];
   labels.forEach(function (k) {
@@ -156,11 +187,12 @@ function ValueLegend({ labels, data, groupBy, colorFor }) {
     seen[g].forEach(function (k) { s += latest ? (latest[k] || 0) : 0; });
     totals[g] = s;
   });
-  /* Reverse so the legend reads top-down matching the stack order. */
-  const orderedGroups = groups.slice().reverse();
+  /* `groups` is in iteration order of `labels`. With labels biggest-first
+     the regions are also biggest-first, which is what we want — so no
+     reversal needed. */
   return (
     <div className="mt-2 grid grid-cols-1 gap-y-1 text-[11px]">
-      {orderedGroups.map(function (g) {
+      {groups.map(function (g) {
         const sample = seen[g][0];
         const color = colorFor ? colorFor(sample) : "#334155";
         return (
@@ -203,25 +235,28 @@ export default function BreakdownHistoryChart({
     return buildData(history, primaryName, benchName, bucket, mode);
   }, [history, primaryName, benchName, bucket, mode]);
 
-  /* Labels in display order. For stacked, biggest at the bottom of the
-     stack (renders first → drawn at the bottom). For diff lines, just
-     order by total absolute diff so dominant lines are on top in legend. */
+  /* Labels in display order.
+     - stacked: biggest first → renders first → drawn at the BOTTOM of
+       the stack. Smallest is rendered last → drawn at the top. Legend
+       below reads top-down largest → smallest in the same order.
+     - diff:    sorted by most-recent signed value descending → biggest
+       overweight first, biggest underweight last. */
   const labels = useMemo(function () {
     if (mode === "single") {
-      /* rankLabels returns top-down (biggest/most-weighted group first).
-         For the stack we reverse so the biggest band sits at the top of
-         the chart (rendered last by recharts). */
-      return rankLabels(history, sourceName, bucket, groupBy).reverse();
+      return rankLabels(history, sourceName, bucket, groupBy);
     }
-    /* diff: rank by sum of |diff| across dates */
-    const absSum = {};
+    /* diff — sort by the latest quarter's diff so the legend (and the
+       Lines drawn order) puts overweight at top, underweight at bottom. */
+    const latest = data.length > 0 ? data[data.length - 1] : null;
+    const allKeys = {};
     data.forEach(function (row) {
-      Object.keys(row).forEach(function (k) {
-        if (k === "date") return;
-        absSum[k] = (absSum[k] || 0) + Math.abs(row[k] || 0);
-      });
+      Object.keys(row).forEach(function (k) { if (k !== "date") allKeys[k] = true; });
     });
-    return Object.keys(absSum).sort(function (a, b) { return absSum[b] - absSum[a]; });
+    return Object.keys(allKeys).sort(function (a, b) {
+      const va = latest ? (latest[a] || 0) : 0;
+      const vb = latest ? (latest[b] || 0) : 0;
+      return vb - va;
+    });
   }, [history, sourceName, bucket, mode, data]);
 
   if (!data || data.length === 0) {
@@ -283,39 +318,43 @@ export default function BreakdownHistoryChart({
             })}
           </AreaChart>
         </ResponsiveContainer>
-        <ValueLegend labels={labels} data={data} groupBy={groupBy} colorFor={colorFor} />
+        <ValueLegend labels={labels} data={data} groupBy={groupBy} colorFor={colorFor} mode="single" />
       </div>
     );
   }
-  /* diff mode */
+  /* diff mode — same custom ValueLegend so the most-recent diff sits
+     next to each label, sorted overweight → underweight. */
   return (
-    <ResponsiveContainer width="100%" height={height}>
-      <LineChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 4 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" strokeOpacity={0.4} />
-        <XAxis dataKey="date" tickFormatter={xTickFmt} tick={{ fontSize: 11 }} />
-        <YAxis tickFormatter={yTickFmt} tick={{ fontSize: 11 }} />
-        <Tooltip
-          formatter={tooltipFmt}
-          labelFormatter={function (l) { return quarterLabel(l) + " (" + l + ")"; }}
-          contentStyle={{ fontSize: 12 }}
-        />
-        <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
-        {labels.map(function (k) {
-          const c = colorFor ? colorFor(k) : "#334155";
-          return (
-            <Line
-              key={k}
-              type="monotone"
-              dataKey={k}
-              stroke={c}
-              strokeWidth={2}
-              dot={{ r: 2 }}
-              activeDot={{ r: 4 }}
-              isAnimationActive={false}
-            />
-          );
-        })}
-      </LineChart>
-    </ResponsiveContainer>
+    <div>
+      <ResponsiveContainer width="100%" height={height}>
+        <LineChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 4 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" strokeOpacity={0.4} />
+          <XAxis dataKey="date" tickFormatter={xTickFmt} tick={{ fontSize: 11 }} />
+          <YAxis tickFormatter={yTickFmt} tick={{ fontSize: 11 }} />
+          <Tooltip
+            formatter={tooltipFmt}
+            labelFormatter={function (l) { return quarterLabel(l) + " (" + l + ")"; }}
+            contentStyle={{ fontSize: 12 }}
+            itemSorter={function (item) { return -(item.value || 0); }}
+          />
+          {labels.map(function (k) {
+            const c = colorFor ? colorFor(k) : "#334155";
+            return (
+              <Line
+                key={k}
+                type="monotone"
+                dataKey={k}
+                stroke={c}
+                strokeWidth={2}
+                dot={{ r: 2 }}
+                activeDot={{ r: 4 }}
+                isAnimationActive={false}
+              />
+            );
+          })}
+        </LineChart>
+      </ResponsiveContainer>
+      <ValueLegend labels={labels} data={data} groupBy={null} colorFor={colorFor} mode="diff" />
+    </div>
   );
 }
