@@ -8,8 +8,21 @@ function PriceAgeIndicator({ lastPriceUpdate, lastPriceUpdatedBy }) {
       </span>
     );
 
-  var d = parseDate(lastPriceUpdate);
-  if (!d) return null;
+  /* Strip any trailing annotation in parens (legacy script format
+     "(FactSet auto)") before parsing. parseDate uses new Date() which
+     fails on the bare trailing paren — we'd otherwise render nothing
+     for users with that older value still on disk. */
+  var cleanDate = String(lastPriceUpdate).replace(/\s*\([^)]*\)\s*$/, "").trim();
+  var d = parseDate(cleanDate);
+  if (!d) {
+    /* Fall back to showing the raw string with no age computation, so
+       at least SOMETHING is visible for unparseable formats. */
+    return (
+      <span className="text-[10px] text-gray-500 dark:text-slate-400">
+        Prices updated{lastPriceUpdatedBy ? " by " + lastPriceUpdatedBy : ""}: {cleanDate || lastPriceUpdate}
+      </span>
+    );
+  }
 
   /* Calendar-day diff (not elapsed-ms) so a timestamp from yesterday
      morning reads "yesterday" as soon as the clock rolls past midnight,
@@ -27,7 +40,7 @@ function PriceAgeIndicator({ lastPriceUpdate, lastPriceUpdatedBy }) {
       className="text-[10px]"
       style={{ color, fontWeight: days > 7 ? 600 : 400 }}
     >
-      Prices updated{byTxt}: {lastPriceUpdate} ({label}){days > 14 ? " \u26a0" : ""}
+      Prices updated{byTxt}: {cleanDate} ({label}){days > 14 ? " \u26a0" : ""}
     </span>
   );
 }
