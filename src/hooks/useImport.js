@@ -935,7 +935,10 @@ export function useImport(){
      paste it back to fully restore the workspace. Triggers a clipboard
      copy when permitted; falls back to populating the import textarea
      so the user can copy from there. */
-  function exportAll(){
+  /* Build the full backup payload: companies + library + every meta key
+     declared in metaSpec(). Used by both the clipboard-copy variant
+     (exportAll) and the file-download variant (downloadBackup). */
+  function buildBackupPayload(){
     var spec = metaSpec();
     var meta = {};
     Object.keys(spec).forEach(function(k){
@@ -945,14 +948,16 @@ export function useImport(){
       if(typeof v === "object" && Object.keys(v).length === 0 && !Array.isArray(v)) return;
       meta[k] = v;
     });
-    var payload = {
+    return {
       companies: companies,
       library: saved,
       meta: meta,
       exportedAt: new Date().toISOString(),
       schemaVersion: 2, /* v1 = pre-meta; v2 = meta included */
     };
-    var txt = JSON.stringify(payload, null, 2);
+  }
+  function exportAll(){
+    var txt = JSON.stringify(buildBackupPayload(), null, 2);
     try{
       var el = document.createElement("textarea");
       el.value = txt;
@@ -964,6 +969,35 @@ export function useImport(){
       setCopied("exportall");
       setTimeout(function(){ setCopied(null); }, 2000);
     }catch(e){
+      setImportText(txt);
+      setShowDataPanel(true);
+    }
+  }
+  /* Download the same backup payload as a .json file. Preferred path
+     for monthly/manual backups since the file lands directly in the
+     user's Downloads folder, no clipboard overhead. Filename includes
+     the timestamp so successive backups don't overwrite. */
+  function downloadBackup(){
+    var payload = buildBackupPayload();
+    var txt = JSON.stringify(payload, null, 2);
+    var stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    var filename = "research-hub-backup-" + stamp + ".json";
+    try{
+      var blob = new Blob([txt], { type: "application/json" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      /* Revoke after a short delay so Chrome has time to start the download. */
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+      setCopied("downloadbackup");
+      setTimeout(function(){ setCopied(null); }, 2000);
+    }catch(e){
+      /* Fallback: surface the JSON in the import textarea so the user
+         can save manually. Same fallback exportAll uses. */
       setImportText(txt);
       setShowDataPanel(true);
     }
@@ -983,6 +1017,6 @@ export function useImport(){
     epsRevImportText,setEpsRevImportText,
     guidanceImportText,setGuidanceImportText,
     applyFxImport,applyRepImport,applyTxImport,applyPerfImport,applyCalImport,applyWeightsImport,applyValImport,applyEstImport,applyMetricsImport,applyBenchmarkImport,applyDashboardImport,applyRatioImport,applyFinancialsImport,applySegmentsImport,applyEpsRevImport,applyGuidanceImport,
-    importAll,exportAll
+    importAll,exportAll,downloadBackup
   };
 }
