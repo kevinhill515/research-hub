@@ -168,35 +168,94 @@ export function useImport(){
     },100);
   }
   function applyRepImport(){if(!repText.trim())return;var lines=repText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});var data={};lines.forEach(function(line){var delim=line.indexOf("\t")>=0?"\t":",";var parts=line.split(delim).map(function(s){return s.trim();});if(parts.length>=3){var acct=parts[0].toUpperCase();var ticker=parts[1].toUpperCase();var shares=parseFloat(parts[2]);var avgCost=parts.length>=4?parseFloat(parts[3]):0;if(isNaN(avgCost))avgCost=0;if(!isNaN(shares)){var port=REP_ACCOUNTS[acct];if(port){if(!data[port])data[port]={};var prev=data[port][ticker];var prevShares=(prev&&typeof prev==="object")?(prev.shares||0):(prev||0);var prevCost=(prev&&typeof prev==="object")?(prev.avgCost||0):0;var newShares=prevShares+shares;/* Weighted average when the same ticker appears twice in one import */var newAvgCost=newShares>0?((prevShares*prevCost)+(shares*avgCost))/newShares:avgCost;data[port][ticker]={shares:newShares,avgCost:newAvgCost};}}}});setRepData(data);setRepLastUpdated(currentUser+" "+todayStr());setRepText("");supaUpsert("meta",{key:"repData",value:JSON.stringify(data)});}
-  /* Earnings Dates upload. 3 columns now:
-       Ticker, Next Rpt Date, Last Rpt Date (last optional)
-     The next date lands as a new/existing earningsEntries[].reportDate;
-     the last date is stashed on company.lastReportDate so the calendar's
-     "Recent Earnings — Last 30 Days" panel has data. */
+  /* Earnings Dates upload — 13 columns:
+       Ticker, Next Rpt Date, Last Rpt Date,
+       Sales Est, Sales Actual, Sales Surp Nom, Sales Surp %,
+       EPS Est, EPS Actual, EPS Surp Nom, EPS Surp %,
+       Sales+1 Est, EPS+1 Est
+     All columns after Last Rpt Date are optional — the legacy 3-col
+     paste (Ticker, Next, Last) still works.
+
+     Persistence model:
+     - nextDate ⇒ create / find earningsEntries entry with that
+       reportDate. Sales+1 / EPS+1 estimates are stored on THAT entry
+       as consensus heading into the report.
+     - lastDate ⇒ company.lastReportDate. Sales/EPS estimate +
+       actual + surprise fields are stored on the earnings entry whose
+       reportDate matches lastDate (so post-report data sits with the
+       right quarter). If no entry matches, we create a closed one
+       so the data has somewhere to live. */
   function applyCalImport(){
     if(!calImportText||!calImportText.trim())return;
     var lines=calImportText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});
+    /* Auto-skip a header row if the first cell looks like a header
+       label rather than a ticker. */
+    if(lines.length>0){
+      var first=lines[0];
+      var d0=first.indexOf("\t")>=0?"\t":",";
+      var p0=first.split(d0).map(function(s){return s.trim();});
+      if(/^ticker$|^name$|^company$/i.test(p0[0]||"")) lines.shift();
+    }
+    function num(v){var n=parseFloat((v||"").toString().replace(/,/g,""));return isNaN(n)?null:n;}
     var count=0;
     setCompanies(function(prev){return prev.map(function(c){
       var match=lines.find(function(l){
         var delim=l.indexOf("\t")>=0?"\t":",";
         var parts=l.split(delim).map(function(s){return s.trim();});
         var allTickers2=[(c.ticker||"")].concat((c.tickers||[]).map(function(t){return t.ticker||"";})).map(function(t){return t.toUpperCase();}).filter(Boolean);
-        return allTickers2.indexOf(parts[0].toUpperCase())>=0;
+        return allTickers2.indexOf((parts[0]||"").toUpperCase())>=0;
       });
       if(!match)return c;
       var delim=match.indexOf("\t")>=0?"\t":",";
       var parts=match.split(delim).map(function(s){return s.trim();});
-      var nextDate=parts[1];
-      var lastDate=parts[2];
+      var nextDate=parts[1]||"";
+      var lastDate=parts[2]||"";
+      /* Last-quarter (just reported) — estimate / actual / surprises. */
+      var lastSalesEst   = num(parts[3]);
+      var lastSalesAct   = num(parts[4]);
+      var lastSalesSurpN = num(parts[5]);
+      var lastSalesSurpP = num(parts[6]);
+      var lastEpsEst     = num(parts[7]);
+      var lastEpsAct     = num(parts[8]);
+      var lastEpsSurpN   = num(parts[9]);
+      var lastEpsSurpP   = num(parts[10]);
+      /* Next-quarter — consensus heading in (no actuals yet). */
+      var nextSalesEst   = num(parts[11]);
+      var nextEpsEst     = num(parts[12]);
+
       var updated=Object.assign({},c);
+      var entries=(c.earningsEntries||[]).slice();
+
+      /* Upsert next-quarter entry. */
       if(nextDate){
-        var entries=(c.earningsEntries||[]).slice();
-        var existing=entries.find(function(e){return e.reportDate===nextDate;});
-        if(!existing){entries.unshift(Object.assign(blankEarnings(),{reportDate:nextDate,open:false}));}
-        updated.earningsEntries=entries;
+        var nextEntry=entries.find(function(e){return e.reportDate===nextDate;});
+        if(!nextEntry){
+          nextEntry=Object.assign(blankEarnings(),{reportDate:nextDate,open:false});
+          entries.unshift(nextEntry);
+        }
+        if(nextSalesEst!==null) nextEntry.salesEst = nextSalesEst;
+        if(nextEpsEst!==null)   nextEntry.epsEst   = nextEpsEst;
       }
-      if(lastDate){updated.lastReportDate=lastDate;}
+
+      /* Upsert last-quarter entry, attach actuals + surprises. */
+      if(lastDate){
+        updated.lastReportDate=lastDate;
+        var lastEntry=entries.find(function(e){return e.reportDate===lastDate;});
+        if(!lastEntry){
+          lastEntry=Object.assign(blankEarnings(),{reportDate:lastDate,open:false});
+          entries.push(lastEntry);
+        }
+        if(lastSalesEst!==null)   lastEntry.salesEst       = lastSalesEst;
+        if(lastSalesAct!==null)   lastEntry.salesActual    = lastSalesAct;
+        if(lastSalesSurpN!==null) lastEntry.salesSurpNom   = lastSalesSurpN;
+        if(lastSalesSurpP!==null) lastEntry.salesSurpPct   = lastSalesSurpP;
+        if(lastEpsEst!==null)     lastEntry.epsEst         = lastEpsEst;
+        if(lastEpsAct!==null)     lastEntry.epsActual      = lastEpsAct;
+        if(lastEpsSurpN!==null)   lastEntry.epsSurpNom     = lastEpsSurpN;
+        if(lastEpsSurpP!==null)   lastEntry.epsSurpPct     = lastEpsSurpP;
+      }
+
+      updated.earningsEntries=entries;
       if(nextDate||lastDate)count++;
       return updated;
     });});

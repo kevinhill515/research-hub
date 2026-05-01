@@ -985,17 +985,39 @@ def _excel_serial_to_date(serial: float):
 
 
 def read_earnings_dates(xl: ExcelSession) -> dict[str, dict]:
-    """Bulk-read cols D..F. D=Ticker, E=Next Rpt Date, F=Last Rpt Date."""
+    """Bulk-read cols D..N. 11 columns matching the new manual upload:
+       D=Ticker, E=Next Rpt Date, F=Last Rpt Date,
+       G=Sales Est (last Q), H=Sales Actual, I=Sales Surp Nom, J=Sales Surp %,
+       K=EPS Est (last Q), L=EPS Actual, M=EPS Surp Nom, N=EPS Surp %,
+       O=Sales+1 Est, P=EPS+1 Est.
+       (G..N apply to the LAST quarter; O,P are consensus heading INTO
+       the next quarter.) All fields after F are optional — sheets that
+       still only populate D..F continue to work unchanged."""
     out: dict[str, dict] = {}
-    rows = xl.read_range("Earnings Dates", f"D2:F{MAX_COMPANY_ROW}")
+    rows = xl.read_range("Earnings Dates", f"D2:P{MAX_COMPANY_ROW}")
     for row in rows:
-        while len(row) < 3: row.append(None)
+        while len(row) < 13: row.append(None)
         tk = _str(row[0])
         if not tk: continue
         nxt = _any_date_to_iso(row[1])
         last = _any_date_to_iso(row[2])
-        if nxt or last:
-            out[tk.upper()] = {"next": nxt, "last": last}
+        rec: dict = {"next": nxt, "last": last}
+        # Optional last-quarter estimate / actual / surprise. _num returns
+        # None for blank / #N/A / non-numeric, so we only emit a key when
+        # there's a real value.
+        if (v := _num(row[3]))  is not None: rec["salesEst"]     = v
+        if (v := _num(row[4]))  is not None: rec["salesActual"]  = v
+        if (v := _num(row[5]))  is not None: rec["salesSurpNom"] = v
+        if (v := _num(row[6]))  is not None: rec["salesSurpPct"] = v
+        if (v := _num(row[7]))  is not None: rec["epsEst"]       = v
+        if (v := _num(row[8]))  is not None: rec["epsActual"]    = v
+        if (v := _num(row[9]))  is not None: rec["epsSurpNom"]   = v
+        if (v := _num(row[10])) is not None: rec["epsSurpPct"]   = v
+        if (v := _num(row[11])) is not None: rec["nextSalesEst"] = v
+        if (v := _num(row[12])) is not None: rec["nextEpsEst"]   = v
+        # Only emit the row if SOMETHING populated.
+        if any(rec.values()):
+            out[tk.upper()] = rec
     log(f"  Earnings dates: {len(out)} tickers")
     return out
 
@@ -1517,16 +1539,31 @@ def merge_companies(companies, prices, valuations, earnings):
                 n_v += 1
                 break
 
-        # Earnings dates: add/update an entry for the NEXT report date and
-        # stash the most recent LAST report date on the company so the
-        # calendar tab can show a "Recent Earnings" list.
+        # Earnings dates + estimates / actuals.
+        # - NEXT entry: store the report date + (when present) the
+        #   Sales+1 / EPS+1 consensus heading INTO the report.
+        # - LAST entry: stash the date on the company AND attach the
+        #   sales/eps estimate/actual/surprise fields to the entry whose
+        #   reportDate matches lastDate (creating a closed entry if none
+        #   exists, so post-report data has somewhere to live).
         for tk in all_tks:
             if tk in earnings:
                 info = earnings[tk]
                 nxt = info.get("next")
                 last = info.get("last")
+                entries = c.setdefault("earningsEntries", [])
+
+                def _new_entry(date):
+                    return {
+                        "id": _new_uuid(),
+                        "quarter": "", "reportDate": date, "eps": "",
+                        "tpChange": "Unchanged", "newTP": "", "tpRationale": "",
+                        "bullets": ["", "", "", "", ""], "shortTakeaway": "",
+                        "extendedTakeaway": "", "thesisStatus": "On track",
+                        "thesisNote": "", "open": False,
+                    }
+
                 if nxt:
-                    entries = c.setdefault("earningsEntries", [])
                     found = next((e for e in entries if _same_date(e.get("reportDate"), nxt)), None)
                     if found is None:
                         placeholder = next((e for e in entries
@@ -1534,17 +1571,29 @@ def merge_companies(companies, prices, valuations, earnings):
                                             and not e.get("reportDate")), None)
                         if placeholder:
                             placeholder["reportDate"] = nxt
+                            found = placeholder
                         else:
-                            entries.append({
-                                "id": _new_uuid(),
-                                "quarter": "", "reportDate": nxt, "eps": "",
-                                "tpChange": "Unchanged", "newTP": "", "tpRationale": "",
-                                "bullets": ["", "", "", "", ""], "shortTakeaway": "",
-                                "extendedTakeaway": "", "thesisStatus": "On track",
-                                "thesisNote": "", "open": False,
-                            })
+                            found = _new_entry(nxt)
+                            entries.append(found)
+                    # Apply consensus-into-report estimates only when we
+                    # actually got values from the sheet.
+                    if "nextSalesEst" in info: found["salesEst"] = info["nextSalesEst"]
+                    if "nextEpsEst"   in info: found["epsEst"]   = info["nextEpsEst"]
+
                 if last:
                     c["lastReportDate"] = last
+                    found = next((e for e in entries if _same_date(e.get("reportDate"), last)), None)
+                    if found is None:
+                        found = _new_entry(last)
+                        entries.append(found)
+                    for k_src, k_dst in (
+                        ("salesEst", "salesEst"), ("salesActual", "salesActual"),
+                        ("salesSurpNom", "salesSurpNom"), ("salesSurpPct", "salesSurpPct"),
+                        ("epsEst", "epsEst"), ("epsActual", "epsActual"),
+                        ("epsSurpNom", "epsSurpNom"), ("epsSurpPct", "epsSurpPct"),
+                    ):
+                        if k_src in info: found[k_dst] = info[k_src]
+
                 n_e += 1
                 break
     return n_p, n_v, n_e
