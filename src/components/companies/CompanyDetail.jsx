@@ -310,20 +310,37 @@ export function CompanyDetail(props){
                 </label>
                 <button onClick={function(){if(!newTx.date||!newTx.portfolio||newTx.shares===""||isNaN(parseFloat(newTx.shares)))return;var shares=parseFloat(newTx.shares);var txId=(typeof crypto!=="undefined"&&crypto.randomUUID)?crypto.randomUUID():(Date.now()+"-"+Math.random().toString(36).slice(2));var txRec={id:txId,date:newTx.date,portfolio:newTx.portfolio,shares:shares,price:parseFloat(newTx.price)||0,amount:parseFloat(newTx.amount)||0,type:shares>=0?"BUY":"SELL"};if(newTx.cashFlow)txRec.cashFlow=true;addTransaction(selCo.id,txRec);setSelCo(function(prev){if(!prev||prev.id!==selCo.id)return prev;var all=(prev.transactions||[]).concat([txRec]);all.sort(function(a,b){return(b.date||"").localeCompare(a.date||"");});return Object.assign({},prev,{transactions:all});});setNewTx({date:"",portfolio:"",shares:"",price:"",amount:"",cashFlow:false});setShowAddTx(false);}} disabled={!newTx.date||!newTx.portfolio||newTx.shares===""} className={BTN_SM}>Add</button>
               </div>)}
-              {selCo.transactions&&selCo.transactions.length>0?(<div style={{display:"table",width:"100%",borderCollapse:"separate",borderSpacing:"0 2px"}}>
+              {selCo.transactions&&selCo.transactions.length>0?(function(){
+                /* Current price for the % G/L column. Uses the ord ticker
+                   (matches the trade's local currency since unit prices
+                   are stored that way), falling back to valuation.price.
+                   Stale or missing \u2192 null and the column shows "--". */
+                var ordTk=(selCo.tickers||[]).find(function(tk){return tk.isOrdinary;});
+                var curPrice=ordTk?parseFloat(ordTk.price):null;
+                if(!isFinite(curPrice))curPrice=parseFloat((selCo.valuation||{}).price);
+                if(!isFinite(curPrice))curPrice=null;
+                return(<div style={{display:"table",width:"100%",borderCollapse:"separate",borderSpacing:"0 2px"}}>
                 <div style={{display:"table-row"}}>
-                  {[["Date"],["Portfolio"],["Type"],["Shares"],["Unit Price"],["Amount"],[""]].map(function(h,i){return <div key={i} className="text-[10px] uppercase tracking-wide pb-1.5 pr-2 text-gray-500 dark:text-slate-400 font-semibold" style={{display:"table-cell"}}>{h[0]}</div>;})}
+                  {[["Date"],["Portfolio"],["Type"],["Shares"],["Unit Price"],["% G/L"],["Amount"],[""]].map(function(h,i){return <div key={i} className="text-[10px] uppercase tracking-wide pb-1.5 pr-2 text-gray-500 dark:text-slate-400 font-semibold" style={{display:"table-cell"}}>{h[0]}</div>;})}
                 </div>
-                {selCo.transactions.slice().filter(function(t){return txFilter==="All"||t.portfolio===txFilter;}).sort(function(a,b){return(b.date||"").localeCompare(a.date||"");}).map(function(t){var isBuy=(parseFloat(t.shares)||0)>=0;return(<div key={t.id} style={{display:"table-row"}}>
+                {selCo.transactions.slice().filter(function(t){return txFilter==="All"||t.portfolio===txFilter;}).sort(function(a,b){return(b.date||"").localeCompare(a.date||"");}).map(function(t){var isBuy=(parseFloat(t.shares)||0)>=0;
+                  /* Per-row gain/loss: (current price / unit price) - 1. */
+                  var unitPrice=parseFloat(t.price);
+                  var gainPct=(curPrice&&isFinite(unitPrice)&&unitPrice>0)?(curPrice/unitPrice-1)*100:null;
+                  var glColor=gainPct===null?undefined:gainPct>0?"#166534":gainPct<0?"#991b1b":"#64748b";
+                  var glText=gainPct===null?"--":(gainPct>=0?"+":"")+gainPct.toFixed(1)+"%";
+                  return(<div key={t.id} style={{display:"table-row"}}>
                   <div className="align-middle pr-2 py-1 text-xs text-gray-700 dark:text-slate-300 font-mono" style={{display:"table-cell"}}>{t.date||"--"}</div>
                   <div className="align-middle pr-2 py-1" style={{display:"table-cell"}}>{t.portfolio?<span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-gray-900 dark:text-slate-100 font-medium">{t.portfolio}</span>:<span className="text-xs text-gray-400 dark:text-slate-500">--</span>}</div>
                   <div className="align-middle pr-2 py-1" style={{display:"table-cell"}}><span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold" style={{background:isBuy?"rgba(22,101,52,0.15)":"rgba(220,38,38,0.15)",color:isBuy?"#166534":"#991b1b"}}>{isBuy?"BUY":"SELL"}</span>{isBuy&&(function(){var active=isInitiationTx(selCo,t);return <span onClick={function(){var nv=active?false:true;setTxInitOverride(selCo.id,t.id,nv);setSelCo(function(prev){if(!prev||prev.id!==selCo.id)return prev;return Object.assign({},prev,{transactions:(prev.transactions||[]).map(function(x){if(x.id!==t.id)return x;return Object.assign({},x,{initOverride:nv});})});});}} className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold ml-1 cursor-pointer transition-colors" style={active?{background:"rgba(37,99,235,0.15)",color:"#1e40af"}:{background:"transparent",color:"#9ca3af",border:"1px dashed #9ca3af"}} title={active?"Click to unmark as initiation":"Click to mark as initiation"}>{active?"\u2605 INIT":"\u2606"}</span>;})()}{(function(){var active=!!t.cashFlow;return <span onClick={function(){var nv=!active;setTxCashFlow(selCo.id,t.id,nv);setSelCo(function(prev){if(!prev||prev.id!==selCo.id)return prev;return Object.assign({},prev,{transactions:(prev.transactions||[]).map(function(x){if(x.id!==t.id)return x;var n=Object.assign({},x);if(nv)n.cashFlow=true;else delete n.cashFlow;return n;})});});}} className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold ml-1 cursor-pointer transition-colors" style={active?{background:"rgba(217,119,6,0.18)",color:"#92400e"}:{background:"transparent",color:"#9ca3af",border:"1px dashed #9ca3af"}} title={active?"Click to unmark as a cash-flow-driven trade":"Click to mark this trade as due to a portfolio cash inflow or outflow"}>{active?"\u27F3 CF":"\u27F3"}</span>;})()}</div>
                   <div className="align-middle pr-2 py-1 text-xs text-gray-700 dark:text-slate-300" style={{display:"table-cell"}}>{Math.abs(parseFloat(t.shares)||0).toLocaleString()}</div>
                   <div className="align-middle pr-2 py-1 text-xs text-gray-700 dark:text-slate-300" style={{display:"table-cell"}}>{t.price?fmtPrice(t.price):"--"}</div>
+                  <div className="align-middle pr-2 py-1 text-xs font-semibold tabular-nums" style={{display:"table-cell",color:glColor}} title={curPrice?"Current price "+fmtPrice(curPrice)+" / unit "+(t.price?fmtPrice(t.price):"--"):"No current price available"}>{glText}</div>
                   <div className="align-middle pr-2 py-1 text-xs text-gray-700 dark:text-slate-300" style={{display:"table-cell"}}>{t.amount?parseFloat(t.amount).toLocaleString(undefined,{maximumFractionDigits:2}):"--"}</div>
                   <div className="align-middle pr-2 py-1" style={{display:"table-cell"}}><span onClick={function(){deleteTransaction(selCo.id,t.id);setSelCo(function(prev){if(!prev||prev.id!==selCo.id)return prev;return Object.assign({},prev,{transactions:(prev.transactions||[]).filter(function(x){return x.id!==t.id;})});});}} className="text-[11px] text-red-500 dark:text-red-400 cursor-pointer hover:text-red-700">{"\u00D7"}</span></div>
                 </div>);})}
-              </div>):(<div className="text-xs text-gray-400 dark:text-slate-500 italic">No transactions logged.</div>)}
+              </div>);})()
+              :(<div className="text-xs text-gray-400 dark:text-slate-500 italic">No transactions logged.</div>)}
             </div>)}
           </div>)}
           {coView==="template"&&(<div>
