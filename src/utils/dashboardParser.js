@@ -102,13 +102,18 @@ export function parseDashboardUpload(text) {
   let dropped = 0;
   let headerSkipped = false;
 
-  /* Column→period mapping for the flat rows. Defaults to canonical 11-
-     window order if no header was seen (Section / Label / Ticker / 1D /
-     5D / MTD / 1M / QTD / 3M / 6M / YTD / 1Y / 2Y / 3Y). When a
-     "Section / Label / Ticker / TODAY / 5D / ..." header is present,
-     we infer the column-to-period mapping from it so older 7-window
-     and newer 11-window pastes both work. */
-  let periodCols = PERIODS.slice();
+  /* Column→period mapping for the flat rows.
+     - If a header row is present we infer the order from it.
+     - If no header but the first data row has 14 cols (3 prefix + 11
+       values), use the new 11-window order.
+     - If no header and the first data row has 10 cols (3 prefix + 7
+       values), use the legacy 7-window order: 1D, 5D, MTD, QTD, YTD,
+       1Y, 3Y. (No header + 7-col layout was previously misaligning to
+       the first 7 of the 11-window order, so 3Y values landed in 6M.) */
+  const PERIODS_NEW = PERIODS.slice();
+  const PERIODS_LEGACY = ["1D", "5D", "MTD", "QTD", "YTD", "1Y", "3Y"];
+  let periodCols = PERIODS_NEW;
+  let columnsLocked = false;
 
   let i = 0;
   while (i < lines.length) {
@@ -139,13 +144,22 @@ export function parseDashboardUpload(text) {
         const mapped = PERIOD_HEADER_ALIASES[k] || (PERIODS.indexOf(k.toUpperCase()) >= 0 ? k.toUpperCase() : null);
         if (mapped) inferred.push(mapped);
       }
-      if (inferred.length > 0) periodCols = inferred;
+      if (inferred.length > 0) { periodCols = inferred; columnsLocked = true; }
       i++;
       continue;
     }
 
     const secKey = SECTION_ALIASES[(parts[0] || "").toLowerCase()];
     if (!secKey || parts.length < 4) { dropped++; i++; continue; }
+
+    /* No header — pick legacy vs new period order from the first
+       data row's column count. Lock the choice for subsequent rows. */
+    if (!columnsLocked) {
+      const valueCount = parts.length - 3;
+      if (valueCount <= 7) periodCols = PERIODS_LEGACY;
+      else                  periodCols = PERIODS_NEW;
+      columnsLocked = true;
+    }
 
     const row = { label: parts[1] || "", ticker: parts[2] || null };
     for (let p = 0; p < periodCols.length; p++) {
