@@ -78,9 +78,10 @@ function PortfolioRow(props) {
     <div
       onClick={function () { onOpenCompany(c); }}
       className="hover:brightness-110 transition-all"
-      /* contentVisibility skips off-screen row painting; contain-intrinsic-size
-         reserves a placeholder height so the scroll container stays correct. */
-      style={{ display: "table-row", cursor: "pointer", contentVisibility: "auto", containIntrinsicSize: "44px" }}
+      /* contentVisibility skips off-screen row painting. "auto 44px" =
+         remember actual size; 44px placeholder height for first paint.
+         Two-value syntax avoids accidentally setting width to 44px too. */
+      style={{ display: "table-row", cursor: "pointer", contentVisibility: "auto", containIntrinsicSize: "auto 44px" }}
     >
       {/* Company */}
       <Cell className="text-sm font-medium text-gray-900 dark:text-slate-100" style={cellStyle}>

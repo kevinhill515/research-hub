@@ -92,12 +92,12 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
       onMouseLeave={function () { setHovered(false); }}
       className={"table-row group hover:bg-slate-50 dark:hover:bg-slate-800" + (selected ? " bg-blue-950/30" : "")}
       /* contentVisibility: "auto" lets the browser skip rendering off-screen
-         rows entirely. contain-intrinsic-size reserves a placeholder height
-         (≈48px per row) so the scroll container stays the right size before
-         rows scroll into view. Native virtualization with zero JS overhead;
-         a fallback no-op on older browsers. */
+         rows entirely. "auto 48px" tells the browser: remember the actual
+         size after first layout, with 48px as the initial placeholder height.
+         Single-value form was incorrect (applies to both width AND height,
+         making rows 48×48 squares which broke mobile layout). */
       style={Object.assign(
-        { contentVisibility: "auto", containIntrinsicSize: "48px" },
+        { contentVisibility: "auto", containIntrinsicSize: "auto 48px" },
         rowBg ? { background: rowBg } : null,
       )}
     >

@@ -292,9 +292,38 @@ export function CompanyProvider({children}){
      }}}catch(e){}     setLoadStatus({companies:coOk,library:libOk});setReady(true);return coOk||libOk;}
 
   useEffect(function(){
-    var done=false,attempts=0;
-    var iv=setInterval(async function(){if(done){clearInterval(iv);return;}attempts++;var got=await loadFromStorage();if(got){done=true;clearInterval(iv);}else if(attempts>60){clearInterval(iv);setLoadStatus({companies:0,library:0});setReady(true);}},500);
-    return function(){done=true;clearInterval(iv);};
+    /* Sequential retry pattern. Earlier this was a setInterval at 500ms,
+       which on mobile cellular fired multiple loadFromStorage calls
+       before the first finished — each making 15 Supabase requests in
+       parallel. With ~3s loads on a phone, you'd have 60+ concurrent
+       requests competing for bandwidth, making everything much slower.
+       Now: call once, wait for completion, only retry on failure. */
+    var cancelled = false;
+    var attempts = 0;
+    function attempt() {
+      if (cancelled) return;
+      attempts++;
+      loadFromStorage().then(function (got) {
+        if (cancelled) return;
+        if (got) return; /* success — done */
+        if (attempts >= 60) {
+          setLoadStatus({ companies: 0, library: 0 });
+          setReady(true);
+          return;
+        }
+        setTimeout(attempt, 1000);
+      }).catch(function () {
+        if (cancelled) return;
+        if (attempts >= 60) {
+          setLoadStatus({ companies: 0, library: 0 });
+          setReady(true);
+          return;
+        }
+        setTimeout(attempt, 1000);
+      });
+    }
+    attempt();
+    return function () { cancelled = true; };
   },[]);
 
   /* Debounce Supabase writes so rapid edits (typing in an input, ★ toggles, etc.)

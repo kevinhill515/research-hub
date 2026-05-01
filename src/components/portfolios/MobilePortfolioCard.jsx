@@ -67,7 +67,7 @@ function MobilePortfolioCard(props) {
       onClick={function(){ onOpenCompany && onOpenCompany(c); }}
       className="rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2.5 mb-1.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
       style={Object.assign(
-        { contentVisibility: "auto", containIntrinsicSize: "180px" },
+        { contentVisibility: "auto", containIntrinsicSize: "auto 180px" },
         tintBg ? { background: tintBg } : null,
       )}
     >
