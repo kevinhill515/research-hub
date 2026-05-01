@@ -194,8 +194,13 @@ function RevisionsLineChart({ dates, series }) {
   return (
     <div className={TILE}>
       <div className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-1">Monthly Estimate Trend</div>
-      <div className="flex items-stretch gap-3">
-        <svg className="flex-1" width="100%" height={H} viewBox={"0 0 " + W + " " + H} preserveAspectRatio="xMidYMid meet" role="img" aria-label="EPS estimate revisions">
+      {/* Chart now spans full tile width; legend (latest + y/y per FY)
+          rendered as a horizontal row underneath. Previously the legend
+          was a 170px side panel which left the chart only 60-65% of the
+          tile width. With the legend below, the chart matches the bar
+          chart's full width below it. */}
+      <div>
+        <svg className="block w-full" width="100%" height={H} viewBox={"0 0 " + W + " " + H} preserveAspectRatio="xMidYMid meet" role="img" aria-label="EPS estimate revisions">
           <rect x={PAD_L} y={PAD_T} width={innerW} height={innerH} fill="none" stroke={GRID_COLOR} />
           {ticks.map(function (t, i) {
             const y = yOf(t);
@@ -268,16 +273,10 @@ function RevisionsLineChart({ dates, series }) {
             });
           })()}
         </svg>
-        {/* Latest values panel — vertical list to the right of the chart.
-            Each forward FY also shows year-over-year EPS growth vs the
-            prior FY's latest estimate. FY0 has no prior so no y/y. */}
-        <div className="shrink-0 flex flex-col justify-center gap-1.5 pl-2 pr-1 border-l border-slate-100 dark:border-slate-800" style={{ minWidth: 170 }}>
-          <div className="grid grid-cols-[auto_auto_auto_auto] gap-x-2 items-baseline text-[9px] uppercase tracking-wide text-gray-400 dark:text-slate-500">
-            <span></span>
-            <span></span>
-            <span className="text-right">Latest</span>
-            <span className="text-right">y/y</span>
-          </div>
+        {/* Horizontal legend row — one entry per series with swatch +
+            label + latest value + y/y. Wraps to multiple rows on narrow
+            viewports so phones stay readable. */}
+        <div className="mt-2 flex flex-wrap justify-center gap-x-4 gap-y-1 text-[11px]">
           {series.map(function (s, idx) {
             const last = s.monthly[s.monthly.length - 1];
             const color = HORIZON_COLORS[s.horizon] || "#64748b";
@@ -297,13 +296,15 @@ function RevisionsLineChart({ dates, series }) {
               : yoy < -0.0025 ? "#dc2626"
               : "#64748b";
             return (
-              <div key={s.horizon} className="grid grid-cols-[auto_auto_auto_auto] gap-x-2 items-baseline text-[11px]">
+              <div key={s.horizon} className="flex items-center gap-1.5">
                 <span className="inline-block w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: color }} />
                 <span className="text-gray-600 dark:text-slate-400">{s.label}</span>
-                <span className="tabular-nums font-semibold text-right" style={{ color: color }}>{fmtVal(last, 2)}</span>
-                <span className="tabular-nums text-right text-[10px]" style={{ color: yoyColor }}>
-                  {yoy === null ? "" : (yoy >= 0 ? "+" : "") + (yoy * 100).toFixed(1) + "%"}
-                </span>
+                <span className="tabular-nums font-semibold" style={{ color: color }}>{fmtVal(last, 2)}</span>
+                {yoy !== null && (
+                  <span className="tabular-nums text-[10px]" style={{ color: yoyColor }}>
+                    ({(yoy >= 0 ? "+" : "") + (yoy * 100).toFixed(1) + "%"} y/y)
+                  </span>
+                )}
               </div>
             );
           })}

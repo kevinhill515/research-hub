@@ -1718,8 +1718,10 @@ def main() -> int:
         log(f"  repData: {sum(len(v) for v in rep_hold.values() if v)} positions written")
 
         supa_put_meta("marketsSnapshot", markets)
+        # Format: "<who> at <YYYY-MM-DD HH:MM>" so the UI's
+        # PriceAgeIndicator can split on " at " and show "by Daily Script".
         supa_put_meta("lastPriceUpdate",
-                      datetime.now().strftime("%Y-%m-%d %H:%M") + " (FactSet auto)")
+                      "Daily Script at " + datetime.now().strftime("%Y-%m-%d %H:%M"))
     except Exception as e:
         log(f"FATAL during Supabase push: {e}\n{traceback.format_exc()}")
         return 3
