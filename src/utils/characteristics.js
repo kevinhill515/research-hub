@@ -188,6 +188,20 @@ export const RATIO_DEFS = [
   { key: "payout",     label: "Payout Ratio",          portMetric: "payout", aggregator: "weighted", kind: "pct",  direction: "neutral" },
   /* Leverage — lower is better. */
   { key: "debtCap",    label: "Debt to Capital",       portMetric: null,     aggregator: null,       kind: "pct",  direction: "lower"   },
+  /* Metrics-only ratios (no benchmark equivalent in the Ratio upload).
+     Portfolio side computed live from holdings via the per-company
+     Metrics upload. Benchmark column stays empty unless someone
+     uploads matching Type=Ratio rows for these keys.
+     Group order matches their CHARACTERISTIC_METRICS group so they
+     cluster sensibly with the existing comparison ratios. */
+  { key: "fcfYld",     label: "FCF Yield",             portMetric: "fcfYld", aggregator: "weighted", kind: "pct",  direction: "higher"  },
+  { key: "intCov",     label: "Interest Coverage",     portMetric: "intCov", aggregator: "weighted", kind: "ratio",direction: "higher"  },
+  { key: "grMgn",      label: "Gross Margin",          portMetric: "grMgn",  aggregator: "weighted", kind: "pct",  direction: "higher"  },
+  { key: "netMgn",     label: "Net Margin",            portMetric: "netMgn", aggregator: "weighted", kind: "pct",  direction: "higher"  },
+  { key: "gpAss",      label: "GP / Assets",           portMetric: "gpAss",  aggregator: "weighted", kind: "pct",  direction: "higher"  },
+  { key: "npAss",      label: "NP / Assets",           portMetric: "npAss",  aggregator: "weighted", kind: "pct",  direction: "higher"  },
+  { key: "opROE",      label: "Operating ROE",         portMetric: "opROE",  aggregator: "weighted", kind: "pct",  direction: "higher"  },
+  { key: "netDE",      label: "Net D / E",             portMetric: "netDE",  aggregator: "weighted", kind: "pct",  direction: "lower"   },
 ];
 
 /* Aggregate the portfolio side for a single ratio definition.

@@ -16,8 +16,7 @@ import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import { BENCHMARKS, PORTFOLIOS } from '../../constants/index.js';
 import { calcBreakdowns } from '../../utils/portfolioMath.js';
 import {
-  CHARACTERISTIC_METRICS, weightedAvg, mktCapStats,
-  resolveField, buildCompaniesById,
+  buildCompaniesById,
   RATIO_DEFS, aggregatePortfolioRatio, latestRatiosSnapshot, ratioDates,
   uploadedPortfolioRatio,
 } from '../../utils/characteristics.js';
@@ -33,7 +32,18 @@ const CARD = "rounded-lg border border-slate-200 dark:border-slate-700 bg-white 
  *   ≥ 1,000,000 → "$n.nT"          ($1T+)
  * Used by both Characteristics and the inline ratio history chart so
  * a $1.2T cap doesn't display as "$1,200,000M". */
-export function fmtMUSD(n) {
+export /* Compact "Q1 '26"-style label for an ISO YYYY-MM-DD date — used by
+   the per-row source badge to show which quarter a Q-end value came
+   from. */
+function quarterShort(iso) {
+  if (!iso || iso.length < 10) return "Q?";
+  const y = iso.slice(2, 4);
+  const m = parseInt(iso.slice(5, 7), 10);
+  const q = m <= 3 ? 1 : m <= 6 ? 2 : m <= 9 ? 3 : 4;
+  return "Q" + q + " '" + y;
+}
+
+function fmtMUSD(n) {
   const abs = Math.abs(n);
   const sign = n < 0 ? "-" : "";
   if (abs >= 1e6) return sign + "$" + (abs / 1e6).toFixed(2) + "T";
@@ -150,14 +160,6 @@ export default function CharacteristicsView() {
     return buildCompaniesById(companies);
   }, [companies]);
 
-  const mcStats = useMemo(function () {
-    return mktCapStats(breakdown.byCompany, companiesById);
-  }, [breakdown, companiesById]);
-
-  const mcWeighted = useMemo(function () {
-    return weightedAvg(breakdown.byCompany, companiesById, "mktCap");
-  }, [breakdown, companiesById]);
-
   /* Both Core and Value benchmarks are shown side-by-side rather than
      toggled. Each has its own metric snapshot (current) and ratio
      history. The Has-* flags drive whether each column renders so an
@@ -184,88 +186,14 @@ export default function CharacteristicsView() {
     if (dates.length === 0) return null;
     return byDate[dates[dates.length - 1]].metrics;
   }
-  const coreMetricsRaw  = (coreData  && coreData.metrics)  || null;
-  const valueMetricsRaw = (valueData && valueData.metrics) || null;
-  const coreMetrics = useMemo(function () {
-    if (coreMetricsRaw && Object.keys(coreMetricsRaw).length > 0) return coreMetricsRaw;
-    return latestMetrics(coreBench);
-  }, [coreMetricsRaw, coreBench, breakdownHistory]);
-  const valueMetrics = useMemo(function () {
-    if (valueMetricsRaw && Object.keys(valueMetricsRaw).length > 0) return valueMetricsRaw;
-    return latestMetrics(valueBench);
-  }, [valueMetricsRaw, valueBench, breakdownHistory]);
-  const hasCoreMetrics  = !!(coreMetrics  && Object.keys(coreMetrics).length  > 0);
-  const hasValueMetrics = !!(valueMetrics && Object.keys(valueMetrics).length > 0);
-  const hasBenchmark    = hasCoreMetrics || hasValueMetrics;
+  /* coreMetrics / valueMetrics are no longer used since the standalone
+     Metrics panel was merged into Ratios. The latestMetrics helper
+     is left in case we need it again (it's harmless dead code). */
 
-  /* Build the metric rows. One row per metric; the three horizon variants
-     (LTM, +1, +2) are exposed as separate columns inside each row, each
-     carrying its own port / core / value tuple. Non-variant metrics
-     (mktCap, intCov, ltEPS) only populate the LTM column; the +1 and +2
-     columns render "—" for those. */
-  const metricRows = useMemo(function () {
-    return CHARACTERISTIC_METRICS.map(function (m) {
-      function buildHorizon(variant) {
-        const field = resolveField(m.key, variant, m.hasVariants);
-        const wa = weightedAvg(breakdown.byCompany, companiesById, field);
-        const core  = coreMetrics  && field in coreMetrics  ? coreMetrics[field]  : null;
-        const value = valueMetrics && field in valueMetrics ? valueMetrics[field] : null;
-        return { portfolio: wa.value, coverage: wa.coverage, core: core, value: value };
-      }
-      const ltm = buildHorizon("0");
-      /* Skip +1/+2 for non-variant metrics — same value would just repeat. */
-      const plus1 = m.hasVariants ? buildHorizon("1") : null;
-      const plus2 = m.hasVariants ? buildHorizon("2") : null;
-      return {
-        key: m.key,
-        group: m.group,
-        label: m.label,
-        kind: m.kind,
-        hasVariants: m.hasVariants,
-        ltm: ltm,
-        plus1: plus1,
-        plus2: plus2,
-      };
-    });
-  }, [breakdown, companiesById, coreMetrics, valueMetrics]);
-
-  /* Insert the two unweighted mkt-cap rows (Avg and Median) at the
-     top of the Size group, alongside the existing weighted Mkt Cap row.
-     New shape: one row per metric, with .ltm / .plus1 / .plus2 horizon
-     tuples. Avg/Median are non-variant so they only have ltm. */
-  const augmentedMetricRows = useMemo(function () {
-    const out = [];
-    metricRows.forEach(function (r, idx) {
-      if (idx === 0 && r.group === "Size") {
-        out.push(r);
-        const cov = { used: mcStats.count, total: breakdown.byCompany.length };
-        out.push({
-          key: "_avgMktCap", group: "Size", label: "Avg Mkt Cap", kind: "bn", hasVariants: false,
-          ltm: { portfolio: mcStats.avg,    coverage: cov, core: null, value: null },
-          plus1: null, plus2: null,
-        });
-        out.push({
-          key: "_medMktCap", group: "Size", label: "Median Mkt Cap", kind: "bn", hasVariants: false,
-          ltm: { portfolio: mcStats.median, coverage: cov, core: null, value: null },
-          plus1: null, plus2: null,
-        });
-      } else {
-        out.push(r);
-      }
-    });
-    return out;
-  }, [metricRows, mcStats, breakdown]);
-
-  /* Group rows by category for rendering section headers. */
-  const grouped = useMemo(function () {
-    const map = {};
-    const order = [];
-    augmentedMetricRows.forEach(function (r) {
-      if (!map[r.group]) { map[r.group] = []; order.push(r.group); }
-      map[r.group].push(r);
-    });
-    return order.map(function (g) { return { group: g, rows: map[g] }; });
-  }, [augmentedMetricRows]);
+  /* The previous Metrics-panel-specific rollups (metricRows /
+     augmentedMetricRows / grouped) were removed when the panel was
+     merged into Ratios. Avg/Median Mkt Cap are now handled directly
+     by RATIO_DEFS via aggregator: "avg" / "median" on mktCap. */
 
   /* Ratios section. Pulls Core AND Value benchmark snapshots from
      breakdownHistory[*] (Type=Ratio quarterly history) and pairs each
@@ -308,13 +236,25 @@ export default function CharacteristicsView() {
   const ratioRows = useMemo(function () {
     return RATIO_DEFS.map(function (def) {
       let port = aggregatePortfolioRatio(breakdown.byCompany, companiesById, def);
-      /* Fallback to uploaded portfolio history when there's no per-company
-         source for this ratio (e.g. Active Share, P/S, P/CF). Reads at the
-         same date the user picked for the benchmarks so periods match. */
+      /* `source` tags the portfolio value's origin so the row can show
+         a "live" or "Q-end" badge. live = rolled up from current holdings
+         via the Metrics upload; quarter = uploaded portfolio snapshot at
+         the selected date.
+
+         Resolution order:
+           1. Live computation if the def has a portMetric AND we got a
+              real value from holdings. Most ratios fall here.
+           2. Uploaded portfolio history at the selected date as fallback
+              when live failed (no per-holding metric for this ratio
+              — e.g. Active Share, P/S, P/CF). */
+      let source = "live";
       if (port.value === null) {
         const uploaded = uploadedPortfolioRatio(breakdownHistory, portKey, ratioDate, def.key);
         if (uploaded !== null && uploaded !== undefined) {
           port = { value: uploaded, coverage: { used: 1, total: 1, weightUsed: 0, weightTotal: 0 } };
+          source = "quarter";
+        } else {
+          source = "none";
         }
       }
       const cv = coreRatios  && (def.key in coreRatios)  ? coreRatios[def.key]  : null;
@@ -328,6 +268,7 @@ export default function CharacteristicsView() {
         coverage: port.coverage,
         core: cv,
         value: vv,
+        source: source,
       };
     });
   }, [breakdown, companiesById, coreRatios, valueRatios, breakdownHistory, portKey, ratioDate]);
@@ -377,11 +318,16 @@ export default function CharacteristicsView() {
 
       {!empty && (
         <>
-          {/* Side-by-side: Ratios on the left, Metrics on the right. Both
-              tables tightened so the label column doesn't waste horizontal
-              space — that's what the user was complaining about with the
-              old single-column layout. Stacks vertically on narrow widths. */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Single full-width Ratios table. Replaces the old Ratios+Metrics
+              two-column layout, since most metrics had benchmark counterparts
+              in the Ratios upload anyway and the two panels disagreed in
+              confusing ways (one rolled up live, the other was quarter-end).
+              Now: every row in one table, with a per-row "live" / quarter-
+              date badge so the user can see where the portfolio side came
+              from at a glance. Metrics-only rows (FCF Yld, Int Cov,
+              Margins, GP/NP per asset, Op ROE, Net D/E) appear with
+              their live portfolio value and "--" benchmark cells. */}
+          <div>
             {/* Ratios — quarterly-history comparison. The benchmark column
                 reads the date-selected snapshot from breakdownHistory[benchName]
                 .ratios (Type=Ratio quarterly history). The portfolio column
@@ -410,48 +356,52 @@ export default function CharacteristicsView() {
                 )}
               </div>
               <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
-                <div className={"grid gap-1 px-2 py-2 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 " +
-                  (hasRatios ? "grid-cols-[1fr_70px_70px_70px]" : "grid-cols-[1fr_90px]")}>
-                  <div>Ratio</div>
+                <div className="grid gap-1 px-2 py-2 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 grid-cols-[1fr_90px_90px_90px]">
+                  <div>Metric</div>
                   <div className="text-right">Port.</div>
-                  {hasRatios && <div className="text-right" title={coreBench  || "Core"}>Core</div>}
-                  {hasRatios && <div className="text-right" title={valueBench || "Value"}>Value</div>}
+                  <div className="text-right" title={coreBench  || "Core benchmark"}>Core</div>
+                  <div className="text-right" title={valueBench || "Value benchmark"}>Value</div>
                 </div>
                 {ratioRows.map(function (r) {
                   const isOpen = openRatios.has(r.key);
+                  /* Source pill: "live" = rolled up from current holdings;
+                     date string = quarter-end snapshot from upload. "none"
+                     = no data either way (rare; renders no badge so dashes
+                     speak for themselves). */
+                  const sourceBadge = r.source === "live" ? (
+                    <span className="text-[8px] uppercase tracking-wide font-semibold px-1 py-0 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 shrink-0" title="Live: rolled up from current holdings">live</span>
+                  ) : r.source === "quarter" && ratioDate ? (
+                    <span className="text-[8px] uppercase tracking-wide font-semibold px-1 py-0 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 shrink-0" title={"Q-end snapshot from uploaded portfolio history (" + ratioDate + ")"}>{quarterShort(ratioDate)}</span>
+                  ) : null;
                   return (
                     <div key={r.key}>
                       <div
                         onClick={function () { toggleRatio(r.key); }}
-                        className={"grid gap-1 px-2 py-1.5 text-xs items-center border-b border-slate-100 dark:border-slate-800 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 " +
-                          (hasRatios ? "grid-cols-[1fr_70px_70px_70px]" : "grid-cols-[1fr_90px]")}
+                        className="grid gap-1 px-2 py-1.5 text-xs items-center border-b border-slate-100 dark:border-slate-800 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 grid-cols-[1fr_90px_90px_90px]"
                         title="Click to toggle history chart"
                       >
-                        <div className="text-gray-900 dark:text-slate-100 truncate flex items-center gap-1">
+                        <div className="text-gray-900 dark:text-slate-100 truncate flex items-center gap-1.5">
                           <span className="text-gray-400 dark:text-slate-500 text-[9px]">{isOpen ? "▼" : "▶"}</span>
                           <span className="truncate" title={r.label}>{r.label}</span>
+                          {sourceBadge}
                         </div>
                         <div className="text-right font-medium text-gray-900 dark:text-slate-100 tabular-nums">
                           {fmtMetric(r.portfolio, r.kind)}
                         </div>
-                        {hasRatios && (
-                          <div
-                            className="text-right tabular-nums"
-                            style={{ color: ratioBenchColor(r.portfolio, r.core, r.kind, r.direction) }}
-                            title={"Δ port − bench: " + (fmtDelta(r.portfolio, r.core, r.kind) || "--")}
-                          >
-                            {r.core === null || r.core === undefined ? "--" : fmtMetric(r.core, r.kind)}
-                          </div>
-                        )}
-                        {hasRatios && (
-                          <div
-                            className="text-right tabular-nums"
-                            style={{ color: ratioBenchColor(r.portfolio, r.value, r.kind, r.direction) }}
-                            title={"Δ port − bench: " + (fmtDelta(r.portfolio, r.value, r.kind) || "--")}
-                          >
-                            {r.value === null || r.value === undefined ? "--" : fmtMetric(r.value, r.kind)}
-                          </div>
-                        )}
+                        <div
+                          className="text-right tabular-nums"
+                          style={{ color: ratioBenchColor(r.portfolio, r.core, r.kind, r.direction) }}
+                          title={"Δ port − bench: " + (fmtDelta(r.portfolio, r.core, r.kind) || "--")}
+                        >
+                          {r.core === null || r.core === undefined ? "--" : fmtMetric(r.core, r.kind)}
+                        </div>
+                        <div
+                          className="text-right tabular-nums"
+                          style={{ color: ratioBenchColor(r.portfolio, r.value, r.kind, r.direction) }}
+                          title={"Δ port − bench: " + (fmtDelta(r.portfolio, r.value, r.kind) || "--")}
+                        >
+                          {r.value === null || r.value === undefined ? "--" : fmtMetric(r.value, r.kind)}
+                        </div>
                       </div>
                       {isOpen && (
                         <div className="px-2 py-1 border-b border-slate-100 dark:border-slate-800">
@@ -476,97 +426,10 @@ export default function CharacteristicsView() {
                 </div>
               )}
               <div className="text-[10px] text-gray-400 dark:text-slate-500 italic mt-1">
-                Click a ratio for its history chart. Cell color = Δ vs portfolio (green = bench higher, red = lower).
+                Click a row for its history chart. Cell color = Δ vs portfolio (green = bench higher, red = lower).
+                <span className="ml-2"><span className="text-[8px] uppercase font-semibold px-1 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">live</span> = rolled up from current holdings · </span>
+                <span><span className="text-[8px] uppercase font-semibold px-1 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">Q1 '26</span> = quarter-end snapshot from upload</span>
               </div>
-            </div>
-
-            {/* Metrics — grouped by category. Three horizon columns
-                (LTM, +1, +2) shown for every metric; non-variant metrics
-                (Mkt Cap, Int Cov, LT EPS) populate only the LTM column.
-                Each horizon cell stacks Port (top, bold) over Core and
-                Value bench numbers (smaller, gray) so the user gets the
-                full Port/Core/Value picture without 9 separate columns.
-                Bench numbers colored green = bench above port, red = below. */}
-            <div>
-              <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-semibold mb-1">
-                Metrics
-              </div>
-              <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
-                <div className="grid gap-1 px-2 py-2 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 grid-cols-[1fr_70px_70px_70px_45px]">
-                  <div>Metric</div>
-                  <div className="text-right">LTM</div>
-                  <div className="text-right">+1</div>
-                  <div className="text-right">+2</div>
-                  <div className="text-right">Cov.</div>
-                </div>
-
-                {grouped.map(function (g) {
-                  return (
-                    <div key={g.group}>
-                      <div className="px-2 py-1 text-[11px] font-semibold text-gray-700 dark:text-slate-300 bg-slate-50/50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800">
-                        {g.group}
-                      </div>
-                      {g.rows.map(function (r) {
-                        function HorizonCell({ h, fieldKey }) {
-                          if (!h) {
-                            return <div className="text-right text-gray-300 dark:text-slate-600 text-[10px]">—</div>;
-                          }
-                          return (
-                            <div className="text-right text-[11px] leading-tight">
-                              <div className="font-medium text-gray-900 dark:text-slate-100 tabular-nums">
-                                {fmtMetric(h.portfolio, r.kind)}
-                              </div>
-                              {hasBenchmark && (
-                                <>
-                                  <div
-                                    className="text-[10px] tabular-nums"
-                                    style={{ color: deltaColor(h.portfolio, h.core, r.kind, fieldKey) || "#94a3b8" }}
-                                    title={"Core: Δ port − bench " + (fmtDelta(h.portfolio, h.core, r.kind) || "--")}
-                                  >
-                                    {h.core === null || h.core === undefined ? "--" : fmtMetric(h.core, r.kind)}
-                                  </div>
-                                  <div
-                                    className="text-[10px] tabular-nums"
-                                    style={{ color: deltaColor(h.portfolio, h.value, r.kind, fieldKey) || "#94a3b8" }}
-                                    title={"Value: Δ port − bench " + (fmtDelta(h.portfolio, h.value, r.kind) || "--")}
-                                  >
-                                    {h.value === null || h.value === undefined ? "--" : fmtMetric(h.value, r.kind)}
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          );
-                        }
-                        const ltmCov = r.ltm && r.ltm.coverage;
-                        return (
-                          <div
-                            key={r.key}
-                            className="grid gap-1 px-2 py-1.5 text-xs items-start border-b border-slate-100 dark:border-slate-800 grid-cols-[1fr_70px_70px_70px_45px]"
-                          >
-                            <div className="text-gray-900 dark:text-slate-100 truncate pt-0.5" title={r.label}>{r.label}</div>
-                            <HorizonCell h={r.ltm}   fieldKey={r.hasVariants ? r.key      : r.key} />
-                            <HorizonCell h={r.plus1} fieldKey={r.hasVariants ? r.key + "1" : r.key} />
-                            <HorizonCell h={r.plus2} fieldKey={r.hasVariants ? r.key + "2" : r.key} />
-                            <div className="text-right text-[10px] text-gray-400 dark:text-slate-500 tabular-nums pt-0.5">
-                              {ltmCov ? (ltmCov.used + "/" + ltmCov.total) : "--"}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
-              </div>
-              {hasBenchmark && (
-                <div className="text-[10px] text-gray-400 dark:text-slate-500 italic mt-1">
-                  Each cell stacks Port (bold) / Core / Value. Hover for exact deltas.
-                </div>
-              )}
-              {!hasBenchmark && (
-                <div className="text-[11px] text-gray-500 dark:text-slate-400 italic mt-2 px-2 py-1 rounded bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
-                  No benchmark metric data uploaded yet. Upload via Data Hub → Benchmarks with Type = Metric for either {coreBench || "Core"} or {valueBench || "Value"}.
-                </div>
-              )}
             </div>
           </div>
         </>
