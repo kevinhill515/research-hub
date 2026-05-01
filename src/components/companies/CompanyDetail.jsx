@@ -311,20 +311,43 @@ export function CompanyDetail(props){
                 <button onClick={function(){if(!newTx.date||!newTx.portfolio||newTx.shares===""||isNaN(parseFloat(newTx.shares)))return;var shares=parseFloat(newTx.shares);var txId=(typeof crypto!=="undefined"&&crypto.randomUUID)?crypto.randomUUID():(Date.now()+"-"+Math.random().toString(36).slice(2));var txRec={id:txId,date:newTx.date,portfolio:newTx.portfolio,shares:shares,price:parseFloat(newTx.price)||0,amount:parseFloat(newTx.amount)||0,type:shares>=0?"BUY":"SELL"};if(newTx.cashFlow)txRec.cashFlow=true;addTransaction(selCo.id,txRec);setSelCo(function(prev){if(!prev||prev.id!==selCo.id)return prev;var all=(prev.transactions||[]).concat([txRec]);all.sort(function(a,b){return(b.date||"").localeCompare(a.date||"");});return Object.assign({},prev,{transactions:all});});setNewTx({date:"",portfolio:"",shares:"",price:"",amount:"",cashFlow:false});setShowAddTx(false);}} disabled={!newTx.date||!newTx.portfolio||newTx.shares===""} className={BTN_SM}>Add</button>
               </div>)}
               {selCo.transactions&&selCo.transactions.length>0?(function(){
-                /* Current price for the % G/L column. Uses the ord ticker
-                   (matches the trade's local currency since unit prices
-                   are stored that way), falling back to valuation.price.
-                   Stale or missing \u2192 null and the column shows "--". */
-                var ordTk=(selCo.tickers||[]).find(function(tk){return tk.isOrdinary;});
-                var curPrice=ordTk?parseFloat(ordTk.price):null;
-                if(!isFinite(curPrice))curPrice=parseFloat((selCo.valuation||{}).price);
-                if(!isFinite(curPrice))curPrice=null;
+                /* Current price for the % G/L column needs to match the
+                   ticker the trade was actually executed in \u2014 a position
+                   held as ANCTF (USD ADR) shouldn't be compared against
+                   ATD-CA (CAD ord). For each row, find which of the
+                   company's tickers has rep shares in that transaction's
+                   portfolio and use that ticker's price. Falls back to
+                   the ord ticker, then valuation.price.
+
+                   getCurrentPriceForTx(t) is closed over the company so
+                   the rendering loop below can call it once per row. */
+                function getCurrentPriceForTx(t){
+                  var pRep=(repData||{})[t.portfolio]||{};
+                  var pickedTk=(selCo.tickers||[]).find(function(tk){
+                    var k=(tk.ticker||"").toUpperCase();
+                    return k && pRep[k]!==undefined;
+                  });
+                  if(pickedTk){
+                    var p=parseFloat(pickedTk.price);
+                    if(isFinite(p)) return p;
+                  }
+                  /* Fallback chain: ord ticker price \u2192 valuation.price. */
+                  var ordTk=(selCo.tickers||[]).find(function(tk){return tk.isOrdinary;});
+                  if(ordTk){var op=parseFloat(ordTk.price); if(isFinite(op)) return op;}
+                  var vp=parseFloat((selCo.valuation||{}).price);
+                  return isFinite(vp)?vp:null;
+                }
                 return(<div style={{display:"table",width:"100%",borderCollapse:"separate",borderSpacing:"0 2px"}}>
                 <div style={{display:"table-row"}}>
                   {[["Date"],["Portfolio"],["Type"],["Shares"],["Unit Price"],["% G/L"],["Amount"],[""]].map(function(h,i){return <div key={i} className="text-[10px] uppercase tracking-wide pb-1.5 pr-2 text-gray-500 dark:text-slate-400 font-semibold" style={{display:"table-cell"}}>{h[0]}</div>;})}
                 </div>
                 {selCo.transactions.slice().filter(function(t){return txFilter==="All"||t.portfolio===txFilter;}).sort(function(a,b){return(b.date||"").localeCompare(a.date||"");}).map(function(t){var isBuy=(parseFloat(t.shares)||0)>=0;
-                  /* Per-row gain/loss: (current price / unit price) - 1. */
+                  /* Per-row gain/loss: (current price / unit price) - 1.
+                     curPrice is the price of whichever of the company's
+                     tickers is held in this transaction's portfolio
+                     (e.g. ANCTF for a portfolio holding the USD ADR,
+                     ATD-CA for a portfolio holding the Canadian ord). */
+                  var curPrice=getCurrentPriceForTx(t);
                   var unitPrice=parseFloat(t.price);
                   var gainPct=(curPrice&&isFinite(unitPrice)&&unitPrice>0)?(curPrice/unitPrice-1)*100:null;
                   var glColor=gainPct===null?undefined:gainPct>0?"#166534":gainPct<0?"#991b1b":"#64748b";
