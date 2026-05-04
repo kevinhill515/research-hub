@@ -376,7 +376,10 @@ export function PortfoliosTable(props) {
     setSelCoOrigin("portfolios");
     setSelCo(c);
     setTab("companies");
-    setCoView("section:Valuation");
+    /* Land on the company Dashboard rather than the Valuation section.
+       Dashboard gives a fuller at-a-glance read; users wanting to edit
+       valuation can still click the Valuation subtab from there. */
+    setCoView("dashboard");
   }
   function onOpenTransactions(c) {
     setSelCoOrigin("portfolios");
