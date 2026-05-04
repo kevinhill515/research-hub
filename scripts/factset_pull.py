@@ -1289,8 +1289,9 @@ def merge_transactions(companies: list[dict], tx_rows: list[dict]) -> tuple[int,
 
 
 # Metrics tab — new layout with "current" (LTM / no suffix) column before
-# each +1/+2 pair. 35 metric columns total (A=Company, B=Ord Ticker,
-# C=MktCap, D..AI=metrics, AJ..AO=trailing returns).
+# each +1/+2 pair. 44 metric columns total (A=Company, B=Ord Ticker,
+# C=MktCap, D..AI=33 original metrics, AJ..AR=new P/B + ROE triplets +
+# 3 growth singles). Trailing returns moved to the Prices upload.
 METRICS_COLS = [
     ("mktCap",  3,  False),  # C  — $B
     ("fpe",     4,  False),  # D  — current P/E
@@ -1325,15 +1326,28 @@ METRICS_COLS = [
     ("opROE",   33, False),  # AG — current
     ("opROE1",  34, False),  # AH
     ("opROE2",  35, False),  # AI
+    # New P/B + ROE triplets (current, +1, +2) and three growth singles.
+    # The JS-side Metrics import expects these at AJ..AR, matching
+    # METRIC_KEYS_NEW in src/hooks/useImport.js.
+    ("pb",      36, False),  # AJ
+    ("pb1",     37, False),  # AK
+    ("pb2",     38, False),  # AL
+    ("roe",     39, True),   # AM — current ROE (percent)
+    ("roe1",    40, True),   # AN
+    ("roe2",    41, True),   # AO
+    ("intGr",   42, True),   # AP — internal growth rate (percent)
+    ("adpsGr5", 43, True),   # AQ — 5Y ADPS growth
+    ("adpsGr1", 44, True),   # AR — 1Y ADPS growth
 ]
 def read_metrics(xl: ExcelSession) -> dict[str, dict]:
-    """Bulk-read the Metrics tab — A..AI covers Company + Ord Ticker +
-    33 metric columns. Trailing returns (formerly AJ..AO) now live on
-    the Prices tab per ticker, so they're not read here.
+    """Bulk-read the Metrics tab — A..AR covers Company + Ord Ticker +
+    42 metric columns (original 33 + new P/B/ROE/growth 9). Trailing
+    returns moved to the Prices tab per ticker, so they're not read
+    here.
 
     Single bulk range read — was 14000 COM calls before, now 1."""
     out: dict[str, dict] = {}
-    rows = xl.read_range("Metrics", f"A2:AI{MAX_COMPANY_ROW}")
+    rows = xl.read_range("Metrics", f"A2:AR{MAX_COMPANY_ROW}")
     for row in rows:
         if len(row) < 3: continue
         tk = _str(row[1])  # col B = ord ticker

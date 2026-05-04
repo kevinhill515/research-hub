@@ -73,7 +73,21 @@ function getCellValue(company, key) {
   if (key === "__name")     return company.name;
   if (key === "__tier")     return company.tier;
   if (key === "__fpeRange") return null; /* not sortable */
-  if (key.startsWith("perf.")) return m.perf ? m.perf[key.slice(5)] : null;
+  if (key.startsWith("perf.")) {
+    /* Trailing returns moved to the Prices upload (per-ticker), so
+       company.metrics.perf is no longer maintained. Read from the
+       company's tickers instead — US (USD) preferred, falling back
+       to ord (local). Same convention as Snapshot + Companies-table
+       5D%. Legacy company.metrics.perf still consulted last for any
+       data uploaded before the move. */
+    const period = key.slice(5);
+    const tks = company.tickers || [];
+    const us = tks.find(function (t) { return (t.currency || "").toUpperCase() === "USD" && !t.isOrdinary; });
+    const ord = tks.find(function (t) { return t.isOrdinary; });
+    if (us  && us.perf  && us.perf[period]  !== undefined && us.perf[period]  !== null) return us.perf[period];
+    if (ord && ord.perf && ord.perf[period] !== undefined && ord.perf[period] !== null) return ord.perf[period];
+    return m.perf ? m.perf[period] : null;
+  }
   return m[key];
 }
 
