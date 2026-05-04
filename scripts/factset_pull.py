@@ -1347,6 +1347,10 @@ def read_metrics(xl: ExcelSession) -> dict[str, dict]:
 
     Single bulk range read — was 14000 COM calls before, now 1."""
     out: dict[str, dict] = {}
+    # Track which keys ended up populated across the whole sheet so we
+    # can flag columns that always come back blank — usually means the
+    # FactSet template's formula is broken or the column is misaligned.
+    key_hit_count: dict[str, int] = {k: 0 for k, _, _ in METRICS_COLS}
     rows = xl.read_range("Metrics", f"A2:AR{MAX_COMPANY_ROW}")
     for row in rows:
         if len(row) < 3: continue
@@ -1359,8 +1363,19 @@ def read_metrics(xl: ExcelSession) -> dict[str, dict]:
                 v = _num(row[idx])
                 if v is not None:
                     m[key] = v
+                    key_hit_count[key] += 1
         if m: out[tk.upper()] = m
     log(f"  Metrics: {len(out)} tickers")
+    # Surface any column that's blank/errored across ALL rows (or
+    # populated for far fewer tickers than its peers). Helps catch
+    # FactSet-template formula breaks like the payout1/payout2 case.
+    if out:
+        zero_keys = [k for k, n in key_hit_count.items() if n == 0]
+        if zero_keys:
+            log(f"  WARNING: 0 tickers populated for: {zero_keys}")
+        # Also report a count breakdown so you can spot half-broken cols.
+        log(f"  Metrics column fill rates: " +
+            ", ".join(f"{k}={n}" for k, n in key_hit_count.items() if n < len(out)))
     return out
 
 
@@ -1504,7 +1519,11 @@ def read_markets(xl: ExcelSession) -> dict:
 # ----------------------------------------------------------------------
 def merge_metrics(companies: list[dict], metrics: dict[str, dict]) -> int:
     """Attach metrics dict to each matching company under `.metrics`.
-    Matches by any ticker on the company."""
+    Matches by any ticker on the company. Uses dict.update() so existing
+    keys (manual paste, prior script run) are preserved when the new
+    pull happens to be missing a field — fixes the case where a single
+    blank cell (#N/A or empty) on the Metrics sheet would wipe a value
+    the user had loaded earlier."""
     n = 0
     for c in companies:
         all_tks = [(t.get("ticker") or "").upper() for t in (c.get("tickers") or [])]
@@ -1512,7 +1531,10 @@ def merge_metrics(companies: list[dict], metrics: dict[str, dict]) -> int:
             all_tks.append(c["ticker"].upper())
         for tk in all_tks:
             if tk in metrics:
-                c["metrics"] = metrics[tk]
+                existing = c.get("metrics") or {}
+                merged = dict(existing)
+                merged.update(metrics[tk])
+                c["metrics"] = merged
                 n += 1
                 break
     return n
