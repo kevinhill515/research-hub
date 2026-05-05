@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useRef } from "react";
-import { supaGet, supaUpsert } from '../api/index.js';
+import { supaGet, supaGetAll, supaUpsert, supaDelete } from '../api/index.js';
 import { todayStr } from '../utils/index.js';
 
 const CompanyContext=createContext(null);
@@ -172,7 +172,11 @@ export function CompanyProvider({children}){
     var safe=function(p){return p.then(function(r){return r;},function(){return null;});};
     var [r,r2,r3,r4,r5,r6,r7,r8,r9,r10,r11,r12,r13,r14,r15]=await Promise.all([
       safe(supaGet("library","id","shared")),
-      safe(supaGet("companies","id","shared")),
+      /* Companies are now stored as one Supabase row per company (each
+         row's data column holds a single company JSON, ~30KB typical).
+         Pull every row in one request and parse each. The legacy "shared"
+         row containing the whole array is migrated below. */
+      safe(supaGetAll("companies")),
       safe(supaGet("meta","key","lastPriceUpdate")),
       safe(supaGet("meta","key","entryComments")),
       safe(supaGet("meta","key","calLastUpdated")),
@@ -188,7 +192,52 @@ export function CompanyProvider({children}){
       safe(supaGet("meta","key","breakdownHistory")),
     ]);
     try{if(r){var d=JSON.parse(r.data);if(Array.isArray(d)&&d.length){var libMig=migrateTags(d);setSaved(libMig.data);libOk=libMig.data.length;if(libMig.changed)supaUpsert("library",{id:"shared",data:JSON.stringify(libMig.data)});}}}catch(e){}
-    try{if(r2){var d2=JSON.parse(r2.data);if(Array.isArray(d2)&&d2.length){var coMig=migratePortfolioKeys(d2);setCompanies(coMig.data);coOk=coMig.data.length;if(coMig.changed)supaUpsert("companies",{id:"shared",data:JSON.stringify(coMig.data)});}}}catch(e){}
+    try{if(r2&&Array.isArray(r2)){
+      /* Two formats coexist during migration:
+         1. New (per-row): each row has id=company.id, data=JSON of one
+            company. Filter out any "shared" row, parse the rest.
+         2. Legacy (single blob): one row with id="shared", data=JSON of
+            the full array. Parse it, then migrate by upserting each
+            company as its own row and deleting the shared row. */
+      var perCo = r2.filter(function(row){ return row.id !== "shared"; });
+      var sharedRow = r2.find(function(row){ return row.id === "shared"; });
+      var loadedArr = null;
+      if (perCo.length > 0) {
+        loadedArr = perCo.map(function(row){
+          try { return JSON.parse(row.data); } catch(_e) { return null; }
+        }).filter(Boolean);
+      } else if (sharedRow) {
+        try {
+          var parsed = JSON.parse(sharedRow.data);
+          if (Array.isArray(parsed) && parsed.length) loadedArr = parsed;
+        } catch(_e) {}
+      }
+      if (loadedArr && loadedArr.length) {
+        var coMig=migratePortfolioKeys(loadedArr);
+        setCompanies(coMig.data);
+        coOk=coMig.data.length;
+        /* If we read from the legacy "shared" row, write each company
+           as its own row and then delete the legacy row. Done as a
+           single bulk upsert + one DELETE; idempotent if interrupted
+           since per-row writes will just overwrite next time. */
+        if (sharedRow && perCo.length === 0) {
+          var bulk = coMig.data.map(function(c){
+            return { id: c.id, data: JSON.stringify(c) };
+          });
+          supaUpsert("companies", bulk).then(function(){
+            supaDelete("companies", "id", "shared");
+          });
+        } else if (coMig.changed) {
+          /* Migration pass touched data — re-upsert all changed entries.
+             Bulk upsert is safe to over-write; PostgREST handles the
+             ON CONFLICT per row. */
+          var bulk2 = coMig.data.map(function(c){
+            return { id: c.id, data: JSON.stringify(c) };
+          });
+          supaUpsert("companies", bulk2);
+        }
+      }
+    }}catch(e){}
     try{if(r3){
       /* Format on disk: "<user> at <timestamp>" or just "<timestamp>"
          for backward compat with values written before the by-user
@@ -378,7 +427,37 @@ export function CompanyProvider({children}){
     return true;
   }
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(saved);if(sendIfChanged("library",function(){return j;}))supaUpsert("library",{id:"shared",data:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[saved,ready]);
-  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(companies);if(sendIfChanged("companies",function(){return j;}))supaUpsert("companies",{id:"shared",data:j});},DEBOUNCE_HEAVY_MS);return function(){clearTimeout(t);};},[companies,ready]);
+  /* Per-company write tracking. Replaces the old single-blob upsert so
+     editing one company's name no longer re-uploads all 325. The ref
+     holds last-sent JSON keyed by company id; on each debounce we diff
+     the current array, bulk-upsert the changed rows, and DELETE any
+     ids that disappeared from the array. */
+  var lastSentCompaniesRef = useRef({});
+  useEffect(function(){
+    if(!ready)return;
+    var t=setTimeout(function(){
+      var changed=[];
+      var seenIds={};
+      (companies||[]).forEach(function(c){
+        if(!c||!c.id)return;
+        seenIds[c.id]=true;
+        var j=JSON.stringify(c);
+        if(lastSentCompaniesRef.current[c.id]!==j){
+          changed.push({id:c.id,data:j});
+          lastSentCompaniesRef.current[c.id]=j;
+        }
+      });
+      var deletedIds=Object.keys(lastSentCompaniesRef.current).filter(function(id){return !seenIds[id];});
+      deletedIds.forEach(function(id){delete lastSentCompaniesRef.current[id];});
+      if(changed.length>0){
+        supaUpsert("companies",changed);
+      }
+      deletedIds.forEach(function(id){
+        supaDelete("companies","id",id);
+      });
+    },DEBOUNCE_HEAVY_MS);
+    return function(){clearTimeout(t);};
+  },[companies,ready]);
   useEffect(function(){if(!ready||!lastPriceUpdate)return;var t=setTimeout(function(){if(sendIfChanged("lastPriceUpdate",function(){return lastPriceUpdate;}))supaUpsert("meta",{key:"lastPriceUpdate",value:lastPriceUpdate});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[lastPriceUpdate,ready]);
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(entryComments);if(sendIfChanged("entryComments",function(){return j;}))supaUpsert("meta",{key:"entryComments",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[entryComments,ready]);
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(annotations);if(sendIfChanged("annotations",function(){return j;}))supaUpsert("meta",{key:"annotations",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[annotations,ready]);

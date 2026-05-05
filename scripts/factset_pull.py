@@ -115,8 +115,24 @@ def supa_get_companies() -> list[dict]:
 
 
 def supa_put_companies(companies: list[dict]) -> None:
-    body = json.dumps({"id": "shared", "data": json.dumps(companies)}).encode()
-    _supa_req("POST", "companies", body=body)
+    """Per-row companies storage (one Supabase row per company).
+    Previously this was a single blob row at id="shared" containing the
+    whole array; that hit Postgres's statement timeout once the JSON
+    grew past ~10MB. Per-row writes keep each UPDATE small (~30KB) and
+    scale comfortably as more data accumulates per company.
+
+    Bulk upsert: PostgREST accepts a JSON array body and runs
+    INSERT...ON CONFLICT in one transaction. Each row is small so the
+    whole batch finishes well under the timeout. Chunk in groups of
+    100 just in case the request body itself gets near limits."""
+    rows = [{"id": c["id"], "data": json.dumps(c)} for c in companies if c.get("id")]
+    if not rows:
+        return
+    chunk_size = 100
+    for i in range(0, len(rows), chunk_size):
+        chunk = rows[i:i + chunk_size]
+        body = json.dumps(chunk).encode()
+        _supa_req("POST", "companies", body=body)
 
 
 def supa_get_meta(key: str) -> Any:
