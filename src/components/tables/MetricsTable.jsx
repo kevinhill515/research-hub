@@ -213,11 +213,19 @@ export default function MetricsTable({ companies, search, onSelectCompany, dark,
                 const active = sortKey === col.key;
                 const arrow = active ? (sortDir === "asc" ? " ↑" : " ↓") : "";
                 const sortable = col.kind !== "fperange" && col.key !== "__tier";
+                /* Pin the Name column to the left edge so the company
+                   name stays visible while horizontal scrolling. The
+                   sticky-left cell needs its own opaque background; we
+                   reuse the header's bg-slate-50/-800. Higher z-index
+                   than the regular sticky-top thead so the top-left
+                   corner cell stacks above both planes. */
+                const isName = col.kind === "name";
                 return (
                   <th
                     key={col.key}
                     onClick={sortable ? function () { handleHeaderClick(col.key); } : undefined}
-                    className={"sticky top-0 z-10 bg-slate-50 dark:bg-slate-800 px-2 py-1.5 text-[10px] uppercase tracking-wide text-left font-medium text-gray-500 dark:text-slate-400 whitespace-nowrap border-b border-slate-200 dark:border-slate-700 " +
+                    className={"sticky top-0 bg-slate-50 dark:bg-slate-800 px-2 py-1.5 text-[10px] uppercase tracking-wide text-left font-medium text-gray-500 dark:text-slate-400 whitespace-nowrap border-b border-slate-200 dark:border-slate-700 " +
+                      (isName ? "left-0 z-20 " : "z-10 ") +
                       (sortable ? "cursor-pointer hover:text-gray-700 dark:hover:text-slate-300 select-none" : "")}
                     style={{ minWidth: col.w }}
                   >
@@ -247,10 +255,17 @@ export default function MetricsTable({ companies, search, onSelectCompany, dark,
                       );
                     }
                     if (col.kind === "name") {
+                      /* Sticky-left so the name stays visible during
+                         horizontal scroll. Cell needs an opaque bg —
+                         the row's tier-tinted bg in light mode, slate-950
+                         in dark, white as fallback. */
+                      const stickyBg = dark
+                        ? "#020617" /* slate-950 */
+                        : (rowBgLight || "#ffffff");
                       return (
                         <td key={col.key}
-                            className="px-2 py-1 text-gray-900 dark:text-slate-100 font-medium whitespace-nowrap"
-                            style={{ minWidth: col.w }}
+                            className="sticky left-0 z-[5] px-2 py-1 text-gray-900 dark:text-slate-100 font-medium whitespace-nowrap"
+                            style={{ minWidth: col.w, background: stickyBg }}
                             title={c.name}>
                           {truncName(c.name, 22)}
                         </td>

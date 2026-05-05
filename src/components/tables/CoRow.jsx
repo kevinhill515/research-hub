@@ -117,9 +117,12 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
         </div>
       )}
 
-      {/* Name */}
+      {/* Name — sticky-left so the company name stays visible while
+          horizontal scrolling. Cell needs an opaque bg (tier-tint in
+          light mode, slate-950 in dark, white fallback) since stuff
+          scrolls behind it. zIndex below the sticky-top header. */}
       {show("Name") && (
-        <div className={tdBase} style={rowBg ? { background: rowBg } : undefined}>
+        <div className={tdBase + " sticky left-0 z-[5]"} style={{ background: rowBg || (dark ? "#020617" : "#ffffff") }}>
           <div className="flex items-center gap-1">
             <span
               onClick={function (e) { e.stopPropagation(); onSelect(company); }}
