@@ -437,10 +437,10 @@ export default function App(){
         {companies.length===0?<p className="text-sm text-gray-500 dark:text-slate-400">No companies yet.</p>:(<div className="print-target">{companiesView==="metrics"?(
           <MetricsTable companies={displayedCos} search={coSearch} dark={dark} visible={metricsVisibleCols} onSelectCompany={function(c){setSelCo(c);setCoView("dashboard");}}/>
         ):(
-          {/* Wrap the wide CSS-table in a horizontal-scroll container so
-              the sticky-left "Name" column has a scroll parent to anchor
-              against. overflowY:visible so the existing sticky-top thead
-              keeps tracking the page viewport rather than this wrapper. */}
+          /* Wrap the wide CSS-table in a horizontal-scroll container so
+             the sticky-left Name column has a scroll parent to anchor
+             against. overflowY:visible keeps the existing sticky-top
+             thead attached to the page viewport rather than this wrapper. */
           <div style={{overflowX:"auto",overflowY:"visible"}}>
           <div style={{display:"table",width:"100%",borderCollapse:"separate",borderSpacing:"0 2px"}}>
             <div style={{display:"table-row"}} className="print-thead">
