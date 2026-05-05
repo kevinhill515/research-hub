@@ -110,8 +110,36 @@ def _supa_req(method: str, path: str, body: bytes | None = None,
 
 
 def supa_get_companies() -> list[dict]:
-    raw = _supa_req("GET", "companies?id=eq.shared&select=data", accept_object=True)
-    return json.loads(json.loads(raw)["data"])
+    """Read companies from per-row storage (one row per company.id).
+    Falls back to the legacy single-blob "shared" row if no per-row data
+    is present yet — keeps the script working in either state during the
+    one-time migration window."""
+    raw = _supa_req("GET", "companies?select=id,data")
+    rows = json.loads(raw)
+    out = []
+    legacy_blob = None
+    for row in rows:
+        rid = row.get("id")
+        data = row.get("data")
+        if not data:
+            continue
+        if rid == "shared":
+            # Legacy blob row: data is a JSON-encoded array of companies.
+            try:
+                legacy_blob = json.loads(data)
+            except Exception:
+                legacy_blob = None
+            continue
+        # Per-row: data is a JSON-encoded single company object.
+        try:
+            out.append(json.loads(data))
+        except Exception:
+            pass
+    if out:
+        return out
+    if isinstance(legacy_blob, list):
+        return legacy_blob
+    return []
 
 
 def supa_put_companies(companies: list[dict]) -> None:

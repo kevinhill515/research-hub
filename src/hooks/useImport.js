@@ -8,6 +8,8 @@ import { parseRatioPaste } from '../utils/ratioParser.js';
 import { parseSegmentsPaste } from '../utils/segmentsParser.js';
 import { parseEpsRevisionsPaste } from '../utils/epsRevisionsParser.js';
 import { parseGuidancePaste } from '../utils/guidanceParser.js';
+import { parsePriceHistory, mergePriceSeries } from '../utils/priceHistoryParser.js';
+import { invalidatePriceHistory } from './usePriceHistory.js';
 import { findCompanyByName, findCompanyByTickerOrName, normalizeCompanyName } from '../utils/nameMatch.js';
 import { useAlert } from '../components/ui/DialogProvider.jsx';
 import { REP_ACCOUNTS } from '../constants/index.js';
@@ -41,6 +43,7 @@ export function useImport(){
   const [segmentsImportText,setSegmentsImportText]=useState("");
   const [epsRevImportText,setEpsRevImportText]=useState("");
   const [guidanceImportText,setGuidanceImportText]=useState("");
+  const [priceHistoryImportText,setPriceHistoryImportText]=useState("");
   const [perfPortTargets,setPerfPortTargets]=useState(["FIN"]);
   const [perfText,setPerfText]=useState("");
   const [portTab,setPortTab]=useState("overlap");
@@ -1069,6 +1072,54 @@ export function useImport(){
     }
   }
 
+  /* Price History upload — wide-format paste (Date, T1, T2, …, Tn).
+     Each ticker becomes its own Supabase row in the prices_history
+     table. If a row already exists, incoming data is merged with the
+     existing series (deduped by date) so partial pastes are safe. */
+  async function applyPriceHistoryImport(){
+    if(!priceHistoryImportText||!priceHistoryImportText.trim())return;
+    var parsed = parsePriceHistory(priceHistoryImportText);
+    if(parsed.errors && parsed.errors.length>0){
+      alertFn("Price history import failed:\n"+parsed.errors.join("\n"));
+      return;
+    }
+    if(parsed.tickers===0){
+      alertFn("No ticker columns found. Format: header row with Date in col 1 and ticker symbols in cols 2+; data rows with date in col 1 and closing prices.");
+      return;
+    }
+    var tickers = Object.keys(parsed.byTicker);
+    var nNew = 0;
+    var nUpd = 0;
+    /* Pull existing series in parallel, merge, write back. */
+    var results = await Promise.all(tickers.map(async function(tk){
+      var incoming = parsed.byTicker[tk];
+      if(incoming.length===0) return {tk:tk, skipped:true};
+      var existing = [];
+      try {
+        var row = await supaGet("prices_history","ticker",tk);
+        if(row && row.data){
+          var arr = JSON.parse(row.data);
+          if(Array.isArray(arr)) existing = arr;
+        }
+      } catch(_e) {}
+      var merged = mergePriceSeries(existing, incoming);
+      try {
+        await supaUpsert("prices_history",{ticker:tk, data: JSON.stringify(merged)});
+        invalidatePriceHistory(tk);
+        if(existing.length===0) nNew++; else nUpd++;
+        return {tk:tk, ok:true, count:merged.length};
+      } catch(e){
+        return {tk:tk, error:String(e)};
+      }
+    }));
+    var errors = results.filter(function(r){return r.error;});
+    var msg = "Price history: "+nNew+" new ticker(s), "+nUpd+" updated, "+parsed.dates+" date(s) parsed";
+    if(parsed.dropped>0) msg += " ("+parsed.dropped+" rows dropped)";
+    if(errors.length>0) msg += "\nFailed: "+errors.map(function(r){return r.tk;}).join(", ");
+    alertFn(msg);
+    setPriceHistoryImportText("");
+  }
+
   return {
     showDataPanel,setShowDataPanel,importText,setImportText,importError,setImportError,
     dataHubTab,setDataHubTab,valImportText,setValImportText,estImportText,setEstImportText,
@@ -1082,7 +1133,8 @@ export function useImport(){
     segmentsImportText,setSegmentsImportText,
     epsRevImportText,setEpsRevImportText,
     guidanceImportText,setGuidanceImportText,
-    applyFxImport,applyRepImport,applyTxImport,applyPerfImport,applyCalImport,applyWeightsImport,applyValImport,applyEstImport,applyMetricsImport,applyBenchmarkImport,applyDashboardImport,applyRatioImport,applyFinancialsImport,applySegmentsImport,applyEpsRevImport,applyGuidanceImport,
+    priceHistoryImportText,setPriceHistoryImportText,
+    applyFxImport,applyRepImport,applyTxImport,applyPerfImport,applyCalImport,applyWeightsImport,applyValImport,applyEstImport,applyMetricsImport,applyBenchmarkImport,applyDashboardImport,applyRatioImport,applyFinancialsImport,applySegmentsImport,applyEpsRevImport,applyGuidanceImport,applyPriceHistoryImport,
     importAll,exportAll,downloadBackup
   };
 }

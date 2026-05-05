@@ -617,11 +617,22 @@ export function CompanyProvider({children}){
   function applyPerfBulk(portfolio,parsed){
     setPerfData(function(prev){
       var port=Object.assign({series:[],lastMonthEMV:0},prev[portfolio]||{});
-      /* Build lookup: exact name OR any alias → index. */
+      /* Build lookup: exact name OR ticker OR any alias → index. Ticker
+         matching is critical because users typically rename series for
+         display ("Russell 1000 Growth") but their CSV column headers
+         stay as the FactSet ticker ("IWF"). Without ticker matching,
+         every re-upload creates duplicate competitor rows with
+         ticker-as-name, while the original series go stale. */
       var lookup={};
       (port.series||[]).forEach(function(s,i){
-        lookup[s.name]=i;
-        (s.aliases||[]).forEach(function(a){if(lookup[a]===undefined)lookup[a]=i;});
+        if(s.name)lookup[s.name]=i;
+        if(s.name)lookup[s.name.toUpperCase()]=i;
+        if(s.ticker&&lookup[s.ticker]===undefined)lookup[s.ticker]=i;
+        if(s.ticker&&lookup[s.ticker.toUpperCase()]===undefined)lookup[s.ticker.toUpperCase()]=i;
+        (s.aliases||[]).forEach(function(a){
+          if(a&&lookup[a]===undefined)lookup[a]=i;
+          if(a&&lookup[a.toUpperCase()]===undefined)lookup[a.toUpperCase()]=i;
+        });
       });
       /* Names the user explicitly deleted — skip them so paste doesn't
          re-create the same dup series the user just removed. */
@@ -632,11 +643,19 @@ export function CompanyProvider({children}){
          Headers in the ignored list get headerIdx=-1 (skipped at write time). */
       var headerIdx={};
       parsed.seriesNames.forEach(function(n){
-        if(ignored[n]){
+        var nu=(n||"").toUpperCase();
+        if(ignored[n]||ignored[nu]){
           headerIdx[n]=-1;
-        }else if(lookup[n]!==undefined){
-          var idx=lookup[n];
-          newSeries[idx]=Object.assign({},newSeries[idx],{returns:Object.assign({},newSeries[idx].returns||{})});
+        }else if(lookup[n]!==undefined||lookup[nu]!==undefined){
+          var idx=lookup[n]!==undefined?lookup[n]:lookup[nu];
+          /* Preserve role/ticker/name; only refresh returns. Also record
+             the incoming header as an alias so future re-uploads short-
+             circuit on alias match (covers the case where header text
+             differs from both name and ticker). */
+          var existing=newSeries[idx];
+          var aliases=(existing.aliases||[]).slice();
+          if(n&&n!==existing.name&&n!==existing.ticker&&aliases.indexOf(n)<0)aliases.push(n);
+          newSeries[idx]=Object.assign({},existing,{aliases:aliases,returns:Object.assign({},existing.returns||{})});
           headerIdx[n]=idx;
         }else{
           headerIdx[n]=newSeries.length;
