@@ -351,14 +351,18 @@ export function useCompanies(){
     /* (date-1, price-1) entries to push into prices_history per ticker
        after companies state is updated. Keyed by ticker. */
     var historyAppends = {};
+    /* Canonicalize ticker before keying historyAppends so MS-prefixed
+       MSCI numeric IDs collapse with their bare-numeric form. */
+    function canonTk(t){ var u=(t||"").toUpperCase().trim(); return /^MS\d+$/.test(u)?u.slice(2):u; }
     function recordHistory(tk, dateRaw, priceRaw){
       if(!tk) return;
       var iso = normIsoDate(dateRaw);
       if(!iso) return;
       var p = priceRaw == null ? NaN : parseFloat(String(priceRaw).replace(/,/g,""));
       if(!isFinite(p) || p <= 0) return;
-      if(!historyAppends[tk]) historyAppends[tk] = [];
-      historyAppends[tk].push({ d: iso, p: p });
+      var key = canonTk(tk);
+      if(!historyAppends[key]) historyAppends[key] = [];
+      historyAppends[key].push({ d: iso, p: p });
     }
     lines.forEach(function(line){
       var delim = line.indexOf("\t")>=0 ? "\t" : ",";

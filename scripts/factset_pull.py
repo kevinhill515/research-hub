@@ -163,6 +163,19 @@ def supa_put_companies(companies: list[dict]) -> None:
         _supa_req("POST", "companies", body=body)
 
 
+def canonical_ticker(t: str) -> str:
+    """Mirrors the frontend's canonical(): uppercases, and strips a
+    leading 'MS' prefix when the rest is purely numeric. FactSet emits
+    MSCI index IDs both ways ('MS655052' / '655052'); both refer to the
+    same series. Real tickers with non-digit chars after MS (MS-US,
+    MSFT, MS.UN-CA) are unaffected."""
+    if not t: return ""
+    u = str(t).upper().strip()
+    if re.match(r"^MS\d+$", u):
+        return u[2:]
+    return u
+
+
 def supa_get_price_history(ticker: str) -> list[dict]:
     """Read the prices_history row for a single ticker. Returns [] if the
     row is missing or unparseable so the merge step can treat it as a
@@ -1061,7 +1074,7 @@ def read_prices(xl: ExcelSession) -> tuple[dict[str, dict], dict[str, list]]:
             if len(row) > ORD_PRICE1_IDX:
                 hist = parse_history_cell(row[ORD_DATE1_IDX], row[ORD_PRICE1_IDX])
                 if hist:
-                    history.setdefault(ord_tk.upper(), []).append({"d": hist[0], "p": hist[1]})
+                    history.setdefault(canonical_ticker(ord_tk), []).append({"d": hist[0], "p": hist[1]})
         if len(row) > US_TICKER_IDX:
             us_tk = _str(row[US_TICKER_IDX])
             if us_tk:
@@ -1075,7 +1088,7 @@ def read_prices(xl: ExcelSession) -> tuple[dict[str, dict], dict[str, list]]:
                 if len(row) > US_PRICE1_IDX:
                     hist = parse_history_cell(row[US_DATE1_IDX], row[US_PRICE1_IDX])
                     if hist:
-                        history.setdefault(us_tk.upper(), []).append({"d": hist[0], "p": hist[1]})
+                        history.setdefault(canonical_ticker(us_tk), []).append({"d": hist[0], "p": hist[1]})
     log(f"  Prices: {len(out)} tickers, {len(history)} with history entries")
     return out, history
 

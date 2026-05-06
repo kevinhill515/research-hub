@@ -10,13 +10,28 @@
 import { useState, useEffect, useRef } from "react";
 import { supaGet } from "../api/index.js";
 
-/* Cross-component cache. Keyed by upper-cased ticker. The value can be
+/* Canonicalize a ticker before using it as a cache / Supabase key.
+   - Uppercase
+   - Strip a leading "MS" prefix when the rest is purely numeric.
+     FactSet sometimes prefixes its numeric MSCI index IDs (e.g.
+     "MS655052") and sometimes drops the prefix ("655052"). Both forms
+     refer to the same series, so we collapse them to the bare numeric
+     form. Real tickers like MS-US, MSFT, MS.UN-CA are unaffected
+     because they have non-digit characters after the MS. */
+export function canonicalTicker(t) {
+  if (!t) return "";
+  const u = String(t).toUpperCase().trim();
+  if (/^MS\d+$/.test(u)) return u.slice(2);
+  return u;
+}
+
+/* Cross-component cache. Keyed by canonical ticker. The value can be
    { loading: true } (a fetch is in flight; subsequent callers wait on
    the same Promise), or { series: [...] } (resolved). */
 const cache = new Map();
 
 export function usePriceHistory(ticker) {
-  const tk = (ticker || "").toUpperCase();
+  const tk = canonicalTicker(ticker);
   const [state, setState] = useState(function () {
     const c = cache.get(tk);
     if (c && c.series) return { loading: false, series: c.series, error: null };
@@ -82,7 +97,7 @@ export function usePriceHistory(ticker) {
    can re-render with a fresh array reference without re-fetching. */
 export function usePriceHistories(tickers) {
   const list = (tickers || [])
-    .map(function (t) { return (t || "").toUpperCase(); })
+    .map(canonicalTicker)
     .filter(Boolean);
   /* De-dupe + stable order so the dependency key only changes when the
      set of tickers actually changes. */
@@ -162,7 +177,7 @@ export function usePriceHistories(tickers) {
 /* Drop a ticker's cached series — call after a manual upload that
    refreshes the history so the next render fetches fresh. */
 export function invalidatePriceHistory(ticker) {
-  cache.delete((ticker || "").toUpperCase());
+  cache.delete(canonicalTicker(ticker));
 }
 
 /* Drop everything (used by import-all reset paths). */

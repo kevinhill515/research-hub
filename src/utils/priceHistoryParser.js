@@ -1,3 +1,14 @@
+/* Canonicalize a ticker. Uppercases, and strips a leading "MS" prefix
+   when the remainder is purely numeric — FactSet emits both forms
+   ("MS655052" and "655052") for the same MSCI index series. Real
+   tickers like MS-US, MSFT are unaffected (non-digit chars after MS). */
+function canonical(t) {
+  if (!t) return "";
+  const u = String(t).toUpperCase().trim();
+  if (/^MS\d+$/.test(u)) return u.slice(2);
+  return u;
+}
+
 /* Parser for the daily-prices upload.
  *
  * Accepts two layouts (auto-detected by the header):
@@ -125,7 +136,7 @@ export function parsePriceHistory(text) {
       let j = i + 1;
       while (j < header.length && !(header[j] || "").trim()) j++;
       if (j >= header.length) continue;
-      const tk = (header[j] || "").trim().toUpperCase();
+      const tk = canonical(header[j]);
       if (!tk || isDateHeader(header[j])) continue;
       pairs.push({ dateIdx: i, priceIdx: j, ticker: tk });
       if (!byTicker[tk]) byTicker[tk] = [];
@@ -160,7 +171,7 @@ export function parsePriceHistory(text) {
     /* Simple wide: col 0 is the shared date, cols 1..n are tickers. */
     const tickerCols = []; /* { idx, ticker } */
     for (let i = 1; i < header.length; i++) {
-      const tk = (header[i] || "").trim().toUpperCase();
+      const tk = canonical(header[i]);
       if (!tk) continue; /* skip blank header columns */
       tickerCols.push({ idx: i, ticker: tk });
       byTicker[tk] = [];
