@@ -146,6 +146,28 @@ export function getDataStatus(company, kind, today) {
     if (f === "none" && r === "none") return "none";
     if (f === "current" || r === "current") return "current";
     return "stale";
+  } else if (kind === "dashboard") {
+    /* Dashboard rolls up Financials, Ratios, Segments. Same "freshest
+       wins" rule as Snapshot: any current → current, all stale → stale,
+       all none → none. */
+    const f = getDataStatus(company, "financials", today);
+    const r = getDataStatus(company, "ratios", today);
+    const s = getDataStatus(company, "segments", today);
+    if (f === "none" && r === "none" && s === "none") return "none";
+    if (f === "current" || r === "current" || s === "current") return "current";
+    return "stale";
+  } else if (kind === "prices") {
+    /* Prices tab is fed by company.tickers[].price (current) and the
+       async-loaded prices_history series (history depth). We can only
+       check the synchronous side here, so:
+         current — any ticker has a parseable positive price
+         none    — no ticker has a price yet
+       We don't surface "stale" because lastPriceUpdate is a global
+       timestamp, not per-company; a global age check would mislabel
+       individual companies. */
+    const tks = (company && company.tickers) || [];
+    const hasPrice = tks.some(function (t) { const p = parseFloat(t && t.price); return isFinite(p) && p > 0; });
+    return hasPrice ? "current" : "none";
   }
 
   if (!hasAny) return "none";

@@ -198,6 +198,8 @@ export default function App(){
   var sEps = getDataStatus(selCo, "epsrev");
   var sGui = getDataStatus(selCo, "guidance");
   var sSnap = getDataStatus(selCo, "snapshot");
+  var sDash = getDataStatus(selCo, "dashboard");
+  var sPrc  = getDataStatus(selCo, "prices");
   function tipFor(s, k){ return s === "stale" ? staleReason(selCo, k) : undefined; }
   /* Active-segments count: a segment is "active" if its most recent
      historical year has any reported value (sales / EBIT). Discontinued
@@ -219,7 +221,7 @@ export default function App(){
     }).length;
   }
   var actSeg = activeSegmentCount(selCo);
-  var coTabs=[{id:"dashboard",label:"Dashboard"},{id:"prices",label:"Prices"},{id:"financials",label:"Financials"+statusBadge(sFin),title:tipFor(sFin,"financials")},{id:"ratios",label:"Ratios"+statusBadge(sRat),title:tipFor(sRat,"ratios")},{id:"segments",label:"Segments"+(actSeg>0?" ("+actSeg+")":"")+statusBadge(sSeg),title:tipFor(sSeg,"segments")},{id:"epsrev",label:"E[EPS] Revisions"+statusBadge(sEps),title:tipFor(sEps,"epsrev")},{id:"guidance",label:"Guidance"+statusBadge(sGui),title:tipFor(sGui,"guidance")},{id:"metrics",label:"Snapshot"+statusBadge(sSnap),title:tipFor(sSnap,"snapshot")},...TEMPLATE_SECTIONS.map(function(s){return{id:"section:"+s,label:s};}),{id:"earnings",label:"Earnings & Thesis Check"},{id:"template",label:"Template"},
+  var coTabs=[{id:"dashboard",label:"Dashboard"+statusBadge(sDash),title:tipFor(sDash,"dashboard")},{id:"prices",label:"Prices"+statusBadge(sPrc),title:tipFor(sPrc,"prices")},{id:"financials",label:"Financials"+statusBadge(sFin),title:tipFor(sFin,"financials")},{id:"ratios",label:"Ratios"+statusBadge(sRat),title:tipFor(sRat,"ratios")},{id:"segments",label:"Segments"+(actSeg>0?" ("+actSeg+")":"")+statusBadge(sSeg),title:tipFor(sSeg,"segments")},{id:"epsrev",label:"E[EPS] Revisions"+statusBadge(sEps),title:tipFor(sEps,"epsrev")},{id:"guidance",label:"Guidance"+statusBadge(sGui),title:tipFor(sGui,"guidance")},{id:"metrics",label:"Snapshot"+statusBadge(sSnap),title:tipFor(sSnap,"snapshot")},...TEMPLATE_SECTIONS.map(function(s){return{id:"section:"+s,label:s};}),{id:"earnings",label:"Earnings & Thesis Check"},{id:"template",label:"Template"},
     {id:"weights",label:"Weights"+((selCo&&selCo.portWeightHistory&&selCo.portWeightHistory.length>0)?" ("+selCo.portWeightHistory.length+")":"")},
     {id:"transactions",label:"Transactions"+((selCo&&selCo.transactions&&selCo.transactions.length>0)?" ("+selCo.transactions.length+")":"")},
     {id:"linked",label:"Linked"+(linkedEntries.length>0?" ("+linkedEntries.length+")":"")},{id:"upload",label:"Upload"},{id:"history",label:"Log"+((selCo&&selCo.updateLog&&selCo.updateLog.length>0)?" ("+selCo.updateLog.length+")":"")}];
