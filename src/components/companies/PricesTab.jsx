@@ -169,6 +169,7 @@ export default function PricesTab({ company }) {
   const [mode, setMode] = useState("price"); /* "price" | "pct" */
   const [show50, setShow50] = useState(true);
   const [show200, setShow200] = useState(true);
+  const [showTx, setShowTx] = useState(true);
   /* Custom date range. When either is set, it overrides the matching
      end of the period preset. Both empty = period preset is in effect. */
   const [customStart, setCustomStart] = useState("");
@@ -327,6 +328,47 @@ export default function PricesTab({ company }) {
 
   /* Reset picks when ticker / period / mode / custom range changes. */
   useEffect(function () { setPickA(null); setPickB(null); }, [activeKey, period, mode, customStart, customEnd, fullSeries.length]);
+
+  /* Transaction markers anchored to the visible window. For each tx in
+     [visible[0].d, visible.last.d], compute the index of the closest
+     trading day (we round forward — first index whose date >= tx.date,
+     so a Saturday tx lands on Monday's close). Aggregates same-direction
+     same-day txs into one marker so a multi-portfolio buy doesn't draw
+     three stacked arrows on top of each other. */
+  const txMarkers = useMemo(function () {
+    if (!showTx || !visible.length) return [];
+    const txs = ((company && company.transactions) || []).slice();
+    if (!txs.length) return [];
+    const startDate = visible[0].d;
+    const endDate = visible[visible.length - 1].d;
+    /* Group by (date, direction). Same-day buys + sells stay separate
+       so the user sees both arrows; same-day same-direction txs from
+       multiple portfolios collapse into one with combined shares. */
+    const groups = {};
+    txs.forEach(function (t) {
+      const d = (t && t.date) || "";
+      if (!d || d < startDate || d > endDate) return;
+      const shares = parseFloat(t.shares);
+      if (!isFinite(shares) || shares === 0) return;
+      const dir = shares > 0 ? "buy" : "sell";
+      const key = d + "|" + dir;
+      if (!groups[key]) groups[key] = { date: d, dir: dir, shares: 0, items: [] };
+      groups[key].shares += shares;
+      groups[key].items.push(t);
+    });
+    /* Map each group's date to a visible-array index (forward-snap). */
+    const out = [];
+    Object.keys(groups).forEach(function (k) {
+      const g = groups[k];
+      let idx = -1;
+      for (let i = 0; i < visible.length; i++) {
+        if (visible[i].d >= g.date) { idx = i; break; }
+      }
+      if (idx < 0) return; /* shouldn't happen given the date guard above */
+      out.push({ idx: idx, date: g.date, dir: g.dir, shares: g.shares, items: g.items });
+    });
+    return out;
+  }, [showTx, visible, company]);
 
   const ccy = (active && active.currency) || "USD";
 
@@ -532,6 +574,13 @@ export default function PricesTab({ company }) {
             </label>
           </>
         )}
+        <span className="text-gray-300 dark:text-slate-600">|</span>
+        <label className="inline-flex items-center gap-1.5 text-xs cursor-pointer select-none">
+          <input type="checkbox" checked={showTx} onChange={function (e) { setShowTx(e.target.checked); }} className="cursor-pointer" />
+          <span className="font-medium text-gray-700 dark:text-slate-300">
+            <span className="text-emerald-600 dark:text-emerald-400">▲</span>/<span className="text-red-600 dark:text-red-400">▼</span> Trades
+          </span>
+        </label>
         {(pickA !== null || pickB !== null) && (
           <button
             onClick={function () { setPickA(null); setPickB(null); }}
@@ -669,6 +718,43 @@ export default function PricesTab({ company }) {
 
           {/* Stock line */}
           <path d={stockPath} fill="none" stroke="#2563eb" strokeWidth="2.25" />
+
+          {/* Transaction arrows. Buys (▲) green, anchored just BELOW the
+              price line so they point UP to it; sells (▼) red, anchored
+              just ABOVE the price line pointing DOWN. The vertical
+              offset keeps the arrows from occluding the line itself.
+              SVG <title> gives a native hover tooltip with the trade
+              details (date, total shares, portfolio set). */}
+          {txMarkers.map(function (m) {
+            const cx = xOf(m.idx);
+            const sv = stockValues[m.idx];
+            if (sv == null || !isFinite(sv)) return null;
+            const cy = yOf(sv);
+            const isBuy = m.dir === "buy";
+            const color = isBuy ? "#16a34a" : "#dc2626";
+            const offset = 16; /* pixels between arrow tip and price point */
+            /* Triangle dimensions. Build an isoceles triangle pointing
+               up (buy) or down (sell), with the tip touching the price
+               point at (cx, cy ± offset). */
+            const half = 6;     /* half-base */
+            const height = 9;   /* tip → base */
+            const tipY = isBuy ? cy + offset : cy - offset;
+            const baseY = isBuy ? tipY + height : tipY - height;
+            const path = "M " + cx.toFixed(1) + " " + tipY.toFixed(1)
+                       + " L " + (cx - half).toFixed(1) + " " + baseY.toFixed(1)
+                       + " L " + (cx + half).toFixed(1) + " " + baseY.toFixed(1) + " Z";
+            const portList = Array.from(new Set(m.items.map(function (t) { return t.portfolio || "?"; }))).join(", ");
+            const tipLine = isBuy
+              ? "BUY " + Math.abs(m.shares).toLocaleString() + " sh — " + m.date + " (" + portList + ")"
+              : "SELL " + Math.abs(m.shares).toLocaleString() + " sh — " + m.date + " (" + portList + ")";
+            return (
+              <g key={m.dir + ":" + m.date}>
+                <path d={path} fill={color} stroke="white" strokeWidth="1" opacity="0.95">
+                  <title>{tipLine}</title>
+                </path>
+              </g>
+            );
+          })}
 
           {/* measure-tool marks */}
           {pickA !== null && visible[pickA] && (
