@@ -180,9 +180,34 @@ export default function PricesTab({ company }) {
   const [hoverIdx, setHoverIdx] = useState(null);
   const svgRef = useRef(null);
 
-  /* Active stock series. */
+  /* Active stock series.
+     Augment with the company's CURRENT price as a final data point so
+     the chart is always up-to-date even when prices_history (which is
+     populated nightly with yesterday's close) is one day behind.
+     Logic:
+       - If today's calendar date is later than the last history date
+         and active.price is a finite positive number, append it.
+       - If today equals the last history date and active.price differs
+         from history's last p, overwrite (current price is fresher
+         than the script-fed close).
+     This way the chart's right edge is always today's price as
+     uploaded most recently, without polluting prices_history itself. */
   const ph = usePriceHistory(active && active.ticker);
-  const fullSeries = ph.series || [];
+  const fullSeries = useMemo(function () {
+    const base = ph.series || [];
+    const cur = active ? parseFloat(active.price) : NaN;
+    if (!isFinite(cur) || cur <= 0) return base;
+    const today = new Date().toISOString().slice(0, 10);
+    if (base.length === 0) return [{ d: today, p: cur }];
+    const last = base[base.length - 1];
+    if (today > last.d) return base.concat([{ d: today, p: cur }]);
+    if (today === last.d && cur !== last.p) {
+      const merged = base.slice(0, -1);
+      merged.push({ d: today, p: cur });
+      return merged;
+    }
+    return base;
+  }, [ph.series, active && active.price]);
 
   /* Build the benchmark candidate list:
      - Every portfolio the company is currently in (`portfolios`)
