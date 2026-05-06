@@ -169,6 +169,11 @@ export default function PricesTab({ company }) {
   const [mode, setMode] = useState("price"); /* "price" | "pct" */
   const [show50, setShow50] = useState(false);
   const [show200, setShow200] = useState(false);
+  /* Custom date range. When either is set, it overrides the matching
+     end of the period preset. Both empty = period preset is in effect. */
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
+  const customActive = !!(customStart || customEnd);
 
   const [pickA, setPickA] = useState(null);
   const [pickB, setPickB] = useState(null);
@@ -244,16 +249,34 @@ export default function PricesTab({ company }) {
   const activeBenchTickers = (mode === "pct" && selectedBenchTickers) ? selectedBenchTickers : [];
   const benchHistories = usePriceHistories(activeBenchTickers);
 
-  /* Crop active stock to visible period. */
+  /* Crop active stock to visible window.
+     Window = [lower, upper] where:
+       lower = customStart if set, else periodCutoff(period)
+       upper = customEnd   if set, else +∞
+     We compute the start/end indices into the FULL series, then slice.
+     Moving averages are computed against the full series and sliced
+     identically so the start of the visible window has correct MAs. */
   const { visible, ma50Vis, ma200Vis } = useMemo(function () {
     if (!fullSeries.length) return { visible: [], ma50Vis: [], ma200Vis: [] };
-    const cutoff = periodCutoff(period, new Date());
-    const start = indexAtOrAfter(fullSeries, cutoff);
-    const v = fullSeries.slice(start);
-    const m50 = show50  ? movingAvg(fullSeries, 50).slice(start)  : [];
-    const m200 = show200 ? movingAvg(fullSeries, 200).slice(start) : [];
+    const lower = customStart || periodCutoff(period, new Date());
+    const start = indexAtOrAfter(fullSeries, lower);
+    let end = fullSeries.length;
+    if (customEnd) {
+      /* customEnd is inclusive; find first index > customEnd. */
+      let lo = start, hi = fullSeries.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (fullSeries[mid].d <= customEnd) lo = mid + 1;
+        else hi = mid;
+      }
+      end = lo;
+    }
+    if (end <= start) return { visible: [], ma50Vis: [], ma200Vis: [] };
+    const v = fullSeries.slice(start, end);
+    const m50 = show50  ? movingAvg(fullSeries, 50).slice(start, end)  : [];
+    const m200 = show200 ? movingAvg(fullSeries, 200).slice(start, end) : [];
     return { visible: v, ma50Vis: m50, ma200Vis: m200 };
-  }, [fullSeries, period, show50, show200]);
+  }, [fullSeries, period, customStart, customEnd, show50, show200]);
 
   /* In % gain mode, build aligned benchmark % gain series. */
   const benchSeriesRendered = useMemo(function () {
@@ -277,8 +300,8 @@ export default function PricesTab({ company }) {
       });
   }, [mode, visible, benchmarkOptions, selectedBenchTickers, benchHistories]);
 
-  /* Reset picks when ticker / period / mode changes. */
-  useEffect(function () { setPickA(null); setPickB(null); }, [activeKey, period, mode, fullSeries.length]);
+  /* Reset picks when ticker / period / mode / custom range changes. */
+  useEffect(function () { setPickA(null); setPickB(null); }, [activeKey, period, mode, customStart, customEnd, fullSeries.length]);
 
   const ccy = (active && active.currency) || "USD";
 
@@ -445,7 +468,32 @@ export default function PricesTab({ company }) {
         <span className="text-gray-300 dark:text-slate-600">|</span>
         <ModeToggle mode={mode} setMode={setMode} />
         <span className="text-gray-300 dark:text-slate-600">|</span>
-        <PeriodPicker period={period} setPeriod={setPeriod} />
+        <PeriodPicker period={period} setPeriod={function (p) { setPeriod(p); setCustomStart(""); setCustomEnd(""); }} disabled={customActive} />
+        <span className="text-[11px] text-gray-500 dark:text-slate-400 ml-1">From</span>
+        <input
+          type="date"
+          value={customStart}
+          min={fullSeries.length ? fullSeries[0].d : undefined}
+          max={customEnd || (fullSeries.length ? fullSeries[fullSeries.length - 1].d : undefined)}
+          onChange={function (e) { setCustomStart(e.target.value); }}
+          className="text-xs px-1.5 py-0.5 rounded border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
+        />
+        <span className="text-[11px] text-gray-500 dark:text-slate-400">to</span>
+        <input
+          type="date"
+          value={customEnd}
+          min={customStart || (fullSeries.length ? fullSeries[0].d : undefined)}
+          max={fullSeries.length ? fullSeries[fullSeries.length - 1].d : undefined}
+          onChange={function (e) { setCustomEnd(e.target.value); }}
+          className="text-xs px-1.5 py-0.5 rounded border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
+        />
+        {customActive && (
+          <button
+            onClick={function () { setCustomStart(""); setCustomEnd(""); }}
+            className="text-[11px] px-1.5 py-0.5 rounded border border-gray-300 dark:border-slate-600 text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700"
+            title="Clear custom range — go back to the period preset"
+          >×</button>
+        )}
         {mode === "price" && (
           <>
             <span className="text-gray-300 dark:text-slate-600">|</span>
@@ -692,11 +740,14 @@ function ModeToggle({ mode, setMode }) {
   );
 }
 
-function PeriodPicker({ period, setPeriod }) {
+function PeriodPicker({ period, setPeriod, disabled }) {
+  /* When `disabled` is true, the custom date range is in effect and
+     none of the presets are visually highlighted. Buttons are still
+     clickable — clicking one switches back to that preset. */
   return (
-    <div className="inline-flex rounded border border-gray-300 dark:border-slate-600 overflow-hidden">
+    <div className={"inline-flex rounded border overflow-hidden " + (disabled ? "border-gray-200 dark:border-slate-700 opacity-70" : "border-gray-300 dark:border-slate-600")}>
       {PERIOD_OPTIONS.map(function (p) {
-        const active = p.id === period;
+        const active = !disabled && p.id === period;
         return (
           <button
             key={p.id}
