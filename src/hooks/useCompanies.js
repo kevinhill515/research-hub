@@ -2,7 +2,9 @@ import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useCompanyContext } from '../context/CompanyContext.jsx';
 import { PORTFOLIOS, TIER_ORDER, SECTOR_ORDER, COUNTRY_ORDER, ALL_COLS, COMPACT_COLS, TEMPLATE_SECTIONS, UPLOAD_TYPES, REP_ACCOUNTS } from '../constants/index.js';
 import { getCurrency, calcNormEPS, calcTP, calcMOS, fmtPrice, fmtTP, fmtMOS, impliedFYLabel, todayStr, parseDate, sortCos, blankEarnings, toHTML, downloadMD, getTiers } from '../utils/index.js';
-import { ANTHROPIC_KEY, apiCall, supaUpsert } from '../api/index.js';
+import { ANTHROPIC_KEY, apiCall, supaUpsert, supaGet } from '../api/index.js';
+import { mergePriceSeries } from '../utils/priceHistoryParser.js';
+import { invalidatePriceHistory } from './usePriceHistory.js';
 import { useAlert } from '../components/ui/DialogProvider.jsx';
 
 export function useCompanies(){
@@ -252,12 +254,17 @@ export function useCompanies(){
   }
   /* Price + trailing-perf upload.
    *
-   * Column layout (27 columns total):
-   *    [0] Company
-   *    [1] Ord Ticker        [2] Ord Price
-   *    [3..13] Ord trailing returns: TODAY 5D MTD 1M QTD 3M 6M YTD 1Y 2Y 3Y (11 cols)
-   *    [14] US Ticker        [15] US Price
-   *    [16..26] US trailing returns: TODAY 5D MTD 1M QTD 3M 6M YTD 1Y 2Y 3Y (11 cols)
+   * Column layout (31 columns — current):
+   *    [0]  Company
+   *    [1]  Ord Ticker    [2]  Ord Date-1    [3]  Ord Price-1    [4]  Ord Price
+   *    [5..15]  Ord trailing returns: TODAY 5D MTD 1M QTD 3M 6M YTD 1Y 2Y 3Y
+   *    [16] US Ticker     [17] US Date-1     [18] US Price-1     [19] US Price
+   *    [20..30] US trailing returns: TODAY 5D MTD 1M QTD 3M 6M YTD 1Y 2Y 3Y
+   *
+   * The Date-1 / Price-1 cells carry yesterday's close per ticker; on
+   * each daily run those entries are appended to the prices_history
+   * series for that ticker (deduped by date), so the historical chart
+   * data grows incrementally without a separate upload step.
    *
    * Each ticker stores its own `perf` object with all 11 windows as
    * decimals (0.032 = 3.2%). Legacy `t.perf5d` (string) is also written
@@ -266,8 +273,11 @@ export function useCompanies(){
    * when present so trailing returns read in USD; ord ticker (often
    * non-USD) is used as a fallback.
    *
-   * The 7-col legacy paste (Company, Ord, OrdPrice, Ord5D, US, USPrice,
-   * US5D) is still accepted — detected by short row length. */
+   * Backward-compatible:
+   *   - 27-col layout (no date-1/price-1): still parses, just doesn't
+   *     append to prices_history.
+   *   - 7-col legacy (Company, Ord, OrdPrice, Ord5D, US, USPrice, US5D):
+   *     still parses. */
   /* Column-position to storage-key map for the Prices import. The
      spreadsheet column header is "TODAY" (FactSet's name); we store it
      under "1D" so it aligns with the Markets Dashboard convention used
@@ -309,6 +319,26 @@ export function useCompanies(){
       return isPercentForm ? p.value / 100 : p.value;
     });
   }
+  /* Normalize a date cell to ISO YYYY-MM-DD. Returns null on bad input
+     so the caller can skip pushing a malformed (date-1, price-1) entry
+     without affecting the rest of the row. */
+  function normIsoDate(s){
+    if(!s) return null;
+    var t = String(s).trim();
+    if(!t) return null;
+    var m = t.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+    if(m){
+      var yy = parseInt(m[1],10), mm = parseInt(m[2],10), dd = parseInt(m[3],10);
+      if(mm>=1&&mm<=12&&dd>=1&&dd<=31) return yy+"-"+(mm<10?"0":"")+mm+"-"+(dd<10?"0":"")+dd;
+    }
+    m = t.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})/);
+    if(m){
+      var mmm = parseInt(m[1],10), ddd = parseInt(m[2],10), yyy = parseInt(m[3],10);
+      if(yyy<100) yyy += yyy>=50 ? 1900 : 2000;
+      if(mmm>=1&&mmm<=12&&ddd>=1&&ddd<=31) return yyy+"-"+(mmm<10?"0":"")+mmm+"-"+(ddd<10?"0":"")+ddd;
+    }
+    return null;
+  }
   function applyPriceImport(){
     if(!priceImportText.trim())return;
     var lines = priceImportText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});
@@ -318,36 +348,68 @@ export function useCompanies(){
       if(/^(company|name)$/i.test((firstParts[0]||"").trim())) lines.shift();
     }
     var priceData = [];
+    /* (date-1, price-1) entries to push into prices_history per ticker
+       after companies state is updated. Keyed by ticker. */
+    var historyAppends = {};
+    function recordHistory(tk, dateRaw, priceRaw){
+      if(!tk) return;
+      var iso = normIsoDate(dateRaw);
+      if(!iso) return;
+      var p = priceRaw == null ? NaN : parseFloat(String(priceRaw).replace(/,/g,""));
+      if(!isFinite(p) || p <= 0) return;
+      if(!historyAppends[tk]) historyAppends[tk] = [];
+      historyAppends[tk].push({ d: iso, p: p });
+    }
     lines.forEach(function(line){
       var delim = line.indexOf("\t")>=0 ? "\t" : ",";
       var parts = line.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});
       if(parts.length < 3) return;
       var name = parts[0];
       var ordTicker = (parts[1]||"").toUpperCase();
-      var ordPrice  = parts[2] ? parseFloat(parts[2].replace(/,/g,"")) : NaN;
+      var ordPrice = NaN;
 
-      /* Detect layout. New 27-col has perf cells at indices 3..13 and
-         15..25; legacy 7-col has US ticker at index 4. We pick by
-         whether index 4 looks like a price (number) or a ticker. */
+      /* Detect layout by length:
+           >=31  → new layout with date-1/price-1 columns
+           >=14  → 27-col legacy (no date-1/price-1)
+           else  → 7-col legacy */
       var ordPerf = {};
       var usTicker = "", usPrice = NaN;
       var usPerf = {};
-      if(parts.length >= 14){
-        /* New layout. Ord perf cells 3..13, US perf cells 16..26. */
+      if(parts.length >= 31){
+        /* Current layout. Ord: ticker[1], date-1[2], price-1[3], price[4],
+           perf[5..15]. US: ticker[16], date-1[17], price-1[18], price[19],
+           perf[20..30]. */
+        recordHistory(ordTicker, parts[2], parts[3]);
+        ordPrice = parts[4] ? parseFloat(parts[4].replace(/,/g,"")) : NaN;
         var ordCells = [];
-        for(var i=0; i<PRICE_PERF_KEYS.length; i++){ ordCells.push(parts[3 + i]); }
+        for(var i=0; i<PRICE_PERF_KEYS.length; i++){ ordCells.push(parts[5 + i]); }
         var ordVals = parsePerfRow(ordCells);
         ordVals.forEach(function(v, idx){ if(v !== null) ordPerf[PRICE_PERF_KEYS[idx]] = v; });
-        usTicker = (parts[14]||"").toUpperCase();
-        usPrice  = parts[15] ? parseFloat(parts[15].replace(/,/g,"")) : NaN;
+        usTicker = (parts[16]||"").toUpperCase();
+        recordHistory(usTicker, parts[17], parts[18]);
+        usPrice  = parts[19] ? parseFloat(parts[19].replace(/,/g,"")) : NaN;
         var usCells = [];
-        for(var k=0; k<PRICE_PERF_KEYS.length; k++){ usCells.push(parts[16 + k]); }
+        for(var k=0; k<PRICE_PERF_KEYS.length; k++){ usCells.push(parts[20 + k]); }
         var usVals = parsePerfRow(usCells);
         usVals.forEach(function(v, idx){ if(v !== null) usPerf[PRICE_PERF_KEYS[idx]] = v; });
+      } else if(parts.length >= 14){
+        /* 27-col legacy. Ord perf cells 3..13, US ticker 14, US perf 16..26. */
+        ordPrice = parts[2] ? parseFloat(parts[2].replace(/,/g,"")) : NaN;
+        var oCells = [];
+        for(var i2=0; i2<PRICE_PERF_KEYS.length; i2++){ oCells.push(parts[3 + i2]); }
+        var oVals = parsePerfRow(oCells);
+        oVals.forEach(function(v, idx){ if(v !== null) ordPerf[PRICE_PERF_KEYS[idx]] = v; });
+        usTicker = (parts[14]||"").toUpperCase();
+        usPrice  = parts[15] ? parseFloat(parts[15].replace(/,/g,"")) : NaN;
+        var uCells = [];
+        for(var k2=0; k2<PRICE_PERF_KEYS.length; k2++){ uCells.push(parts[16 + k2]); }
+        var uVals = parsePerfRow(uCells);
+        uVals.forEach(function(v, idx){ if(v !== null) usPerf[PRICE_PERF_KEYS[idx]] = v; });
       } else {
         /* Legacy 7-col: Company, Ord, OrdPrice, Ord5D, US, USPrice, US5D.
            Row-level interpretation runs over both the ord and US 5D cells
            to keep the format detection consistent. */
+        ordPrice = parts[2] ? parseFloat(parts[2].replace(/,/g,"")) : NaN;
         var raw = parts[3] || "";
         usTicker = parts.length>=5 ? (parts[4]||"").toUpperCase() : "";
         usPrice  = parts.length>=6 && parts[5] ? parseFloat(parts[5].replace(/,/g,"")) : NaN;
@@ -414,6 +476,28 @@ export function useCompanies(){
     });});
     setPriceImportText("");
     setShowPriceImport(false);
+    /* Append (date-1, price-1) to prices_history per ticker. Fire-and-
+       forget: the companies update doesn't depend on this completing,
+       and any per-ticker failure is isolated to that ticker. Each
+       ticker round-trips: GET existing series → merge → UPSERT →
+       invalidate cache. */
+    var historyTickers = Object.keys(historyAppends);
+    if(historyTickers.length > 0){
+      historyTickers.forEach(function(tk){
+        (async function(){
+          try {
+            var existing = [];
+            var row = await supaGet("prices_history","ticker",tk);
+            if(row && row.data){
+              try { var arr = JSON.parse(row.data); if(Array.isArray(arr)) existing = arr; } catch(_e){}
+            }
+            var merged = mergePriceSeries(existing, historyAppends[tk]);
+            await supaUpsert("prices_history",{ ticker: tk, data: JSON.stringify(merged) });
+            invalidatePriceHistory(tk);
+          } catch(_e){ /* swallow per-ticker errors */ }
+        })();
+      });
+    }
     /* Persist as "<user> at <timestamp>" so the indicator can show who
        ran the update. Mirrors the calLastUpdated wire format. Falls
        back to a bare timestamp when no user is set. */

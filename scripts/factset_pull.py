@@ -163,6 +163,63 @@ def supa_put_companies(companies: list[dict]) -> None:
         _supa_req("POST", "companies", body=body)
 
 
+def supa_get_price_history(ticker: str) -> list[dict]:
+    """Read the prices_history row for a single ticker. Returns [] if the
+    row is missing or unparseable so the merge step can treat it as a
+    fresh series."""
+    try:
+        raw = _supa_req("GET", f"prices_history?ticker=eq.{ticker}&select=data", accept_object=True)
+        data = json.loads(raw).get("data")
+        if not data: return []
+        arr = json.loads(data)
+        return arr if isinstance(arr, list) else []
+    except (urllib.error.HTTPError, KeyError, json.JSONDecodeError):
+        return []
+
+
+def supa_put_price_history(ticker: str, series: list[dict]) -> None:
+    """Upsert the merged series back to prices_history. The row stores
+    `data` as a JSON-encoded array; same shape as the frontend reads."""
+    body = json.dumps({"ticker": ticker, "data": json.dumps(series)}).encode()
+    _supa_req("POST", "prices_history", body=body)
+
+
+def merge_price_series(existing: list[dict], incoming: list[dict]) -> list[dict]:
+    """Merge incoming entries into the existing series, deduping by date
+    (incoming wins on conflict). Returns a fresh list sorted ascending.
+    Mirrors the frontend's mergePriceSeries util so the data shape stays
+    consistent regardless of which side wrote it."""
+    by_date: dict[str, dict] = {}
+    for e in existing or []:
+        if e and e.get("d"): by_date[e["d"]] = e
+    for e in incoming or []:
+        if e and e.get("d"): by_date[e["d"]] = e
+    return [by_date[d] for d in sorted(by_date.keys())]
+
+
+def push_price_history(history: dict[str, list]) -> int:
+    """For each ticker with new (date, price) entries, fetch the existing
+    series, merge, and write back. Returns the count of tickers updated.
+    Per-ticker errors are logged but don't abort the loop."""
+    n_ok = 0
+    n_err = 0
+    for tk, incoming in history.items():
+        if not incoming: continue
+        try:
+            existing = supa_get_price_history(tk)
+            merged = merge_price_series(existing, incoming)
+            supa_put_price_history(tk, merged)
+            n_ok += 1
+        except Exception as e:
+            n_err += 1
+            log(f"  prices_history {tk}: {e}")
+    if n_err:
+        log(f"  prices_history: {n_ok} updated, {n_err} failed")
+    else:
+        log(f"  prices_history: {n_ok} updated")
+    return n_ok
+
+
 def supa_get_meta(key: str) -> Any:
     try:
         raw = _supa_req("GET", f"meta?key=eq.{key}&select=value", accept_object=True)
@@ -871,15 +928,21 @@ def _str(v) -> str | None:
 # the Snapshot tile's benchmark rows.
 PRICES_PERF_KEYS = ["1D", "5D", "MTD", "1M", "QTD", "3M", "6M", "YTD", "1Y", "2Y", "3Y"]
 
-def read_prices(xl: ExcelSession) -> dict[str, dict]:
-    """Returns { upper_ticker: {price, perf, perf5d} } for every populated row.
+def read_prices(xl: ExcelSession) -> tuple[dict[str, dict], dict[str, list]]:
+    """Returns (prices, history).
 
-    Layout (27 columns, A..AA):
-        A: Company       B: Ord Ticker   C: Ord Price
-        D..N: 11 ord trailing returns (TODAY, 5D, MTD, 1M, QTD, 3M, 6M,
-                                       YTD, 1Y, 2Y, 3Y)
-        O: US Ticker     P: US Price
-        Q..AA: 11 US trailing returns (same windows)
+    prices:  { upper_ticker: {price, perf, perf5d} } for every populated row.
+    history: { upper_ticker: [{d, p}, …] } — yesterday's close per ticker
+             from the new Date-1 / Price-1 cells. Empty when those cells
+             are blank, so old templates keep working.
+
+    Layout (31 columns, A..AE — current):
+        A: Company
+        B: Ord Ticker    C: Ord Date-1   D: Ord Price-1   E: Ord Price
+        F..P:  11 ord trailing returns (TODAY, 5D, MTD, 1M, QTD, 3M,
+                                        6M, YTD, 1Y, 2Y, 3Y)
+        Q: US Ticker     R: US Date-1    S: US Price-1    T: US Price
+        U..AE: 11 US trailing returns (same windows)
 
     Each ticker entry stores:
         price   — float or None
@@ -890,13 +953,18 @@ def read_prices(xl: ExcelSession) -> dict[str, dict]:
 
     Single bulk range read — much faster than the per-cell loop."""
     out: dict[str, dict] = {}
-    rows = xl.read_range("Prices", f"A2:AA{MAX_COMPANY_ROW}")
-    # Indexed offsets into each row for the two ticker blocks:
-    ORD_PRICE_IDX = 2
-    ORD_PERF_START = 3
-    US_TICKER_IDX = 14
-    US_PRICE_IDX = 15
-    US_PERF_START = 16
+    history: dict[str, list] = {}
+    rows = xl.read_range("Prices", f"A2:AE{MAX_COMPANY_ROW}")
+    # Indexed offsets into each row for the two ticker blocks (new layout):
+    ORD_DATE1_IDX = 2
+    ORD_PRICE1_IDX = 3
+    ORD_PRICE_IDX = 4
+    ORD_PERF_START = 5
+    US_TICKER_IDX = 16
+    US_DATE1_IDX = 17
+    US_PRICE1_IDX = 18
+    US_PRICE_IDX = 19
+    US_PERF_START = 20
     NUM_PERF_COLS = len(PRICES_PERF_KEYS)  # 11
 
     def parse_perf_block(row, start: int) -> dict:
@@ -938,6 +1006,45 @@ def read_prices(xl: ExcelSession) -> dict[str, dict]:
             block[key] = round(v / 100 if is_percent_form else v, 6)
         return block
 
+    def parse_history_cell(date_cell, price_cell) -> tuple[str, float] | None:
+        """Convert a (date, price) pair into ('YYYY-MM-DD', float) or None.
+        Skips rows where either cell is blank or unparseable so a missing
+        Date-1 column on an old template doesn't poison anything."""
+        # Date may come back as a Python datetime (Excel serial converted by
+        # pywin32) or a plain string. Handle both.
+        if date_cell is None or date_cell == "":
+            return None
+        iso = None
+        try:
+            # datetime / date object (most common when Excel formats as a date)
+            if hasattr(date_cell, "strftime"):
+                iso = date_cell.strftime("%Y-%m-%d")
+        except Exception:
+            iso = None
+        if iso is None:
+            s = str(date_cell).strip()
+            if not s: return None
+            # ISO already?
+            m = re.match(r"^(\d{4})[-/](\d{1,2})[-/](\d{1,2})", s)
+            if m:
+                yy, mm, dd = int(m.group(1)), int(m.group(2)), int(m.group(3))
+                if 1 <= mm <= 12 and 1 <= dd <= 31:
+                    iso = f"{yy:04d}-{mm:02d}-{dd:02d}"
+            else:
+                # M/D/YYYY or M/D/YY (US format)
+                m = re.match(r"^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})", s)
+                if m:
+                    mm, dd, yy = int(m.group(1)), int(m.group(2)), int(m.group(3))
+                    if yy < 100: yy += 1900 if yy >= 50 else 2000
+                    if 1 <= mm <= 12 and 1 <= dd <= 31:
+                        iso = f"{yy:04d}-{mm:02d}-{dd:02d}"
+        if iso is None:
+            return None
+        p = _num(price_cell)
+        if p is None or not isinstance(p, (int, float)) or p <= 0:
+            return None
+        return (iso, float(p))
+
     for row in rows:
         if len(row) < 3: continue
         ord_tk = _str(row[1])
@@ -950,6 +1057,11 @@ def read_prices(xl: ExcelSession) -> dict[str, dict]:
                 entry["perf5d"] = f"{perf['5D'] * 100:.2f}"
             if price is not None or perf:
                 out[ord_tk.upper()] = entry
+            # Date-1 / Price-1 → history entry for this ticker.
+            if len(row) > ORD_PRICE1_IDX:
+                hist = parse_history_cell(row[ORD_DATE1_IDX], row[ORD_PRICE1_IDX])
+                if hist:
+                    history.setdefault(ord_tk.upper(), []).append({"d": hist[0], "p": hist[1]})
         if len(row) > US_TICKER_IDX:
             us_tk = _str(row[US_TICKER_IDX])
             if us_tk:
@@ -960,8 +1072,12 @@ def read_prices(xl: ExcelSession) -> dict[str, dict]:
                     us_entry["perf5d"] = f"{us_perf['5D'] * 100:.2f}"
                 if us_price is not None or us_perf:
                     out[us_tk.upper()] = us_entry
-    log(f"  Prices: {len(out)} tickers")
-    return out
+                if len(row) > US_PRICE1_IDX:
+                    hist = parse_history_cell(row[US_DATE1_IDX], row[US_PRICE1_IDX])
+                    if hist:
+                        history.setdefault(us_tk.upper(), []).append({"d": hist[0], "p": hist[1]})
+    log(f"  Prices: {len(out)} tickers, {len(history)} with history entries")
+    return out, history
 
 
 def read_valuation(xl: ExcelSession) -> dict[str, dict]:
@@ -1781,7 +1897,7 @@ def main() -> int:
             xl.refresh_factset()
             # 3. Read everything
             log("Reading sheets...")
-            prices     = read_prices(xl)
+            prices, price_history = read_prices(xl)
             valuations = read_valuation(xl)
             earnings   = read_earnings_dates(xl)
             fx         = read_fx(xl)
@@ -1817,6 +1933,8 @@ def main() -> int:
         n_tx, n_tx_cos, unmatched_tx = merge_transactions(cos, tx_rows)
         supa_put_companies(cos)
         log(f"  Companies: prices+={n_p}, valuations+={n_v}, earnings+={n_e}, metrics+={n_m}")
+        if price_history:
+            push_price_history(price_history)
         if tx_rows:
             log(f"  Transactions: {n_tx} new across {n_tx_cos} companies"
                 + (f"; {len(unmatched_tx)} unmatched names: {unmatched_tx[:10]}" if unmatched_tx else ""))
