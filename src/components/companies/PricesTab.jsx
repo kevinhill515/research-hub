@@ -733,11 +733,8 @@ export default function PricesTab({ company }) {
             const isBuy = m.dir === "buy";
             const color = isBuy ? "#16a34a" : "#dc2626";
             const offset = 16; /* pixels between arrow tip and price point */
-            /* Triangle dimensions. Build an isoceles triangle pointing
-               up (buy) or down (sell), with the tip touching the price
-               point at (cx, cy ± offset). */
-            const half = 6;     /* half-base */
-            const height = 9;   /* tip → base */
+            const half = 6;
+            const height = 9;
             const tipY = isBuy ? cy + offset : cy - offset;
             const baseY = isBuy ? tipY + height : tipY - height;
             const path = "M " + cx.toFixed(1) + " " + tipY.toFixed(1)
@@ -747,11 +744,31 @@ export default function PricesTab({ company }) {
             const tipLine = isBuy
               ? "BUY " + Math.abs(m.shares).toLocaleString() + " sh — " + m.date + " (" + portList + ")"
               : "SELL " + Math.abs(m.shares).toLocaleString() + " sh — " + m.date + " (" + portList + ")";
+            /* Portfolio label: green for buys, red for sells. Buy labels
+               sit BELOW the arrow base; sell labels sit ABOVE the arrow
+               base. Stroke + paint-order put a thin white halo around the
+               text so it stays readable when an arrow lands close to the
+               price line. */
+            const labelY = isBuy ? baseY + 11 : baseY - 4;
             return (
               <g key={m.dir + ":" + m.date}>
                 <path d={path} fill={color} stroke="white" strokeWidth="1" opacity="0.95">
                   <title>{tipLine}</title>
                 </path>
+                <text
+                  x={cx}
+                  y={labelY}
+                  fontSize="10"
+                  fontWeight="700"
+                  textAnchor="middle"
+                  fill={color}
+                  stroke="white"
+                  strokeWidth="3"
+                  paintOrder="stroke"
+                  style={{ pointerEvents: "none" }}
+                >
+                  {portList}
+                </text>
               </g>
             );
           })}
