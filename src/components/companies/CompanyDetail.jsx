@@ -26,6 +26,7 @@ import EpsRevisionsTab from './EpsRevisionsTab.jsx';
 import GuidanceTab from './GuidanceTab.jsx';
 import PreEarningsBrief from './PreEarningsBrief.jsx';
 import SnapshotTab from './SnapshotTab.jsx';
+import PricesTab from './PricesTab.jsx';
 
 const INP = "text-sm px-2 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:outline-none";
 const CARD = "bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 px-3.5 py-3 mb-2";
@@ -619,6 +620,8 @@ export function CompanyDetail(props){
               trailing performance bars + current values vs 5Y history.
               Replaces the previous numbers-grid Metrics tab. */}
           {coView==="metrics"&&<SnapshotTab company={selCo}/>}
+
+          {coView==="prices"&&<PricesTab company={selCo}/>}
 
           {/* EARNINGS & THESIS CHECK TAB */}
           {coView==="earnings"&&(<div className="print-target">
