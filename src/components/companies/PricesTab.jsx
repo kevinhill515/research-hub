@@ -167,8 +167,8 @@ export default function PricesTab({ company }) {
 
   const [period, setPeriod] = useState("1Y");
   const [mode, setMode] = useState("price"); /* "price" | "pct" */
-  const [show50, setShow50] = useState(false);
-  const [show200, setShow200] = useState(false);
+  const [show50, setShow50] = useState(true);
+  const [show200, setShow200] = useState(true);
   /* Custom date range. When either is set, it overrides the matching
      end of the period preset. Both empty = period preset is in effect. */
   const [customStart, setCustomStart] = useState("");
@@ -684,15 +684,43 @@ export default function PricesTab({ company }) {
         </svg>
       </div>
 
-      {/* legend / footnote */}
-      <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 dark:text-slate-400">
-        <LegendDot color="#2563eb" label={active.ticker} />
-        {mode === "price" && show50  && <LegendDot color="#d97706" label="50d MA" />}
-        {mode === "price" && show200 && <LegendDot color="#9333ea" label="200d MA" />}
+      {/* Legend — centered, larger type, with the latest value of each
+          visible series so the chart reads at a glance. In price mode
+          the value is currency-formatted; in pct mode it's the latest
+          % gain. MA latest values are read from the last non-null entry
+          (early window points may be null until the avg has enough data). */}
+      <div className="flex flex-wrap justify-center items-center gap-x-6 gap-y-2 text-sm">
+        <LegendItem
+          color="#2563eb"
+          label={active.ticker}
+          value={mode === "pct"
+            ? fmtPct(stockValues[stockValues.length - 1])
+            : (ccy === "USD" ? "$" : ccy + " ") + fmtPrice(visible[visible.length - 1].p)}
+          valueColor={mode === "pct"
+            ? (stockValues[stockValues.length - 1] >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400")
+            : null}
+        />
+        {mode === "price" && show50  && (
+          <LegendItem color="#d97706" label="50d MA"  value={lastNonNull(ma50Vis,  function (v) { return (ccy === "USD" ? "$" : ccy + " ") + fmtPrice(v); })} />
+        )}
+        {mode === "price" && show200 && (
+          <LegendItem color="#9333ea" label="200d MA" value={lastNonNull(ma200Vis, function (v) { return (ccy === "USD" ? "$" : ccy + " ") + fmtPrice(v); })} />
+        )}
         {mode === "pct" && benchSeriesRendered.filter(function (b) { return !b.missing; }).map(function (b) {
-          return <LegendDot key={b.ticker} color={b.color} label={b.name} />;
+          const last = lastNonNullValue(b.values);
+          return (
+            <LegendItem
+              key={b.ticker}
+              color={b.color}
+              label={b.name}
+              value={last == null ? "—" : fmtPct(last)}
+              valueColor={last == null ? null : (last >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400")}
+            />
+          );
         })}
-        <div className="ml-auto">{visible.length} trading days · series ends {fmtDate(visible[visible.length - 1].d)}</div>
+      </div>
+      <div className="text-center text-xs text-gray-500 dark:text-slate-400">
+        {visible.length} trading days · series ends {fmtDate(visible[visible.length - 1].d)}
       </div>
     </div>
   );
@@ -769,6 +797,43 @@ function LegendDot({ color, label }) {
       {label}
     </span>
   );
+}
+
+/* Larger legend chip with the latest value alongside the label. Used by
+ * the centered legend below the chart. */
+function LegendItem({ color, label, value, valueColor }) {
+  return (
+    <span className="inline-flex items-center gap-2">
+      <span className="inline-block w-5 h-1 rounded-sm" style={{ backgroundColor: color }} />
+      <span className="font-medium text-gray-800 dark:text-slate-200">{label}</span>
+      {value && (
+        <span className={"font-semibold tabular-nums " + (valueColor || "text-gray-900 dark:text-slate-100")}>
+          {value}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/* Find the last finite, non-null entry in an array and format it via
+ * `fmt`. Returns "—" when the array has no usable values (e.g. early
+ * window where the moving average isn't computable yet). */
+function lastNonNull(arr, fmt) {
+  if (!arr || !arr.length) return "—";
+  for (let i = arr.length - 1; i >= 0; i--) {
+    const v = arr[i];
+    if (v != null && isFinite(v)) return fmt(v);
+  }
+  return "—";
+}
+
+function lastNonNullValue(arr) {
+  if (!arr || !arr.length) return null;
+  for (let i = arr.length - 1; i >= 0; i--) {
+    const v = arr[i];
+    if (v != null && isFinite(v)) return v;
+  }
+  return null;
 }
 
 /* Tooltip box that flips to the left of the crosshair if the cursor is
