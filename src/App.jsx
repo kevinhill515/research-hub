@@ -3,7 +3,7 @@ import { evaluateAlertsForCompany } from './utils/alerts.js';
 import { PORTFOLIOS, TIER_ORDER, SECTOR_ORDER, COUNTRY_ORDER, SECTOR_COLORS, SECTOR_SHORT, COUNTRY_GROUPS, COUNTRY_COLORS, REGION_COLORS, REGION_GROUPS, STATUS_RANK, CURRENCY_MAP, ALL_CURRENCIES, MONTHS, CO_SORTS, FORMATS, TONES, LIB_SORTS, PRESET_TAGS, UPLOAD_TYPES, TEMPLATE_SECTIONS, SECTION_SUBHEADINGS, THESIS_STATUSES, TP_CHANGES, AVG_WPM, ALL_COLS, COMPACT_COLS, COMPANY_COLUMNS, SHORTCUTS, CONF_BG, CONF_COLOR, ACTIONS, TEAM_MEMBERS, TEAM_COLORS, REP_ACCOUNTS, PORT_NAMES, FLAG_STYLES } from './constants/index.js';
 import { shortSector, sectorStyle, countryStyle, getRegion, getTiers, getCurrency, calcNormEPS, calcTP, calcMOS, fmtPrice, fmtTP, fmtMOS, mosBg, impliedFYLabel, tierPillStyle, tierBg, fmtTime, getCore, getConf, escHTML, toHTML, toMD, simScore, downloadMD, detectCompanyTags, todayStr, parseDate, daysSince, reviewedColor, getStatusRank, getTierIndex, getCompanyMOS, blankEarnings, sortCos, synPrompt, tierToStatus, repShares, repAvgCost, getInitiatedDate, monthsSince, isInitiationTx, printPage } from './utils/index.js';
 import { supaGet, supaUpsert, ANTHROPIC_KEY, apiCall } from './api/index.js';
-import { getDataStatus, statusBadge, staleReason } from './utils/dataStatus.js';
+import { getDataStatus, statusBadge, staleReason, annualStaleStatus } from './utils/dataStatus.js';
 import AlertsPanel from './components/dashboard/AlertsPanel.jsx';
 import ThisWeekEarnings from './components/dashboard/ThisWeekEarnings.jsx';
 import { PriceAgeIndicator, BarRow, PillEl, PortPicker, SectionBlock, StatusPill, DiffView } from './components/ui/index.js';
@@ -102,6 +102,9 @@ export default function App(){
   });
   const [showThisWeek,setShowThisWeek]=useState(function(){
     try { return localStorage.getItem("ccd:showThisWeek") === "1"; } catch (e) { return false; }
+  });
+  const [showAnnualStale,setShowAnnualStale]=useState(function(){
+    try { return localStorage.getItem("ccd:showAnnualStale") === "1"; } catch (e) { return false; }
   });
   const [companiesView,setCompaniesView]=useState("standard"); /* "standard" | "metrics" */
   const [metricsVisibleCols,setMetricsVisibleCols]=useState(DEFAULT_METRICS_VISIBLE);
@@ -324,6 +327,60 @@ export default function App(){
                       );
                     })}
                     {missing.length > 100 && <span className="text-[11px] text-amber-700 dark:text-amber-400 italic self-center">+ {missing.length - 100} more</span>}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+        {/* Stale annual data — collapsible. Lists companies whose
+            annual financials need a re-import. A name is "stale" once
+            either its post-FY-end earnings has reported (per
+            earningsEntries.reportDate) and the latest year in
+            company.financials.years is still behind, OR 13 months have
+            passed since FY-end with no fresh data. Sold names skipped.
+            Click any chip to open the company on its Financials tab. */}
+        {(function(){
+          var stale = companies.map(function(c){
+            return { c: c, st: annualStaleStatus(c) };
+          }).filter(function(x){ return x.st && x.st.stale; });
+          if (stale.length === 0) return null;
+          /* Sort by FY year asc (oldest stale first), then name. */
+          stale.sort(function(a,b){
+            var ay = (a.st.latestImportedYear || 0);
+            var by = (b.st.latestImportedYear || 0);
+            if (ay !== by) return ay - by;
+            return (a.c.name||"").localeCompare(b.c.name||"");
+          });
+          return (
+            <div className="mb-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800">
+              <div onClick={function(){setShowAnnualStale(function(v){var nv=!v;try{localStorage.setItem("ccd:showAnnualStale",nv?"1":"0");}catch(e){}return nv;});}} className="px-3.5 py-2 cursor-pointer flex items-center gap-2">
+                <span className="text-[11px] text-amber-700 dark:text-amber-400">{showAnnualStale?"▼":"▶"}</span>
+                <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">⚠ Stale data: {stale.length} compan{stale.length===1?"y":"ies"} need a re-import</span>
+                <span className="text-[10px] text-amber-700 dark:text-amber-400 italic ml-auto">{showAnnualStale?"click to collapse":"click to expand"}</span>
+              </div>
+              {showAnnualStale&&(
+                <div className="px-3.5 pb-2">
+                  <div className="text-[11px] text-amber-700 dark:text-amber-400 mb-1">Each name has reported its latest fiscal year (or it's been 13+ months since FY-end) but the new annual data hasn't been re-imported. Click a chip to jump to the company's Financials tab.</div>
+                  <div className="flex flex-wrap gap-1 max-h-40 overflow-y-auto">
+                    {stale.slice(0, 200).map(function(x){
+                      var c = x.c, st = x.st;
+                      var tip = "Latest imported: FY" + (st.latestImportedYear || "?")
+                              + " · Expected through FY" + st.fyYear
+                              + (st.reportSeen ? " · post-FY-end report on file" : " · 13+ months past FY-end");
+                      return (
+                        <span
+                          key={c.id}
+                          title={tip}
+                          onClick={function(){setSelCo(c);setCoView("financials");}}
+                          className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 cursor-pointer hover:bg-amber-200 dark:hover:bg-amber-900/60"
+                        >
+                          {c.name}
+                          <span className="text-amber-700 dark:text-amber-400 ml-1">FY{st.latestImportedYear || "?"}→FY{st.fyYear}</span>
+                        </span>
+                      );
+                    })}
+                    {stale.length > 200 && <span className="text-[11px] text-amber-700 dark:text-amber-400 italic self-center">+ {stale.length - 200} more</span>}
                   </div>
                 </div>
               )}

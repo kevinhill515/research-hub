@@ -182,6 +182,74 @@ export function statusBadge(status) {
   return "";
 }
 
+/* True iff a company's annual financials are stale, defined as:
+ *   The company's most recent FY-end has passed, AND
+ *   - either there's an earningsEntries entry with reportDate >= that
+ *     FY-end (i.e. the post-FY-end earnings report has happened) but
+ *     the latest historical year in financials < FY-end year,
+ *   - or it's been more than 13 months since the FY-end and still no
+ *     post-FY-end report is recorded (covers companies where
+ *     earningsEntries is incomplete).
+ *
+ * Used by the top-of-Companies banner that lists names whose annual
+ * data needs a re-import. Excludes Sold names — they don't need
+ * re-imports each cycle.
+ *
+ * Returns { stale: boolean, fyYear: number, reportSeen: boolean,
+ *           latestImportedYear: number|null, fyEnd: string }
+ * so the caller can format a useful tooltip ("FY2025 reported on
+ * 2026-02-15, latest data is 2024"). */
+export function annualStaleStatus(company, today) {
+  if (!company) return { stale: false };
+  if (company.status === "Sold") return { stale: false };
+  const t = today || new Date();
+  const fyMonthRaw = (company.valuation && company.valuation.fyMonth) || "Dec";
+  const monthKey = String(fyMonthRaw).toLowerCase().slice(0, 3);
+  const monthNum = MONTH_FROM_NAME[monthKey] || 12;
+  /* Most recent FY-end that's already happened. If today is earlier
+     in the calendar than this year's FY-end month/day, the most recent
+     FY-end is from last year. */
+  let fyYear = t.getFullYear();
+  const lastDay = lastDayOfMonth(fyYear, monthNum);
+  let fyEnd = new Date(fyYear, monthNum - 1, lastDay, 23, 59, 59);
+  if (t < fyEnd) {
+    fyYear = fyYear - 1;
+    const ld = lastDayOfMonth(fyYear, monthNum);
+    fyEnd = new Date(fyYear, monthNum - 1, ld, 23, 59, 59);
+  }
+  const fyEndIso = fyEnd.toISOString().slice(0, 10);
+
+  /* Has any earnings report been recorded with reportDate >= fyEnd? */
+  let reportSeen = false;
+  const entries = (company.earningsEntries || []);
+  for (let i = 0; i < entries.length; i++) {
+    const rd = entries[i] && entries[i].reportDate;
+    if (rd && String(rd) >= fyEndIso) { reportSeen = true; break; }
+  }
+
+  /* Latest historical year in financials. If financials missing
+     entirely, treat as not-stale-yet — we don't pester names that have
+     never been imported (those show up as "none" elsewhere). */
+  const fin = company.financials || {};
+  if (!fin.years || !fin.years.length) return { stale: false, fyYear: fyYear, reportSeen: reportSeen, latestImportedYear: null, fyEnd: fyEndIso };
+  const latestImported = latestHistoricalYear(fin.years, fin.estimate);
+
+  /* The 13-month fallback: covers names without earningsEntries. */
+  const thirteenMonthsMs = 13 * 30 * 24 * 3600 * 1000;
+  const thirteenMonthsPast = (t.getTime() - fyEnd.getTime()) > thirteenMonthsMs;
+
+  if (latestImported && latestImported >= fyYear) {
+    /* Already imported the latest FY — fresh. */
+    return { stale: false, fyYear: fyYear, reportSeen: reportSeen, latestImportedYear: latestImported, fyEnd: fyEndIso };
+  }
+
+  /* Latest imported is behind. Stale if the post-FY report has happened
+     OR we're past the 13-month fallback. Otherwise wait — they haven't
+     reported yet. */
+  const stale = reportSeen || thirteenMonthsPast;
+  return { stale: stale, fyYear: fyYear, reportSeen: reportSeen, latestImportedYear: latestImported, fyEnd: fyEndIso };
+}
+
 /* Tooltip text to surface why ⚠ shows. */
 export function staleReason(company, kind, today) {
   const expected = expectedLatestFYYear(company, today);
