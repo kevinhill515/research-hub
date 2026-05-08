@@ -219,12 +219,20 @@ export function annualStaleStatus(company, today) {
   }
   const fyEndIso = fyEnd.toISOString().slice(0, 10);
 
-  /* Has any earnings report been recorded with reportDate >= fyEnd? */
+  /* Has any earnings report been recorded with reportDate in the
+     window (fyEnd, today]? Future-dated entries don't qualify — those
+     are placeholders for the next scheduled report, not evidence the
+     report has actually happened. Without this guard, a name like
+     ATD-CA (April FY-end, reports late June) would flag stale on
+     April 30 because the user pre-populated the June report date. */
+  const todayIso = t.toISOString().slice(0, 10);
   let reportSeen = false;
   const entries = (company.earningsEntries || []);
   for (let i = 0; i < entries.length; i++) {
     const rd = entries[i] && entries[i].reportDate;
-    if (rd && String(rd) >= fyEndIso) { reportSeen = true; break; }
+    if (!rd) continue;
+    const rdStr = String(rd);
+    if (rdStr >= fyEndIso && rdStr <= todayIso) { reportSeen = true; break; }
   }
 
   /* Latest historical year in financials. If financials missing
