@@ -202,8 +202,27 @@ function EarningsCalendar({ companies, onSelectCompany }) {
   const { fxRates } = useCompanyContext();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const upcomingCutoff = new Date(today); upcomingCutoff.setDate(upcomingCutoff.getDate() + 30);
-  const recentCutoff = new Date(today);   recentCutoff.setDate(recentCutoff.getDate() - 30);
+  /* Window: full calendar-quarter aligned, spanning the previous
+     quarter through the end of next quarter. So on May 8, 2026
+     (Q2-2026) the window is Jan 1, 2026 → Sep 30, 2026 — covering
+     the season already in flight (Q1 reporters who are still trickling
+     in) plus the next two quarters of upcoming dates. This matches how
+     PMs actually think about reporting season instead of an arbitrary
+     30-day rolling window. */
+  function startOfQuarter(d) {
+    const qStartMonth = Math.floor(d.getMonth() / 3) * 3;
+    return new Date(d.getFullYear(), qStartMonth, 1);
+  }
+  function addQuarters(d, n) {
+    const q = startOfQuarter(d);
+    return new Date(q.getFullYear(), q.getMonth() + n * 3, 1);
+  }
+  function endOfQuarterStart(qStart) {
+    /* Last day of the quarter whose first day is qStart. */
+    return new Date(qStart.getFullYear(), qStart.getMonth() + 3, 0, 23, 59, 59);
+  }
+  const recentCutoff = addQuarters(today, -1);              /* start of previous quarter */
+  const upcomingCutoff = endOfQuarterStart(addQuarters(today, 1)); /* end of next quarter */
 
   /* Upcoming: any earningsEntry with reportDate in [today, today+30]. */
   const upcoming = [];
@@ -274,23 +293,68 @@ function EarningsCalendar({ companies, onSelectCompany }) {
   /* Most recent first */
   recent.sort(function (a, b) { return b.date - a.date; });
 
+  /* Season progress: % of in-window companies that have already
+     reported. Denominator = all unique companies with a date in the
+     full window (recent + upcoming); numerator = those with a recent
+     row. Gives a one-glance "we're 60% through this season" read. */
+  const inSeason = {};
+  recent.forEach(function (r) { inSeason[r.company.id] = "reported"; });
+  upcoming.forEach(function (u) { if (!inSeason[u.company.id]) inSeason[u.company.id] = "scheduled"; });
+  const totalInSeason = Object.keys(inSeason).length;
+  const reportedInSeason = Object.keys(inSeason).filter(function (id) { return inSeason[id] === "reported"; }).length;
+  const pctReported = totalInSeason > 0 ? Math.round((reportedInSeason / totalInSeason) * 100) : 0;
+
+  /* Format the window endpoints for the header subtitle. */
+  function fmtShort(d) {
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <div>
-        <div className="text-sm font-medium text-gray-900 dark:text-slate-100 mb-2">Upcoming — Next 30 Days</div>
-        {upcoming.length === 0 ? (
-          <p className="text-sm text-gray-500 dark:text-slate-400">No earnings scheduled in the next 30 days.</p>
-        ) : upcoming.map(function (u, i) {
-          return <Row key={"u"+i} c={u.company} date={u.date} daysAway={u.daysAway} entry={u.entry} variant="upcoming" fxRates={fxRates} onClick={onSelectCompany ? function(){onSelectCompany(u.company);} : undefined} />;
-        })}
-      </div>
-      <div>
-        <div className="text-sm font-medium text-gray-900 dark:text-slate-100 mb-2">Recent — Last 30 Days</div>
-        {recent.length === 0 ? (
-          <p className="text-sm text-gray-500 dark:text-slate-400">No earnings reported in the last 30 days. Run the daily FactSet pull or paste into the Earnings Dates upload (now accepts a 3rd column: Last Rpt Date).</p>
-        ) : recent.map(function (r, i) {
-          return <Row key={"r"+i} c={r.company} date={r.date} daysAway={r.daysAway} entry={r.entry} variant="recent" fxRates={fxRates} onClick={onSelectCompany ? function(){onSelectCompany(r.company);} : undefined} />;
-        })}
+    <div className="space-y-3">
+      {/* Season progress header */}
+      {totalInSeason > 0 && (
+        <div className="px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+            <div className="text-sm">
+              <span className="font-semibold text-emerald-700 dark:text-emerald-400">{reportedInSeason}</span>
+              <span className="text-gray-500 dark:text-slate-400"> reported · </span>
+              <span className="font-semibold text-blue-700 dark:text-blue-400">{upcoming.length}</span>
+              <span className="text-gray-500 dark:text-slate-400"> upcoming · </span>
+              <span className="font-semibold text-gray-900 dark:text-slate-100">{pctReported}%</span>
+              <span className="text-gray-500 dark:text-slate-400"> of {totalInSeason} companies have reported this season</span>
+            </div>
+            <div className="text-[11px] text-gray-500 dark:text-slate-400 ml-auto">
+              Window: {fmtShort(recentCutoff)} – {fmtShort(upcomingCutoff)}
+            </div>
+          </div>
+          {/* Progress bar */}
+          <div className="mt-1.5 h-1.5 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+            <div className="h-full bg-emerald-500 dark:bg-emerald-400" style={{ width: pctReported + "%" }} />
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <div className="text-sm font-medium text-gray-900 dark:text-slate-100 mb-2">
+            Upcoming — through {fmtShort(upcomingCutoff)} <span className="text-gray-500 dark:text-slate-400 font-normal">({upcoming.length})</span>
+          </div>
+          {upcoming.length === 0 ? (
+            <p className="text-sm text-gray-500 dark:text-slate-400">No earnings scheduled through end of next quarter.</p>
+          ) : upcoming.map(function (u, i) {
+            return <Row key={"u"+i} c={u.company} date={u.date} daysAway={u.daysAway} entry={u.entry} variant="upcoming" fxRates={fxRates} onClick={onSelectCompany ? function(){onSelectCompany(u.company);} : undefined} />;
+          })}
+        </div>
+        <div>
+          <div className="text-sm font-medium text-gray-900 dark:text-slate-100 mb-2">
+            Recent — back to {fmtShort(recentCutoff)} <span className="text-gray-500 dark:text-slate-400 font-normal">({recent.length})</span>
+          </div>
+          {recent.length === 0 ? (
+            <p className="text-sm text-gray-500 dark:text-slate-400">No earnings reported since start of last quarter. Run the daily FactSet pull or paste into the Earnings Dates upload (now accepts a 3rd column: Last Rpt Date).</p>
+          ) : recent.map(function (r, i) {
+            return <Row key={"r"+i} c={r.company} date={r.date} daysAway={r.daysAway} entry={r.entry} variant="recent" fxRates={fxRates} onClick={onSelectCompany ? function(){onSelectCompany(r.company);} : undefined} />;
+          })}
+        </div>
       </div>
     </div>
   );
