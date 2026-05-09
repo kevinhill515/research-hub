@@ -365,9 +365,21 @@ export default function App(){
                   <div className="flex flex-wrap gap-1 max-h-40 overflow-y-auto">
                     {stale.slice(0, 200).map(function(x){
                       var c = x.c, st = x.st;
-                      var tip = "Latest imported: FY" + (st.latestImportedYear || "?")
-                              + " · Expected through FY" + st.fyYear
-                              + (st.reportSeen ? " · post-FY-end report on file" : " · 13+ months past FY-end");
+                      var tip;
+                      if (st.reason === "no-data") {
+                        tip = "No annual financials imported yet · Expected through FY" + st.fyYear;
+                      } else if (st.reason === "post-fy-report") {
+                        tip = "Latest imported: FY" + (st.latestImportedYear || "?")
+                            + " · Expected through FY" + st.fyYear
+                            + " · Post-FY-end report on file (" + (st.reportSeenDate || "?") + ")";
+                      } else {
+                        tip = "Latest imported: FY" + (st.latestImportedYear || "?")
+                            + " · Expected through FY" + st.fyYear
+                            + " · 13+ months past FY-end (" + st.fyEnd + ")";
+                      }
+                      var label = st.reason === "no-data"
+                        ? "no data"
+                        : "FY" + (st.latestImportedYear || "?") + "→FY" + st.fyYear;
                       return (
                         <span
                           key={c.id}
@@ -376,7 +388,7 @@ export default function App(){
                           className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 cursor-pointer hover:bg-amber-200 dark:hover:bg-amber-900/60"
                         >
                           {c.name}
-                          <span className="text-amber-700 dark:text-amber-400 ml-1">FY{st.latestImportedYear || "?"}→FY{st.fyYear}</span>
+                          <span className="text-amber-700 dark:text-amber-400 ml-1">{label}</span>
                         </span>
                       );
                     })}

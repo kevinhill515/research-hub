@@ -221,32 +221,55 @@ export function annualStaleStatus(company, today) {
 
   /* Has the company's post-FY-end report happened? Two signals:
        1. company.lastReportDate (canonical — set by the Earnings Dates
-          upload, kept up-to-date by the daily script). If this is
-          >= fyEnd and <= today, they've reported.
-       2. Fallback: any earningsEntries.reportDate in (fyEnd, today].
-          Excludes future-dated entries (next-report placeholders)
-          which would otherwise falsely flag e.g. ATD-CA on April 30
-          because the user pre-populated the late-June report date. */
+          upload, kept up-to-date by the daily script).
+       2. Fallback: any earningsEntries.reportDate.
+     Both must be in (fyEnd + 7 days, today]:
+       - >= fyEnd + 7d filters obvious data glitches where the field is
+         set to a date within a week of FY-end (no real Q4 report
+         happens that fast — quickest US filers are ~3 weeks).
+       - <= today filters future-dated entries (next-report
+         placeholders) which would otherwise falsely flag e.g. ATD-CA
+         on April 30 because the user pre-populated the June report
+         date. */
   const todayIso = t.toISOString().slice(0, 10);
+  /* fyEnd + 7 days as ISO. Use Date arithmetic to handle month rollover. */
+  const reportableFrom = new Date(fyEnd.getTime() + 7 * 24 * 3600 * 1000).toISOString().slice(0, 10);
   let reportSeen = false;
+  let reportSeenDate = "";
   const lrd = company.lastReportDate ? String(company.lastReportDate) : "";
-  if (lrd && lrd >= fyEndIso && lrd <= todayIso) {
+  if (lrd && lrd >= reportableFrom && lrd <= todayIso) {
     reportSeen = true;
+    reportSeenDate = lrd;
   } else {
     const entries = (company.earningsEntries || []);
     for (let i = 0; i < entries.length; i++) {
       const rd = entries[i] && entries[i].reportDate;
       if (!rd) continue;
       const rdStr = String(rd);
-      if (rdStr >= fyEndIso && rdStr <= todayIso) { reportSeen = true; break; }
+      if (rdStr >= reportableFrom && rdStr <= todayIso) {
+        reportSeen = true;
+        reportSeenDate = rdStr;
+        break;
+      }
     }
   }
 
-  /* Latest historical year in financials. If financials missing
-     entirely, treat as not-stale-yet — we don't pester names that have
-     never been imported (those show up as "none" elsewhere). */
+  /* No financials at all → flag immediately as stale. The user wants
+     a single panel for both "this needs a re-import" and "this never
+     got imported in the first place" — both show up here so the daily
+     review surface is one banner, not two. */
   const fin = company.financials || {};
-  if (!fin.years || !fin.years.length) return { stale: false, fyYear: fyYear, reportSeen: reportSeen, latestImportedYear: null, fyEnd: fyEndIso };
+  if (!fin.years || !fin.years.length) {
+    return {
+      stale: true,
+      fyYear: fyYear,
+      reportSeen: reportSeen,
+      reportSeenDate: reportSeenDate,
+      latestImportedYear: null,
+      fyEnd: fyEndIso,
+      reason: "no-data",
+    };
+  }
   const latestImported = latestHistoricalYear(fin.years, fin.estimate);
 
   /* The 13-month fallback: covers names without earningsEntries. */
@@ -255,14 +278,22 @@ export function annualStaleStatus(company, today) {
 
   if (latestImported && latestImported >= fyYear) {
     /* Already imported the latest FY — fresh. */
-    return { stale: false, fyYear: fyYear, reportSeen: reportSeen, latestImportedYear: latestImported, fyEnd: fyEndIso };
+    return { stale: false, fyYear: fyYear, reportSeen: reportSeen, reportSeenDate: reportSeenDate, latestImportedYear: latestImported, fyEnd: fyEndIso };
   }
 
   /* Latest imported is behind. Stale if the post-FY report has happened
      OR we're past the 13-month fallback. Otherwise wait — they haven't
      reported yet. */
   const stale = reportSeen || thirteenMonthsPast;
-  return { stale: stale, fyYear: fyYear, reportSeen: reportSeen, latestImportedYear: latestImported, fyEnd: fyEndIso };
+  return {
+    stale: stale,
+    fyYear: fyYear,
+    reportSeen: reportSeen,
+    reportSeenDate: reportSeenDate,
+    latestImportedYear: latestImported,
+    fyEnd: fyEndIso,
+    reason: stale ? (reportSeen ? "post-fy-report" : "13mo-fallback") : null,
+  };
 }
 
 /* Tooltip text to surface why ⚠ shows. */
