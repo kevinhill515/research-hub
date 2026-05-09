@@ -176,7 +176,25 @@ export default function BreakdownView({ kind }) {
   }, [companies, repData, fxRates, portKey]);
 
   const benchName = (BENCHMARKS[portKey] || {})[bmType];
-  const benchData = benchmarkWeights && benchName ? benchmarkWeights[benchName] : null;
+  /* Benchmark weights: prefer the most recent quarterly snapshot from
+     breakdownHistory (uploaded each quarter and the canonical "current"
+     view of the benchmark), and fall back to the static benchmarkWeights
+     when no historical entry exists. Without this, the comparison bars
+     showed whatever was in the legacy benchmarkWeights blob, which
+     drifted out of date relative to the freshly-uploaded quarterly
+     snapshots. */
+  const benchData = useMemo(function () {
+    if (!benchName) return null;
+    const hist = (breakdownHistory || {})[benchName];
+    if (hist) {
+      const dates = Object.keys(hist).sort();
+      if (dates.length > 0) {
+        const latest = hist[dates[dates.length - 1]];
+        if (latest && (latest.sectors || latest.countries)) return latest;
+      }
+    }
+    return benchmarkWeights ? benchmarkWeights[benchName] : null;
+  }, [benchName, breakdownHistory, benchmarkWeights]);
   const hasBenchmark = !!(benchData && ((kind === "sectors" ? benchData.sectors : benchData.countries)));
 
   /* Rows: union of portfolio keys + benchmark keys. Sort depends on
