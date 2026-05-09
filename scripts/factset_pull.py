@@ -1727,6 +1727,11 @@ def merge_companies(companies, prices, valuations, earnings):
         # trailing windows in decimal form). Legacy perf5d string is
         # also written for back-compat with older clients.
         any_p = False
+        # Stamp priceAsOf per-ticker so the price-1d alert can detect
+        # stale-row drift (when a name fell hard, then FactSet stops
+        # including it in the daily pull, the perf row stays at the old
+        # -10% and the alert keeps firing forever without this stamp).
+        today_iso = datetime.now().strftime("%Y-%m-%d")
         for t in (c.get("tickers") or []):
             tk = (t.get("ticker") or "").upper()
             if tk in prices:
@@ -1734,6 +1739,7 @@ def merge_companies(companies, prices, valuations, earnings):
                 if p.get("price") is not None: t["price"] = p["price"]
                 if p.get("perf"):              t["perf"]  = p["perf"]
                 if p.get("perf5d") is not None: t["perf5d"] = p["perf5d"]
+                t["priceAsOf"] = today_iso
                 any_p = True
         if any_p: n_p += 1
 

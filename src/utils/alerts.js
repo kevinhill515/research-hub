@@ -91,20 +91,34 @@ function readUsdPerf(company, key) {
 function evalPrice1D(company, params, ctx) {
   const t = (params && params.threshold) || 0.08;
   const dir = (params && params.direction) || "down";
-  /* The 1D perf field lives on the ticker and is overwritten only when
-     prices are re-imported. If the last prices upload is more than 2
-     days old, the 1D number reflects whatever happened on the day
-     prices were last refreshed — not "today" — and the alert would
-     keep firing for stocks that fell weeks ago. Skip in that case so
-     the panel only surfaces actual recent moves. */
-  const lpu = ctx && ctx.lastPriceUpdate ? String(ctx.lastPriceUpdate) : "";
-  if (lpu) {
-    const m = lpu.match(/(\d{4})-(\d{2})-(\d{2})/);
-    if (m) {
-      const lpuDate = new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
-      const ageDays = (Date.now() - lpuDate.getTime()) / 86400000;
-      if (ageDays > 2) return null;
-    }
+  /* Per-ticker freshness gate. Each ticker stamps `priceAsOf` when it
+     gets refreshed (manual Prices upload or daily script). If the
+     ticker we're reading from is more than 2 days stale, skip — the
+     1D field reflects the last refresh day, not today. Without this
+     a stock that fell -10% three weeks ago would keep flagging every
+     day until FactSet finally included it in a fresh pull.
+
+     Falls back to the global ctx.lastPriceUpdate when the ticker
+     doesn't have priceAsOf yet (legacy data from before the field
+     was added). */
+  const tickers = (company && company.tickers) || [];
+  const ord = tickers.find(function (t) { return t.isOrdinary; });
+  const us = tickers.find(function (t) { return (t.currency || "").toUpperCase() === "USD" && !t.isOrdinary; })
+          || (ord && (ord.currency || "").toUpperCase() === "USD" ? ord : null);
+  const src = us || ord;
+  function isFreshIso(iso) {
+    if (!iso) return null;
+    const m = String(iso).match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return null;
+    const d = new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
+    return ((Date.now() - d.getTime()) / 86400000) <= 2;
+  }
+  const tickerFresh = src && src.priceAsOf ? isFreshIso(src.priceAsOf) : null;
+  if (tickerFresh === false) return null;        /* ticker has priceAsOf, but it's stale */
+  if (tickerFresh === null) {
+    /* No per-ticker stamp — fall back to global timestamp. */
+    const lpuFresh = ctx && ctx.lastPriceUpdate ? isFreshIso(ctx.lastPriceUpdate) : null;
+    if (lpuFresh === false) return null;
   }
   const v = readUsdPerf(company, "1D");
   if (!isFiniteNum(v)) return null;

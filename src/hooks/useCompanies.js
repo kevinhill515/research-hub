@@ -452,6 +452,13 @@ export function useCompanies(){
 
       function legacy5d(perf){ return perf && isFinite(perf["5D"]) ? String((perf["5D"] * 100).toFixed(1)) : ""; }
 
+      /* priceAsOf is the date this row's perf/price was last refreshed.
+         Stamping per-ticker (not just globally) so the price-1d alert
+         can detect "this ticker's data is stale" — when FactSet doesn't
+         include a name in the daily pull, its perf row stays the same
+         but priceAsOf is unchanged, so the alert won't keep firing
+         based on a weeks-old 1D move. */
+      var priceAsOf = todayStr();
       var newTickers = [{
         ticker:    match.ordTicker,
         price:     match.ordPrice,
@@ -459,6 +466,7 @@ export function useCompanies(){
         isOrdinary: hasMatch ? ordIsExistingOrd : true,
         perf:      match.ordPerf,
         perf5d:    legacy5d(match.ordPerf), /* legacy field — read by older UI surfaces */
+        priceAsOf: priceAsOf,
       }];
       if(match.usTicker && match.usPrice !== null && match.usTicker !== match.ordTicker){
         newTickers.push({
@@ -468,6 +476,7 @@ export function useCompanies(){
           isOrdinary: hasMatch ? usIsExistingOrd : false,
           perf:      match.usPerf,
           perf5d:    legacy5d(match.usPerf),
+          priceAsOf: priceAsOf,
         });
       }
       var nowOrdinary = newTickers.find(function(t){return t.isOrdinary;}) || newTickers[0];
