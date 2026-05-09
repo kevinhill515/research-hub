@@ -221,8 +221,8 @@ function EarningsCalendar({ companies, onSelectCompany }) {
     /* Last day of the quarter whose first day is qStart. */
     return new Date(qStart.getFullYear(), qStart.getMonth() + 3, 0, 23, 59, 59);
   }
-  const recentCutoff = addQuarters(today, -1);              /* start of previous quarter */
-  const upcomingCutoff = endOfQuarterStart(addQuarters(today, 1)); /* end of next quarter */
+  const recentCutoff = startOfQuarter(today);                          /* start of current quarter */
+  const upcomingCutoff = endOfQuarterStart(startOfQuarter(today));     /* end of current quarter */
 
   /* Upcoming: any earningsEntry with reportDate in [today, today+30]. */
   const upcoming = [];
