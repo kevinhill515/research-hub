@@ -43,12 +43,13 @@ export default function App(){
      when companies or alertRules actually change. */
   const coAlertsByCoId = useMemo(function () {
     const out = {};
+    const ctx = { lastPriceUpdate: lastPriceUpdate };
     (companies || []).forEach(function (c) {
-      out[c.id] = evaluateAlertsForCompany(c, alertRules || {})
+      out[c.id] = evaluateAlertsForCompany(c, alertRules || {}, ctx)
         .filter(function (a) { return a.severity === "warn"; });
     });
     return out;
-  }, [companies, alertRules]);
+  }, [companies, alertRules, lastPriceUpdate]);
 
   /* Stable handlers so React.memo on CoRow is effective — without
      useCallback, every parent render creates a new function ref and

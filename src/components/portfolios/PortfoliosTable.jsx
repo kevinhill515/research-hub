@@ -120,7 +120,7 @@ export function PortfoliosTable(props) {
   const [editingTarget, setEditingTarget] = useState(null);
   const {
     companies, repData, fxRates, specialWeights, annotations, dark,
-    updateTargetWeight, alertRules,
+    updateTargetWeight, alertRules, lastPriceUpdate,
   } = useCompanyContext();
 
   /* ---- Per-company alerts, memoized so evaluateAlertsForCompany doesn't
@@ -129,12 +129,13 @@ export function PortfoliosTable(props) {
      surfaced as 🚩 indicators. */
   const perRowAlerts = useMemo(function () {
     const out = {};
+    const ctx = { lastPriceUpdate: lastPriceUpdate };
     (companies || []).forEach(function (c) {
-      out[c.id] = evaluateAlertsForCompany(c, alertRules || {})
+      out[c.id] = evaluateAlertsForCompany(c, alertRules || {}, ctx)
         .filter(function (a) { return a.severity === "warn"; });
     });
     return out;
-  }, [companies, alertRules]);
+  }, [companies, alertRules, lastPriceUpdate]);
 
   /* ---- Derive portfolio data ---- */
   const { portCos, portRep, tickerOwners, totalMV, perRowData } = useMemo(function () {

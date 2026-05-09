@@ -88,9 +88,24 @@ function readUsdPerf(company, key) {
  *   direction = "up"             — fires only when v >= threshold
  *   direction = "any"            — fires when |v| >= threshold (legacy)
  * `magnitude` = absolute % change, used by the panel for rank sorting. */
-function evalPrice1D(company, params) {
+function evalPrice1D(company, params, ctx) {
   const t = (params && params.threshold) || 0.08;
   const dir = (params && params.direction) || "down";
+  /* The 1D perf field lives on the ticker and is overwritten only when
+     prices are re-imported. If the last prices upload is more than 2
+     days old, the 1D number reflects whatever happened on the day
+     prices were last refreshed — not "today" — and the alert would
+     keep firing for stocks that fell weeks ago. Skip in that case so
+     the panel only surfaces actual recent moves. */
+  const lpu = ctx && ctx.lastPriceUpdate ? String(ctx.lastPriceUpdate) : "";
+  if (lpu) {
+    const m = lpu.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (m) {
+      const lpuDate = new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
+      const ageDays = (Date.now() - lpuDate.getTime()) / 86400000;
+      if (ageDays > 2) return null;
+    }
+  }
   const v = readUsdPerf(company, "1D");
   if (!isFiniteNum(v)) return null;
   let fires = false;
@@ -303,7 +318,7 @@ export const WARN_RULE_LABELS = {
 /* Evaluate enabled rules for ONE company. Returns the array of
  * fired-rule alerts (warn-only filter is the caller's responsibility,
  * since portfolio/company rows render only when severity === "warn"). */
-export function evaluateAlertsForCompany(company, rules) {
+export function evaluateAlertsForCompany(company, rules, ctx) {
   if (!company) return [];
   const merged = Object.assign({}, DEFAULT_RULES);
   if (rules && typeof rules === "object") {
@@ -315,7 +330,7 @@ export function evaluateAlertsForCompany(company, rules) {
   Object.keys(RULE_DEFS).forEach(function (ruleId) {
     const rule = merged[ruleId];
     if (!rule || rule.enabled === false) return;
-    const result = RULE_DEFS[ruleId].eval(company, rule.params || {});
+    const result = RULE_DEFS[ruleId].eval(company, rule.params || {}, ctx);
     if (!result) return;
     out.push({
       companyId: company.id,
@@ -331,7 +346,7 @@ export function evaluateAlertsForCompany(company, rules) {
 }
 
 /* Public: evaluate all enabled rules across all companies. */
-export function evaluateAlerts(companies, rules) {
+export function evaluateAlerts(companies, rules, ctx) {
   const merged = Object.assign({}, DEFAULT_RULES);
   if (rules && typeof rules === "object") {
     Object.keys(rules).forEach(function (k) {
@@ -343,7 +358,7 @@ export function evaluateAlerts(companies, rules) {
     Object.keys(RULE_DEFS).forEach(function (ruleId) {
       const rule = merged[ruleId];
       if (!rule || rule.enabled === false) return;
-      const result = RULE_DEFS[ruleId].eval(c, rule.params || {});
+      const result = RULE_DEFS[ruleId].eval(c, rule.params || {}, ctx);
       if (!result) return;
       out.push({
         companyId: c.id,

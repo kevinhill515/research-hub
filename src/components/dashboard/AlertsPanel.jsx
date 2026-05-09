@@ -80,7 +80,7 @@ const STATUS_FILTER_KEY = "ccd:alertStatusFilter";
 const ALL_STATUSES = ["Own", "Focus", "Watch", "Sold"];
 
 export default function AlertsPanel({ onJumpToCompany }) {
-  const { companies, alertRules, setAlertRules } = useCompanyContext();
+  const { companies, alertRules, setAlertRules, lastPriceUpdate } = useCompanyContext();
   const [open, setOpen] = useState(false);
   const [view, setView] = useState("alerts"); /* "alerts" | "rules" */
   const [activeRuleFilter, setActiveRuleFilter] = useState("all"); /* "all" or a ruleId */
@@ -198,9 +198,9 @@ export default function AlertsPanel({ onJumpToCompany }) {
      sort by magnitude (largest first) so the most-actionable items
      bubble up regardless of company name. */
   const allWarns = useMemo(function () {
-    return evaluateAlerts(filteredCompanies, alertRules || {})
+    return evaluateAlerts(filteredCompanies, alertRules || {}, { lastPriceUpdate: lastPriceUpdate })
       .filter(function (a) { return a.severity === "warn"; });
-  }, [filteredCompanies, alertRules]);
+  }, [filteredCompanies, alertRules, lastPriceUpdate]);
 
   /* Per-rule counts power the filter pills (so the user can see at a
      glance which rules currently have alerts firing). */
