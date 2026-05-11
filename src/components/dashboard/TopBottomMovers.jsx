@@ -76,27 +76,19 @@ export default function TopBottomMovers({ onSelectCompany }) {
   /* Filter to selected statuses + companies that have a parseable perf
      value for the selected window. Sorted desc; top = first N, bottom
      = last N (reversed for display so worst is at the top of bottom).
-
-     Pre-market detection: when the script runs before market close,
-     FactSet's TODAY/1D returns 0 for every name (no moves yet). If
-     more than half the universe is exactly 0, the data is almost
-     certainly stale — flag it and skip those zero rows so the
-     remaining (genuinely moved) names rank cleanly. A truly 0.00%
-     move on a real trading day is statistically negligible. */
-  const { ranked, premarket, totalConsidered } = useMemo(function () {
+     1D is today's intraday move (FactSet Today column) so 0s before
+     market close are the truth, not stale data — they stay in the
+     ranking as-is. */
+  const ranked = useMemo(function () {
     const arr = [];
-    let zeros = 0;
     (companies || []).forEach(function (c) {
       if (!statusFilter.has(c.status || "")) return;
       const v = readPerf(c, windowKey);
       if (v == null) return;
-      if (v === 0) zeros++;
       arr.push({ id: c.id, name: c.name, status: c.status, ticker: (pickTicker(c) || {}).ticker || c.ticker, v: v });
     });
-    const premarket = arr.length > 0 && (zeros / arr.length) > 0.5;
-    const cleaned = premarket ? arr.filter(function (r) { return r.v !== 0; }) : arr;
-    cleaned.sort(function (a, b) { return b.v - a.v; });
-    return { ranked: cleaned, premarket: premarket, totalConsidered: arr.length };
+    arr.sort(function (a, b) { return b.v - a.v; });
+    return arr;
   }, [companies, statusFilter, windowKey]);
 
   const sliceN = Math.max(3, Math.min(25, Math.round((pctSlice / 100) * ranked.length)));
@@ -166,11 +158,6 @@ export default function TopBottomMovers({ onSelectCompany }) {
         </span>
       </div>
 
-      {premarket && (
-        <div className="px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800 text-[12px] text-amber-800 dark:text-amber-300">
-          <span className="font-semibold">Heads up:</span> most {windowKey} values came back as 0.00%, likely because the daily script ran before market close. Showing only the {ranked.length} of {totalConsidered} names with non-zero returns. Re-run the Prices upload after the close for a clean view.
-        </div>
-      )}
       {ranked.length === 0 ? (
         <div className="text-sm text-gray-500 dark:text-slate-400 italic p-3">
           No companies with {windowKey} performance data in the selected statuses. Re-run the daily Prices upload.
