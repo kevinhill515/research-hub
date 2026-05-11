@@ -488,8 +488,11 @@ export function PortfoliosTable(props) {
       </div>
 
       {/* Desktop: full grid table — unchanged from before. Wrapper carries
-          the responsive hide; inner div keeps its display:table for the grid. */}
-      <div className="hidden sm:block">
+          the responsive hide; inner div keeps its display:table for the grid.
+          overflow-x:auto + overflow-y:visible lets the Name column stick to
+          the left edge on horizontal scroll while the header row still
+          sticks to the top of the page on vertical scroll. */}
+      <div className="hidden sm:block" style={{ overflowX: "auto", overflowY: "visible" }}>
       <div style={{ display: "table", width: "100%", borderCollapse: "separate", borderSpacing: "0 2px" }}>
         {/* Header row */}
         <div
@@ -513,6 +516,7 @@ export function PortfoliosTable(props) {
                 } : undefined}
                 className={
                   "text-[10px] uppercase tracking-wide pb-1.5 pr-3 sticky top-0 bg-white dark:bg-slate-950 select-none " +
+                  (col.id === "name" ? "left-0 z-20 " : "z-10 ") +
                   (clickable ? "cursor-pointer hover:text-gray-700 dark:hover:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded " : "") +
                   (active
                     ? "text-gray-900 dark:text-slate-100 font-semibold"

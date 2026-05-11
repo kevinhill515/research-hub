@@ -83,8 +83,11 @@ function PortfolioRow(props) {
          Two-value syntax avoids accidentally setting width to 44px too. */
       style={{ display: "table-row", cursor: "pointer", contentVisibility: "auto", containIntrinsicSize: "auto 44px" }}
     >
-      {/* Company */}
-      <Cell className="text-sm font-medium text-gray-900 dark:text-slate-100" style={cellStyle}>
+      {/* Company — sticky-left so the name stays visible while
+          horizontal scrolling. Cell uses its own opaque background
+          (white in light / slate-950 in dark) since other cells
+          scroll behind it. */}
+      <Cell className="text-sm font-medium text-gray-900 dark:text-slate-100 sticky left-0 z-[5]" style={Object.assign({}, cellStyle, { background: dark ? "#020617" : "#ffffff" })}>
         <span className="inline-flex items-center gap-1.5" title={c.name}>
           {truncName(c.name, 15)}
           {(alertsForCompany || []).length > 0 && (

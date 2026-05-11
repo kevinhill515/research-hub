@@ -334,7 +334,7 @@ function EarningsCalendar({ companies, onSelectCompany }) {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <div className="text-sm font-medium text-gray-900 dark:text-slate-100 mb-2">
             Upcoming — through {fmtShort(upcomingCutoff)} <span className="text-gray-500 dark:text-slate-400 font-normal">({upcoming.length})</span>

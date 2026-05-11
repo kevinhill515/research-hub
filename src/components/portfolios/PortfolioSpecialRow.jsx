@@ -31,9 +31,9 @@ export default function PortfolioSpecialRow({ label, repShares, totalMV, target 
       {PORTFOLIO_COLUMNS.map(function (col) {
         const isLabel = col.id === "name";
         const isDiff = col.id === "diff";
-        const cls = isLabel ? LABEL_CLS
+        const cls = (isLabel ? LABEL_CLS + " sticky left-0 z-[5]"
                   : isDiff  ? DIFF_CLS_BASE
-                  : CELL_CLS;
+                  : CELL_CLS);
         const style = { display: "table-cell" };
         if (isDiff) style.color = diffColor;
         return (

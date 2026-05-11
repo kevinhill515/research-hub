@@ -8,6 +8,13 @@
 .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 
+/* Body / html background — applied here so horizontal scrolling past
+ * the React root doesn't expose the browser's default white. The .dark
+ * class is mirrored onto <html> by an App-level effect. */
+html { background: #ffffff; }
+html.dark { background: #020617; } /* slate-950, matches the root div */
+html.dark body { background: #020617; }
+
 @theme {
   --color-surface: #ffffff;
   --color-surface-sec: #f8fafc;

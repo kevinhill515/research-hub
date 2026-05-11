@@ -154,6 +154,17 @@ export default function App(){
     return function () { clearTimeout(t); };
   }, []);
 
+  /* Mirror `dark` to the <html> element so global rules (body bg, scroll
+     gutter) pick it up. Without this the dark class only applies to the
+     root <div>, and horizontal scroll exposes the body's default white
+     background to the right of the React root — the "white bleed" the
+     user sees in landscape on mobile. */
+  useEffect(function () {
+    const root = document.documentElement;
+    if (dark) root.classList.add("dark");
+    else root.classList.remove("dark");
+  }, [dark]);
+
   useEffect(function(){
     function onKey(e){
       var tag=document.activeElement.tagName;var typing=tag==="INPUT"||tag==="TEXTAREA"||tag==="SELECT";

@@ -84,10 +84,11 @@ export default function PortfolioTotalRow({
     <div style={{ display: "table-row" }}>
       {PORTFOLIO_COLUMNS.map(function (col) {
         const isDiff = col.id === "diff";
+        const isName = col.id === "name";
         const style = { display: "table-cell" };
         if (isDiff) style.color = diffColor;
         return (
-          <div key={col.id} className={isDiff ? DIFF_CLS : CELL_CLS} style={style}>
+          <div key={col.id} className={(isDiff ? DIFF_CLS : CELL_CLS) + (isName ? " sticky left-0 z-[5]" : "")} style={style}>
             {content[col.id] !== undefined ? content[col.id] : "--"}
           </div>
         );
