@@ -214,7 +214,7 @@ export default function MarketsDashboard() {
   if (!snap) {
     return (
       <div className="text-sm text-gray-500 dark:text-slate-400 py-6">
-        No markets snapshot yet. The daily FactSet job runs at 7:30 AM PT and populates this view.
+        No markets snapshot yet. The daily FactSet job populates this view.
       </div>
     );
   }
@@ -225,7 +225,7 @@ export default function MarketsDashboard() {
         <div>
           <div className="text-base font-semibold text-gray-900 dark:text-slate-100">Markets</div>
           <div className="text-xs text-gray-500 dark:text-slate-400">
-            Total returns in USD. Updated daily at 7:30 AM PT from FactSet.
+            Total returns in USD. Updated daily.
           </div>
         </div>
         {snap.asOf && (
