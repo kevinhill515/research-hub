@@ -7,5 +7,7 @@ dist
 
 scripts/__pycache__/
 
-# Side project with its own .git — must not be tracked as a submodule
+# Sibling projects with their own .git repos — never track in research-hub
+# even if a copy accidentally lands inside the working tree.
 life-tracker/
+calisthenics-tracker/
