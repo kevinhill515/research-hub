@@ -730,16 +730,32 @@ export default function PricesTab({ company }) {
               Slots are tracked per-direction so buys and sells stack
               independently. */}
           {(function () {
-            const MIN_GAP = 55; /* viewBox px; ~estimated label width */
+            /* Estimate label width per marker so collision detection
+               uses actual rendered widths, not a fixed gap. Bold 10px
+               text averages ~5.5 viewBox-px per char; plus a small
+               padding so adjacent labels get visual breathing room. */
+            const CHAR_W = 5.5;
+            const PAD = 6;
             const SLOT_STEP = 13;
-            const lastByDir = { buy: [], sell: [] }; /* per slot, last cx used */
-            const slots = txMarkers.map(function (m) {
-              const cx = xOf(m.idx);
-              const arr = lastByDir[m.dir];
+            /* Sort markers by x position so the slot algorithm sees them
+               left-to-right; without this, an arbitrary order can place
+               a later marker at slot 0 and force an earlier-in-time
+               marker into a higher slot for no reason. */
+            const ordered = txMarkers
+              .map(function (m, i) { return { m: m, i: i, cx: xOf(m.idx) }; })
+              .sort(function (a, b) { return a.cx - b.cx; });
+            const lastRightByDir = { buy: [], sell: [] };
+            const slotByOrig = new Array(txMarkers.length);
+            ordered.forEach(function (o) {
+              const portList = Array.from(new Set(o.m.items.map(function (t) { return t.portfolio || "?"; }))).join(", ");
+              const labelW = portList.length * CHAR_W + PAD;
+              const left = o.cx - labelW / 2;
+              const right = o.cx + labelW / 2;
+              const arr = lastRightByDir[o.m.dir];
               let slot = 0;
-              while (slot < arr.length && (cx - arr[slot]) < MIN_GAP) slot++;
-              arr[slot] = cx;
-              return slot;
+              while (slot < arr.length && left < arr[slot]) slot++;
+              arr[slot] = right;
+              slotByOrig[o.i] = slot;
             });
             return txMarkers.map(function (m, i) {
               const cx = xOf(m.idx);
@@ -758,7 +774,7 @@ export default function PricesTab({ company }) {
                          + " L " + (cx + half).toFixed(1) + " " + baseY.toFixed(1) + " Z";
               const portList = Array.from(new Set(m.items.map(function (t) { return t.portfolio || "?"; }))).join(", ");
               const tipLine = (isBuy ? "BUY " : "SELL ") + Math.abs(m.shares).toLocaleString() + " sh — " + m.date + " (" + portList + ")";
-              const slot = slots[i];
+              const slot = slotByOrig[i];
               const labelY = isBuy
                 ? baseY + 11 + slot * SLOT_STEP
                 : baseY - 4  - slot * SLOT_STEP;
