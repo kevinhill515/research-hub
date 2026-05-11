@@ -10,6 +10,7 @@
 
 import { useMemo, useState } from "react";
 import { useCompanyContext } from "../../context/CompanyContext.jsx";
+import { PORTFOLIOS } from "../../constants/index.js";
 
 const WINDOWS = [
   { id: "1D",  label: "1 Day" },
@@ -42,7 +43,7 @@ function readPerf(c, key) {
 function fmtPct(v) {
   if (v == null || !isFinite(v)) return "—";
   const sign = v >= 0 ? "+" : "";
-  return sign + (v * 100).toFixed(2) + "%";
+  return sign + (v * 100).toFixed(1) + "%";
 }
 
 export default function TopBottomMovers({ onSelectCompany }) {
@@ -51,6 +52,9 @@ export default function TopBottomMovers({ onSelectCompany }) {
   /* Multi-select status filter via Set so users can include any combo
      of Own + Focus + Watch + Sold. "All" toggles all on/off. */
   const [statusFilter, setStatusFilter] = useState(new Set(["Own", "Focus", "Watch"]));
+  /* Portfolio filter: "All" = no filter, otherwise restrict to
+     companies whose `portfolios` array includes the selected code. */
+  const [portFilter, setPortFilter] = useState("All");
   /* Top/bottom slice size — default 10% of the filtered universe,
      bounded by [3, 25] so it's always actionable on small or huge
      universes. */
@@ -83,13 +87,17 @@ export default function TopBottomMovers({ onSelectCompany }) {
     const arr = [];
     (companies || []).forEach(function (c) {
       if (!statusFilter.has(c.status || "")) return;
+      if (portFilter !== "All") {
+        const ports = (c.portfolios || []);
+        if (ports.indexOf(portFilter) < 0) return;
+      }
       const v = readPerf(c, windowKey);
       if (v == null) return;
       arr.push({ id: c.id, name: c.name, status: c.status, ticker: (pickTicker(c) || {}).ticker || c.ticker, v: v });
     });
     arr.sort(function (a, b) { return b.v - a.v; });
     return arr;
-  }, [companies, statusFilter, windowKey]);
+  }, [companies, statusFilter, portFilter, windowKey]);
 
   const sliceN = Math.max(3, Math.min(25, Math.round((pctSlice / 100) * ranked.length)));
   const top = ranked.slice(0, sliceN);
@@ -113,6 +121,25 @@ export default function TopBottomMovers({ onSelectCompany }) {
                   ? "bg-blue-600 text-white"
                   : "bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700")}
               >{w.label}</button>
+            );
+          })}
+        </div>
+
+        <span className="text-gray-300 dark:text-slate-600">|</span>
+
+        {/* Portfolio — single-select, "All" = no filter */}
+        <span className="text-[11px] text-gray-500 dark:text-slate-400">Portfolio:</span>
+        <div className="inline-flex rounded border border-gray-300 dark:border-slate-600 overflow-hidden">
+          {["All"].concat(PORTFOLIOS).map(function (p) {
+            const active = p === portFilter;
+            return (
+              <button
+                key={p}
+                onClick={function () { setPortFilter(p); }}
+                className={"px-2 py-0.5 text-[11px] font-medium transition " + (active
+                  ? "bg-gray-900 text-white dark:bg-slate-200 dark:text-slate-900"
+                  : "bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700")}
+              >{p}</button>
             );
           })}
         </div>

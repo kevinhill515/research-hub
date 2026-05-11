@@ -719,59 +719,72 @@ export default function PricesTab({ company }) {
           {/* Stock line */}
           <path d={stockPath} fill="none" stroke="#2563eb" strokeWidth="2.25" />
 
-          {/* Transaction arrows. Buys (▲) green, anchored just BELOW the
-              price line so they point UP to it; sells (▼) red, anchored
-              just ABOVE the price line pointing DOWN. The vertical
-              offset keeps the arrows from occluding the line itself.
-              SVG <title> gives a native hover tooltip with the trade
-              details (date, total shares, portfolio set). */}
-          {txMarkers.map(function (m) {
-            const cx = xOf(m.idx);
-            const sv = stockValues[m.idx];
-            if (sv == null || !isFinite(sv)) return null;
-            const cy = yOf(sv);
-            const isBuy = m.dir === "buy";
-            const color = isBuy ? "#16a34a" : "#dc2626";
-            const offset = 16; /* pixels between arrow tip and price point */
-            const half = 6;
-            const height = 9;
-            const tipY = isBuy ? cy + offset : cy - offset;
-            const baseY = isBuy ? tipY + height : tipY - height;
-            const path = "M " + cx.toFixed(1) + " " + tipY.toFixed(1)
-                       + " L " + (cx - half).toFixed(1) + " " + baseY.toFixed(1)
-                       + " L " + (cx + half).toFixed(1) + " " + baseY.toFixed(1) + " Z";
-            const portList = Array.from(new Set(m.items.map(function (t) { return t.portfolio || "?"; }))).join(", ");
-            const tipLine = isBuy
-              ? "BUY " + Math.abs(m.shares).toLocaleString() + " sh — " + m.date + " (" + portList + ")"
-              : "SELL " + Math.abs(m.shares).toLocaleString() + " sh — " + m.date + " (" + portList + ")";
-            /* Portfolio label: green for buys, red for sells. Buy labels
-               sit BELOW the arrow base; sell labels sit ABOVE the arrow
-               base. Stroke + paint-order put a thin white halo around the
-               text so it stays readable when an arrow lands close to the
-               price line. */
-            const labelY = isBuy ? baseY + 11 : baseY - 4;
-            return (
-              <g key={m.dir + ":" + m.date}>
-                <path d={path} fill={color} stroke="white" strokeWidth="1" opacity="0.95">
-                  <title>{tipLine}</title>
-                </path>
-                <text
-                  x={cx}
-                  y={labelY}
-                  fontSize="10"
-                  fontWeight="700"
-                  textAnchor="middle"
-                  fill={color}
-                  stroke="white"
-                  strokeWidth="3"
-                  paintOrder="stroke"
-                  style={{ pointerEvents: "none" }}
-                >
-                  {portList}
-                </text>
-              </g>
-            );
-          })}
+          {/* Transaction arrows + portfolio labels. Buys (▲) green,
+              anchored below the price line; sells (▼) red, above. To
+              prevent label collisions when multiple trades land in a
+              short window (e.g. buys for different portfolios a few
+              days apart), labels are slotted vertically — first marker
+              uses slot 0 (closest to the arrow), the next nearby one
+              uses slot 1, etc. Slots reset when there's enough x-gap
+              that a new slot 0 wouldn't overlap an existing label.
+              Slots are tracked per-direction so buys and sells stack
+              independently. */}
+          {(function () {
+            const MIN_GAP = 55; /* viewBox px; ~estimated label width */
+            const SLOT_STEP = 13;
+            const lastByDir = { buy: [], sell: [] }; /* per slot, last cx used */
+            const slots = txMarkers.map(function (m) {
+              const cx = xOf(m.idx);
+              const arr = lastByDir[m.dir];
+              let slot = 0;
+              while (slot < arr.length && (cx - arr[slot]) < MIN_GAP) slot++;
+              arr[slot] = cx;
+              return slot;
+            });
+            return txMarkers.map(function (m, i) {
+              const cx = xOf(m.idx);
+              const sv = stockValues[m.idx];
+              if (sv == null || !isFinite(sv)) return null;
+              const cy = yOf(sv);
+              const isBuy = m.dir === "buy";
+              const color = isBuy ? "#16a34a" : "#dc2626";
+              const offset = 16;
+              const half = 6;
+              const height = 9;
+              const tipY = isBuy ? cy + offset : cy - offset;
+              const baseY = isBuy ? tipY + height : tipY - height;
+              const path = "M " + cx.toFixed(1) + " " + tipY.toFixed(1)
+                         + " L " + (cx - half).toFixed(1) + " " + baseY.toFixed(1)
+                         + " L " + (cx + half).toFixed(1) + " " + baseY.toFixed(1) + " Z";
+              const portList = Array.from(new Set(m.items.map(function (t) { return t.portfolio || "?"; }))).join(", ");
+              const tipLine = (isBuy ? "BUY " : "SELL ") + Math.abs(m.shares).toLocaleString() + " sh — " + m.date + " (" + portList + ")";
+              const slot = slots[i];
+              const labelY = isBuy
+                ? baseY + 11 + slot * SLOT_STEP
+                : baseY - 4  - slot * SLOT_STEP;
+              return (
+                <g key={m.dir + ":" + m.date}>
+                  <path d={path} fill={color} stroke="white" strokeWidth="1" opacity="0.95">
+                    <title>{tipLine}</title>
+                  </path>
+                  <text
+                    x={cx}
+                    y={labelY}
+                    fontSize="10"
+                    fontWeight="700"
+                    textAnchor="middle"
+                    fill={color}
+                    stroke="white"
+                    strokeWidth="3"
+                    paintOrder="stroke"
+                    style={{ pointerEvents: "none" }}
+                  >
+                    {portList}
+                  </text>
+                </g>
+              );
+            });
+          })()}
 
           {/* measure-tool marks */}
           {pickA !== null && visible[pickA] && (
