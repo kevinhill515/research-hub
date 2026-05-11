@@ -6,3 +6,6 @@ dist
 .claude/
 
 scripts/__pycache__/
+
+# Side project with its own .git — must not be tracked as a submodule
+life-tracker/
