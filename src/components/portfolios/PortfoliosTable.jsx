@@ -488,11 +488,13 @@ export function PortfoliosTable(props) {
       </div>
 
       {/* Desktop: full grid table — unchanged from before. Wrapper carries
-          the responsive hide; inner div keeps its display:table for the grid.
-          overflow-x:auto + overflow-y:visible lets the Name column stick to
-          the left edge on horizontal scroll while the header row still
-          sticks to the top of the page on vertical scroll. */}
-      <div className="hidden sm:block" style={{ overflowX: "auto", overflowY: "visible" }}>
+          the responsive hide; inner div keeps its display:table for the
+          grid. No overflow wrapper — that would create a separate
+          scroll context that breaks position:sticky against the page,
+          so headers wouldn't stick when scrolling down. Wide tables let
+          the page itself scroll horizontally; the top page-header is
+          sticky so it stays visible. */}
+      <div className="hidden sm:block">
       <div style={{ display: "table", width: "100%", borderCollapse: "separate", borderSpacing: "0 2px" }}>
         {/* Header row */}
         <div

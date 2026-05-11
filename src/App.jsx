@@ -252,17 +252,17 @@ export default function App(){
       {quickUploadCo&&<QuickUploadModal company={quickUploadCo} onClose={function(){setQuickUploadCo(null);}} onAccept={acceptQuickDiff}/>}
       <DiscussionsPanel open={showDiscussions} onClose={function(){setShowDiscussions(false);}} initialScope={discussionScope.scope} initialPortfolio={discussionScope.portfolio} initialCompanyId={discussionScope.companyId} companies={companies}/>
 
-      <div className="flex gap-2 items-start mb-2 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 shadow-sm pb-2 -mx-4 -mt-4 px-4 pt-4">
-        <div className="flex gap-1.5 items-center flex-wrap shrink-0">
+      <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 shadow-sm pb-2 -mx-4 -mt-4 px-4 pt-4 mb-2">
+        {/* Storage row \u2014 own line at the top so it never competes with
+            buttons for horizontal space. */}
+        <div className="flex gap-1.5 items-center flex-wrap mb-2">
           <span className="text-[11px] text-gray-500 dark:text-slate-400">Storage:</span>
           <span className={PILL_BASE + " border-none"} style={{background:loadStatus.companies===null?undefined:loadStatus.companies>0?"#dcfce7":"#fef9c3",color:loadStatus.companies===null?undefined:loadStatus.companies>0?"#166534":"#854d0e"}}>{loadStatus.companies===null?"loading\u2026":loadStatus.companies>0?"\u2713 "+loadStatus.companies+" cos":"\u26A0 none"}</span>
-          <span className={PILL_BASE + " border-none"} style={{background:loadStatus.library===null?undefined:loadStatus.library>0?"#dcfce7":"#fef9c3",color:loadStatus.library===null?undefined:loadStatus.library>0?"#166534":"#854d0e"}}>{loadStatus.library===null?"loading\u2026":loadStatus.library>0?"\u2713 "+loadStatus.library+" lib":"\u26A0 none"}</span> <PriceAgeIndicator lastPriceUpdate={lastPriceUpdate} lastPriceUpdatedBy={lastPriceUpdatedBy}/>
+          <span className={PILL_BASE + " border-none"} style={{background:loadStatus.library===null?undefined:loadStatus.library>0?"#dcfce7":"#fef9c3",color:loadStatus.library===null?undefined:loadStatus.library>0?"#166534":"#854d0e"}}>{loadStatus.library===null?"loading\u2026":loadStatus.library>0?"\u2713 "+loadStatus.library+" lib":"\u26A0 none"}</span>
+          <PriceAgeIndicator lastPriceUpdate={lastPriceUpdate} lastPriceUpdatedBy={lastPriceUpdatedBy}/>
         </div>
-        {/* Inner flex-wrap so the buttons wrap WITHIN their own container,
-            staying right-aligned with the first button instead of jumping
-            to the far-left under the storage block (the issue on phone
-            landscape where Import/Export, Backup, Flags wrapped to col 0). */}
-        <div className="flex gap-2 items-center flex-wrap flex-1 min-w-0">
+        {/* Buttons row \u2014 wraps naturally. */}
+        <div className="flex gap-2 items-center flex-wrap">
         <button onClick={function(){setShowGlobalSearch(true);}} className={BTN}>{"\uD83D\uDD0D"} Search</button> <button onClick={function(){setShowTmplSearch(true);}} className={BTN}>Templates</button>
         {(function(){var active=annotations.filter(function(a){return !a.resolved;});var mentionCount=active.filter(function(a){return ((a.mentions||[]).indexOf(currentUser)>=0||((a.replies||[]).some(function(r){return(r.mentions||[]).indexOf(currentUser)>=0;})))&&((a.readBy||[]).indexOf(currentUser)<0);}).length;return(<button onClick={function(){openDiscussions();}} className={BTN+" relative"}>{"\uD83D\uDCAC"} Discussions{active.length>0&&<span className="ml-1 text-[10px] px-1.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-semibold">{active.length}</span>}{mentionCount>0&&<span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-red-500"/>}</button>);})()}
         <button onClick={function(){setDark(function(d){return !d;});}} className={BTN}>{dark?"\u2600 Light":"\uD83C\uDF19 Dark"}</button>
@@ -547,7 +547,7 @@ export default function App(){
         {companies.length===0?<p className="text-sm text-gray-500 dark:text-slate-400">No companies yet.</p>:(<div className="print-target">{companiesView==="metrics"?(
           <MetricsTable companies={displayedCos} search={coSearch} dark={dark} visible={metricsVisibleCols} onSelectCompany={function(c){setSelCo(c);setCoView("dashboard");}}/>
         ):(
-          <div style={{overflowX:"auto",overflowY:"visible"}}>
+          <div>
           <div style={{display:"table",width:"100%",borderCollapse:"separate",borderSpacing:"0 2px"}}>
             <div style={{display:"table-row"}} className="print-thead">
               <div style={{display:"table-cell",paddingBottom:4,paddingRight:6,position:"sticky",top:0,background:"var(--tw-prose-body,#fff)",zIndex:10}} className="bg-white dark:bg-slate-950"><span onClick={function(e){e.stopPropagation();if(selectedIds.size>0){clearSelected();}else{selectAll();}}} className="cursor-pointer inline-flex items-center justify-center w-4 h-4 rounded border border-slate-300 dark:border-slate-600 text-[10px] leading-none select-none hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" style={{background:selectedIds.size===displayedCos.length&&displayedCos.length>0?"#2563eb":selectedIds.size>0?"#93c5fd":undefined,color:selectedIds.size>0?"#fff":undefined}}>{selectedIds.size===displayedCos.length&&displayedCos.length>0?"\u2713":selectedIds.size>0?"\u2013":""}</span></div>
