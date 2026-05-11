@@ -732,10 +732,12 @@ export default function PricesTab({ company }) {
           {(function () {
             /* Estimate label width per marker so collision detection
                uses actual rendered widths, not a fixed gap. Bold 10px
-               text averages ~5.5 viewBox-px per char; plus a small
-               padding so adjacent labels get visual breathing room. */
-            const CHAR_W = 5.5;
-            const PAD = 6;
+               text averages ~7-8 viewBox-px per char in practice
+               (commas, "I", "N" pull the mean up); plus 14 viewBox-px
+               of breathing-room padding so adjacent labels never visually
+               touch even when fonts render slightly wider than estimate. */
+            const CHAR_W = 7.5;
+            const PAD = 14;
             const SLOT_STEP = 13;
             /* Sort markers by x position so the slot algorithm sees them
                left-to-right; without this, an arbitrary order can place
