@@ -731,14 +731,15 @@ export default function PricesTab({ company }) {
               independently. */}
           {(function () {
             /* Estimate label width per marker so collision detection
-               uses actual rendered widths, not a fixed gap. Bold 10px
-               text averages ~7-8 viewBox-px per char in practice
-               (commas, "I", "N" pull the mean up); plus 14 viewBox-px
-               of breathing-room padding so adjacent labels never visually
-               touch even when fonts render slightly wider than estimate. */
-            const CHAR_W = 7.5;
-            const PAD = 14;
-            const SLOT_STEP = 13;
+               uses actual rendered widths, not a fixed gap. fontSize=8
+               (small but still readable) keeps a 16-char "FGL, GL, IN,
+               FIN" label around 86 viewBox-px wide, which makes 2-3
+               trades within a tight window fit cleanly across vertical
+               slots without spilling sideways. */
+            const FONT_SIZE = 8;
+            const CHAR_W = 5;
+            const PAD = 8;
+            const SLOT_STEP = 10;
             /* Sort markers by x position so the slot algorithm sees them
                left-to-right; without this, an arbitrary order can place
                a later marker at slot 0 and force an earlier-in-time
@@ -778,8 +779,8 @@ export default function PricesTab({ company }) {
               const tipLine = (isBuy ? "BUY " : "SELL ") + Math.abs(m.shares).toLocaleString() + " sh — " + m.date + " (" + portList + ")";
               const slot = slotByOrig[i];
               const labelY = isBuy
-                ? baseY + 11 + slot * SLOT_STEP
-                : baseY - 4  - slot * SLOT_STEP;
+                ? baseY + 9 + slot * SLOT_STEP
+                : baseY - 3 - slot * SLOT_STEP;
               return (
                 <g key={m.dir + ":" + m.date}>
                   <path d={path} fill={color} stroke="white" strokeWidth="1" opacity="0.95">
@@ -788,12 +789,12 @@ export default function PricesTab({ company }) {
                   <text
                     x={cx}
                     y={labelY}
-                    fontSize="10"
+                    fontSize={FONT_SIZE}
                     fontWeight="700"
                     textAnchor="middle"
                     fill={color}
                     stroke="white"
-                    strokeWidth="3"
+                    strokeWidth="2.5"
                     paintOrder="stroke"
                     style={{ pointerEvents: "none" }}
                   >
