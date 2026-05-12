@@ -259,18 +259,22 @@ export default function PricesTab({ company }) {
     return out;
   }, [company, perfData]);
 
-  /* Selected benchmarks (default: all on, but only when in % gain mode). */
+  /* Selected benchmarks (default: all on, but only when in % gain mode).
+     Memoize the ticker-list key so the useEffect dep is stable across
+     renders that don't actually change the option set (every render
+     was computing a new map+join inline, defeating useEffect's bail-
+     out). */
+  const benchmarkTickerKey = useMemo(function () {
+    return benchmarkOptions.map(function (b) { return b.ticker; }).join("|");
+  }, [benchmarkOptions]);
   const [selectedBenchTickers, setSelectedBenchTickers] = useState(null);
-  /* Initialize / reset selection when the option set changes. We key off
-     the ticker list so adding a portfolio doesn't drop existing picks. */
   useEffect(function () {
     setSelectedBenchTickers(function (prev) {
       const allOpts = benchmarkOptions.map(function (b) { return b.ticker; });
       if (prev === null) return allOpts; /* first run: select all */
-      /* Keep currently-selected that still exist. */
       return prev.filter(function (tk) { return allOpts.indexOf(tk) >= 0; });
     });
-  }, [benchmarkOptions.map(function (b) { return b.ticker; }).join("|")]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [benchmarkTickerKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const activeBenchTickers = (mode === "pct" && selectedBenchTickers) ? selectedBenchTickers : [];
   const benchHistories = usePriceHistories(activeBenchTickers);
@@ -328,6 +332,40 @@ export default function PricesTab({ company }) {
 
   /* Reset picks when ticker / period / mode / custom range changes. */
   useEffect(function () { setPickA(null); setPickB(null); }, [activeKey, period, mode, customStart, customEnd, fullSeries.length]);
+
+  /* Trade-arrow label slot assignment, memoized. Without memoization
+     the slot algorithm (sort + collision walk per marker) ran on
+     every hover-induced re-render, which made the chart noticeably
+     sluggish for names with 10+ trades. Slot output depends only on
+     the marker set and the visible-window length (which determines
+     x positions), so we cache here and look up by orig index at
+     render time. */
+  const txMarkerSlots = useMemo(function () {
+    if (!txMarkers.length) return [];
+    const CHAR_W = 5, PAD = 8;
+    const ordered = txMarkers
+      .map(function (m, i) {
+        const cx = visible.length <= 1
+          ? PAD_L + INNER_W / 2
+          : PAD_L + (m.idx / (visible.length - 1)) * INNER_W;
+        return { i: i, dir: m.dir, items: m.items, cx: cx };
+      })
+      .sort(function (a, b) { return a.cx - b.cx; });
+    const lastRightByDir = { buy: [], sell: [] };
+    const slots = new Array(txMarkers.length);
+    ordered.forEach(function (o) {
+      const portList = Array.from(new Set(o.items.map(function (t) { return t.portfolio || "?"; }))).join(", ");
+      const labelW = portList.length * CHAR_W + PAD;
+      const left = o.cx - labelW / 2;
+      const right = o.cx + labelW / 2;
+      const arr = lastRightByDir[o.dir];
+      let slot = 0;
+      while (slot < arr.length && left < arr[slot]) slot++;
+      arr[slot] = right;
+      slots[o.i] = slot;
+    });
+    return slots;
+  }, [txMarkers, visible.length]);
 
   /* Transaction markers anchored to the visible window. For each tx in
      [visible[0].d, visible.last.d], compute the index of the closest
@@ -730,36 +768,11 @@ export default function PricesTab({ company }) {
               Slots are tracked per-direction so buys and sells stack
               independently. */}
           {(function () {
-            /* Estimate label width per marker so collision detection
-               uses actual rendered widths, not a fixed gap. fontSize=8
-               (small but still readable) keeps a 16-char "FGL, GL, IN,
-               FIN" label around 86 viewBox-px wide, which makes 2-3
-               trades within a tight window fit cleanly across vertical
-               slots without spilling sideways. */
+            /* Slots precomputed in `txMarkerSlots` useMemo above so
+               this block doesn't re-sort/walk on every hover. */
             const FONT_SIZE = 8;
-            const CHAR_W = 5;
-            const PAD = 8;
             const SLOT_STEP = 10;
-            /* Sort markers by x position so the slot algorithm sees them
-               left-to-right; without this, an arbitrary order can place
-               a later marker at slot 0 and force an earlier-in-time
-               marker into a higher slot for no reason. */
-            const ordered = txMarkers
-              .map(function (m, i) { return { m: m, i: i, cx: xOf(m.idx) }; })
-              .sort(function (a, b) { return a.cx - b.cx; });
-            const lastRightByDir = { buy: [], sell: [] };
-            const slotByOrig = new Array(txMarkers.length);
-            ordered.forEach(function (o) {
-              const portList = Array.from(new Set(o.m.items.map(function (t) { return t.portfolio || "?"; }))).join(", ");
-              const labelW = portList.length * CHAR_W + PAD;
-              const left = o.cx - labelW / 2;
-              const right = o.cx + labelW / 2;
-              const arr = lastRightByDir[o.m.dir];
-              let slot = 0;
-              while (slot < arr.length && left < arr[slot]) slot++;
-              arr[slot] = right;
-              slotByOrig[o.i] = slot;
-            });
+            const slotByOrig = txMarkerSlots;
             return txMarkers.map(function (m, i) {
               const cx = xOf(m.idx);
               const sv = stockValues[m.idx];

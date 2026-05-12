@@ -1,18 +1,13 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { getLastReportedEntry } from '../../utils/index.js';
+import { useClickOutside } from '../../hooks/useClickOutside.js';
 
 function NotesCell({ company, onUpdate }) {
   var [open, setOpen] = useState(false);
   var [sv, setSv] = useState(company.takeaway || "");
   var [lv, setLv] = useState(company.takeawayLong || "");
   var ref = useRef();
-
-  useEffect(function () {
-    if (!open) return;
-    function h(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
-    document.addEventListener("mousedown", h);
-    return function () { document.removeEventListener("mousedown", h); };
-  }, [open]);
+  useClickOutside(ref, function () { setOpen(false); }, open);
 
   /* Fallback to the most recent earnings entry's takeaways when the
      company-level fields are empty. The same fallback also seeds the

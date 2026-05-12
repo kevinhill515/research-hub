@@ -1,6 +1,7 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { MONTHS } from '../../constants/index.js';
 import { parseDate, todayStr } from '../../utils/index.js';
+import { useClickOutside } from '../../hooks/useClickOutside.js';
 
 function DatePicker({ value, onChange }) {
   var [open, setOpen] = useState(false);
@@ -13,13 +14,7 @@ function DatePicker({ value, onChange }) {
     return isNaN(d) ? new Date().getMonth() : d.getMonth();
   });
   var ref = useRef();
-
-  useEffect(function () {
-    if (!open) return;
-    function h(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
-    document.addEventListener("mousedown", h);
-    return function () { document.removeEventListener("mousedown", h); };
-  }, [open]);
+  useClickOutside(ref, function () { setOpen(false); }, open);
 
   var parsed = value ? parseDate(value) : null;
 

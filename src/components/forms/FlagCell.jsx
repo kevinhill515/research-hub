@@ -1,16 +1,11 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { FLAG_STYLES } from '../../constants/index.js';
+import { useClickOutside } from '../../hooks/useClickOutside.js';
 
 function FlagCell({ value, onUpdate }) {
   var [open, setOpen] = useState(false);
   var ref = useRef();
-
-  useEffect(function () {
-    if (!open) return;
-    function h(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
-    document.addEventListener("mousedown", h);
-    return function () { document.removeEventListener("mousedown", h); };
-  }, [open]);
+  useClickOutside(ref, function () { setOpen(false); }, open);
 
   var fs = value ? FLAG_STYLES[value] : null;
 

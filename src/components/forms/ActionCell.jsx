@@ -1,17 +1,12 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { ACTIONS } from '../../constants/index.js';
 import { getLastReportedEntry } from '../../utils/index.js';
+import { useClickOutside } from '../../hooks/useClickOutside.js';
 
 function ActionCell({ value, earningsEntries, onUpdate }) {
   var [open, setOpen] = useState(false);
   var ref = useRef();
-
-  useEffect(function () {
-    if (!open) return;
-    function h(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
-    document.addEventListener("mousedown", h);
-    return function () { document.removeEventListener("mousedown", h); };
-  }, [open]);
+  useClickOutside(ref, function () { setOpen(false); }, open);
 
   /* When the manual action isn't set, fall back to the most recent
      earnings entry's tpChange (Increase TP / No Action / Decrease TP).

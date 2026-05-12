@@ -10,6 +10,7 @@
  * utils/alerts.evaluateAlerts. */
 
 import { useState, useMemo, useRef, useEffect } from "react";
+import { useClickOutside } from '../../hooks/useClickOutside.js';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import { evaluateAlerts, WARN_RULE_LABELS, DEFAULT_RULES } from '../../utils/alerts.js';
 import { supaUpsert } from '../../api/index.js';
@@ -171,15 +172,7 @@ export default function AlertsPanel({ onJumpToCompany }) {
     setDraftDirty(true);
   }
 
-  /* Close on click-outside. */
-  useEffect(function () {
-    function onDoc(e) {
-      if (!open) return;
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
-    }
-    document.addEventListener("mousedown", onDoc);
-    return function () { document.removeEventListener("mousedown", onDoc); };
-  }, [open]);
+  useClickOutside(ref, function () { setOpen(false); }, open);
 
   /* Pre-filter the company pool by status so alerts only fire for the
      subset the user cares about. Companies without a status set are

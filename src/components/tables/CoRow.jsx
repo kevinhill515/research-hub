@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, memo } from "react";
+import { useState, useRef, memo } from "react";
+import { useClickOutside } from '../../hooks/useClickOutside.js';
 import { PORTFOLIOS, TIER_ORDER, COUNTRY_ORDER, SECTOR_ORDER } from '../../constants/index.js';
 import { shortSector, sectorStyle, countryStyle, getTiers, tierPillStyle, tierBg, reviewedColor, daysSince, todayStr, calcNormEPS, calcTP, calcMOS, fmtMOS, fmtMOS0, mosBg, getTpFixed, tierToStatus, truncName, getLastReportedEntry } from '../../utils/index.js';
 import StatusPill from '../ui/StatusPill.jsx';
@@ -25,12 +26,7 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
   var [showMenu, setShowMenu] = useState(false);
   var menuRef = useRef();
 
-  useEffect(function () {
-    if (!showMenu) return;
-    function h(e) { if (menuRef.current && !menuRef.current.contains(e.target)) setShowMenu(false); }
-    document.addEventListener("mousedown", h);
-    return function () { document.removeEventListener("mousedown", h); };
-  }, [showMenu]);
+  useClickOutside(menuRef, function () { setShowMenu(false); }, showMenu);
 
   var missing = [];
   if (!company.country) missing.push("country");
