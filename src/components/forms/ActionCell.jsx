@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { ACTIONS } from '../../constants/index.js';
 
-function ActionCell({ value, onUpdate }) {
+function ActionCell({ value, earningsEntries, onUpdate }) {
   var [open, setOpen] = useState(false);
   var ref = useRef();
 
@@ -12,8 +12,24 @@ function ActionCell({ value, onUpdate }) {
     return function () { document.removeEventListener("mousedown", h); };
   }, [open]);
 
-  var aColor = value === "Increase TP" ? "#166534" : value === "Decrease TP" ? "#dc2626" : "#6b7280";
-  var aBg = value === "Increase TP" ? "#dcfce7" : value === "Decrease TP" ? "#fee2e2" : value ? "#f1f5f9" : "transparent";
+  /* When the manual action isn't set, fall back to the most recent
+     earnings entry's tpChange (Increase TP / No Action / Decrease TP).
+     The 📊 prefix signals the value came from earnings rather than a
+     manual entry, so the user knows it'll auto-update when the next
+     earnings entry is logged. */
+  var derivedFromEarnings = false;
+  var displayValue = value;
+  if (!displayValue && earningsEntries && earningsEntries.length > 0) {
+    var todayIso = new Date().toISOString().slice(0, 10);
+    var sorted = earningsEntries.slice().filter(function (e) { return e && e.reportDate; }).sort(function (a, b) { return (b.reportDate || "").localeCompare(a.reportDate || ""); });
+    var last = sorted.find(function (e) { return (e.reportDate || "") <= todayIso; });
+    if (last && last.tpChange && ["Increase TP", "Decrease TP", "No Action"].indexOf(last.tpChange) >= 0) {
+      displayValue = last.tpChange;
+      derivedFromEarnings = true;
+    }
+  }
+  var aColor = displayValue === "Increase TP" ? "#166534" : displayValue === "Decrease TP" ? "#dc2626" : "#6b7280";
+  var aBg = displayValue === "Increase TP" ? "#dcfce7" : displayValue === "Decrease TP" ? "#fee2e2" : displayValue ? "#f1f5f9" : "transparent";
 
   return (
     <div className="relative" ref={ref} onClick={function (e) { e.stopPropagation(); }}>
@@ -21,12 +37,13 @@ function ActionCell({ value, onUpdate }) {
         onClick={function () { setOpen(function (o) { return !o; }); }}
         className="cursor-pointer min-w-[24px]"
       >
-        {value ? (
+        {displayValue ? (
           <span
+            title={derivedFromEarnings ? "From most recent earnings — clear to set manually" : undefined}
             className="text-xs px-2 py-0.5 rounded-full"
             style={{ background: aBg, color: aColor }}
           >
-            {value}
+            {derivedFromEarnings ? "📊 " : ""}{displayValue}
           </span>
         ) : (
           <span className="text-xs text-slate-400 dark:text-slate-500 border-b border-dashed border-slate-200 dark:border-slate-700">

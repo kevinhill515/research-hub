@@ -13,7 +13,28 @@ function NotesCell({ company, onUpdate }) {
     return function () { document.removeEventListener("mousedown", h); };
   }, [open]);
 
-  var hasLong = !!(company.takeawayLong && company.takeawayLong.trim());
+  /* Fallback to the most recent earnings entry's takeaways when the
+     company-level fields are empty. Mirrors the Action / Thesis
+     columns. The 📊 prefix on the displayed text tells the user the
+     copy is sourced from earnings — useful for spotting names where
+     the manual takeaway hasn't been touched since the last report. */
+  var derivedFromEarnings = false;
+  var displayShort = company.takeaway || "";
+  var displayLong = company.takeawayLong || "";
+  if (!displayShort && !displayLong) {
+    var todayIso = new Date().toISOString().slice(0, 10);
+    var sorted = ((company.earningsEntries) || [])
+      .filter(function (e) { return e && e.reportDate; })
+      .slice()
+      .sort(function (a, b) { return (b.reportDate || "").localeCompare(a.reportDate || ""); });
+    var last = sorted.find(function (e) { return (e.reportDate || "") <= todayIso; });
+    if (last && (last.shortTakeaway || last.extendedTakeaway)) {
+      displayShort = last.shortTakeaway || "";
+      displayLong = last.extendedTakeaway || "";
+      derivedFromEarnings = true;
+    }
+  }
+  var hasLong = !!(displayLong && displayLong.trim());
 
   function save() {
     onUpdate(company.id, { takeaway: sv, takeawayLong: lv });
@@ -31,14 +52,15 @@ function NotesCell({ company, onUpdate }) {
       <div className="flex items-center gap-1">
         <span
           onClick={openEditor}
+          title={derivedFromEarnings ? "From most recent earnings — open to set a manual note" : undefined}
           className={
             "text-xs block max-w-[150px] overflow-hidden text-ellipsis whitespace-nowrap cursor-pointer border-b border-dashed border-slate-300 dark:border-slate-600 " +
-            (company.takeaway
+            (displayShort
               ? "text-gray-500 dark:text-slate-400"
               : "text-slate-300 dark:text-slate-600 italic")
           }
         >
-          {company.takeaway || "add note..."}
+          {displayShort ? (derivedFromEarnings ? "📊 " : "") + displayShort : "add note..."}
         </span>
         {hasLong && (
           <span

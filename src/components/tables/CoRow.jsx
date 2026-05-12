@@ -340,10 +340,16 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
         </div>
       )}
 
+      {/* Most recent EARNINGS entry — used to back-fill Action, Notes
+         and Thesis when those manual fields are empty. The 📊 badge in
+         each cell signals "sourced from latest earnings, not manually
+         entered" so the user can tell at a glance. */}
+      {(function(){ return null; })()}
+
       {/* Action */}
       {show("Action") && (
         <div className={tdBase} style={rowBg ? { background: rowBg } : undefined} onClick={function (e) { e.stopPropagation(); }}>
-          <ActionCell value={company.action || ""} onUpdate={function (v) { onUpdate(company.id, { action: v }); }} />
+          <ActionCell value={company.action || ""} earningsEntries={company.earningsEntries} onUpdate={function (v) { onUpdate(company.id, { action: v }); }} />
         </div>
       )}
 
@@ -351,13 +357,6 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
       {show("Notes") && (
         <div className={tdBase + " max-w-[170px]"} style={rowBg ? { background: rowBg } : undefined}>
           <NotesCell company={company} onUpdate={onUpdate} />
-        </div>
-      )}
-
-      {/* Reviewed */}
-      {show("Reviewed") && (
-        <div className={tdBase} style={rowBg ? { background: rowBg } : undefined} onClick={function (e) { e.stopPropagation(); }}>
-          <DatePicker value={company.lastReviewed || ""} onChange={function (v) { onUpdate(company.id, { lastReviewed: v }); }} />
         </div>
       )}
 
@@ -391,10 +390,27 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
         </div>
       )}
 
-      {/* Flag */}
-      {show("Flag") && (
-        <div className={tdBase} style={rowBg ? { background: rowBg } : undefined} onClick={function (e) { e.stopPropagation(); }}>
-          <FlagCell value={company.flag || ""} onUpdate={function (v) { onUpdate(company.id, { flag: v }); }} />
+      {/* Thesis — derived from most recent earnings entry's thesisStatus
+         (On track / Watch / Broken). Read-only cell; users update it
+         from the Earnings & Thesis Check tab. */}
+      {show("Thesis") && (
+        <div className={tdBase} style={rowBg ? { background: rowBg } : undefined}>
+          {(function(){
+            var ents = (company.earningsEntries || [])
+              .filter(function (e) { return e && e.reportDate; })
+              .slice()
+              .sort(function (a, b) { return (b.reportDate || "").localeCompare(a.reportDate || ""); });
+            var todayIso = new Date().toISOString().slice(0, 10);
+            var last = ents.find(function (e) { return (e.reportDate || "") <= todayIso; });
+            var ts = last && last.thesisStatus;
+            if (!ts) return <span className="text-xs text-slate-300 dark:text-slate-600">—</span>;
+            var cfg = { "On track": { bg: "#dcfce7", color: "#166534" }, "Watch": { bg: "#fef9c3", color: "#854d0e" }, "Broken": { bg: "#fee2e2", color: "#991b1b" } }[ts] || { bg: "#f1f5f9", color: "#475569" };
+            return (
+              <span title={"From earnings " + (last.reportDate || "?")} className="text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap" style={{ background: cfg.bg, color: cfg.color }}>
+                📊 {ts}
+              </span>
+            );
+          })()}
         </div>
       )}
 
