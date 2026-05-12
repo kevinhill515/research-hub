@@ -192,6 +192,42 @@ function AnnotationCard({ ann, onReply, onResolve, onUnresolve, onDelete, onUpda
         </div>
       )}
 
+      {/* Follow-up date — set/edit/clear at any time. Surfaces on the
+         Companies banner and the Discussions "Follow-ups" tab once the
+         date is within 7 days. */}
+      {(function(){
+        var due = ann.followUpDate || "";
+        var today = new Date().toISOString().slice(0, 10);
+        var overdue = due && due < today;
+        var soon = due && !overdue && (function(){
+          var d = new Date(due + "T00:00:00").getTime();
+          var n = Date.now();
+          return (d - n) / 86400000 <= 7;
+        })();
+        var color = overdue
+          ? "text-red-600 dark:text-red-400"
+          : soon
+            ? "text-amber-600 dark:text-amber-400"
+            : due
+              ? "text-blue-600 dark:text-blue-400"
+              : "text-gray-500 dark:text-slate-400";
+        return (
+          <div className="flex items-center gap-2 mb-2 text-[11px]">
+            <span className={color}>📅 Follow up:</span>
+            <input
+              type="date"
+              value={due}
+              onChange={function(e){ onUpdate(ann.id, { followUpDate: e.target.value || null }); }}
+              className="text-[11px] px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100"
+            />
+            {due && (
+              <span onClick={function(){ onUpdate(ann.id, { followUpDate: null }); }} className="text-[10px] text-gray-400 dark:text-slate-500 cursor-pointer hover:text-red-500 dark:hover:text-red-400">clear</span>
+            )}
+            {due && <span className={"text-[10px] italic ml-1 " + color}>{overdue ? "overdue" : soon ? "due ≤ 7d" : ""}</span>}
+          </div>
+        );
+      })()}
+
       <div className="flex gap-3 mt-2 text-xs text-gray-500 dark:text-slate-400">
         {!ann.resolved && <span onClick={function(){setShowReply(!showReply);}} className="cursor-pointer hover:text-blue-600 dark:hover:text-blue-400">Reply</span>}
         {ann.resolved ? (
@@ -224,7 +260,7 @@ function AnnotationCard({ ann, onReply, onResolve, onUnresolve, onDelete, onUpda
 
 export default function DiscussionsPanel({ open, onClose, initialScope, initialPortfolio, initialCompanyId, companies }){
   var { annotations, addAnnotation, updateAnnotation, deleteAnnotation, resolveAnnotation, unresolveAnnotation, addReply, currentUser } = useCompanyContext();
-  var [filter, setFilter] = useState("active"); // active | archive | mentions
+  var [filter, setFilter] = useState("active"); // active | archive | mentions | followups
   var [scopeFilter, setScopeFilter] = useState("all"); // all | portfolio | company
   /* Archive-only kind filter — once you're in Archive, you usually want
      to triage by scope shape (portfolio thread vs. company-wide vs.
@@ -270,6 +306,7 @@ export default function DiscussionsPanel({ open, onClose, initialScope, initialP
                       (a.replies || []).some(function(r){return (r.mentions || []).indexOf(currentUser) >= 0;});
       if(!mentioned) return false;
     }
+    if(filter === "followups" && !a.followUpDate) return false;
     if(scopeFilter === "portfolio" && initialPortfolio && a.portfolio !== initialPortfolio && a.scope !== "company") return false;
     if(scopeFilter === "company" && initialCompanyId && a.companyId !== initialCompanyId) return false;
     if(filter === "archive" && archiveKind !== "all" && a.scope !== archiveKind) return false;
@@ -287,6 +324,12 @@ export default function DiscussionsPanel({ open, onClose, initialScope, initialP
       var ra = a.resolvedDate || a.date || "";
       var rb = b.resolvedDate || b.date || "";
       return rb.localeCompare(ra);
+    });
+  }
+  /* Follow-ups: overdue first, then upcoming by ascending date. */
+  if(filter === "followups"){
+    filtered = filtered.slice().sort(function(a, b){
+      return (a.followUpDate || "").localeCompare(b.followUpDate || "");
     });
   }
 
@@ -330,7 +373,7 @@ export default function DiscussionsPanel({ open, onClose, initialScope, initialP
         </div>
 
         <div className="px-4 py-2 border-b border-slate-200 dark:border-slate-700 flex gap-1.5 flex-wrap">
-          {[["active","Active"],["archive","Archive"],["mentions","My mentions"]].map(function(f){
+          {[["active","Active"],["archive","Archive"],["followups","Follow-ups"],["mentions","My mentions"]].map(function(f){
             var active = filter === f[0];
             return <button key={f[0]} onClick={function(){setFilter(f[0]);}} className={"text-xs px-2.5 py-1 rounded-full border " + (active ? "bg-blue-100 dark:bg-blue-900/40 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300 font-medium" : "border-slate-200 dark:border-slate-700 text-gray-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800")}>{f[1]}</button>;
           })}
@@ -446,6 +489,7 @@ export default function DiscussionsPanel({ open, onClose, initialScope, initialP
             <div className="text-sm text-gray-500 dark:text-slate-400 text-center py-8">
               {filter === "active" ? "No active discussions. Start one above." :
                filter === "archive" ? "No archived discussions." :
+               filter === "followups" ? "No discussions with a follow-up date set. Set one on any card." :
                "No mentions for you."}
             </div>
           ) : (

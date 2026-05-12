@@ -108,6 +108,9 @@ export default function App(){
   const [showAnnualStale,setShowAnnualStale]=useState(function(){
     try { return localStorage.getItem("ccd:showAnnualStale") === "1"; } catch (e) { return false; }
   });
+  const [showFollowUps,setShowFollowUps]=useState(function(){
+    try { return localStorage.getItem("ccd:showFollowUps") === "1"; } catch (e) { return true; }
+  });
   const [companiesView,setCompaniesView]=useState("standard"); /* "standard" | "metrics" */
   const [metricsVisibleCols,setMetricsVisibleCols]=useState(DEFAULT_METRICS_VISIBLE);
   const [calFilter,setCalFilter]=useState("All");
@@ -264,7 +267,7 @@ export default function App(){
         {/* Buttons row \u2014 wraps naturally. */}
         <div className="flex gap-2 items-center flex-wrap">
         <button onClick={function(){setShowGlobalSearch(true);}} className={BTN}>{"\uD83D\uDD0D"} Search</button> <button onClick={function(){setShowTmplSearch(true);}} className={BTN}>Templates</button>
-        {(function(){var active=annotations.filter(function(a){return !a.resolved;});var mentionCount=active.filter(function(a){return ((a.mentions||[]).indexOf(currentUser)>=0||((a.replies||[]).some(function(r){return(r.mentions||[]).indexOf(currentUser)>=0;})))&&((a.readBy||[]).indexOf(currentUser)<0);}).length;return(<button onClick={function(){openDiscussions();}} className={BTN+" relative"}>{"\uD83D\uDCAC"} Discussions{active.length>0&&<span className="ml-1 text-[10px] px-1.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-semibold">{active.length}</span>}{mentionCount>0&&<span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-red-500"/>}</button>);})()}
+        {(function(){var active=annotations.filter(function(a){return !a.resolved;});var mentionCount=active.filter(function(a){return ((a.mentions||[]).indexOf(currentUser)>=0||((a.replies||[]).some(function(r){return(r.mentions||[]).indexOf(currentUser)>=0;})))&&((a.readBy||[]).indexOf(currentUser)<0);}).length;var todayIso=new Date().toISOString().slice(0,10);var dueCount=annotations.filter(function(a){return a.followUpDate&&a.followUpDate<=todayIso;}).length;return(<button onClick={function(){openDiscussions();}} className={BTN+" relative"}>{"\uD83D\uDCAC"} Discussions{dueCount>0&&<span className="ml-1 text-[10px] px-1.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 font-semibold" title={dueCount+" follow-up"+(dueCount===1?"":"s")+" due"}>\uD83D\uDCC5 {dueCount}</span>}{active.length>0&&<span className="ml-1 text-[10px] px-1.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-semibold">{active.length}</span>}{mentionCount>0&&<span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-red-500"/>}</button>);})()}
         <button onClick={function(){setDark(function(d){return !d;});}} className={BTN}>{dark?"\u2600 Light":"\uD83C\uDF19 Dark"}</button>
         <button onClick={function(){setCompact(function(c){var next=!c;setVisibleCols(next?COMPACT_COLS:new Set(ALL_COLS));return next;});}} className={BTN}>{compact?"\u229E Default":"\u229F Compact"}</button>
         <button onClick={function(){
@@ -432,6 +435,69 @@ export default function App(){
                       );
                     })}
                     {stale.length > 200 && <span className="text-[11px] text-amber-700 dark:text-amber-400 italic self-center">+ {stale.length - 200} more</span>}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+        {/* Discussion follow-ups due — collapsible. Surfaces any
+            annotation whose followUpDate is today or in the next 7
+            days. Click a chip to open the Discussions panel filtered
+            to that annotation's context. Defaults to OPEN so a fresh
+            morning page-load can't miss them. */}
+        {(function(){
+          var todayIso = new Date().toISOString().slice(0, 10);
+          var soonIso = (function(){ var d = new Date(); d.setDate(d.getDate() + 7); return d.toISOString().slice(0, 10); })();
+          var due = (annotations || []).filter(function(a){
+            return a.followUpDate && a.followUpDate <= soonIso;
+          });
+          if (due.length === 0) return null;
+          due.sort(function(a, b){ return (a.followUpDate || "").localeCompare(b.followUpDate || ""); });
+          var overdueCount = due.filter(function(a){ return a.followUpDate < todayIso; }).length;
+          function nameFor(a){
+            if (a.companyId){
+              var c = companies.find(function(x){ return x.id === a.companyId; });
+              if (c) return c.name;
+            }
+            if (a.scope === "portfolio") return (a.portfolio || "Portfolio");
+            return "Discussion";
+          }
+          return (
+            <div className="mb-2 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-300 dark:border-blue-800">
+              <div onClick={function(){setShowFollowUps(function(v){var nv=!v;try{localStorage.setItem("ccd:showFollowUps",nv?"1":"0");}catch(e){}return nv;});}} className="px-3.5 py-2 cursor-pointer flex items-center gap-2">
+                <span className="text-[11px] text-blue-700 dark:text-blue-400">{showFollowUps?"▼":"▶"}</span>
+                <span className="text-xs font-semibold text-blue-800 dark:text-blue-300">📅 Follow-ups: {due.length} discussion{due.length===1?"":"s"} {overdueCount>0?"("+overdueCount+" overdue)":"due this week"}</span>
+                <span className="text-[10px] text-blue-700 dark:text-blue-400 italic ml-auto">{showFollowUps?"click to collapse":"click to expand"}</span>
+              </div>
+              {showFollowUps&&(
+                <div className="px-3.5 pb-2">
+                  <div className="text-[11px] text-blue-700 dark:text-blue-400 mb-1">Click a chip to open the discussion. Adjust the follow-up date or resolve & clear it on the card.</div>
+                  <div className="flex flex-wrap gap-1 max-h-40 overflow-y-auto">
+                    {due.map(function(a){
+                      var overdue = a.followUpDate < todayIso;
+                      var nm = nameFor(a);
+                      var preview = (a.text || "").replace(/\s+/g, " ").slice(0, 60);
+                      return (
+                        <span
+                          key={a.id}
+                          title={preview}
+                          onClick={function(){
+                            if (a.companyId) {
+                              var co = companies.find(function(x){ return x.id === a.companyId; });
+                              if (co) { setSelCo(co); setTab("companies"); }
+                            }
+                            openDiscussions();
+                          }}
+                          className={"text-[11px] px-2 py-0.5 rounded-full border cursor-pointer " + (overdue
+                            ? "bg-red-100 dark:bg-red-900/40 border-red-300 dark:border-red-700 text-red-800 dark:text-red-200 hover:bg-red-200 dark:hover:bg-red-900/60"
+                            : "bg-blue-100 dark:bg-blue-900/40 border-blue-300 dark:border-blue-700 text-blue-800 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-blue-900/60")}
+                        >
+                          {nm}
+                          <span className="ml-1 text-[10px] opacity-80">{a.followUpDate}</span>
+                        </span>
+                      );
+                    })}
                   </div>
                 </div>
               )}
