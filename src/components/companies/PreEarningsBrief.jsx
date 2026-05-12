@@ -79,31 +79,34 @@ export default function PreEarningsBrief({ company }) {
   if (!company) return null;
 
   /* ---- Section 1: next-report countdown ----
-   * Source priority:
-   *   1. c.guidance.nextReportDate (FactSet Guidance History metadata)
-   *   2. soonest future c.earningsEntries.reportDate (Earnings Dates
-   *      upload populates this)
-   *   3. c.lastReportDate sanity check — if it's in the future, use it
-   *      (rare; happens when the calendar import landed a date that
-   *      hasn't passed yet but didn't create an entry)
-   * Uses parseDate so it tolerates "YYYY-MM-DD", "M/D/YYYY", etc. */
-  let nextRepIso = (company.guidance && company.guidance.nextReportDate) || null;
-  if (!nextRepIso) {
-    const t0 = new Date(); t0.setHours(0, 0, 0, 0);
-    ((company.earningsEntries) || []).forEach(function (e) {
-      if (!e.reportDate) return;
-      const d = parseDate(e.reportDate);
-      if (!d || isNaN(d.getTime()) || d < t0) return;
-      const cur = nextRepIso ? parseDate(nextRepIso) : null;
-      if (!cur || d < cur) nextRepIso = e.reportDate;
-    });
+   * Collect every candidate next-report date (FactSet guidance,
+   * earningsEntries, lastReportDate) and pick the soonest FUTURE one.
+   * Past dates are ignored — including FactSet's nextReportDate,
+   * which often stays at the just-passed date until the next
+   * Guidance pull refreshes it. Without filtering, the panel would
+   * still say "Reports in -7 days" for a company that already
+   * reported last week. */
+  const t0 = new Date(); t0.setHours(0, 0, 0, 0);
+  function pushFuture(arr, iso){
+    if (!iso) return;
+    const d = parseDate(iso);
+    if (!d || isNaN(d.getTime()) || d < t0) return;
+    arr.push({ iso: iso, t: d.getTime() });
   }
-  if (!nextRepIso && company.lastReportDate) {
-    const lr = parseDate(company.lastReportDate);
-    const t0 = new Date(); t0.setHours(0, 0, 0, 0);
-    if (lr && !isNaN(lr.getTime()) && lr >= t0) nextRepIso = company.lastReportDate;
-  }
+  const futureCandidates = [];
+  pushFuture(futureCandidates, company.guidance && company.guidance.nextReportDate);
+  ((company.earningsEntries) || []).forEach(function (e) { pushFuture(futureCandidates, e.reportDate); });
+  pushFuture(futureCandidates, company.lastReportDate);
+  futureCandidates.sort(function (a, b) { return a.t - b.t; });
+  const nextRepIso = futureCandidates.length > 0 ? futureCandidates[0].iso : null;
   const daysToNext = daysUntil(nextRepIso);
+
+  /* No future report on file → the brief has nothing to brief on.
+     Hide entirely (rather than render "no upcoming report date"
+     forever). Companies pick up the panel again as soon as a future
+     date is uploaded — via Earnings Dates upload or the daily
+     Guidance pull catching up. */
+  if (!nextRepIso) return null;
 
   /* ---- Section 2: last reported quarter ---- */
   const sortedEntries = ((company.earningsEntries) || [])
