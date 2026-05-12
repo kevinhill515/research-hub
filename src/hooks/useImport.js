@@ -38,6 +38,14 @@ export function useImport(){
   const [repText,setRepText]=useState("");
   const [fxText,setFxText]=useState("");
   const [txText,setTxText]=useState("");
+  /* When true, applyTxImport WIPES existing transactions for every
+     company that has at least one incoming row before inserting the
+     new ones. Companies not present in the upload stay untouched.
+     Used when re-importing with corrected fields (e.g., local-currency
+     prices replacing USD) — otherwise the dedup key would treat
+     them as distinct rows and you'd end up with two copies of each
+     trade. */
+  const [txReplaceMatched,setTxReplaceMatched]=useState(false);
   const [ratioImportText,setRatioImportText]=useState("");
   const [financialsImportText,setFinancialsImportText]=useState("");
   const [segmentsImportText,setSegmentsImportText]=useState("");
@@ -96,14 +104,17 @@ export function useImport(){
       if(matches.length===0) matches=null;
       if(!matches||matches.length===0)return c;
       matches.forEach(function(r){matchedNames[r.name]=true;unmatched.delete(r.name);});
-      var existing=c.transactions||[];
+      /* Replace-mode: wipe existing transactions for this company
+         before inserting the upload's rows. Used when re-importing
+         with corrected fields (e.g., local-currency prices). */
+      var existing = txReplaceMatched ? [] : (c.transactions || []);
       var keyOf=function(r){return(r.date||"")+"|"+(r.portfolio||"")+"|"+(r.shares||0)+"|"+(r.price||0)+"|"+(r.amount||0);};
       var existKeys={};existing.forEach(function(t){existKeys[keyOf(t)]=true;});
       var newTx=matches.filter(function(r){return !existKeys[keyOf(r)];}).map(function(r){
         var id=(typeof crypto!=="undefined"&&crypto.randomUUID)?crypto.randomUUID():(Date.now()+"-"+Math.random().toString(36).slice(2));
         return{id:id,date:r.date,portfolio:r.portfolio,shares:r.shares,price:r.price,amount:r.amount,type:r.shares>=0?"BUY":"SELL"};
       });
-      if(newTx.length===0)return c;
+      if(newTx.length===0 && !txReplaceMatched)return c;
       txCount+=newTx.length;
       var all=existing.concat(newTx);all.sort(function(a,b){return(b.date||"").localeCompare(a.date||"");});
       return Object.assign({},c,{transactions:all});
@@ -1127,7 +1138,7 @@ export function useImport(){
     benchmarkImportText,setBenchmarkImportText,benchmarkAsOf,setBenchmarkAsOf,
     dashboardImportText,setDashboardImportText,
     weightsImportText,setWeightsImportText,calImportText,setCalImportText,
-    repText,setRepText,fxText,setFxText,txText,setTxText,perfPortTargets,setPerfPortTargets,perfText,setPerfText,portTab,setPortTab,portSort,setPortSort,portSortDir,setPortSortDir,
+    repText,setRepText,fxText,setFxText,txText,setTxText,txReplaceMatched,setTxReplaceMatched,perfPortTargets,setPerfPortTargets,perfText,setPerfText,portTab,setPortTab,portSort,setPortSort,portSortDir,setPortSortDir,
     ratioImportText,setRatioImportText,
     financialsImportText,setFinancialsImportText,
     segmentsImportText,setSegmentsImportText,
