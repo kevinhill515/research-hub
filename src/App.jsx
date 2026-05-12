@@ -329,43 +329,74 @@ export default function App(){
         {false&&(<div></div>)}
         {dashSubTab==="overlap"&&(<div><div className="text-sm font-medium mb-3 text-gray-900 dark:text-slate-100">Portfolio Overlap</div><OverlapMatrix companies={companies}/></div>)}
         {dashSubTab==="quality"&&(<div><div className="text-sm font-medium mb-3 text-gray-900 dark:text-slate-100">Data Quality</div>{(function(){
-  /* Transaction gaps: companies that have rep holdings in a portfolio
-     but ZERO transactions on file for that portfolio. Catches the case
-     where a "Replace existing transactions" import wiped a portfolio's
-     trades because the upload happened to not include rows for that
-     portfolio's ticker (e.g. Alimentation Couche-Tard's GL position
-     in ANCTF — wiped when the user re-uploaded just the ord-currency
-     ATD-CA rows). */
-  var gaps = [];
+  /* Transaction reconciliation: for every (company, portfolio) where
+     rep shares > 0, compute the sum of signed transaction shares and
+     compare to actual rep shares. Two failure modes:
+       - "missing"  → no transactions at all for that portfolio (the
+         "wiped portfolio" case after a replace-matched import).
+       - "mismatch" → transactions exist but their sum doesn't equal
+         rep shares (a single buy/sell is missing or stale).
+     Tolerance 0.5 shares to handle FactSet rounding on fractional
+     share splits / DRIP. */
+  var issues = [];
   companies.forEach(function(c){
     var tickerSet = {};
     (c.tickers||[]).forEach(function(t){var k=(t.ticker||"").toUpperCase(); if(k) tickerSet[k]=true;});
     if (Object.keys(tickerSet).length === 0) return;
-    var heldPorts = {};
+    /* heldByPort: portfolio → rep shares of the company's ticker held there. */
+    var heldByPort = {};
     Object.keys(repData||{}).forEach(function(p){
       var pRep = repData[p] || {};
       Object.keys(pRep).forEach(function(tk){
         if (!tickerSet[tk]) return;
         var sh = (pRep[tk] && typeof pRep[tk] === "object") ? pRep[tk].shares : pRep[tk];
         var n = parseFloat(sh);
-        if (isFinite(n) && n > 0) heldPorts[p] = true;
+        if (isFinite(n) && n > 0) heldByPort[p] = (heldByPort[p] || 0) + n;
       });
     });
-    var txPorts = {};
-    (c.transactions||[]).forEach(function(t){ if (t.portfolio) txPorts[t.portfolio] = true; });
-    var missing = Object.keys(heldPorts).filter(function(p){ return !txPorts[p]; });
-    if (missing.length > 0) gaps.push({ c: c, missing: missing });
+    /* txByPort: portfolio → sum of signed transaction shares. */
+    var txByPort = {};
+    (c.transactions||[]).forEach(function(t){
+      if (!t.portfolio) return;
+      var n = parseFloat(t.shares);
+      if (!isFinite(n)) return;
+      txByPort[t.portfolio] = (txByPort[t.portfolio] || 0) + n;
+    });
+    var rows = [];
+    Object.keys(heldByPort).forEach(function(p){
+      var held = heldByPort[p];
+      var txSum = txByPort[p];
+      if (txSum === undefined) {
+        rows.push({ port: p, kind: "missing", held: held, txSum: 0, diff: -held });
+      } else if (Math.abs(txSum - held) > 0.5) {
+        rows.push({ port: p, kind: "mismatch", held: held, txSum: txSum, diff: txSum - held });
+      }
+    });
+    if (rows.length > 0) issues.push({ c: c, rows: rows });
   });
-  if (gaps.length === 0) return null;
+  if (issues.length === 0) return null;
+  var missingCount = issues.reduce(function(s, x){ return s + x.rows.filter(function(r){return r.kind==="missing";}).length; }, 0);
+  var mismatchCount = issues.reduce(function(s, x){ return s + x.rows.filter(function(r){return r.kind==="mismatch";}).length; }, 0);
   return (
     <div className="mb-5 rounded-lg bg-rose-50 dark:bg-rose-950/30 border border-rose-300 dark:border-rose-800 px-3.5 py-2.5">
-      <div className="text-xs font-semibold text-rose-800 dark:text-rose-300 mb-1">⚠ Transaction gaps: {gaps.length} compan{gaps.length===1?"y has":"ies have"} rep holdings without any matching transactions</div>
-      <div className="text-[11px] text-rose-700 dark:text-rose-400 mb-2">Each name below holds shares in the listed portfolio(s) but has no transactions for that portfolio. Most common cause: a Tx re-import in "replace matched" mode that didn't include those rows. Click a chip to open the company.</div>
-      <div className="flex flex-wrap gap-1 max-h-48 overflow-y-auto">
-        {gaps.map(function(g){
+      <div className="text-xs font-semibold text-rose-800 dark:text-rose-300 mb-1">⚠ Transaction reconciliation: {issues.length} compan{issues.length===1?"y":"ies"} ({missingCount} missing, {mismatchCount} mismatched)</div>
+      <div className="text-[11px] text-rose-700 dark:text-rose-400 mb-2">For each row, transactions summed should equal current rep shares. Chips show <code>port: txSum / rep (diff)</code>. <span className="font-semibold">missing</span> = no transactions; <span className="font-semibold">mismatch</span> = totals don't reconcile. Click a chip to open the company's Transactions tab.</div>
+      <div className="flex flex-wrap gap-1 max-h-64 overflow-y-auto">
+        {issues.map(function(g){
           return (
             <span key={g.c.id} onClick={function(){setSelCo(g.c);setTab("companies");setCoView("transactions");}} className="text-[11px] px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-900/40 border border-rose-300 dark:border-rose-700 text-rose-900 dark:text-rose-200 cursor-pointer hover:bg-rose-200 dark:hover:bg-rose-900/60">
-              {g.c.name}<span className="text-rose-700 dark:text-rose-400 ml-1">missing: {g.missing.join(", ")}</span>
+              {g.c.name}
+              {g.rows.map(function(r, i){
+                var fmtN = function(n){return Math.round(n).toLocaleString();};
+                var sign = r.diff > 0 ? "+" : "";
+                return (
+                  <span key={i} className="ml-1 text-rose-700 dark:text-rose-400">
+                    {r.port}: {r.kind === "missing"
+                      ? "missing (rep " + fmtN(r.held) + ")"
+                      : fmtN(r.txSum) + " / " + fmtN(r.held) + " (" + sign + fmtN(r.diff) + ")"}
+                  </span>
+                );
+              })}
             </span>
           );
         })}
