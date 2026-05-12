@@ -343,9 +343,56 @@ export function CompanyDetail(props){
                   var vp=parseFloat((selCo.valuation||{}).price);
                   return isFinite(vp)?vp:null;
                 }
+                /* Running balance per portfolio. Walk every transaction
+                   in chronological order, accumulating shares per
+                   portfolio. After the loop, runningByTxId[id] is the
+                   portfolio's share total AFTER that trade. Display
+                   table is sorted newest-first so the column reads as
+                   "balance after this trade." Compare the most-recent
+                   running (per portfolio) against the company's rep
+                   shares in that portfolio — mismatches surface as red
+                   so missing trades are obvious. */
+                var runningByTxId = {};
+                var lastRunByPort = {};
+                selCo.transactions.slice().sort(function(a,b){
+                  var da=a.date||"", db=b.date||"";
+                  if(da!==db) return da.localeCompare(db);
+                  return (a.id||"").localeCompare(b.id||"");
+                }).forEach(function(t){
+                  var p = t.portfolio||"?";
+                  var sh = parseFloat(t.shares)||0;
+                  var prev = lastRunByPort[p] || 0;
+                  var next = prev + sh;
+                  lastRunByPort[p] = next;
+                  runningByTxId[t.id] = next;
+                });
+                /* For mismatch detection, compare the final per-portfolio
+                   running against rep shares of that portfolio's ticker
+                   on this company. We use the same ticker-pick logic as
+                   getTickerForTx. */
+                function repSharesForPort(port){
+                  var pRep = (repData||{})[port] || {};
+                  var pickedTk = (selCo.tickers||[]).find(function(tk){
+                    var k = (tk.ticker||"").toUpperCase();
+                    return k && pRep[k] !== undefined;
+                  });
+                  if(!pickedTk) return null;
+                  var v = pRep[(pickedTk.ticker||"").toUpperCase()];
+                  if(!v) return null;
+                  var sh = (typeof v === "object") ? v.shares : v;
+                  return isFinite(parseFloat(sh)) ? parseFloat(sh) : null;
+                }
+                var mismatchByPort = {};
+                Object.keys(lastRunByPort).forEach(function(p){
+                  var actual = repSharesForPort(p);
+                  if (actual !== null && Math.abs(actual - lastRunByPort[p]) > 0.0001) {
+                    mismatchByPort[p] = { running: lastRunByPort[p], actual: actual };
+                  }
+                });
+
                 return(<div style={{display:"table",width:"100%",borderCollapse:"separate",borderSpacing:"0 2px"}}>
                 <div style={{display:"table-row"}}>
-                  {[["Date"],["Portfolio"],["Ticker"],["Type"],["Shares"],["Unit Price"],["% G/L"],["Amount"],[""]].map(function(h,i){return <div key={i} className="text-[10px] uppercase tracking-wide pb-1.5 pr-2 text-gray-500 dark:text-slate-400 font-semibold" style={{display:"table-cell"}}>{h[0]}</div>;})}
+                  {[["Date"],["Portfolio"],["Ticker"],["Type"],["Shares"],["Running"],["Unit Price"],["% G/L"],["Amount"],[""]].map(function(h,i){return <div key={i} className="text-[10px] uppercase tracking-wide pb-1.5 pr-2 text-gray-500 dark:text-slate-400 font-semibold" style={{display:"table-cell"}} title={h[0]==="Running"?"Cumulative shares in this portfolio after this trade":undefined}>{h[0]}</div>;})}
                 </div>
                 {selCo.transactions.slice().filter(function(t){return txFilter==="All"||t.portfolio===txFilter;}).sort(function(a,b){return(b.date||"").localeCompare(a.date||"");}).map(function(t){var isBuy=(parseFloat(t.shares)||0)>=0;
                   /* Per-row gain/loss: (current price / unit price) - 1.
@@ -366,6 +413,28 @@ export function CompanyDetail(props){
                   <div className="align-middle pr-2 py-1" style={{display:"table-cell"}} title="Ticker inferred from this portfolio's rep holdings">{rowTkLabel?<span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 font-mono font-semibold">{rowTkLabel}</span>:<span className="text-xs text-gray-400 dark:text-slate-500">--</span>}</div>
                   <div className="align-middle pr-2 py-1" style={{display:"table-cell"}}><span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold" style={{background:isBuy?"rgba(22,101,52,0.15)":"rgba(220,38,38,0.15)",color:isBuy?"#166534":"#991b1b"}}>{isBuy?"BUY":"SELL"}</span>{isBuy&&(function(){var active=isInitiationTx(selCo,t);return <span onClick={function(){var nv=active?false:true;setTxInitOverride(selCo.id,t.id,nv);setSelCo(function(prev){if(!prev||prev.id!==selCo.id)return prev;return Object.assign({},prev,{transactions:(prev.transactions||[]).map(function(x){if(x.id!==t.id)return x;return Object.assign({},x,{initOverride:nv});})});});}} className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold ml-1 cursor-pointer transition-colors" style={active?{background:"rgba(37,99,235,0.15)",color:"#1e40af"}:{background:"transparent",color:"#9ca3af",border:"1px dashed #9ca3af"}} title={active?"Click to unmark as initiation":"Click to mark as initiation"}>{active?"\u2605 INIT":"\u2606"}</span>;})()}{(function(){var active=!!t.cashFlow;return <span onClick={function(){var nv=!active;setTxCashFlow(selCo.id,t.id,nv);setSelCo(function(prev){if(!prev||prev.id!==selCo.id)return prev;return Object.assign({},prev,{transactions:(prev.transactions||[]).map(function(x){if(x.id!==t.id)return x;var n=Object.assign({},x);if(nv)n.cashFlow=true;else delete n.cashFlow;return n;})});});}} className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold ml-1 cursor-pointer transition-colors" style={active?{background:"rgba(217,119,6,0.18)",color:"#92400e"}:{background:"transparent",color:"#9ca3af",border:"1px dashed #9ca3af"}} title={active?"Click to unmark as a cash-flow-driven trade":"Click to mark this trade as due to a portfolio cash inflow or outflow"}>{active?"\u27F3 CF":"\u27F3"}</span>;})()}</div>
                   <div className="align-middle pr-2 py-1 text-xs text-gray-700 dark:text-slate-300" style={{display:"table-cell"}}>{Math.abs(parseFloat(t.shares)||0).toLocaleString()}</div>
+                  {(function(){
+                    var run = runningByTxId[t.id];
+                    var mm = mismatchByPort[t.portfolio];
+                    var isLastForPort = run !== undefined && lastRunByPort[t.portfolio] === run;
+                    /* Negative running = sold more than held (a missing
+                       earlier buy). Mismatch on the LAST row for a
+                       portfolio = total doesn't reconcile to rep
+                       shares. Both flagged red. */
+                    var bad = run < 0 || (isLastForPort && mm);
+                    var color = bad ? "#dc2626" : (run < 0 ? "#dc2626" : "#374151");
+                    var tip = bad
+                      ? (run < 0
+                          ? "Running goes negative — earlier buy(s) missing"
+                          : "Final total (" + lastRunByPort[t.portfolio].toLocaleString() + ") doesn't match rep shares (" + mm.actual.toLocaleString() + ") — trades missing or stale")
+                      : "Cumulative shares in " + (t.portfolio||"?") + " after this trade";
+                    return (
+                      <div className="align-middle pr-2 py-1 text-xs tabular-nums" style={{display:"table-cell",color:color,fontWeight:bad?700:400}} title={tip}>
+                        {run === undefined ? "--" : run.toLocaleString()}
+                        {bad && <span className="ml-1">⚠</span>}
+                      </div>
+                    );
+                  })()}
                   <div className="align-middle pr-2 py-1 text-xs text-gray-700 dark:text-slate-300" style={{display:"table-cell"}}>{t.price?ccyPrefix(rowTk&&rowTk.currency)+fmtPrice(t.price):"--"}</div>
                   <div className="align-middle pr-2 py-1 text-xs font-semibold tabular-nums" style={{display:"table-cell",color:glColor}} title={curPrice?"Current price "+fmtPrice(curPrice)+" / unit "+(t.price?fmtPrice(t.price):"--"):"No current price available"}>{glText}</div>
                   <div className="align-middle pr-2 py-1 text-xs text-gray-700 dark:text-slate-300" style={{display:"table-cell"}}>{t.amount?ccyPrefix(rowTk&&rowTk.currency)+parseFloat(t.amount).toLocaleString(undefined,{maximumFractionDigits:2}):"--"}</div>
