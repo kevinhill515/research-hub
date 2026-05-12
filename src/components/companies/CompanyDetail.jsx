@@ -680,7 +680,13 @@ export function CompanyDetail(props){
                   </div>
                 </div>)}
               </div>)}
-              <SectionEditTab title={sectionName} content={selCo.sections&&selCo.sections[sectionName]} onSave={function(newContent){var ns=Object.assign({},selCo.sections,{[sectionName]:newContent});var u=Object.assign({},selCo,{sections:ns,lastUpdated:todayStr()});setSelCo(u);setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});});}}/>
+              {/* key={sectionName} forces a full remount on every
+                  section switch — otherwise React reuses the same
+                  SectionEditTab instance and its internal state
+                  (textbox value, editing flag, bullets array) bleeds
+                  across sections. Caused Overview edits to surface in
+                  the Valuation textbox and vice versa. */}
+              <SectionEditTab key={sectionName} title={sectionName} content={selCo.sections&&selCo.sections[sectionName]} onSave={function(newContent){var ns=Object.assign({},selCo.sections,{[sectionName]:newContent});var u=Object.assign({},selCo,{sections:ns,lastUpdated:todayStr()});setSelCo(u);setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});});}}/>
             </div>);
           }())}
 
