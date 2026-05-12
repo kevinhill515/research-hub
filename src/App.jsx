@@ -403,6 +403,61 @@ export default function App(){
       </div>
     </div>
   );
+})()}{(function(){
+  /* Date-format audit + one-click normalizer. Walks every company's
+     reportDate fields (earningsEntries[*].reportDate and
+     lastReportDate) and counts any that aren't in YYYY-MM-DD form.
+     The "Normalize" button converts them all to ISO in one pass.
+     Important because mixed formats break string sorts/compares
+     (Toyota's "5/8/26" coming after "2026-02-06" in lexicographic
+     order, etc.). One-shot — running it on already-ISO data is a
+     no-op. */
+  var isoRe = /^\d{4}-\d{2}-\d{2}$/;
+  var bad = [];
+  (companies||[]).forEach(function(c){
+    var hits = [];
+    if (c.lastReportDate && !isoRe.test(c.lastReportDate)) hits.push("lastReportDate=" + c.lastReportDate);
+    (c.earningsEntries||[]).forEach(function(e, idx){
+      if (e && e.reportDate && !isoRe.test(e.reportDate)) hits.push("earningsEntries["+idx+"].reportDate=" + e.reportDate);
+    });
+    if (hits.length > 0) bad.push({ c: c, hits: hits });
+  });
+  if (bad.length === 0) return null;
+  function doNormalize(){
+    setCompanies(function(prev){
+      return prev.map(function(c){
+        var changed = false;
+        var u = Object.assign({}, c);
+        if (u.lastReportDate && !isoRe.test(u.lastReportDate)) {
+          var d = parseDate(u.lastReportDate);
+          if (d && !isNaN(d.getTime())) {
+            u.lastReportDate = d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+            changed = true;
+          }
+        }
+        if (u.earningsEntries && u.earningsEntries.length) {
+          u.earningsEntries = u.earningsEntries.map(function(e){
+            if (!e || !e.reportDate || isoRe.test(e.reportDate)) return e;
+            var d = parseDate(e.reportDate);
+            if (!d || isNaN(d.getTime())) return e;
+            changed = true;
+            var iso = d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+            return Object.assign({}, e, { reportDate: iso });
+          });
+        }
+        return changed ? u : c;
+      });
+    });
+  }
+  return (
+    <div className="mb-5 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800 px-3.5 py-2.5">
+      <div className="flex items-center justify-between mb-1">
+        <div className="text-xs font-semibold text-amber-800 dark:text-amber-300">⚠ Date formats: {bad.length} compan{bad.length===1?"y":"ies"} have report dates in non-ISO format</div>
+        <button onClick={doNormalize} className="text-[11px] px-2.5 py-1 rounded-md bg-amber-600 dark:bg-amber-700 text-white hover:bg-amber-700 dark:hover:bg-amber-600 transition-colors">Normalize all to YYYY-MM-DD</button>
+      </div>
+      <div className="text-[11px] text-amber-700 dark:text-amber-400">Mixed date formats (e.g. "5/8/26" vs "2026-02-06") break sort/compare on the Companies dashboard — Thesis / Action / Notes pick the wrong "most recent earnings." One click fixes them all in place.</div>
+    </div>
+  );
 })()}<div className="flex gap-2.5 flex-wrap mb-5">{[{label:"Missing country",count:companies.filter(function(c){return !c.country;}).length},{label:"Missing sector",count:companies.filter(function(c){return !c.sector;}).length},{label:"Missing tier",count:companies.filter(function(c){return !c.tier;}).length},{label:"No template",count:companies.filter(function(c){return !Object.keys(c.sections||{}).length;}).length},{label:"Not reviewed 30d+",count:companies.filter(function(c){return daysSince(c.lastReviewed)>30;}).length},{label:"Not reviewed 60d+",count:companies.filter(function(c){return daysSince(c.lastReviewed)>60;}).length},{label:"Watch stale 90d+",count:staleWatchCount}].map(function(item){return(<div key={item.label} className={CARD + " !mb-0 min-w-[140px] flex-1"}><div className="text-xl font-semibold" style={{color:item.count>0?"#d97706":"#16a34a"}}>{item.count}</div><div className="text-xs text-gray-500 dark:text-slate-400">{item.label}</div></div>);})}</div><div className="text-sm font-medium mb-2.5 text-gray-900 dark:text-slate-100">Stale companies (60d+ since review)</div>{companies.filter(function(c){return daysSince(c.lastReviewed)>60;}).sort(function(a,b){return daysSince(b.lastReviewed)-daysSince(a.lastReviewed);}).map(function(c){var d=daysSince(c.lastReviewed);return(<div key={c.id} className={CARD + " !mb-1.5 flex gap-2.5 items-center cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"} onClick={function(){setSelCo(c);setTab("companies");setCoView("upload");}}><span className="text-sm font-medium text-gray-900 dark:text-slate-100 flex-1">{c.name}</span>{c.ticker&&<span className={PILL_BASE}>{c.ticker}</span>}{c.status&&<StatusPill status={c.status}/>}<span className="text-[11px] font-semibold" style={{color:d>90?"#dc2626":d>60?"#d97706":"#ca8a04"}}>{d===Infinity?"never":d+"d ago"}</span></div>);})}</div>)}
       </div>)}
 

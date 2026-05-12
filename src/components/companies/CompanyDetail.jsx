@@ -16,6 +16,7 @@ import {
   repShares, repAvgCost, printPage,
 } from '../../utils/index.js';
 import { StatusPill, PortPicker, SectionBlock, DiffView, BarRow, PillEl, PriceAgeIndicator } from '../ui/index.js';
+import { ErrorBoundary } from '../ErrorBoundary.jsx';
 import { useConfirm, useAlert } from '../ui/DialogProvider.jsx';
 import { SectionEditTab, EarningsEntry, NotesCell, ActionCell, FlagCell, DatePicker } from '../forms/index.js';
 import RatiosTab from './RatiosTab.jsx';
@@ -247,6 +248,12 @@ export function CompanyDetail(props){
           <div className="flex gap-1 mb-3.5 flex-wrap">
             {coTabs.map(function(t){return <button key={t.id} title={t.title||undefined} className={(coView===t.id?TABSM_ACTIVE:TABSM_INACTIVE)+" whitespace-nowrap"} onClick={function(){setCoView(t.id);}}>{t.label}</button>;})}
           </div>
+
+          {/* Per-subtab ErrorBoundary so a render crash in one tab
+              (e.g. Thesis hitting bad data) shows a localized error
+              without nuking the whole company view. resetKey={coView}
+              clears the error when the user switches tabs. */}
+          <ErrorBoundary resetKey={coView}>
 
           {/* TEMPLATE TAB */}
           {/* Portfolio weights / History / Transactions — visible on every tab */}
@@ -822,5 +829,7 @@ export function CompanyDetail(props){
 
           {/* LOG */}
           {coView==="history"&&(<div>{(selCo.updateLog||[]).length===0?<p className="text-sm text-gray-500 dark:text-slate-400">No updates yet.</p>:(selCo.updateLog||[]).map(function(log,i){return(<div key={i} className={CARD}><div className="flex gap-2 items-center mb-1 flex-wrap"><span className={PILL_BASE}>{log.type}</span><span className="text-xs text-gray-500 dark:text-slate-400">{log.date}</span><span className="text-xs text-gray-500 dark:text-slate-400 ml-auto">{log.changes.join(", ")}</span></div><p className="text-sm m-0 leading-relaxed text-gray-900 dark:text-slate-100">{log.summary}</p></div>);})}</div>)}
+
+          </ErrorBoundary>
         </div>);
 }

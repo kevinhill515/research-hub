@@ -272,9 +272,17 @@ export function annualStaleStatus(company, today) {
   }
   const latestImported = latestHistoricalYear(fin.years, fin.estimate);
 
-  /* The 13-month fallback: covers names without earningsEntries. */
-  const thirteenMonthsMs = 13 * 30 * 24 * 3600 * 1000;
-  const thirteenMonthsPast = (t.getTime() - fyEnd.getTime()) > thirteenMonthsMs;
+  /* 13-month fallback: anchor the threshold to the LATEST IMPORTED
+     year's fiscal-year-end, not the most-recent-past. fyEnd is
+     always ≤ 12 months old (it rolls forward each year), so the
+     prior implementation could never fire. Anchored to the
+     imported year, the rule actually catches stale data when
+     earningsEntries doesn't carry the post-FY-end report. */
+  let thirteenMonthsPast = false;
+  if (latestImported) {
+    const importedFyEnd = new Date(latestImported, monthNum - 1, lastDayOfMonth(latestImported, monthNum), 23, 59, 59);
+    thirteenMonthsPast = (t.getTime() - importedFyEnd.getTime()) > 13 * 30 * 24 * 3600 * 1000;
+  }
 
   if (latestImported && latestImported >= fyYear) {
     /* Already imported the latest FY — fresh. */
