@@ -199,17 +199,20 @@ function AnnotationCard({ ann, onReply, onResolve, onUnresolve, onDelete, onUpda
         ) : (
           <span onClick={function(){onResolve(ann.id);}} className="cursor-pointer hover:text-green-600 dark:hover:text-green-400">Resolve</span>
         )}
-        {ann.author === currentUser && !editing && (
-          <>
-            <span onClick={function(){setEditing(true);}} className="cursor-pointer hover:text-blue-600 dark:hover:text-blue-400">Edit</span>
-            <span
-              role="button"
-              tabIndex={0}
-              onClick={async function(){ if(await confirm("Delete this comment?",{danger:true,okLabel:"Delete"}))onDelete(ann.id); }}
-              onKeyDown={function(e){ if(e.key==="Enter"||e.key===" "){e.preventDefault();(async function(){if(await confirm("Delete this comment?",{danger:true,okLabel:"Delete"}))onDelete(ann.id);})();} }}
-              className="cursor-pointer hover:text-red-600 dark:hover:text-red-400 focus:outline-none focus:ring-2 focus:ring-red-400 rounded"
-            >Delete</span>
-          </>
+        {ann.author === currentUser && !editing && !ann.resolved && (
+          <span onClick={function(){setEditing(true);}} className="cursor-pointer hover:text-blue-600 dark:hover:text-blue-400">Edit</span>
+        )}
+        {/* Delete: author-only while active; anyone-on-team once resolved
+           (so archived discussions can be cleaned up regardless of who
+           wrote them). */}
+        {(ann.author === currentUser || ann.resolved) && !editing && (
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={async function(){ if(await confirm("Delete this comment?",{danger:true,okLabel:"Delete"}))onDelete(ann.id); }}
+            onKeyDown={function(e){ if(e.key==="Enter"||e.key===" "){e.preventDefault();(async function(){if(await confirm("Delete this comment?",{danger:true,okLabel:"Delete"}))onDelete(ann.id);})();} }}
+            className="cursor-pointer hover:text-red-600 dark:hover:text-red-400 focus:outline-none focus:ring-2 focus:ring-red-400 rounded"
+          >Delete</span>
         )}
         {ann.resolved && (
           <span className="ml-auto text-[10px] italic">resolved by {ann.resolvedBy} on {ann.resolvedDate}</span>
@@ -223,6 +226,11 @@ export default function DiscussionsPanel({ open, onClose, initialScope, initialP
   var { annotations, addAnnotation, updateAnnotation, deleteAnnotation, resolveAnnotation, unresolveAnnotation, addReply, currentUser } = useCompanyContext();
   var [filter, setFilter] = useState("active"); // active | archive | mentions
   var [scopeFilter, setScopeFilter] = useState("all"); // all | portfolio | company
+  /* Archive-only kind filter — once you're in Archive, you usually want
+     to triage by scope shape (portfolio thread vs. company-wide vs.
+     specific holding) so you can clean up by category. "row" is the
+     stored value for what the UI labels "holding". */
+  var [archiveKind, setArchiveKind] = useState("all"); // all | portfolio | company | row
   var [newText, setNewText] = useState("");
   /* Scope normalization: legacy "row" → "holding" (renamed for
      clarity per IC feedback). The stored annotation scope is still
@@ -264,8 +272,23 @@ export default function DiscussionsPanel({ open, onClose, initialScope, initialP
     }
     if(scopeFilter === "portfolio" && initialPortfolio && a.portfolio !== initialPortfolio && a.scope !== "company") return false;
     if(scopeFilter === "company" && initialCompanyId && a.companyId !== initialCompanyId) return false;
+    if(filter === "archive" && archiveKind !== "all" && a.scope !== archiveKind) return false;
     return true;
   });
+
+  /* Archive sort: group by scope kind, then most-recently-resolved first
+     within each group. Active/Mentions stay in default chronological order. */
+  if(filter === "archive"){
+    var kindOrder = { portfolio: 0, company: 1, row: 2, cell: 3 };
+    filtered = filtered.slice().sort(function(a, b){
+      var ka = kindOrder[a.scope] !== undefined ? kindOrder[a.scope] : 99;
+      var kb = kindOrder[b.scope] !== undefined ? kindOrder[b.scope] : 99;
+      if(ka !== kb) return ka - kb;
+      var ra = a.resolvedDate || a.date || "";
+      var rb = b.resolvedDate || b.date || "";
+      return rb.localeCompare(ra);
+    });
+  }
 
   function submitNew(){
     if(!newText.trim()) return;
@@ -312,6 +335,16 @@ export default function DiscussionsPanel({ open, onClose, initialScope, initialP
             return <button key={f[0]} onClick={function(){setFilter(f[0]);}} className={"text-xs px-2.5 py-1 rounded-full border " + (active ? "bg-blue-100 dark:bg-blue-900/40 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300 font-medium" : "border-slate-200 dark:border-slate-700 text-gray-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800")}>{f[1]}</button>;
           })}
         </div>
+
+        {filter === "archive" && (
+          <div className="px-4 py-2 border-b border-slate-200 dark:border-slate-700 flex gap-1.5 flex-wrap items-center">
+            <span className="text-[10px] text-gray-500 dark:text-slate-400 uppercase">Group by:</span>
+            {[["all","All"],["portfolio","Portfolio"],["company","Company-wide"],["row","Holding"]].map(function(k){
+              var active = archiveKind === k[0];
+              return <button key={k[0]} onClick={function(){setArchiveKind(k[0]);}} className={"text-[11px] px-2 py-0.5 rounded-full border " + (active ? "bg-slate-100 dark:bg-slate-800 border-slate-400 dark:border-slate-500 text-gray-900 dark:text-slate-100 font-semibold" : "border-slate-200 dark:border-slate-700 text-gray-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800")}>{k[1]}</button>;
+            })}
+          </div>
+        )}
 
         {(initialPortfolio || initialCompanyId) && (
           <div className="px-4 py-2 border-b border-slate-200 dark:border-slate-700 flex gap-1.5 flex-wrap">
