@@ -101,12 +101,17 @@ export default function PreEarningsBrief({ company }) {
   const nextRepIso = futureCandidates.length > 0 ? futureCandidates[0].iso : null;
   const daysToNext = daysUntil(nextRepIso);
 
-  /* No future report on file → the brief has nothing to brief on.
-     Hide entirely (rather than render "no upcoming report date"
-     forever). Companies pick up the panel again as soon as a future
-     date is uploaded — via Earnings Dates upload or the daily
-     Guidance pull catching up. */
+  /* Only show the brief when a report is genuinely imminent —
+     within 30 days. Outside that window the brief is mostly
+     stale (mid-quarter guidance doesn't change much) and
+     clutters the Earnings tab right after a name reports
+     (FactSet immediately schedules the next-quarter date, so a
+     "future date exists" check alone wasn't enough to clear the
+     brief post-report). 30 days roughly tracks the conventional
+     "earnings season" prep window. */
   if (!nextRepIso) return null;
+  const daysToNextChk = daysUntil(nextRepIso);
+  if (daysToNextChk == null || daysToNextChk > 30) return null;
 
   /* ---- Section 2: last reported quarter ---- */
   const sortedEntries = ((company.earningsEntries) || [])
