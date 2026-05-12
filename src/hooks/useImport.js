@@ -78,7 +78,20 @@ export function useImport(){
         var shares=parseFloat(parts[3]);
         var price=parseFloat(parts[4]);
         var amount=parseFloat((parts[5]||"").replace(/,/g,""));
-        if(name&&!isNaN(shares))rows.push({date:date,name:name,portfolio:portfolio,shares:shares,price:isNaN(price)?0:price,amount:isNaN(amount)?0:amount});
+        /* Optional cols 7+8: per-trade Ticker and Currency. Preserves the
+           historical ticker for cross-listed names whose ticker has
+           changed over time (e.g. ANCUFOLD → ANCTF → BL56KN2). When
+           omitted, the UI falls back to the inferred ticker. Empty
+           strings normalize to undefined so they don't accidentally
+           overwrite richer data on re-imports. */
+        var rowTicker=(parts[6]||"").toUpperCase().trim();
+        var rowCcy=(parts[7]||"").toUpperCase().trim();
+        if(name&&!isNaN(shares)){
+          var row={date:date,name:name,portfolio:portfolio,shares:shares,price:isNaN(price)?0:price,amount:isNaN(amount)?0:amount};
+          if(rowTicker) row.ticker=rowTicker;
+          if(rowCcy) row.currency=rowCcy;
+          rows.push(row);
+        }
       }
     });
     if(rows.length===0){alertFn("No valid rows parsed. Expected columns: Date, Name, Portfolio, Shares, Price, Amount.");return;}
@@ -112,7 +125,10 @@ export function useImport(){
       var existKeys={};existing.forEach(function(t){existKeys[keyOf(t)]=true;});
       var newTx=matches.filter(function(r){return !existKeys[keyOf(r)];}).map(function(r){
         var id=(typeof crypto!=="undefined"&&crypto.randomUUID)?crypto.randomUUID():(Date.now()+"-"+Math.random().toString(36).slice(2));
-        return{id:id,date:r.date,portfolio:r.portfolio,shares:r.shares,price:r.price,amount:r.amount,type:r.shares>=0?"BUY":"SELL"};
+        var rec={id:id,date:r.date,portfolio:r.portfolio,shares:r.shares,price:r.price,amount:r.amount,type:r.shares>=0?"BUY":"SELL"};
+        if(r.ticker) rec.ticker=r.ticker;
+        if(r.currency) rec.currency=r.currency;
+        return rec;
       });
       if(newTx.length===0 && !txReplaceMatched)return c;
       txCount+=newTx.length;

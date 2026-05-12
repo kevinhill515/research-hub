@@ -323,6 +323,16 @@ export function CompanyDetail(props){
                    getCurrentPriceForTx(t) is closed over the company so
                    the rendering loop below can call it once per row. */
                 function getTickerForTx(t){
+                  /* Prefer the transaction's own stored ticker/currency
+                     (set by the import when the row included Ticker /
+                     Currency columns). Lets historical trades on
+                     superseded tickers (ANCUFOLD \u2192 ANCTF \u2192 BL56KN2)
+                     display with their actual ticker + currency,
+                     instead of being remapped to the current rep
+                     holding. */
+                  if (t.ticker) {
+                    return { ticker: t.ticker, currency: t.currency || "USD", price: undefined };
+                  }
                   var pRep=(repData||{})[t.portfolio]||{};
                   var pickedTk=(selCo.tickers||[]).find(function(tk){
                     var k=(tk.ticker||"").toUpperCase();
@@ -335,6 +345,16 @@ export function CompanyDetail(props){
                   return (selCo.tickers||[]).find(function(tk){return tk.isOrdinary;}) || null;
                 }
                 function getCurrentPriceForTx(t){
+                  /* When the row stores its own ticker and that ticker
+                     no longer exists on the company (superseded — e.g.
+                     ANCUFOLD), we can't sensibly mark-to-market the
+                     trade. Skip the % G/L for those rows. */
+                  if (t.ticker) {
+                    var stillHeld = (selCo.tickers||[]).some(function(tk){
+                      return (tk.ticker||"").toUpperCase() === t.ticker.toUpperCase();
+                    });
+                    if (!stillHeld) return null;
+                  }
                   var tk=getTickerForTx(t);
                   if(tk){
                     var p=parseFloat(tk.price);
