@@ -7,6 +7,17 @@ function MentionInput({ value, onChange, onSubmit, placeholder, autoFocus }){
   var [suggestions, setSuggestions] = useState([]);
   var ref = useRef();
 
+  /* Auto-grow: resize the textarea to fit its content. Reset to "auto"
+     first so shrinking works after deletions, then set to scrollHeight.
+     Capped at 60vh so a runaway paste doesn't take over the panel. */
+  useEffect(function(){
+    var el = ref.current;
+    if(!el) return;
+    el.style.height = "auto";
+    var maxPx = Math.floor(window.innerHeight * 0.6);
+    el.style.height = Math.min(el.scrollHeight, maxPx) + "px";
+  }, [value]);
+
   function handleChange(e){
     var text = e.target.value;
     onChange(text);
