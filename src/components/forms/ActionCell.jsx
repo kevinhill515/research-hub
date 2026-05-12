@@ -18,9 +18,15 @@ function ActionCell({ value, earningsEntries, onUpdate }) {
      The 📊 prefix signals the value came from earnings rather than a
      manual entry, so the user knows it'll auto-update when the next
      earnings entry is logged. */
+  /* Earnings-driven: when the latest earnings entry has a usable
+     tpChange (Increase TP / Decrease TP / No Action), it wins over
+     any manual company.action. The manual value still shows as a
+     fallback for companies with no earnings entries yet — useful
+     during a name's first review when there's nothing logged. The
+     📊 prefix + tooltip make the source obvious. */
   var derivedFromEarnings = false;
   var displayValue = value;
-  if (!displayValue && earningsEntries && earningsEntries.length > 0) {
+  if (earningsEntries && earningsEntries.length > 0) {
     var last = getLastReportedEntry(earningsEntries);
     if (last && last.tpChange && ["Increase TP", "Decrease TP", "No Action"].indexOf(last.tpChange) >= 0) {
       displayValue = last.tpChange;
