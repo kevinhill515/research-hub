@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { ACTIONS } from '../../constants/index.js';
+import { getLastReportedEntry } from '../../utils/index.js';
 
 function ActionCell({ value, earningsEntries, onUpdate }) {
   var [open, setOpen] = useState(false);
@@ -20,9 +21,7 @@ function ActionCell({ value, earningsEntries, onUpdate }) {
   var derivedFromEarnings = false;
   var displayValue = value;
   if (!displayValue && earningsEntries && earningsEntries.length > 0) {
-    var todayIso = new Date().toISOString().slice(0, 10);
-    var sorted = earningsEntries.slice().filter(function (e) { return e && e.reportDate; }).sort(function (a, b) { return (b.reportDate || "").localeCompare(a.reportDate || ""); });
-    var last = sorted.find(function (e) { return (e.reportDate || "") <= todayIso; });
+    var last = getLastReportedEntry(earningsEntries);
     if (last && last.tpChange && ["Increase TP", "Decrease TP", "No Action"].indexOf(last.tpChange) >= 0) {
       displayValue = last.tpChange;
       derivedFromEarnings = true;

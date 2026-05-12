@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, memo } from "react";
 import { PORTFOLIOS, TIER_ORDER, COUNTRY_ORDER, SECTOR_ORDER } from '../../constants/index.js';
-import { shortSector, sectorStyle, countryStyle, getTiers, tierPillStyle, tierBg, reviewedColor, daysSince, todayStr, calcNormEPS, calcTP, calcMOS, fmtMOS, fmtMOS0, mosBg, getTpFixed, tierToStatus, truncName } from '../../utils/index.js';
+import { shortSector, sectorStyle, countryStyle, getTiers, tierPillStyle, tierBg, reviewedColor, daysSince, todayStr, calcNormEPS, calcTP, calcMOS, fmtMOS, fmtMOS0, mosBg, getTpFixed, tierToStatus, truncName, getLastReportedEntry } from '../../utils/index.js';
 import StatusPill from '../ui/StatusPill.jsx';
 import NotesCell from '../forms/NotesCell.jsx';
 import ActionCell from '../forms/ActionCell.jsx';
@@ -396,12 +396,7 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
       {show("Thesis") && (
         <div className={tdBase} style={rowBg ? { background: rowBg } : undefined}>
           {(function(){
-            var ents = (company.earningsEntries || [])
-              .filter(function (e) { return e && e.reportDate; })
-              .slice()
-              .sort(function (a, b) { return (b.reportDate || "").localeCompare(a.reportDate || ""); });
-            var todayIso = new Date().toISOString().slice(0, 10);
-            var last = ents.find(function (e) { return (e.reportDate || "") <= todayIso; });
+            var last = getLastReportedEntry(company.earningsEntries);
             var ts = last && last.thesisStatus;
             if (!ts) return <span className="text-xs text-slate-300 dark:text-slate-600">—</span>;
             var cfg = { "On track": { bg: "#dcfce7", color: "#166534" }, "Watch": { bg: "#fef9c3", color: "#854d0e" }, "Broken": { bg: "#fee2e2", color: "#991b1b" } }[ts] || { bg: "#f1f5f9", color: "#475569" };

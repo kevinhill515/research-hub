@@ -20,6 +20,24 @@ export function fmtTP(val,currency){if(val===null||val===undefined)return"--";re
 export function fmtMOS(mos){if(mos===null||mos===undefined)return null;return(mos>0?"+":"")+mos+"%";}
 export function mosBg(mos){if(mos===null)return null;if(mos>=20)return{bg:"#dcfce7",color:"#166534"};if(mos>=0)return{bg:"#fef9c3",color:"#854d0e"};return{bg:"#fee2e2",color:"#991b1b"};}
 export function impliedFYLabel(v){var parts=[];if(v.fy1&&v.w1)parts.push(v.fy1+(v.w2?" "+v.w1+"%":""));if(v.fy2&&v.w2)parts.push(v.fy2+" "+v.w2+"%");return parts.join(" / ")||v.forwardYear||"";}
+/* Most recent earnings entry whose reportDate is on or before today.
+   Uses parseDate so mixed reportDate formats (M/D/YY, M/D/YYYY,
+   YYYY-MM-DD) all work — string-comparing those formats was failing
+   to recognize "5/8/26" as more recent than "2026-02-06" because "5"
+   sorts after "2026-...". Returns the entry object or null. */
+export function getLastReportedEntry(earningsEntries){
+  if(!earningsEntries||!earningsEntries.length)return null;
+  var t0=new Date();t0.setHours(0,0,0,0);
+  var best=null,bestT=-Infinity;
+  earningsEntries.forEach(function(e){
+    if(!e||!e.reportDate)return;
+    var d=parseDate(e.reportDate);
+    if(!d||isNaN(d.getTime()))return;
+    if(d.getTime()>t0.getTime())return; // future
+    if(d.getTime()>bestT){best=e;bestT=d.getTime();}
+  });
+  return best;
+}
 export function tierPillStyle(t){if(!t)return{bg:"#334155",color:"#fff"};if(t.indexOf("FIN")===0)return{bg:"#1a3a6b",color:"#fff"};if(t.indexOf("INGL")===0)return{bg:"#b45309",color:"#fff"};if(t==="IN1"||t==="IN2")return{bg:"#0f766e",color:"#fff"};if(t.indexOf("US")===0)return{bg:"#1a3a6b",color:"#fff"};if(t.indexOf("EM")===0)return{bg:"#92400e",color:"#fff"};if(t.indexOf("SC")===0)return{bg:"#5b21b6",color:"#fff"};if(t.indexOf("F ")===0||t.indexOf("W ")===0)return{bg:"#9d174d",color:"#fff"};if(t==="Hit TP")return{bg:"#64748b",color:"#fff"};if(t==="Gave Up")return{bg:"#94a3b8",color:"#fff"};if(t==="Remove")return{bg:"#dc2626",color:"#fff"};return{bg:"#334155",color:"#fff"};}
 export function tierBg(t){var tiers=getTiers(t),first=tiers[0]||"";if(!first)return"#ffffff";if(first.indexOf("FIN")===0)return"#e8f0f8";if(first.indexOf("INGL")===0)return"#fde8d8";if(first==="IN1"||first==="IN2")return"#d1faf4";if(first.indexOf("US")===0)return"#e8f5ee";if(first.indexOf("EM")===0)return"#fef6e4";if(first.indexOf("SC")===0)return"#f0ecfb";if(first.indexOf("F ")===0||first.indexOf("W ")===0)return"#fceef4";if(first==="Hit TP")return"#f1f5f9";if(first==="Gave Up")return"#f8fafc";if(first==="Remove")return"#fee2e2";return"#ffffff";}
 export function fmtTime(t){var m=Math.ceil(t.trim().split(/\s+/).length/AVG_WPM);return m===1?"1 min":m+" min";}

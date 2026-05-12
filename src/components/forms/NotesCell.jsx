@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { getLastReportedEntry } from '../../utils/index.js';
 
 function NotesCell({ company, onUpdate }) {
   var [open, setOpen] = useState(false);
@@ -14,25 +15,24 @@ function NotesCell({ company, onUpdate }) {
   }, [open]);
 
   /* Fallback to the most recent earnings entry's takeaways when the
-     company-level fields are empty. Mirrors the Action / Thesis
-     columns. The 📊 prefix on the displayed text tells the user the
-     copy is sourced from earnings — useful for spotting names where
-     the manual takeaway hasn't been touched since the last report. */
+     company-level fields are empty. The same fallback also seeds the
+     editor textboxes when openEditor runs, so opening the editor
+     gives users an already-typed-out starting point from the latest
+     earnings (they can edit, then Save to lift it onto the company-
+     level fields). */
   var derivedFromEarnings = false;
   var displayShort = company.takeaway || "";
   var displayLong = company.takeawayLong || "";
-  if (!displayShort && !displayLong) {
-    var todayIso = new Date().toISOString().slice(0, 10);
-    var sorted = ((company.earningsEntries) || [])
-      .filter(function (e) { return e && e.reportDate; })
-      .slice()
-      .sort(function (a, b) { return (b.reportDate || "").localeCompare(a.reportDate || ""); });
-    var last = sorted.find(function (e) { return (e.reportDate || "") <= todayIso; });
-    if (last && (last.shortTakeaway || last.extendedTakeaway)) {
-      displayShort = last.shortTakeaway || "";
-      displayLong = last.extendedTakeaway || "";
-      derivedFromEarnings = true;
-    }
+  var earningsShort = "", earningsLong = "";
+  var last = getLastReportedEntry(company.earningsEntries);
+  if (last) {
+    earningsShort = last.shortTakeaway || "";
+    earningsLong = last.extendedTakeaway || "";
+  }
+  if (!displayShort && !displayLong && (earningsShort || earningsLong)) {
+    displayShort = earningsShort;
+    displayLong = earningsLong;
+    derivedFromEarnings = true;
   }
   var hasLong = !!(displayLong && displayLong.trim());
 
@@ -43,8 +43,12 @@ function NotesCell({ company, onUpdate }) {
 
   function openEditor() {
     setOpen(true);
-    setSv(company.takeaway || "");
-    setLv(company.takeawayLong || "");
+    /* Pre-fill from the company-level fields if set, else from the
+       latest earnings takeaways. That way users editing a stale
+       earnings-sourced note start with the earnings text already
+       loaded — no copy-paste needed. */
+    setSv(company.takeaway || earningsShort || "");
+    setLv(company.takeawayLong || earningsLong || "");
   }
 
   return (
