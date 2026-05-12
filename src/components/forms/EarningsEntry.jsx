@@ -1,10 +1,26 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { TP_CHANGES, THESIS_STATUSES } from '../../constants/index.js';
 import { apiCall } from '../../api/index.js';
 import { useAlert } from '../ui/DialogProvider.jsx';
 import { inferQuarter } from '../../utils/index.js';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import GuidanceVsActual from '../companies/GuidanceVsActual.jsx';
+
+/* Textarea that grows with its content. Reset to "auto" so deletions
+   shrink it, then size to scrollHeight. Capped at 70vh so a giant
+   paste doesn't take over the page. Used for the AI-paste box and the
+   Extended Takeaway field. */
+function AutoGrowTextarea(props) {
+  var ref = useRef();
+  useEffect(function () {
+    var el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    var maxPx = Math.floor(window.innerHeight * 0.7);
+    el.style.height = Math.min(el.scrollHeight, maxPx) + "px";
+  }, [props.value]);
+  return <textarea ref={ref} {...props} />;
+}
 
 function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
   /* fxRates is needed to convert local-currency sales/EPS into USD for
@@ -268,7 +284,7 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
                 <div className="text-xs text-gray-500 dark:text-slate-400 mb-1.5">
                   Paste raw earnings notes, report excerpts, or your own commentary. AI will fill all fields automatically.
                 </div>
-                <textarea
+                <AutoGrowTextarea
                   value={aiText}
                   onChange={function (ev) { setAiText(ev.target.value); }}
                   placeholder="Paste earnings notes here..."
@@ -365,7 +381,7 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
             <label className={labelClasses}>
               Extended Takeaway <span className="text-blue-700 dark:text-blue-400">({"\u2192"} Extended Note)</span>
             </label>
-            <textarea
+            <AutoGrowTextarea
               value={e.extendedTakeaway}
               onChange={function (ev) { upd({ extendedTakeaway: ev.target.value }); }}
               rows={8}
