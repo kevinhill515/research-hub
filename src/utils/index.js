@@ -10,6 +10,12 @@ export function calcNormEPS(v){var e1=parseFloat(v.eps1),e2=parseFloat(v.eps2),w
 export function calcTP(pe,eps){var p=parseFloat(pe),e=parseFloat(eps);if(isNaN(p)||isNaN(e)||p<=0)return null;return Math.round(p*e*100)/100;}
 export function calcMOS(tp,price){if(tp===null||tp===undefined)return null;var pr=parseFloat(price);if(isNaN(pr)||pr<=0)return null;return Math.round((tp-pr)/tp*1000)/10;}
 export function fmtPrice(val){if(val===null||val===undefined||val==="")return"--";return parseFloat(val).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});}
+/* Currency prefix for display. Short symbol when widely recognized
+   ($, €, ¥, £, ₩, ₹), or a short text prefix for regional dollars
+   ("C$", "A$", "HK$"), or the bare code + space otherwise. Used to
+   disambiguate cross-listed names (ATD-CA in CAD vs ANCTF in USD)
+   at a glance on the Transactions tab. */
+export function ccyPrefix(ccy){var c=(ccy||"").toUpperCase();switch(c){case "USD":return "$";case "EUR":return "€";case "JPY":case "CNY":case "CNH":return "¥";case "GBP":return "£";case "KRW":return "₩";case "INR":return "₹";case "CAD":return "C$";case "AUD":return "A$";case "HKD":return "HK$";case "SGD":return "S$";case "NZD":return "NZ$";case "TWD":return "NT$";case "BRL":return "R$";case "MXN":return "MX$";case "":return "";default:return c+" ";}}
 export function fmtTP(val,currency){if(val===null||val===undefined)return"--";return currency+" "+val.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});}
 export function fmtMOS(mos){if(mos===null||mos===undefined)return null;return(mos>0?"+":"")+mos+"%";}
 export function mosBg(mos){if(mos===null)return null;if(mos>=20)return{bg:"#dcfce7",color:"#166534"};if(mos>=0)return{bg:"#fef9c3",color:"#854d0e"};return{bg:"#fee2e2",color:"#991b1b"};}
