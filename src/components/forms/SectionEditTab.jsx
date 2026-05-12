@@ -3,23 +3,33 @@ import { SECTION_SUBHEADINGS } from '../../constants/index.js';
 import { toHTML } from '../../utils/index.js';
 
 function SectionEditTab({ title, content, onSave }) {
+  /* Coerce content to a string defensively — legacy data sometimes
+     stored sections as arrays/objects and the textarea / parseBullets
+     code paths expect a string. Without this, navigating to a
+     non-string section (e.g. Shell > Thesis) blows up with
+     "<x>.split is not a function". */
+  var safeContent = (typeof content === "string") ? content : "";
   var TICKER_SECTION = "Overview";
   var bulletSections = new Set(["Thesis", "Segments", "Guidance / KPIs", "Key Challenges"]);
   var useBullets = bulletSections.has(title);
-  var isEmpty = !content || !content.trim();
+  var isEmpty = !safeContent || !safeContent.trim();
 
   var [editing, setEditing] = useState(isEmpty);
-  var [val, setVal] = useState(content || "");
+  var [val, setVal] = useState(safeContent);
   var [showRef, setShowRef] = useState(false);
   var subheadings = SECTION_SUBHEADINGS[title] || [];
 
   function parseBullets(text) {
+    /* Defensive: callers sometimes pass non-strings (e.g. legacy data
+       where the section was stored as an array). Coerce to "" so
+       .split doesn't blow up. */
+    if (typeof text !== "string") text = "";
     var lines = text.split("\n").map(function (l) { return l.replace(/^•\s*/, "").trim(); }).filter(function (l) { return l; });
     while (lines.length < 5) lines.push("");
     return lines.slice(0, 15);
   }
 
-  var [bullets, setBullets] = useState(function () { return useBullets ? parseBullets(content || []) : []; });
+  var [bullets, setBullets] = useState(function () { return useBullets ? parseBullets(safeContent) : []; });
 
   function bulletsToText(bl) { return bl.filter(function (b) { return b.trim(); }).map(function (b) { return "\u2022 " + b; }).join("\n"); }
   function addBullet() { if (bullets.length < 15) setBullets(function (b) { return b.concat([""]); }); }
@@ -27,9 +37,9 @@ function SectionEditTab({ title, content, onSave }) {
   function updBullet(i, v) { setBullets(function (b) { var n = b.slice(); n[i] = v; return n; }); }
 
   useEffect(function () {
-    setVal(content || "");
-    if (!content || !content.trim()) setEditing(true);
-    if (useBullets) setBullets(parseBullets(content || ""));
+    setVal(safeContent);
+    if (!safeContent.trim()) setEditing(true);
+    if (useBullets) setBullets(parseBullets(safeContent));
   }, [content]);
 
   /* -------- Bullet mode -------- */
@@ -44,7 +54,7 @@ function SectionEditTab({ title, content, onSave }) {
           <div className="flex gap-1.5">
             {!editing && (
               <button
-                onClick={function () { setEditing(true); setBullets(parseBullets(content || "")); }}
+                onClick={function () { setEditing(true); setBullets(parseBullets(safeContent)); }}
                 className="text-xs px-3 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
               >
                 Edit
@@ -102,7 +112,7 @@ function SectionEditTab({ title, content, onSave }) {
               </button>
               {!isEmpty && (
                 <span
-                  onClick={function () { setEditing(false); setBullets(parseBullets(content || "")); }}
+                  onClick={function () { setEditing(false); setBullets(parseBullets(safeContent)); }}
                   className="text-xs text-gray-500 dark:text-slate-400 cursor-pointer px-2 py-1.5 hover:text-gray-700 dark:hover:text-slate-300 transition-colors"
                 >
                   Cancel
@@ -122,7 +132,7 @@ function SectionEditTab({ title, content, onSave }) {
   }
 
   /* -------- Free-text mode -------- */
-  var isEmpty2 = !content || !content.trim();
+  var isEmpty2 = !safeContent.trim();
 
   return (
     <div>
@@ -139,7 +149,7 @@ function SectionEditTab({ title, content, onSave }) {
           )}
           {!editing && (
             <button
-              onClick={function () { setEditing(true); setVal(content || ""); }}
+              onClick={function () { setEditing(true); setVal(safeContent); }}
               className="text-xs px-3 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
             >
               Edit
@@ -192,7 +202,7 @@ function SectionEditTab({ title, content, onSave }) {
             </button>
             {!isEmpty2 && (
               <span
-                onClick={function () { setEditing(false); setVal(content || ""); }}
+                onClick={function () { setEditing(false); setVal(safeContent); }}
                 className="text-xs text-gray-500 dark:text-slate-400 cursor-pointer px-2 py-1.5 hover:text-gray-700 dark:hover:text-slate-300 transition-colors"
               >
                 Cancel
@@ -202,7 +212,7 @@ function SectionEditTab({ title, content, onSave }) {
         </div>
       ) : (
         <div className="text-sm leading-[1.8] text-gray-900 dark:text-slate-100 whitespace-pre-wrap px-3 py-2.5 bg-slate-50 dark:bg-slate-800 rounded-md border border-slate-200 dark:border-slate-700 min-h-[60px]">
-          <span dangerouslySetInnerHTML={{ __html: toHTML(content || "") }} />
+          <span dangerouslySetInnerHTML={{ __html: toHTML(safeContent) }} />
         </div>
       )}
     </div>
