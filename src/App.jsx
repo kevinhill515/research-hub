@@ -328,7 +328,51 @@ export default function App(){
         </Suspense>
         {false&&(<div></div>)}
         {dashSubTab==="overlap"&&(<div><div className="text-sm font-medium mb-3 text-gray-900 dark:text-slate-100">Portfolio Overlap</div><OverlapMatrix companies={companies}/></div>)}
-        {dashSubTab==="quality"&&(<div><div className="text-sm font-medium mb-3 text-gray-900 dark:text-slate-100">Data Quality</div><div className="flex gap-2.5 flex-wrap mb-5">{[{label:"Missing country",count:companies.filter(function(c){return !c.country;}).length},{label:"Missing sector",count:companies.filter(function(c){return !c.sector;}).length},{label:"Missing tier",count:companies.filter(function(c){return !c.tier;}).length},{label:"No template",count:companies.filter(function(c){return !Object.keys(c.sections||{}).length;}).length},{label:"Not reviewed 30d+",count:companies.filter(function(c){return daysSince(c.lastReviewed)>30;}).length},{label:"Not reviewed 60d+",count:companies.filter(function(c){return daysSince(c.lastReviewed)>60;}).length},{label:"Watch stale 90d+",count:staleWatchCount}].map(function(item){return(<div key={item.label} className={CARD + " !mb-0 min-w-[140px] flex-1"}><div className="text-xl font-semibold" style={{color:item.count>0?"#d97706":"#16a34a"}}>{item.count}</div><div className="text-xs text-gray-500 dark:text-slate-400">{item.label}</div></div>);})}</div><div className="text-sm font-medium mb-2.5 text-gray-900 dark:text-slate-100">Stale companies (60d+ since review)</div>{companies.filter(function(c){return daysSince(c.lastReviewed)>60;}).sort(function(a,b){return daysSince(b.lastReviewed)-daysSince(a.lastReviewed);}).map(function(c){var d=daysSince(c.lastReviewed);return(<div key={c.id} className={CARD + " !mb-1.5 flex gap-2.5 items-center cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"} onClick={function(){setSelCo(c);setTab("companies");setCoView("upload");}}><span className="text-sm font-medium text-gray-900 dark:text-slate-100 flex-1">{c.name}</span>{c.ticker&&<span className={PILL_BASE}>{c.ticker}</span>}{c.status&&<StatusPill status={c.status}/>}<span className="text-[11px] font-semibold" style={{color:d>90?"#dc2626":d>60?"#d97706":"#ca8a04"}}>{d===Infinity?"never":d+"d ago"}</span></div>);})}</div>)}
+        {dashSubTab==="quality"&&(<div><div className="text-sm font-medium mb-3 text-gray-900 dark:text-slate-100">Data Quality</div>{(function(){
+  /* Transaction gaps: companies that have rep holdings in a portfolio
+     but ZERO transactions on file for that portfolio. Catches the case
+     where a "Replace existing transactions" import wiped a portfolio's
+     trades because the upload happened to not include rows for that
+     portfolio's ticker (e.g. Alimentation Couche-Tard's GL position
+     in ANCTF — wiped when the user re-uploaded just the ord-currency
+     ATD-CA rows). */
+  var gaps = [];
+  companies.forEach(function(c){
+    var tickerSet = {};
+    (c.tickers||[]).forEach(function(t){var k=(t.ticker||"").toUpperCase(); if(k) tickerSet[k]=true;});
+    if (Object.keys(tickerSet).length === 0) return;
+    var heldPorts = {};
+    Object.keys(repData||{}).forEach(function(p){
+      var pRep = repData[p] || {};
+      Object.keys(pRep).forEach(function(tk){
+        if (!tickerSet[tk]) return;
+        var sh = (pRep[tk] && typeof pRep[tk] === "object") ? pRep[tk].shares : pRep[tk];
+        var n = parseFloat(sh);
+        if (isFinite(n) && n > 0) heldPorts[p] = true;
+      });
+    });
+    var txPorts = {};
+    (c.transactions||[]).forEach(function(t){ if (t.portfolio) txPorts[t.portfolio] = true; });
+    var missing = Object.keys(heldPorts).filter(function(p){ return !txPorts[p]; });
+    if (missing.length > 0) gaps.push({ c: c, missing: missing });
+  });
+  if (gaps.length === 0) return null;
+  return (
+    <div className="mb-5 rounded-lg bg-rose-50 dark:bg-rose-950/30 border border-rose-300 dark:border-rose-800 px-3.5 py-2.5">
+      <div className="text-xs font-semibold text-rose-800 dark:text-rose-300 mb-1">⚠ Transaction gaps: {gaps.length} compan{gaps.length===1?"y has":"ies have"} rep holdings without any matching transactions</div>
+      <div className="text-[11px] text-rose-700 dark:text-rose-400 mb-2">Each name below holds shares in the listed portfolio(s) but has no transactions for that portfolio. Most common cause: a Tx re-import in "replace matched" mode that didn't include those rows. Click a chip to open the company.</div>
+      <div className="flex flex-wrap gap-1 max-h-48 overflow-y-auto">
+        {gaps.map(function(g){
+          return (
+            <span key={g.c.id} onClick={function(){setSelCo(g.c);setTab("companies");setCoView("transactions");}} className="text-[11px] px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-900/40 border border-rose-300 dark:border-rose-700 text-rose-900 dark:text-rose-200 cursor-pointer hover:bg-rose-200 dark:hover:bg-rose-900/60">
+              {g.c.name}<span className="text-rose-700 dark:text-rose-400 ml-1">missing: {g.missing.join(", ")}</span>
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+})()}<div className="flex gap-2.5 flex-wrap mb-5">{[{label:"Missing country",count:companies.filter(function(c){return !c.country;}).length},{label:"Missing sector",count:companies.filter(function(c){return !c.sector;}).length},{label:"Missing tier",count:companies.filter(function(c){return !c.tier;}).length},{label:"No template",count:companies.filter(function(c){return !Object.keys(c.sections||{}).length;}).length},{label:"Not reviewed 30d+",count:companies.filter(function(c){return daysSince(c.lastReviewed)>30;}).length},{label:"Not reviewed 60d+",count:companies.filter(function(c){return daysSince(c.lastReviewed)>60;}).length},{label:"Watch stale 90d+",count:staleWatchCount}].map(function(item){return(<div key={item.label} className={CARD + " !mb-0 min-w-[140px] flex-1"}><div className="text-xl font-semibold" style={{color:item.count>0?"#d97706":"#16a34a"}}>{item.count}</div><div className="text-xs text-gray-500 dark:text-slate-400">{item.label}</div></div>);})}</div><div className="text-sm font-medium mb-2.5 text-gray-900 dark:text-slate-100">Stale companies (60d+ since review)</div>{companies.filter(function(c){return daysSince(c.lastReviewed)>60;}).sort(function(a,b){return daysSince(b.lastReviewed)-daysSince(a.lastReviewed);}).map(function(c){var d=daysSince(c.lastReviewed);return(<div key={c.id} className={CARD + " !mb-1.5 flex gap-2.5 items-center cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"} onClick={function(){setSelCo(c);setTab("companies");setCoView("upload");}}><span className="text-sm font-medium text-gray-900 dark:text-slate-100 flex-1">{c.name}</span>{c.ticker&&<span className={PILL_BASE}>{c.ticker}</span>}{c.status&&<StatusPill status={c.status}/>}<span className="text-[11px] font-semibold" style={{color:d>90?"#dc2626":d>60?"#d97706":"#ca8a04"}}>{d===Infinity?"never":d+"d ago"}</span></div>);})}</div>)}
       </div>)}
 
       {tab==="research"&&(<ResearchBoard setSelCo={setSelCo} setTab={setTab} setCoView={setCoView} setSelCoOrigin={setSelCoOrigin}/>)}
