@@ -378,15 +378,20 @@ export default function CharacteristicsView() {
     /* Source badge uses the FIRST port's source as the row-level
        indicator (live vs Q-end). Per-port badges would clutter the
        UI; the first port is "primary" and represents the row. */
-    const firstSource = (r.ports[activePorts[0]] || {}).source;
-    const sourceBadge = firstSource === "live" ? (
-      <span className="text-[8px] uppercase tracking-wide font-semibold px-1 py-0 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 shrink-0" title="Live: rolled up from current holdings">live</span>
-    ) : firstSource === "quarter" && ratioDate ? (
-      <span className="text-[8px] uppercase tracking-wide font-semibold px-1 py-0 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 shrink-0" title={"Q-end snapshot from uploaded portfolio history (" + ratioDate + ")"}>{quarterShort(ratioDate)}</span>
-    ) : null;
-    /* Bench delta color: when multiple ports, compare against the
-       first port (any port works since they share benchmarks). */
+    /* Per-cell badges. Each port column gets its own LIVE/Q-end
+       badge based on that port's source — FIN can be live while IN
+       falls back to a quarterly snapshot, etc. Each benchmark column
+       gets a Q-end badge when the value came from an earlier quarter
+       than the selected ratioDate (the new buildBenchRatios
+       fallback). Tiny badge sizes so the numbers stay the focal
+       point. */
     const primaryVal = (r.ports[activePorts[0]] || {}).value;
+    function liveBadge() {
+      return <span className="ml-1 text-[8px] uppercase tracking-wide font-semibold px-1 py-0 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 align-middle" title="Live: rolled up from current holdings">live</span>;
+    }
+    function quarterBadge(iso) {
+      return <span className="ml-1 text-[8px] uppercase tracking-wide font-semibold px-1 py-0 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 align-middle" title={"Q-end snapshot (" + iso + ")"}>{quarterShort(iso)}</span>;
+    }
     return (
       <div key={r.key}>
         <div
@@ -398,13 +403,18 @@ export default function CharacteristicsView() {
           <div className="text-gray-900 dark:text-slate-100 truncate flex items-center gap-1.5">
             <span className="text-gray-400 dark:text-slate-500 text-[9px]">{isOpen ? "▼" : "▶"}</span>
             <span className="truncate" title={r.label}>{r.label}</span>
-            {sourceBadge}
           </div>
           {activePorts.map(function (p) {
-            const pv = (r.ports[p] || {}).value;
+            const slot = r.ports[p] || {};
+            const pv = slot.value;
+            if (pv == null || !isFinite(pv)) {
+              return <div key={p} className="text-right font-medium text-gray-900 dark:text-slate-100 tabular-nums">--</div>;
+            }
             return (
               <div key={p} className="text-right font-medium text-gray-900 dark:text-slate-100 tabular-nums">
                 {fmtMetric(pv, r.kind)}
+                {slot.source === "live" && liveBadge()}
+                {slot.source === "quarter" && ratioDate && quarterBadge(ratioDate)}
               </div>
             );
           })}
