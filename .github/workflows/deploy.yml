@@ -4,6 +4,12 @@ on:
   push:
     branches: [ main ]
 
+# Org default in Silvercrest grants GITHUB_TOKEN only read access; the
+# gh-pages push needs write. Granting at the workflow level (rather than
+# org-wide via Settings → Actions) is least-privilege.
+permissions:
+  contents: write
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -20,10 +26,12 @@ jobs:
           rm -rf node_modules package-lock.json
           npm install
 
+      # No VITE_ANTHROPIC_KEY env — the app now reads the Anthropic
+      # key from each user's localStorage (set via the in-app Settings
+      # modal). Embedding it at build time would re-trigger secret
+      # scanning and put the key back in the public bundle.
       - name: Build
         run: npm run build
-        env:
-          VITE_ANTHROPIC_KEY: ${{ secrets.VITE_ANTHROPIC_KEY }}
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
