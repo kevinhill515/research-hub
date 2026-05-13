@@ -333,46 +333,17 @@ export default function PricesTab({ company }) {
   /* Reset picks when ticker / period / mode / custom range changes. */
   useEffect(function () { setPickA(null); setPickB(null); }, [activeKey, period, mode, customStart, customEnd, fullSeries.length]);
 
-  /* Trade-arrow label slot assignment, memoized. Without memoization
-     the slot algorithm (sort + collision walk per marker) ran on
-     every hover-induced re-render, which made the chart noticeably
-     sluggish for names with 10+ trades. Slot output depends only on
-     the marker set and the visible-window length (which determines
-     x positions), so we cache here and look up by orig index at
-     render time. */
-  const txMarkerSlots = useMemo(function () {
-    if (!txMarkers.length) return [];
-    const CHAR_W = 5, PAD = 8;
-    const ordered = txMarkers
-      .map(function (m, i) {
-        const cx = visible.length <= 1
-          ? PAD_L + INNER_W / 2
-          : PAD_L + (m.idx / (visible.length - 1)) * INNER_W;
-        return { i: i, dir: m.dir, items: m.items, cx: cx };
-      })
-      .sort(function (a, b) { return a.cx - b.cx; });
-    const lastRightByDir = { buy: [], sell: [] };
-    const slots = new Array(txMarkers.length);
-    ordered.forEach(function (o) {
-      const portList = Array.from(new Set(o.items.map(function (t) { return t.portfolio || "?"; }))).join(", ");
-      const labelW = portList.length * CHAR_W + PAD;
-      const left = o.cx - labelW / 2;
-      const right = o.cx + labelW / 2;
-      const arr = lastRightByDir[o.dir];
-      let slot = 0;
-      while (slot < arr.length && left < arr[slot]) slot++;
-      arr[slot] = right;
-      slots[o.i] = slot;
-    });
-    return slots;
-  }, [txMarkers, visible.length]);
-
   /* Transaction markers anchored to the visible window. For each tx in
      [visible[0].d, visible.last.d], compute the index of the closest
      trading day (we round forward — first index whose date >= tx.date,
      so a Saturday tx lands on Monday's close). Aggregates same-direction
      same-day txs into one marker so a multi-portfolio buy doesn't draw
-     three stacked arrows on top of each other. */
+     three stacked arrows on top of each other.
+
+     Declared BEFORE txMarkerSlots: the slots memo depends on this one,
+     and a const referenced from an earlier-evaluated memo would hit a
+     temporal-dead-zone error in production builds (the minifier shows
+     this as "Cannot access 'me' before initialization"). */
   const txMarkers = useMemo(function () {
     if (!showTx || !visible.length) return [];
     const txs = ((company && company.transactions) || []).slice();
@@ -407,6 +378,40 @@ export default function PricesTab({ company }) {
     });
     return out;
   }, [showTx, visible, company]);
+
+  /* Trade-arrow label slot assignment, memoized. Without memoization
+     the slot algorithm (sort + collision walk per marker) ran on
+     every hover-induced re-render, which made the chart noticeably
+     sluggish for names with 10+ trades. Slot output depends only on
+     the marker set and the visible-window length (which determines
+     x positions), so we cache here and look up by orig index at
+     render time. */
+  const txMarkerSlots = useMemo(function () {
+    if (!txMarkers.length) return [];
+    const CHAR_W = 5, PAD = 8;
+    const ordered = txMarkers
+      .map(function (m, i) {
+        const cx = visible.length <= 1
+          ? PAD_L + INNER_W / 2
+          : PAD_L + (m.idx / (visible.length - 1)) * INNER_W;
+        return { i: i, dir: m.dir, items: m.items, cx: cx };
+      })
+      .sort(function (a, b) { return a.cx - b.cx; });
+    const lastRightByDir = { buy: [], sell: [] };
+    const slots = new Array(txMarkers.length);
+    ordered.forEach(function (o) {
+      const portList = Array.from(new Set(o.items.map(function (t) { return t.portfolio || "?"; }))).join(", ");
+      const labelW = portList.length * CHAR_W + PAD;
+      const left = o.cx - labelW / 2;
+      const right = o.cx + labelW / 2;
+      const arr = lastRightByDir[o.dir];
+      let slot = 0;
+      while (slot < arr.length && left < arr[slot]) slot++;
+      arr[slot] = right;
+      slots[o.i] = slot;
+    });
+    return slots;
+  }, [txMarkers, visible.length]);
 
   const ccy = (active && active.currency) || "USD";
 
