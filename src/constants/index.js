@@ -56,4 +56,35 @@ export const BENCHMARKS={
   SC:  {core:"ACWI ex US SC", value:"ACWI ex US SC Value"},
 };
 export const BENCHMARK_NAMES=Array.from(new Set([].concat.apply([],Object.values(BENCHMARKS).map(function(b){return[b.core,b.value];}))));
+/* FactSet IDs ↔ canonical benchmark names. Uploads via Data Hub
+   sometimes use the numeric ID ("106039") instead of the friendly name
+   ("ACWI Value"); resolveBenchmarkName accepts either and returns the
+   canonical so downstream code (lookups in breakdownHistory /
+   benchmarkWeights) finds the data regardless. */
+export const BENCHMARK_ID_TO_NAME={
+  "892400":"ACWI",
+  "106039":"ACWI Value",
+  "899901":"ACWI ex US",
+  "106037":"ACWI ex US Value",
+  "891800":"MSCI EM",
+  "106063":"MSCI EM Value",
+  "655052":"ACWI ex US SC",
+  "655157":"ACWI ex US SC Value",
+};
+/* Pull a piece of data out of an object keyed by benchmark name, falling
+   back through the FactSet ID forms. Used so a user who uploaded ratio
+   data keyed by "106039" / "MS106039" gets the same lookup hit as a
+   user who keyed by "ACWI Value". */
+export function getBenchSlot(byKey,name){
+  if(!byKey||!name)return null;
+  if(byKey[name])return byKey[name];
+  /* Find any FactSet ID that maps to this canonical name and try those keys. */
+  var aliases=Object.keys(BENCHMARK_ID_TO_NAME).filter(function(id){return BENCHMARK_ID_TO_NAME[id]===name;});
+  for(var i=0;i<aliases.length;i++){
+    var id=aliases[i];
+    if(byKey[id])return byKey[id];
+    if(byKey["MS"+id])return byKey["MS"+id];
+  }
+  return null;
+}
 export const FLAG_STYLES={"Needs Review":{bg:"#fef9c3",color:"#854d0e",icon:"⚑"},"Urgent":{bg:"#fee2e2",color:"#991b1b",icon:"🔴"}};

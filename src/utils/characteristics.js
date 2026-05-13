@@ -300,7 +300,23 @@ export function latestRatiosSnapshot(breakdownHistory, benchName) {
  * portfolio code), sorted ascending. Empty array when nothing exists. */
 export function ratioDates(breakdownHistory, name) {
   if (!breakdownHistory || !name) return [];
-  const byDate = breakdownHistory[name];
+  /* Inline alias resolution — same logic as constants/getBenchSlot, but
+     avoiding a circular import (this util is also imported by
+     constants-adjacent code). */
+  function resolve() {
+    if (breakdownHistory[name]) return breakdownHistory[name];
+    const ID_TO_NAME = {
+      "892400":"ACWI","106039":"ACWI Value","899901":"ACWI ex US","106037":"ACWI ex US Value",
+      "891800":"MSCI EM","106063":"MSCI EM Value","655052":"ACWI ex US SC","655157":"ACWI ex US SC Value",
+    };
+    const aliases = Object.keys(ID_TO_NAME).filter(function (id) { return ID_TO_NAME[id] === name; });
+    for (let i = 0; i < aliases.length; i++) {
+      if (breakdownHistory[aliases[i]]) return breakdownHistory[aliases[i]];
+      if (breakdownHistory["MS" + aliases[i]]) return breakdownHistory["MS" + aliases[i]];
+    }
+    return null;
+  }
+  const byDate = resolve();
   if (!byDate) return [];
   return Object.keys(byDate)
     .filter(function (d) {

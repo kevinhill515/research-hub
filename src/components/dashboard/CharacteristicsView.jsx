@@ -13,7 +13,7 @@
 
 import { useMemo, useState, useEffect } from 'react';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
-import { BENCHMARKS, PORTFOLIOS } from '../../constants/index.js';
+import { BENCHMARKS, PORTFOLIOS, getBenchSlot } from '../../constants/index.js';
 import { calcBreakdowns } from '../../utils/portfolioMath.js';
 import {
   buildCompaniesById,
@@ -220,19 +220,34 @@ export default function CharacteristicsView() {
       setRatioDate(latest);
     }
   }, [allBenchDates, ratioDate]);
+  /* Use getBenchSlot so a benchmark uploaded under its FactSet ID
+     ("106039") is still found when looking up by canonical name
+     ("ACWI Value"). Without this, data uploaded by ID never surfaces
+     on this view. */
   const coreRatios  = useMemo(function () {
     if (!coreBench || !ratioDate) return null;
-    const slot = breakdownHistory && breakdownHistory[coreBench] && breakdownHistory[coreBench][ratioDate];
+    const byDate = getBenchSlot(breakdownHistory, coreBench) || {};
+    const slot = byDate[ratioDate];
     return (slot && slot.ratios) || null;
   }, [breakdownHistory, coreBench, ratioDate]);
   const valueRatios = useMemo(function () {
     if (!valueBench || !ratioDate) return null;
-    const slot = breakdownHistory && breakdownHistory[valueBench] && breakdownHistory[valueBench][ratioDate];
+    const byDate = getBenchSlot(breakdownHistory, valueBench) || {};
+    const slot = byDate[ratioDate];
     return (slot && slot.ratios) || null;
   }, [breakdownHistory, valueBench, ratioDate]);
   const hasCoreRatios  = !!(coreRatios  && Object.keys(coreRatios).length  > 0);
   const hasValueRatios = !!(valueRatios && Object.keys(valueRatios).length > 0);
   const hasRatios = hasCoreRatios || hasValueRatios;
+  /* User-requested section grouping. Keys not listed here fall under
+     "Other" at the bottom so nothing disappears silently. */
+  const RATIO_GROUPS = [
+    { label: "Size",          keys: ["mcWtdAvg","avgMktCap","medMktCap","mcLargest","mcSmallest","nHoldings","activeShare"] },
+    { label: "Valuation",     keys: ["fwdPe","pe","peExcl","pb","pbLtm","ps","pcf","fcfYld","divYld","payout","epsGrFwd1","epsGrFwd35","epsGrHist3","adpsGr5","adpsGr1"] },
+    { label: "Profitability", keys: ["roe","roe5y","intGr","grMgn","netMgn","gpAss","npAss","opROE"] },
+    { label: "Balance Sheet", keys: ["netDE","debtCap","intCov"] },
+  ];
+
   const ratioRows = useMemo(function () {
     return RATIO_DEFS.map(function (def) {
       let port = aggregatePortfolioRatio(breakdown.byCompany, companiesById, def);
@@ -274,6 +289,63 @@ export default function CharacteristicsView() {
   }, [breakdown, companiesById, coreRatios, valueRatios, breakdownHistory, portKey, ratioDate]);
 
   const empty = breakdown.byCompany.length === 0;
+
+  /* Single ratio row — extracted so the grouped/flat call sites both
+     use the same markup. Grid columns are fixed-width so the label
+     stays adjacent to its values (1fr was pushing values to the far
+     right of the available space — felt detached on wide screens). */
+  function renderRatioRow(r) {
+    const isOpen = openRatios.has(r.key);
+    const sourceBadge = r.source === "live" ? (
+      <span className="text-[8px] uppercase tracking-wide font-semibold px-1 py-0 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 shrink-0" title="Live: rolled up from current holdings">live</span>
+    ) : r.source === "quarter" && ratioDate ? (
+      <span className="text-[8px] uppercase tracking-wide font-semibold px-1 py-0 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 shrink-0" title={"Q-end snapshot from uploaded portfolio history (" + ratioDate + ")"}>{quarterShort(ratioDate)}</span>
+    ) : null;
+    return (
+      <div key={r.key}>
+        <div
+          onClick={function () { toggleRatio(r.key); }}
+          className="grid gap-1 px-2 py-1.5 text-xs items-center border-b border-slate-100 dark:border-slate-800 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 grid-cols-[220px_90px_90px_90px]"
+          title="Click to toggle history chart"
+        >
+          <div className="text-gray-900 dark:text-slate-100 truncate flex items-center gap-1.5">
+            <span className="text-gray-400 dark:text-slate-500 text-[9px]">{isOpen ? "▼" : "▶"}</span>
+            <span className="truncate" title={r.label}>{r.label}</span>
+            {sourceBadge}
+          </div>
+          <div className="text-right font-medium text-gray-900 dark:text-slate-100 tabular-nums">
+            {fmtMetric(r.portfolio, r.kind)}
+          </div>
+          <div
+            className="text-right tabular-nums"
+            style={{ color: ratioBenchColor(r.portfolio, r.core, r.kind, r.direction) }}
+            title={"Δ port − bench: " + (fmtDelta(r.portfolio, r.core, r.kind) || "--")}
+          >
+            {r.core === null || r.core === undefined ? "--" : fmtMetric(r.core, r.kind)}
+          </div>
+          <div
+            className="text-right tabular-nums"
+            style={{ color: ratioBenchColor(r.portfolio, r.value, r.kind, r.direction) }}
+            title={"Δ port − bench: " + (fmtDelta(r.portfolio, r.value, r.kind) || "--")}
+          >
+            {r.value === null || r.value === undefined ? "--" : fmtMetric(r.value, r.kind)}
+          </div>
+        </div>
+        {isOpen && (
+          <div className="px-2 py-1 border-b border-slate-100 dark:border-slate-800">
+            <RatioHistoryChart
+              history={breakdownHistory}
+              portKey={portKey}
+              coreBench={coreBench}
+              valueBench={valueBench}
+              ratioKey={r.key}
+              kind={r.kind}
+            />
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -356,68 +428,33 @@ export default function CharacteristicsView() {
                 )}
               </div>
               <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
-                <div className="grid gap-1 px-2 py-2 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 grid-cols-[1fr_90px_90px_90px]">
+                <div className="grid gap-1 px-2 py-2 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 grid-cols-[220px_90px_90px_90px]">
                   <div>Metric</div>
                   <div className="text-right">Port.</div>
                   <div className="text-right" title={coreBench  || "Core benchmark"}>Core</div>
                   <div className="text-right" title={valueBench || "Value benchmark"}>Value</div>
                 </div>
-                {ratioRows.map(function (r) {
-                  const isOpen = openRatios.has(r.key);
-                  /* Source pill: "live" = rolled up from current holdings;
-                     date string = quarter-end snapshot from upload. "none"
-                     = no data either way (rare; renders no badge so dashes
-                     speak for themselves). */
-                  const sourceBadge = r.source === "live" ? (
-                    <span className="text-[8px] uppercase tracking-wide font-semibold px-1 py-0 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 shrink-0" title="Live: rolled up from current holdings">live</span>
-                  ) : r.source === "quarter" && ratioDate ? (
-                    <span className="text-[8px] uppercase tracking-wide font-semibold px-1 py-0 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 shrink-0" title={"Q-end snapshot from uploaded portfolio history (" + ratioDate + ")"}>{quarterShort(ratioDate)}</span>
-                  ) : null;
-                  return (
-                    <div key={r.key}>
-                      <div
-                        onClick={function () { toggleRatio(r.key); }}
-                        className="grid gap-1 px-2 py-1.5 text-xs items-center border-b border-slate-100 dark:border-slate-800 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 grid-cols-[1fr_90px_90px_90px]"
-                        title="Click to toggle history chart"
-                      >
-                        <div className="text-gray-900 dark:text-slate-100 truncate flex items-center gap-1.5">
-                          <span className="text-gray-400 dark:text-slate-500 text-[9px]">{isOpen ? "▼" : "▶"}</span>
-                          <span className="truncate" title={r.label}>{r.label}</span>
-                          {sourceBadge}
-                        </div>
-                        <div className="text-right font-medium text-gray-900 dark:text-slate-100 tabular-nums">
-                          {fmtMetric(r.portfolio, r.kind)}
-                        </div>
-                        <div
-                          className="text-right tabular-nums"
-                          style={{ color: ratioBenchColor(r.portfolio, r.core, r.kind, r.direction) }}
-                          title={"Δ port − bench: " + (fmtDelta(r.portfolio, r.core, r.kind) || "--")}
-                        >
-                          {r.core === null || r.core === undefined ? "--" : fmtMetric(r.core, r.kind)}
-                        </div>
-                        <div
-                          className="text-right tabular-nums"
-                          style={{ color: ratioBenchColor(r.portfolio, r.value, r.kind, r.direction) }}
-                          title={"Δ port − bench: " + (fmtDelta(r.portfolio, r.value, r.kind) || "--")}
-                        >
-                          {r.value === null || r.value === undefined ? "--" : fmtMetric(r.value, r.kind)}
-                        </div>
-                      </div>
-                      {isOpen && (
-                        <div className="px-2 py-1 border-b border-slate-100 dark:border-slate-800">
-                          <RatioHistoryChart
-                            history={breakdownHistory}
-                            portKey={portKey}
-                            coreBench={coreBench}
-                            valueBench={valueBench}
-                            ratioKey={r.key}
-                            kind={r.kind}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                {(function () {
+                  /* Bucket ratio rows by group, plus an "Other" bucket
+                     for keys not in any group so nothing is lost. */
+                  const byKey = {};
+                  ratioRows.forEach(function (r) { byKey[r.key] = r; });
+                  const claimed = new Set();
+                  const groupBlocks = RATIO_GROUPS.map(function (g) {
+                    const rows = g.keys.map(function (k) { claimed.add(k); return byKey[k]; }).filter(Boolean);
+                    return { label: g.label, rows: rows };
+                  });
+                  const leftover = ratioRows.filter(function (r) { return !claimed.has(r.key); });
+                  if (leftover.length > 0) groupBlocks.push({ label: "Other", rows: leftover });
+                  return groupBlocks.filter(function (g) { return g.rows.length > 0; }).map(function (g) {
+                    return [
+                      <div key={"hdr-" + g.label} className="px-2 py-1 text-[10px] uppercase tracking-wide font-semibold text-gray-600 dark:text-slate-400 bg-slate-100/70 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700">
+                        {g.label}
+                      </div>,
+                      ...g.rows.map(function (r) { return renderRatioRow(r); }),
+                    ];
+                  });
+                })()}
               </div>
               {!hasRatios && (
                 <div className="text-[11px] text-gray-500 dark:text-slate-400 italic mt-2 px-2 py-1 rounded bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
