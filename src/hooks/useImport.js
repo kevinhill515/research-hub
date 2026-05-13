@@ -678,17 +678,19 @@ export function useImport(){
       }
       if(dateIso){
         if(!historyRows[bm])historyRows[bm]={};
-        if(!historyRows[bm][dateIso])historyRows[bm][dateIso]={sectors:{},countries:{},metrics:{},ratios:{}};
+        if(!historyRows[bm][dateIso])historyRows[bm][dateIso]={sectors:{},countries:{},metrics:{},ratios:{},ratioSources:{}};
         if(bucket==="ratios"){
           var scope = bm + "|" + dateIso;
           if(!writeRatioCell(scope, storedName, w, ratioTier)) return;
+          historyRows[bm][dateIso].ratioSources[storedName] = ratioTier;
         }
         historyRows[bm][dateIso][bucket][storedName]=w;
       } else {
-        if(!affected[bm])affected[bm]={sectors:{},countries:{},metrics:{},ratios:{},asOf:benchmarkAsOf||""};
+        if(!affected[bm])affected[bm]={sectors:{},countries:{},metrics:{},ratios:{},ratioSources:{},asOf:benchmarkAsOf||""};
         if(bucket==="ratios"){
           var scope = bm + "|current";
           if(!writeRatioCell(scope, storedName, w, ratioTier)) return;
+          affected[bm].ratioSources[storedName] = ratioTier;
         }
         affected[bm][bucket][storedName]=w;
       }
@@ -718,17 +720,33 @@ export function useImport(){
       setBenchmarkWeights(function(prev){
         var next=Object.assign({},prev);
         Object.keys(affected).forEach(function(bm){
-          var cur=next[bm]||{sectors:{},countries:{},metrics:{},ratios:{},asOf:""};
-          /* Merge: for each bucket, incoming REPLACES existing when the
-           * paste included that bucket. Untouched buckets are preserved so
-           * you can upload sectors/countries one week and metrics the
-           * next without clobbering. */
+          var cur=next[bm]||{sectors:{},countries:{},metrics:{},ratios:{},ratioSources:{},asOf:""};
+          /* Merge: for sectors/countries/metrics, incoming REPLACES
+             existing when the paste included that bucket. For ratios,
+             cell-level merge with source-tier check so MSCI primary
+             values aren't clobbered by FactSet fillIn re-uploads.
+             Untouched buckets are preserved so partial pastes don't
+             wipe other categories. */
           var inc=affected[bm];
+          var incSources = inc.ratioSources || {};
+          var curSources = cur.ratioSources || {};
+          var mergedRatios  = Object.assign({}, cur.ratios || {});
+          var mergedSources = Object.assign({}, curSources);
+          Object.keys(inc.ratios || {}).forEach(function(k){
+            var pT = curSources[k];
+            if (pT === undefined && mergedRatios[k] !== undefined) pT = 1; /* legacy */
+            var nT = incSources[k] || 2;
+            if (pT === undefined || nT <= pT) {
+              mergedRatios[k] = inc.ratios[k];
+              mergedSources[k] = nT;
+            }
+          });
           next[bm]={
             sectors:   Object.keys(inc.sectors  ).length>0 ? inc.sectors   : (cur.sectors  ||{}),
             countries: Object.keys(inc.countries).length>0 ? inc.countries : (cur.countries||{}),
             metrics:   Object.keys(inc.metrics  ).length>0 ? inc.metrics   : (cur.metrics  ||{}),
-            ratios:    Object.keys(inc.ratios   ).length>0 ? inc.ratios    : (cur.ratios   ||{}),
+            ratios:        mergedRatios,
+            ratioSources:  mergedSources,
             asOf: inc.asOf || cur.asOf || "",
           };
         });
@@ -745,7 +763,42 @@ export function useImport(){
         Object.keys(historyRows).forEach(function(name){
           var byDate=Object.assign({},next[name]||{});
           Object.keys(historyRows[name]).forEach(function(d){
-            byDate[d]=historyRows[name][d];
+            /* Cell-level merge — previously this slot was REPLACED
+               wholesale, which meant a partial re-upload (e.g. only
+               FactSet ratios) wiped any MSCI cells that weren't in
+               the new paste. Now: preserve all prior cells, overlay
+               only the cells the new upload touches.
+
+               Ratios specifically respect source tier: a tier-2
+               (FactSet fillIn) cell can't overwrite a tier-1 (MSCI
+               primary) cell, even across separate uploads. Legacy
+               cells with no recorded tier are treated as tier 1
+               (assume MSCI by default so they don't lose to fillIns)
+               — this is conservative; if a user had a stray FactSet
+               value sitting in a cell, re-uploading MSCI for that
+               cell will still write because tier 1 ≤ tier 1. */
+            var prevSlot = byDate[d] || { sectors:{}, countries:{}, metrics:{}, ratios:{}, ratioSources:{} };
+            var newSlot  = historyRows[name][d];
+            var prevSources = prevSlot.ratioSources || {};
+            var newSources  = newSlot.ratioSources  || {};
+            var mergedRatios  = Object.assign({}, prevSlot.ratios  || {});
+            var mergedSources = Object.assign({}, prevSources);
+            Object.keys(newSlot.ratios || {}).forEach(function(k){
+              var pT = prevSources[k];
+              if (pT === undefined && mergedRatios[k] !== undefined) pT = 1; /* legacy: assume primary */
+              var nT = newSources[k] || 2;
+              if (pT === undefined || nT <= pT) {
+                mergedRatios[k]  = newSlot.ratios[k];
+                mergedSources[k] = nT;
+              }
+            });
+            byDate[d] = {
+              sectors:   Object.assign({}, prevSlot.sectors   || {}, newSlot.sectors   || {}),
+              countries: Object.assign({}, prevSlot.countries || {}, newSlot.countries || {}),
+              metrics:   Object.assign({}, prevSlot.metrics   || {}, newSlot.metrics   || {}),
+              ratios:        mergedRatios,
+              ratioSources:  mergedSources,
+            };
           });
           next[name]=byDate;
         });
