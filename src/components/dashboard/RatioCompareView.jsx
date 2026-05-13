@@ -193,7 +193,13 @@ export default function RatioCompareView() {
     });
     const benchNames = [];
     if (includeBench) {
+      /* Only pull benchmarks for portfolios the user has checked —
+         otherwise checking FIN with Include Benchmarks on would still
+         drag in every benchmark across every portfolio (ACWI ex US,
+         MSCI EM, etc.) which clutters the chart with lines for
+         portfolios the user is explicitly hiding. */
       PORTFOLIOS.forEach(function (p) {
+        if (!visiblePorts.has(p)) return;
         const cb = (BENCHMARKS[p] || {}).core;
         const vb = (BENCHMARKS[p] || {}).value;
         if (cb && benchNames.indexOf(cb) < 0) benchNames.push(cb);
@@ -224,7 +230,7 @@ export default function RatioCompareView() {
         return row;
       }),
     };
-  }, [breakdownHistory, def, includeBench]);
+  }, [breakdownHistory, def, includeBench, visiblePorts]);
 
   /* Y-axis formatter — auto-scale musd, percent-aware pct, etc. */
   function chartYFmt(v) {
