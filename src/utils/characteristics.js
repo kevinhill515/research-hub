@@ -170,7 +170,6 @@ export const RATIO_DEFS = [
   { key: "pe",         label: "P/E",                   portMetric: "fpe",    aggregator: "weighted", kind: "x",    direction: "lower"   },
   { key: "peExcl",     label: "P/E (Excl. Neg.)",      portMetric: null,     aggregator: null,       kind: "x",    direction: "lower"   },
   { key: "pb",         label: "P/B",                   portMetric: "pb",     aggregator: "weighted", kind: "x",    direction: "lower"   },
-  { key: "pbLtm",      label: "P/B (LTM)",             portMetric: null,     aggregator: null,       kind: "x",    direction: "lower"   },
   { key: "ps",         label: "P/S",                   portMetric: null,     aggregator: null,       kind: "x",    direction: "lower"   },
   { key: "pcf",        label: "P/CF",                  portMetric: null,     aggregator: null,       kind: "x",    direction: "lower"   },
   /* Returns — higher is better. */
