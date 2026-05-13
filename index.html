@@ -13,8 +13,19 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
+    <!-- iOS apple-touch-icon needs a square PNG at a recognized size
+         (180x180) with no transparency, or it falls back to a tiny
+         screenshot of the page. apple-touch-icon.png is the Silvercrest
+         logo centered on a black background, generated from
+         public/favicon.png. Android/PWA reads icon-192/512 via the
+         manifest below. -->
     <link rel="icon" type="image/png" href="./favicon.png" />
-    <link rel="apple-touch-icon" href="./favicon.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Research Hub" />
     <title>Research Hub</title>
   </head>
   <body>
