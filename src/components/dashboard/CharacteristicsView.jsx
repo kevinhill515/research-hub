@@ -129,9 +129,21 @@ function ratioBenchColor(port, bench, kind, direction) {
   return signColor(d);
 }
 
+/* Combined-portfolio button definitions. FIN and IN share the
+   ACWI ex US (Core/Value) benchmarks, FGL and GL share ACWI
+   (Core/Value), so the user wants them merged into single buttons.
+   EM and SC remain solo. `ports[0]` is the "primary" used for
+   benchmark + uploaded-history lookups; calcBreakdowns pools both. */
+const PORT_BUTTONS = [
+  { id: "intl",   label: "Int'l",  ports: ["FIN", "IN"] },
+  { id: "global", label: "Global", ports: ["FGL", "GL"] },
+  { id: "EM",     label: "EM",     ports: ["EM"] },
+  { id: "SC",     label: "SC",     ports: ["SC"] },
+];
+
 export default function CharacteristicsView() {
   const { companies, repData, fxRates, benchmarkWeights, breakdownHistory } = useCompanyContext();
-  const [portKey, setPortKey] = useState(PORTFOLIOS[0] || "GL");
+  const [portKey, setPortKey] = useState("intl");
   /* Ratios — selected date for the benchmark "as of" snapshot, and the
      set of expanded rows showing inline history charts (multi-open like
      the Companies → Financials tab). */
@@ -145,16 +157,27 @@ export default function CharacteristicsView() {
     });
   }
 
-  const availablePorts = useMemo(function () {
-    return PORTFOLIOS.filter(function (p) {
-      const pRep = (repData || {})[p] || {};
-      return Object.keys(pRep).length > 0;
+  /* Resolve the selected button to its constituent portfolio codes
+     and a "primary" used for benchmark / uploaded-history lookups. */
+  const activeBtn = PORT_BUTTONS.find(function (b) { return b.id === portKey; }) || PORT_BUTTONS[0];
+  const activePorts = activeBtn.ports;
+  const primaryPort = activePorts[0];
+
+  /* Only show buttons whose constituent portfolios have any rep
+     holdings. (A new firm without an IN rep account, say, shouldn't
+     see an "Int'l" tab that just shows FIN.) */
+  const availableButtons = useMemo(function () {
+    return PORT_BUTTONS.filter(function (b) {
+      return b.ports.some(function (p) {
+        const pRep = (repData || {})[p] || {};
+        return Object.keys(pRep).length > 0;
+      });
     });
   }, [repData]);
 
   const breakdown = useMemo(function () {
-    return calcBreakdowns(companies, repData, fxRates, portKey);
-  }, [companies, repData, fxRates, portKey]);
+    return calcBreakdowns(companies, repData, fxRates, activePorts);
+  }, [companies, repData, fxRates, activePorts]);
 
   const companiesById = useMemo(function () {
     return buildCompaniesById(companies);
@@ -173,8 +196,12 @@ export default function CharacteristicsView() {
      #2 fallback was the missing piece — uploads in the dated format
      populated breakdownHistory but not benchmarkWeights, so this
      panel showed blank "--" cells everywhere. */
-  const coreBench  = (BENCHMARKS[portKey] || {}).core  || null;
-  const valueBench = (BENCHMARKS[portKey] || {}).value || null;
+  /* Buttons that combine portfolios always combine ones with
+     identical benchmarks (Int'l = FIN+IN both use ACWI ex US;
+     Global = FGL+GL both use ACWI). So benchmark lookup against
+     the primary port is correct for the whole group. */
+  const coreBench  = (BENCHMARKS[primaryPort] || {}).core  || null;
+  const valueBench = (BENCHMARKS[primaryPort] || {}).value || null;
   const coreData   = coreBench  && benchmarkWeights ? benchmarkWeights[coreBench]  : null;
   const valueData  = valueBench && benchmarkWeights ? benchmarkWeights[valueBench] : null;
   function latestMetrics(name) {
@@ -268,7 +295,14 @@ export default function CharacteristicsView() {
               — e.g. Active Share, P/S, P/CF). */
       let source = "live";
       if (port.value === null) {
-        const uploaded = uploadedPortfolioRatio(breakdownHistory, portKey, ratioDate, def.key);
+        /* For combined buttons (e.g. Int'l = FIN+IN), try each
+           constituent port — most uploads are keyed by single
+           portfolio code, so we just take the first hit. */
+        let uploaded = null;
+        for (let pi = 0; pi < activePorts.length; pi++) {
+          const v = uploadedPortfolioRatio(breakdownHistory, activePorts[pi], ratioDate, def.key);
+          if (v !== null && v !== undefined) { uploaded = v; break; }
+        }
         if (uploaded !== null && uploaded !== undefined) {
           port = { value: uploaded, coverage: { used: 1, total: 1, weightUsed: 0, weightTotal: 0 } };
           source = "quarter";
@@ -290,7 +324,7 @@ export default function CharacteristicsView() {
         source: source,
       };
     });
-  }, [breakdown, companiesById, coreRatios, valueRatios, breakdownHistory, portKey, ratioDate]);
+  }, [breakdown, companiesById, coreRatios, valueRatios, breakdownHistory, activePorts, ratioDate]);
 
   const empty = breakdown.byCompany.length === 0;
 
@@ -339,7 +373,7 @@ export default function CharacteristicsView() {
           <div className="px-2 py-1 border-b border-slate-100 dark:border-slate-800">
             <RatioHistoryChart
               history={breakdownHistory}
-              portKey={portKey}
+              portKey={primaryPort}
               coreBench={coreBench}
               valueBench={valueBench}
               ratioKey={r.key}
@@ -353,17 +387,20 @@ export default function CharacteristicsView() {
 
   return (
     <div>
-      {/* Portfolio tabs */}
+      {/* Portfolio tabs — combined buttons (Int'l = FIN+IN, Global =
+          FGL+GL) plus the solo EM and SC. Constituents shown in a
+          sub-label so the pooling is obvious. */}
       <div className="flex gap-1 mb-3 border-b border-slate-200 dark:border-slate-700 pb-2 flex-wrap">
-        {(availablePorts.length > 0 ? availablePorts : PORTFOLIOS).map(function (p) {
+        {(availableButtons.length > 0 ? availableButtons : PORT_BUTTONS).map(function (b) {
           return (
             <button
-              key={p}
+              key={b.id}
               type="button"
-              onClick={function () { setPortKey(p); }}
-              className={portKey === p ? TABST_ACTIVE : TABST_INACTIVE}
+              onClick={function () { setPortKey(b.id); }}
+              className={portKey === b.id ? TABST_ACTIVE : TABST_INACTIVE}
+              title={b.ports.length > 1 ? "Combined " + b.ports.join(" + ") : b.ports[0]}
             >
-              {p}
+              {b.label}{b.ports.length > 1 && <span className="ml-1 text-[10px] text-gray-400 dark:text-slate-500 font-normal">({b.ports.join("+")})</span>}
             </button>
           );
         })}
@@ -374,7 +411,8 @@ export default function CharacteristicsView() {
           as its own row so all values are visible at once. */}
       <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
         <div className="text-sm text-gray-700 dark:text-slate-300">
-          <span className="font-semibold">{portKey}</span>
+          <span className="font-semibold">{activeBtn.label}</span>
+          {activePorts.length > 1 && <span className="text-xs text-gray-500 dark:text-slate-400 ml-1.5">({activePorts.join(" + ")})</span>}
           {breakdown.totalMV > 0 && (
             <span className="text-xs text-gray-500 dark:text-slate-400 ml-2">
               Rep AUM: ${breakdown.totalMV.toLocaleString(undefined, { maximumFractionDigits: 0 })}
