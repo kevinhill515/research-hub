@@ -175,9 +175,30 @@ export default function CharacteristicsView() {
     });
   }, [repData]);
 
-  const breakdown = useMemo(function () {
-    return calcBreakdowns(companies, repData, fxRates, activePorts);
+  /* Per-port breakdown — one call per constituent so each port's
+     weighted-avg metric can be shown as its own column rather than
+     pooled. The breakdown.totalMV used for the header AUM is the sum
+     across all active ports. */
+  const breakdownByPort = useMemo(function () {
+    const out = {};
+    activePorts.forEach(function (p) {
+      out[p] = calcBreakdowns(companies, repData, fxRates, p);
+    });
+    return out;
   }, [companies, repData, fxRates, activePorts]);
+  const breakdown = useMemo(function () {
+    /* Aggregate AUM + flat byCompany list for any code path that still
+       expects a single combined view (header AUM, empty-state check). */
+    let totalMV = 0;
+    let byCompany = [];
+    activePorts.forEach(function (p) {
+      const b = breakdownByPort[p];
+      if (!b) return;
+      totalMV += b.totalMV || 0;
+      byCompany = byCompany.concat(b.byCompany || []);
+    });
+    return { totalMV: totalMV, byCompany: byCompany };
+  }, [breakdownByPort, activePorts]);
 
   const companiesById = useMemo(function () {
     return buildCompaniesById(companies);
@@ -281,35 +302,23 @@ export default function CharacteristicsView() {
 
   const ratioRows = useMemo(function () {
     return RATIO_DEFS.map(function (def) {
-      let port = aggregatePortfolioRatio(breakdown.byCompany, companiesById, def);
-      /* `source` tags the portfolio value's origin so the row can show
-         a "live" or "Q-end" badge. live = rolled up from current holdings
-         via the Metrics upload; quarter = uploaded portfolio snapshot at
-         the selected date.
-
-         Resolution order:
-           1. Live computation if the def has a portMetric AND we got a
-              real value from holdings. Most ratios fall here.
-           2. Uploaded portfolio history at the selected date as fallback
-              when live failed (no per-holding metric for this ratio
-              — e.g. Active Share, P/S, P/CF). */
-      let source = "live";
-      if (port.value === null) {
-        /* For combined buttons (e.g. Int'l = FIN+IN), try each
-           constituent port — most uploads are keyed by single
-           portfolio code, so we just take the first hit. */
-        let uploaded = null;
-        for (let pi = 0; pi < activePorts.length; pi++) {
-          const v = uploadedPortfolioRatio(breakdownHistory, activePorts[pi], ratioDate, def.key);
-          if (v !== null && v !== undefined) { uploaded = v; break; }
-        }
-        if (uploaded !== null && uploaded !== undefined) {
-          port = { value: uploaded, coverage: { used: 1, total: 1, weightUsed: 0, weightTotal: 0 } };
-          source = "quarter";
+      /* One value per active port — live aggregate from holdings, with
+         the quarterly upload as fallback. */
+      const ports = {}; /* port code → { value, source } */
+      activePorts.forEach(function (p) {
+        const b = breakdownByPort[p];
+        const live = b ? aggregatePortfolioRatio(b.byCompany, companiesById, def) : { value: null };
+        if (live.value !== null) {
+          ports[p] = { value: live.value, source: "live" };
         } else {
-          source = "none";
+          const uploaded = uploadedPortfolioRatio(breakdownHistory, p, ratioDate, def.key);
+          if (uploaded !== null && uploaded !== undefined) {
+            ports[p] = { value: uploaded, source: "quarter" };
+          } else {
+            ports[p] = { value: null, source: "none" };
+          }
         }
-      }
+      });
       const cv = coreRatios  && (def.key in coreRatios)  ? coreRatios[def.key]  : null;
       const vv = valueRatios && (def.key in valueRatios) ? valueRatios[def.key] : null;
       return {
@@ -317,14 +326,12 @@ export default function CharacteristicsView() {
         label: def.label,
         kind: def.kind,
         direction: def.direction,
-        portfolio: port.value,
-        coverage: port.coverage,
+        ports: ports,
         core: cv,
         value: vv,
-        source: source,
       };
     });
-  }, [breakdown, companiesById, coreRatios, valueRatios, breakdownHistory, activePorts, ratioDate]);
+  }, [breakdownByPort, companiesById, coreRatios, valueRatios, breakdownHistory, activePorts, ratioDate]);
 
   const empty = breakdown.byCompany.length === 0;
 
@@ -332,18 +339,29 @@ export default function CharacteristicsView() {
      use the same markup. Grid columns are fixed-width so the label
      stays adjacent to its values (1fr was pushing values to the far
      right of the available space — felt detached on wide screens). */
+  /* Grid template: 220px label + 90px per port + 90px Core + 90px Value.
+     Computed once and reused by header + body rows so they stay aligned. */
+  const gridCols = "220px " + activePorts.map(function () { return "90px"; }).join(" ") + " 90px 90px";
   function renderRatioRow(r) {
     const isOpen = openRatios.has(r.key);
-    const sourceBadge = r.source === "live" ? (
+    /* Source badge uses the FIRST port's source as the row-level
+       indicator (live vs Q-end). Per-port badges would clutter the
+       UI; the first port is "primary" and represents the row. */
+    const firstSource = (r.ports[activePorts[0]] || {}).source;
+    const sourceBadge = firstSource === "live" ? (
       <span className="text-[8px] uppercase tracking-wide font-semibold px-1 py-0 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 shrink-0" title="Live: rolled up from current holdings">live</span>
-    ) : r.source === "quarter" && ratioDate ? (
+    ) : firstSource === "quarter" && ratioDate ? (
       <span className="text-[8px] uppercase tracking-wide font-semibold px-1 py-0 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 shrink-0" title={"Q-end snapshot from uploaded portfolio history (" + ratioDate + ")"}>{quarterShort(ratioDate)}</span>
     ) : null;
+    /* Bench delta color: when multiple ports, compare against the
+       first port (any port works since they share benchmarks). */
+    const primaryVal = (r.ports[activePorts[0]] || {}).value;
     return (
       <div key={r.key}>
         <div
           onClick={function () { toggleRatio(r.key); }}
-          className="grid gap-1 px-2 py-1.5 text-xs items-center border-b border-slate-100 dark:border-slate-800 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 grid-cols-[220px_90px_90px_90px]"
+          className="grid gap-1 px-2 py-1.5 text-xs items-center border-b border-slate-100 dark:border-slate-800 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50"
+          style={{ gridTemplateColumns: gridCols }}
           title="Click to toggle history chart"
         >
           <div className="text-gray-900 dark:text-slate-100 truncate flex items-center gap-1.5">
@@ -351,20 +369,25 @@ export default function CharacteristicsView() {
             <span className="truncate" title={r.label}>{r.label}</span>
             {sourceBadge}
           </div>
-          <div className="text-right font-medium text-gray-900 dark:text-slate-100 tabular-nums">
-            {fmtMetric(r.portfolio, r.kind)}
-          </div>
+          {activePorts.map(function (p) {
+            const pv = (r.ports[p] || {}).value;
+            return (
+              <div key={p} className="text-right font-medium text-gray-900 dark:text-slate-100 tabular-nums">
+                {fmtMetric(pv, r.kind)}
+              </div>
+            );
+          })}
           <div
             className="text-right tabular-nums"
-            style={{ color: ratioBenchColor(r.portfolio, r.core, r.kind, r.direction) }}
-            title={"Δ port − bench: " + (fmtDelta(r.portfolio, r.core, r.kind) || "--")}
+            style={{ color: ratioBenchColor(primaryVal, r.core, r.kind, r.direction) }}
+            title={"Δ port − bench: " + (fmtDelta(primaryVal, r.core, r.kind) || "--")}
           >
             {r.core === null || r.core === undefined ? "--" : fmtMetric(r.core, r.kind)}
           </div>
           <div
             className="text-right tabular-nums"
-            style={{ color: ratioBenchColor(r.portfolio, r.value, r.kind, r.direction) }}
-            title={"Δ port − bench: " + (fmtDelta(r.portfolio, r.value, r.kind) || "--")}
+            style={{ color: ratioBenchColor(primaryVal, r.value, r.kind, r.direction) }}
+            title={"Δ port − bench: " + (fmtDelta(primaryVal, r.value, r.kind) || "--")}
           >
             {r.value === null || r.value === undefined ? "--" : fmtMetric(r.value, r.kind)}
           </div>
@@ -470,9 +493,14 @@ export default function CharacteristicsView() {
                 )}
               </div>
               <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
-                <div className="grid gap-1 px-2 py-2 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 grid-cols-[220px_90px_90px_90px]">
+                <div
+                  className="grid gap-1 px-2 py-2 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700"
+                  style={{ gridTemplateColumns: gridCols }}
+                >
                   <div>Metric</div>
-                  <div className="text-right">Port.</div>
+                  {activePorts.map(function (p) {
+                    return <div key={p} className="text-right" title={"Portfolio " + p}>{p}</div>;
+                  })}
                   <div className="text-right" title={coreBench  || "Core benchmark"}>Core</div>
                   <div className="text-right" title={valueBench || "Value benchmark"}>Value</div>
                 </div>
