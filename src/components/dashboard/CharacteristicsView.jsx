@@ -276,18 +276,43 @@ export default function CharacteristicsView() {
      ("106039") is still found when looking up by canonical name
      ("ACWI Value"). Without this, data uploaded by ID never surfaces
      on this view. */
-  const coreRatios  = useMemo(function () {
-    if (!coreBench || !ratioDate) return null;
-    const byDate = getBenchSlot(breakdownHistory, coreBench) || {};
-    const slot = byDate[ratioDate];
-    return (slot && slot.ratios) || null;
-  }, [breakdownHistory, coreBench, ratioDate]);
-  const valueRatios = useMemo(function () {
-    if (!valueBench || !ratioDate) return null;
-    const byDate = getBenchSlot(breakdownHistory, valueBench) || {};
-    const slot = byDate[ratioDate];
-    return (slot && slot.ratios) || null;
-  }, [breakdownHistory, valueBench, ratioDate]);
+  /* Per-key value lookup with fallback to the most recent prior
+     quarter. Returns { key: { value, date } } — date is the actual
+     quarter the value came from, which may differ from `ratioDate`
+     when that key is missing at the selected as-of and we walk
+     backward to find it. Some MSCI ratios (Avg/Median Mkt Cap)
+     don't get re-published every quarter — without this fallback
+     they'd show "--" most of the time. */
+  function buildBenchRatios(benchName) {
+    if (!benchName || !ratioDate) return null;
+    const byDate = getBenchSlot(breakdownHistory, benchName) || {};
+    const datesAsc = Object.keys(byDate).sort();
+    if (datesAsc.length === 0) return null;
+    /* All dates ≤ ratioDate, newest first, so the first non-null we
+       find is the most-recent-on-or-before the selected date. */
+    const candidateDates = datesAsc.filter(function (d) { return d <= ratioDate; }).slice().reverse();
+    if (candidateDates.length === 0) return null;
+    /* Collect every ratio key that has a value at SOME candidate date. */
+    const keys = new Set();
+    candidateDates.forEach(function (d) {
+      const r = (byDate[d] && byDate[d].ratios) || {};
+      Object.keys(r).forEach(function (k) { keys.add(k); });
+    });
+    const out = {};
+    keys.forEach(function (k) {
+      for (let i = 0; i < candidateDates.length; i++) {
+        const d = candidateDates[i];
+        const r = (byDate[d] && byDate[d].ratios) || {};
+        if (r[k] !== undefined && r[k] !== null && isFinite(r[k])) {
+          out[k] = { value: r[k], date: d };
+          break;
+        }
+      }
+    });
+    return out;
+  }
+  const coreRatios  = useMemo(function () { return buildBenchRatios(coreBench);  }, [breakdownHistory, coreBench,  ratioDate]);
+  const valueRatios = useMemo(function () { return buildBenchRatios(valueBench); }, [breakdownHistory, valueBench, ratioDate]);
   const hasCoreRatios  = !!(coreRatios  && Object.keys(coreRatios).length  > 0);
   const hasValueRatios = !!(valueRatios && Object.keys(valueRatios).length > 0);
   const hasRatios = hasCoreRatios || hasValueRatios;
@@ -319,16 +344,22 @@ export default function CharacteristicsView() {
           }
         }
       });
-      const cv = coreRatios  && (def.key in coreRatios)  ? coreRatios[def.key]  : null;
-      const vv = valueRatios && (def.key in valueRatios) ? valueRatios[def.key] : null;
+      /* coreRatios / valueRatios now return { value, date } per key —
+         the date is the actual quarter the value was sourced from
+         (may be earlier than ratioDate when the ratio isn't published
+         every quarter — typical for Avg/Median Mkt Cap). */
+      const cv = (coreRatios  && coreRatios[def.key])  || null;
+      const vv = (valueRatios && valueRatios[def.key]) || null;
       return {
         key: def.key,
         label: def.label,
         kind: def.kind,
         direction: def.direction,
         ports: ports,
-        core: cv,
-        value: vv,
+        core:  cv ? cv.value : null,
+        value: vv ? vv.value : null,
+        coreDate:  cv ? cv.date : null,
+        valueDate: vv ? vv.date : null,
       };
     });
   }, [breakdownByPort, companiesById, coreRatios, valueRatios, breakdownHistory, activePorts, ratioDate]);
@@ -377,19 +408,47 @@ export default function CharacteristicsView() {
               </div>
             );
           })}
+          {/* Benchmark cells. When the displayed value comes from a
+              quarter EARLIER than the selected ratioDate (because
+              the benchmark didn't publish that metric for the
+              selected quarter), append a small "Q-end" badge so the
+              user knows the source quarter. Common for Avg/Median
+              Mkt Cap which MSCI doesn't update every quarter. */}
           <div
             className="text-right tabular-nums"
             style={{ color: ratioBenchColor(primaryVal, r.core, r.kind, r.direction) }}
-            title={"Δ port − bench: " + (fmtDelta(primaryVal, r.core, r.kind) || "--")}
+            title={r.coreDate && r.coreDate !== ratioDate
+              ? "Latest available (" + r.coreDate + ") — not published for " + ratioDate
+              : "Δ port − bench: " + (fmtDelta(primaryVal, r.core, r.kind) || "--")}
           >
-            {r.core === null || r.core === undefined ? "--" : fmtMetric(r.core, r.kind)}
+            {r.core === null || r.core === undefined ? "--" : (
+              <span>
+                {fmtMetric(r.core, r.kind)}
+                {r.coreDate && r.coreDate !== ratioDate && (
+                  <span className="ml-1 text-[8px] uppercase font-semibold px-1 py-0 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 align-middle">
+                    {quarterShort(r.coreDate)}
+                  </span>
+                )}
+              </span>
+            )}
           </div>
           <div
             className="text-right tabular-nums"
             style={{ color: ratioBenchColor(primaryVal, r.value, r.kind, r.direction) }}
-            title={"Δ port − bench: " + (fmtDelta(primaryVal, r.value, r.kind) || "--")}
+            title={r.valueDate && r.valueDate !== ratioDate
+              ? "Latest available (" + r.valueDate + ") — not published for " + ratioDate
+              : "Δ port − bench: " + (fmtDelta(primaryVal, r.value, r.kind) || "--")}
           >
-            {r.value === null || r.value === undefined ? "--" : fmtMetric(r.value, r.kind)}
+            {r.value === null || r.value === undefined ? "--" : (
+              <span>
+                {fmtMetric(r.value, r.kind)}
+                {r.valueDate && r.valueDate !== ratioDate && (
+                  <span className="ml-1 text-[8px] uppercase font-semibold px-1 py-0 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 align-middle">
+                    {quarterShort(r.valueDate)}
+                  </span>
+                )}
+              </span>
+            )}
           </div>
         </div>
         {isOpen && (
