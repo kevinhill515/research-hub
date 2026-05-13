@@ -295,7 +295,7 @@ export default function CharacteristicsView() {
      "Other" at the bottom so nothing disappears silently. */
   const RATIO_GROUPS = [
     { label: "Size",          keys: ["mcWtdAvg","avgMktCap","medMktCap","mcLargest","mcSmallest","nHoldings","activeShare"] },
-    { label: "Valuation",     keys: ["fwdPe","pe","peExcl","pb","pbLtm","ps","pcf","fcfYld","divYld","payout"] },
+    { label: "Valuation",     keys: ["fwdPe","pe","peExcl","pb","ps","pcf","fcfYld","divYld","payout"] },
     { label: "Profitability", keys: ["roe","roe5y","intGr","grMgn","netMgn","gpAss","npAss","opROE","epsGrFwd1","epsGrFwd35","epsGrHist3","adpsGr5","adpsGr1"] },
     { label: "Balance Sheet", keys: ["netDE","debtCap","intCov"] },
   ];

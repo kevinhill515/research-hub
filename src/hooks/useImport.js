@@ -465,63 +465,110 @@ export function useImport(){
        value should be percent-converted on import. Keep the keys distinct
        from the metric bucket's keys so the same name can mean different
        things in different buckets if needed. */
+    /* Each entry has two alias lists:
+       - `primary` = MSCI's authoritative labels (single source of
+         truth — winner when both sources upload the same ratio)
+       - `fillIn` = FactSet rollup labels + generic spellings. Used
+         only to fill cells that primary didn't populate. When both
+         arrive for the same (date, benchmark, key), primary wins
+         regardless of paste order. */
     var RATIO_ALIASES = [
-      /* Mkt cap variants — extreme values + weighted/median/average. */
-      { aliases: ["MARKET CAP (LARGEST)", "MKT CAP LARGEST", "LARGEST MKTCAP", "MAX MKTCAP", "LARGEST MARKET CAP"],
-                                                                                                          key: "mcLargest", kind: "musd" },
-      { aliases: ["MARKET CAP (SMALLEST)", "MKT CAP SMALLEST", "SMALLEST MKTCAP", "MIN MKTCAP", "SMALLEST MARKET CAP"],
-                                                                                                          key: "mcSmallest", kind: "musd" },
-      { aliases: ["MARKET CAP (WGT. AVERAGE)", "MARKET CAP (WGT AVERAGE)", "WGT AVG MKTCAP", "WEIGHTED AVERAGE MARKET CAP", "MARKET CAP WGT AVG"],
-                                                                                                          key: "mcWtdAvg",   kind: "musd" },
-      { aliases: ["MARKET CAP (AVERAGE)", "AVERAGE MKTCAP", "AVERAGE MKTCAP (M USD)", "AVG MKTCAP", "AVG MARKET CAP", "AVERAGE MARKET CAP"],
-                                                                                                          key: "avgMktCap", kind: "musd" },
-      { aliases: ["MARKET CAP (MEDIAN)", "MEDIAN MKTCAP", "MEDIAN MKTCAP (M USD)", "MED MKTCAP", "MEDIAN MARKET CAP"],
-                                                                                                          key: "medMktCap", kind: "musd" },
-      /* Concentration / count. */
-      { aliases: ["NUMBER OF HOLDINGS", "# HOLDINGS", "HOLDINGS COUNT", "N HOLDINGS"],                    key: "nHoldings",  kind: "int"  },
-      { aliases: ["ACTIVE SHARE"],                                                                        key: "activeShare",kind: "pct"  },
-      /* Valuation. */
-      { aliases: ["PRICE TO EARNINGS", "PRICE TO EARNINGS (LAST 12 MOS.)", "PRICE TO EARNINGS (LAST 12 MOS)", "P/E LTM", "P/E (LAST 12 MOS.)", "P/E", "PE"],
-                                                                                                          key: "pe",        kind: "x"    },
-      { aliases: ["PRICE TO EARNINGS (EXCL. NEGATIVES)", "PRICE TO EARNINGS EXCL NEGATIVES", "P/E EXCL NEGATIVES", "P/E (EXCL. NEG.)", "PE EXCL NEG"],
-                                                                                                          key: "peExcl",    kind: "x"    },
-      { aliases: ["PRICE TO BOOK VALUE", "PRICE TO BOOK", "P/B", "PB"],                                   key: "pb",        kind: "x"    },
-      { aliases: ["PRICE TO BOOK (LAST 12 MOS.)", "PRICE TO BOOK (LAST 12 MOS)", "P/B LTM", "P/B (LTM)"], key: "pbLtm",     kind: "x"    },
-      { aliases: ["PRICE TO SALES", "P/S", "PS"],                                                         key: "ps",        kind: "x"    },
-      { aliases: ["PRICE TO CASH FLOW", "P/CF", "PCF"],                                                   key: "pcf",       kind: "x"    },
-      { aliases: ["FWD PRICE TO EARN", "FORWARD PRICE TO EARNINGS", "PRICE TO EARNINGS (FWD. 12 MOS.)", "PRICE TO EARNINGS (FWD 12 MOS)", "FWD P/E", "FORWARD P/E",
-                  /* FactSet's actual export has a typo: "EARNIGS" without the 'N'. */
-                  "PRICE TO EARNIGS (FWD. 12 MOS.)", "PRICE TO EARNIGS (FWD 12 MOS)"],
-                                                                                                          key: "fwdPe",     kind: "x"    },
+      /* Mkt cap variants — MSCI provides average + median; FactSet
+         adds weighted + largest/smallest. No primary↔fillIn conflict
+         on the size keys other than median. */
+      { primary: [],
+        fillIn:  ["MARKET CAP (LARGEST)", "MKT CAP LARGEST", "LARGEST MKTCAP", "MAX MKTCAP", "LARGEST MARKET CAP"],
+        key: "mcLargest", kind: "musd" },
+      { primary: [],
+        fillIn:  ["MARKET CAP (SMALLEST)", "MKT CAP SMALLEST", "SMALLEST MKTCAP", "MIN MKTCAP", "SMALLEST MARKET CAP"],
+        key: "mcSmallest", kind: "musd" },
+      { primary: [],
+        fillIn:  ["MARKET CAP (WGT. AVERAGE)", "MARKET CAP (WGT AVERAGE)", "WGT AVG MKTCAP", "WEIGHTED AVERAGE MARKET CAP", "MARKET CAP WGT AVG"],
+        key: "mcWtdAvg",   kind: "musd" },
+      { primary: ["AVERAGE MKTCAP", "AVERAGE MKTCAP (M USD)"],
+        fillIn:  ["MARKET CAP (AVERAGE)", "AVG MKTCAP", "AVG MARKET CAP", "AVERAGE MARKET CAP"],
+        key: "avgMktCap", kind: "musd" },
+      { primary: ["MEDIAN MKTCAP", "MEDIAN MKTCAP (M USD)"],
+        fillIn:  ["MARKET CAP (MEDIAN)", "MED MKTCAP", "MEDIAN MARKET CAP"],
+        key: "medMktCap", kind: "musd" },
+      /* Concentration / count — FactSet only. */
+      { primary: [], fillIn: ["NUMBER OF HOLDINGS", "# HOLDINGS", "HOLDINGS COUNT", "N HOLDINGS"],
+        key: "nHoldings",  kind: "int"  },
+      { primary: [], fillIn: ["ACTIVE SHARE"],
+        key: "activeShare",kind: "pct"  },
+      /* Valuation. PRICE TO EARNINGS (MSCI) and Price to Earnings
+         (Last 12 Mos.) (FactSet) are the same trailing-12M number;
+         same for PRICE TO BOOK VALUE vs Price to Book (Last 12 Mos.). */
+      { primary: ["PRICE TO EARNINGS"],
+        fillIn:  ["PRICE TO EARNINGS (LAST 12 MOS.)", "PRICE TO EARNINGS (LAST 12 MOS)", "P/E LTM", "P/E (LAST 12 MOS.)", "P/E", "PE"],
+        key: "pe",        kind: "x"    },
+      { primary: [],
+        fillIn:  ["PRICE TO EARNINGS (EXCL. NEGATIVES)", "PRICE TO EARNINGS EXCL NEGATIVES", "P/E EXCL NEGATIVES", "P/E (EXCL. NEG.)", "PE EXCL NEG"],
+        key: "peExcl",    kind: "x"    },
+      /* pb and the former pbLtm collapsed into a single key — both
+         represent LTM P/B. Old pbLtm key kept in characteristics
+         RATIO_DEFS for backward-compat display but no parser path
+         writes to it now. */
+      { primary: ["PRICE TO BOOK VALUE"],
+        fillIn:  ["PRICE TO BOOK (LAST 12 MOS.)", "PRICE TO BOOK (LAST 12 MOS)", "P/B LTM", "P/B (LTM)", "PRICE TO BOOK", "P/B", "PB"],
+        key: "pb",        kind: "x"    },
+      { primary: [], fillIn: ["PRICE TO SALES", "P/S", "PS"],
+        key: "ps",        kind: "x"    },
+      { primary: [], fillIn: ["PRICE TO CASH FLOW", "P/CF", "PCF"],
+        key: "pcf",       kind: "x"    },
+      { primary: ["FWD PRICE TO EARN", "FORWARD PRICE TO EARNINGS"],
+        /* FactSet's actual export has a typo: "EARNIGS" without the 'N'. */
+        fillIn:  ["PRICE TO EARNINGS (FWD. 12 MOS.)", "PRICE TO EARNINGS (FWD 12 MOS)",
+                  "PRICE TO EARNIGS (FWD. 12 MOS.)", "PRICE TO EARNIGS (FWD 12 MOS)",
+                  "FWD P/E", "FORWARD P/E"],
+        key: "fwdPe",     kind: "x"    },
       /* Returns. */
-      { aliases: ["ROE", "RETURN ON EQUITY", "RETURN ON EQUITY (1Y)", "ROE 1Y"],                          key: "roe",       kind: "pct"  },
-      { aliases: ["RETURN ON EQUITY (5Y)", "ROE 5Y", "ROE (5Y)"],                                         key: "roe5y",     kind: "pct"  },
-      /* Growth. */
-      { aliases: ["EPS GROWTH (1Y FWD.)", "EPS GROWTH (1Y FWD)", "EPS GROWTH 1Y FWD", "1YR EPS GROWTH FWD"],
-                                                                                                          key: "epsGrFwd1", kind: "pct"  },
-      { aliases: ["EPS GROWTH (3-5Y FWD.)", "EPS GROWTH (3-5Y FWD)", "EPS GROWTH 3-5Y FWD", "EPS LT GROWTH"],
-                                                                                                          key: "epsGrFwd35",kind: "pct"  },
-      { aliases: ["EPS GROWTH (3Y HIST.)", "EPS GROWTH (3Y HIST)", "EPS GROWTH 3Y HIST", "3YR HIST EPS GROWTH"],
-                                                                                                          key: "epsGrHist3",kind: "pct"  },
-      { aliases: ["EPS GROWTH (5Y HIST.)", "EPS GROWTH (5Y HIST)", "5 YEARS ADPS GROWTH RATE", "5YR ADPS GROWTH", "5Y ADPS GROWTH", "ADPS 5Y"],
-                                                                                                          key: "adpsGr5",   kind: "pct"  },
-      { aliases: ["EPS GROWTH (1Y HIST.)", "EPS GROWTH (1Y HIST)", "1 YEAR ADPS GROWTH RATE", "1YR ADPS GROWTH", "1Y ADPS GROWTH", "ADPS 1Y"],
-                                                                                                          key: "adpsGr1",   kind: "pct"  },
-      { aliases: ["CURR INTERNAL GROWTH RATE", "INTERNAL GROWTH", "INTERNAL GROWTH RATE", "INT GROWTH"],  key: "intGr",     kind: "pct"  },
-      /* Yield / payout. */
-      { aliases: ["DIVIDEND YIELD", "MONTHLY YIELD", "DIV YLD", "DIV YIELD"],                             key: "divYld",    kind: "pct"  },
-      { aliases: ["PAYOUT RATIO", "PAYOUT"],                                                              key: "payout",    kind: "pct"  },
-      /* Leverage. */
-      { aliases: ["DEBT TO CAPITAL", "DEBT/CAPITAL", "DEBT-TO-CAP"],                                      key: "debtCap",   kind: "pct"  },
-      { aliases: ["NET DEBT TO EQUITY", "NET DEBT/EQUITY", "NET D/E"],                                    key: "netDE",     kind: "pct"  },
+      { primary: ["ROE", "RETURN ON EQUITY"],
+        fillIn:  ["RETURN ON EQUITY (1Y)", "ROE 1Y"],
+        key: "roe",       kind: "pct"  },
+      { primary: [], fillIn: ["RETURN ON EQUITY (5Y)", "ROE 5Y", "ROE (5Y)"],
+        key: "roe5y",     kind: "pct"  },
+      /* Growth. MSCI provides 1Y + 5Y ADPS; FactSet provides EPS
+         variants (FactSet's plain EPS Growth (1Y Hist.) ≈ MSCI's
+         1 YEAR ADPS GROWTH RATE for buyback-adjusted shares). */
+      { primary: [], fillIn: ["EPS GROWTH (1Y FWD.)", "EPS GROWTH (1Y FWD)", "EPS GROWTH 1Y FWD", "1YR EPS GROWTH FWD"],
+        key: "epsGrFwd1", kind: "pct"  },
+      { primary: [], fillIn: ["EPS GROWTH (3-5Y FWD.)", "EPS GROWTH (3-5Y FWD)", "EPS GROWTH 3-5Y FWD", "EPS LT GROWTH"],
+        key: "epsGrFwd35",kind: "pct"  },
+      { primary: [], fillIn: ["EPS GROWTH (3Y HIST.)", "EPS GROWTH (3Y HIST)", "EPS GROWTH 3Y HIST", "3YR HIST EPS GROWTH"],
+        key: "epsGrHist3",kind: "pct"  },
+      { primary: ["5 YEARS ADPS GROWTH RATE"],
+        fillIn:  ["EPS GROWTH (5Y HIST.)", "EPS GROWTH (5Y HIST)", "5YR ADPS GROWTH", "5Y ADPS GROWTH", "ADPS 5Y"],
+        key: "adpsGr5",   kind: "pct"  },
+      { primary: ["1 YEAR ADPS GROWTH RATE"],
+        fillIn:  ["EPS GROWTH (1Y HIST.)", "EPS GROWTH (1Y HIST)", "1YR ADPS GROWTH", "1Y ADPS GROWTH", "ADPS 1Y"],
+        key: "adpsGr1",   kind: "pct"  },
+      { primary: ["CURR INTERNAL GROWTH RATE"],
+        fillIn:  ["INTERNAL GROWTH", "INTERNAL GROWTH RATE", "INT GROWTH"],
+        key: "intGr",     kind: "pct"  },
+      /* Yield / payout. MONTHLY YIELD (MSCI) is the same number as
+         Dividend Yield (FactSet) — MSCI publishes monthly. */
+      { primary: ["MONTHLY YIELD"],
+        fillIn:  ["DIVIDEND YIELD", "DIV YLD", "DIV YIELD"],
+        key: "divYld",    kind: "pct"  },
+      { primary: ["PAYOUT RATIO"], fillIn: ["PAYOUT"],
+        key: "payout",    kind: "pct"  },
+      /* Leverage — FactSet only. */
+      { primary: [], fillIn: ["DEBT TO CAPITAL", "DEBT/CAPITAL", "DEBT-TO-CAP"],
+        key: "debtCap",   kind: "pct"  },
+      { primary: [], fillIn: ["NET DEBT TO EQUITY", "NET DEBT/EQUITY", "NET D/E"],
+        key: "netDE",     kind: "pct"  },
     ];
     function resolveRatioKey(itemRaw) {
       const u = (itemRaw||"").trim().toUpperCase();
       if (!u) return null;
       for (let i = 0; i < RATIO_ALIASES.length; i++) {
         const def = RATIO_ALIASES[i];
-        for (let j = 0; j < def.aliases.length; j++) {
-          if (def.aliases[j] === u) return def;
+        for (let j = 0; j < def.primary.length; j++) {
+          if (def.primary[j].toUpperCase() === u) return { def: def, tier: 1 };
+        }
+        for (let j = 0; j < def.fillIn.length; j++) {
+          if (def.fillIn[j].toUpperCase() === u) return { def: def, tier: 2 };
         }
       }
       return null;
@@ -540,6 +587,12 @@ export function useImport(){
     var affected={};
     /* dated history rows (5-col), keyed by [bm][isoDate] */
     var historyRows={};
+    /* Source-priority tracker for ratios. Map<"<bm>|<dateIso|current>",
+       Record<ratioKey, tier>>. A lower tier wins (1 = MSCI primary, 2 =
+       FactSet fillIn). Used by writeRatioCell so two rows for the same
+       ratio key (one MSCI, one FactSet) keep the MSCI value regardless
+       of which arrived first in the paste. */
+    var ratioTiers = new Map();
     var dropped=0;
     /* Track WHY rows were dropped + sample the offending rows. Without
        this the user has no way to debug a "206 rows skipped" message
@@ -595,31 +648,48 @@ export function useImport(){
          resolved via RATIO_ALIASES so users can paste FactSet-style
          human labels ("PRICE TO BOOK VALUE") instead of canonical keys. */
       var storedName = name;
+      var ratioTier = null; /* set below for bucket==="ratios" only */
       if(bucket==="metrics" && PCT_METRIC_RE.test(name)) w=w/100;
       if(bucket==="ratios"){
-        var def = resolveRatioKey(name);
-        if(!def){
+        var resolved = resolveRatioKey(name);
+        if(!resolved){
           var k=(name||"").trim().toUpperCase();
           unknownItems[k]=(unknownItems[k]||0)+1;
           recordDrop("unrecognized ratio item label", line);
           return;
         }
+        var def = resolved.def;
+        ratioTier = resolved.tier; /* 1=primary (MSCI), 2=fillIn */
         storedName = def.key;
         if(def.kind==="pct") w=w/100;
-        /* Auto-correct decimal-form multiples for x-kind ratios. Real
-           P/E, P/B, Fwd P/E etc. are always >= 1; if the pasted value
-           is < 1 it almost certainly means FactSet exported as a
-           "yield" (1/multiple) or in some other decimal form. Multiply
-           by 100 to recover the multiple. Same convention the migration
-           uses retroactively. */
         if(def.kind==="x" && Math.abs(w) > 0 && Math.abs(w) < 1) w=w*100;
+      }
+      /* writeRatioCell honors tier priority: a fillIn (tier 2) row
+         won't clobber a value previously written by a primary (tier 1)
+         row, even when the fillIn row was parsed later. ratioTiers
+         tracks which tier currently owns each cell so the check works
+         regardless of paste order. */
+      function writeRatioCell(scope, key, value, tier) {
+        var cur = ratioTiers.get(scope);
+        if (cur && cur[key] !== undefined && cur[key] < tier) return false;
+        if (!cur) { cur = {}; ratioTiers.set(scope, cur); }
+        cur[key] = tier;
+        return true;
       }
       if(dateIso){
         if(!historyRows[bm])historyRows[bm]={};
         if(!historyRows[bm][dateIso])historyRows[bm][dateIso]={sectors:{},countries:{},metrics:{},ratios:{}};
+        if(bucket==="ratios"){
+          var scope = bm + "|" + dateIso;
+          if(!writeRatioCell(scope, storedName, w, ratioTier)) return;
+        }
         historyRows[bm][dateIso][bucket][storedName]=w;
       } else {
         if(!affected[bm])affected[bm]={sectors:{},countries:{},metrics:{},ratios:{},asOf:benchmarkAsOf||""};
+        if(bucket==="ratios"){
+          var scope = bm + "|current";
+          if(!writeRatioCell(scope, storedName, w, ratioTier)) return;
+        }
         affected[bm][bucket][storedName]=w;
       }
     });

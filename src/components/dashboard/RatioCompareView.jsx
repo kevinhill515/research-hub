@@ -259,7 +259,7 @@ export default function RatioCompareView() {
     const groups = [
       { label: "Size",          keys: ["mcWtdAvg","avgMktCap","medMktCap","mcLargest","mcSmallest","nHoldings"] },
       { label: "Concentration", keys: ["activeShare"] },
-      { label: "Valuation",     keys: ["fwdPe","pe","peExcl","pb","pbLtm","ps","pcf"] },
+      { label: "Valuation",     keys: ["fwdPe","pe","peExcl","pb","ps","pcf"] },
       { label: "Returns",       keys: ["roe","roe5y"] },
       { label: "Growth",        keys: ["epsGrFwd1","epsGrFwd35","epsGrHist3","adpsGr5","adpsGr1","intGr"] },
       { label: "Yield / Payout",keys: ["divYld","payout"] },
