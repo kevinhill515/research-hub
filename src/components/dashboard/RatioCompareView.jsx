@@ -19,7 +19,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
-import { BENCHMARKS, PORTFOLIOS, PORT_NAMES } from '../../constants/index.js';
+import { BENCHMARKS, PORTFOLIOS, PORT_NAMES, getBenchSlot } from '../../constants/index.js';
 import { calcBreakdowns } from '../../utils/portfolioMath.js';
 import {
   RATIO_DEFS, aggregatePortfolioRatio, uploadedPortfolioRatio,
@@ -162,7 +162,8 @@ export default function RatioCompareView() {
       const valueBench = (BENCHMARKS[port] || {}).value || null;
       function lookupBench(name) {
         if (!name || !ratioDate) return null;
-        const slot = breakdownHistory && breakdownHistory[name] && breakdownHistory[name][ratioDate];
+        const byDate = getBenchSlot(breakdownHistory, name);
+        const slot = byDate && byDate[ratioDate];
         if (!slot || !slot.ratios) return null;
         return def.key in slot.ratios ? slot.ratios[def.key] : null;
       }
@@ -206,7 +207,7 @@ export default function RatioCompareView() {
         if (vb && benchNames.indexOf(vb) < 0) benchNames.push(vb);
       });
       benchNames.forEach(function (b) {
-        const byDate = (breakdownHistory && breakdownHistory[b]) || {};
+        const byDate = getBenchSlot(breakdownHistory, b) || {};
         Object.keys(byDate).forEach(function (d) {
           if (byDate[d] && byDate[d].ratios && (def.key in byDate[d].ratios)) dateSet.add(d);
         });
@@ -223,7 +224,8 @@ export default function RatioCompareView() {
         });
         if (includeBench) {
           benchNames.forEach(function (b) {
-            const slot = breakdownHistory && breakdownHistory[b] && breakdownHistory[b][d];
+            const byDate = getBenchSlot(breakdownHistory, b);
+            const slot = byDate && byDate[d];
             row[b] = (slot && slot.ratios && def.key in slot.ratios) ? slot.ratios[def.key] : null;
           });
         }

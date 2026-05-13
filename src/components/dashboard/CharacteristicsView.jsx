@@ -178,8 +178,12 @@ export default function CharacteristicsView() {
   const coreData   = coreBench  && benchmarkWeights ? benchmarkWeights[coreBench]  : null;
   const valueData  = valueBench && benchmarkWeights ? benchmarkWeights[valueBench] : null;
   function latestMetrics(name) {
-    if (!name || !breakdownHistory || !breakdownHistory[name]) return null;
-    const byDate = breakdownHistory[name];
+    if (!name) return null;
+    /* Resolve through getBenchSlot so a benchmark uploaded under its
+       FactSet ID ("106039") still finds the data when we ask for the
+       canonical name ("ACWI Value"). */
+    const byDate = getBenchSlot(breakdownHistory, name);
+    if (!byDate) return null;
     const dates = Object.keys(byDate)
       .filter(function (d) { return byDate[d] && byDate[d].metrics && Object.keys(byDate[d].metrics).length > 0; })
       .sort();
@@ -243,8 +247,8 @@ export default function CharacteristicsView() {
      "Other" at the bottom so nothing disappears silently. */
   const RATIO_GROUPS = [
     { label: "Size",          keys: ["mcWtdAvg","avgMktCap","medMktCap","mcLargest","mcSmallest","nHoldings","activeShare"] },
-    { label: "Valuation",     keys: ["fwdPe","pe","peExcl","pb","pbLtm","ps","pcf","fcfYld","divYld","payout","epsGrFwd1","epsGrFwd35","epsGrHist3","adpsGr5","adpsGr1"] },
-    { label: "Profitability", keys: ["roe","roe5y","intGr","grMgn","netMgn","gpAss","npAss","opROE"] },
+    { label: "Valuation",     keys: ["fwdPe","pe","peExcl","pb","pbLtm","ps","pcf","fcfYld","divYld","payout"] },
+    { label: "Profitability", keys: ["roe","roe5y","intGr","grMgn","netMgn","gpAss","npAss","opROE","epsGrFwd1","epsGrFwd35","epsGrHist3","adpsGr5","adpsGr1"] },
     { label: "Balance Sheet", keys: ["netDE","debtCap","intCov"] },
   ];
 

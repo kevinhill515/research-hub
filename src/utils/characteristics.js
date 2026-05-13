@@ -282,11 +282,29 @@ export function uploadedPortfolioRatio(breakdownHistory, portKey, dateIso, key) 
   return key in slot.ratios ? slot.ratios[key] : null;
 }
 
+/* Resolve a benchmark/portfolio name to its breakdownHistory slot,
+ * falling back through FactSet ID forms ("106039", "MS106039") when
+ * the canonical name (e.g. "ACWI Value") isn't found. Inlined to avoid
+ * a circular import on the constants module. */
+const _BENCH_ID_TO_NAME = {
+  "892400":"ACWI","106039":"ACWI Value","899901":"ACWI ex US","106037":"ACWI ex US Value",
+  "891800":"MSCI EM","106063":"MSCI EM Value","655052":"ACWI ex US SC","655157":"ACWI ex US SC Value",
+};
+function resolveBenchByDate(breakdownHistory, name) {
+  if (!breakdownHistory || !name) return null;
+  if (breakdownHistory[name]) return breakdownHistory[name];
+  const aliases = Object.keys(_BENCH_ID_TO_NAME).filter(function (id) { return _BENCH_ID_TO_NAME[id] === name; });
+  for (let i = 0; i < aliases.length; i++) {
+    if (breakdownHistory[aliases[i]]) return breakdownHistory[aliases[i]];
+    if (breakdownHistory["MS" + aliases[i]]) return breakdownHistory["MS" + aliases[i]];
+  }
+  return null;
+}
+
 /* Pick the most-recent uploaded ratios snapshot for a benchmark from
  * breakdownHistory. Returns { date, ratios } or null when no history exists. */
 export function latestRatiosSnapshot(breakdownHistory, benchName) {
-  if (!breakdownHistory || !benchName) return null;
-  const byDate = breakdownHistory[benchName];
+  const byDate = resolveBenchByDate(breakdownHistory, benchName);
   if (!byDate) return null;
   const dates = Object.keys(byDate).filter(function (d) {
     return byDate[d] && byDate[d].ratios && Object.keys(byDate[d].ratios).length > 0;
@@ -299,24 +317,7 @@ export function latestRatiosSnapshot(breakdownHistory, benchName) {
 /* All dates with at least one ratio uploaded for `name` (benchmark or
  * portfolio code), sorted ascending. Empty array when nothing exists. */
 export function ratioDates(breakdownHistory, name) {
-  if (!breakdownHistory || !name) return [];
-  /* Inline alias resolution — same logic as constants/getBenchSlot, but
-     avoiding a circular import (this util is also imported by
-     constants-adjacent code). */
-  function resolve() {
-    if (breakdownHistory[name]) return breakdownHistory[name];
-    const ID_TO_NAME = {
-      "892400":"ACWI","106039":"ACWI Value","899901":"ACWI ex US","106037":"ACWI ex US Value",
-      "891800":"MSCI EM","106063":"MSCI EM Value","655052":"ACWI ex US SC","655157":"ACWI ex US SC Value",
-    };
-    const aliases = Object.keys(ID_TO_NAME).filter(function (id) { return ID_TO_NAME[id] === name; });
-    for (let i = 0; i < aliases.length; i++) {
-      if (breakdownHistory[aliases[i]]) return breakdownHistory[aliases[i]];
-      if (breakdownHistory["MS" + aliases[i]]) return breakdownHistory["MS" + aliases[i]];
-    }
-    return null;
-  }
-  const byDate = resolve();
+  const byDate = resolveBenchByDate(breakdownHistory, name);
   if (!byDate) return [];
   return Object.keys(byDate)
     .filter(function (d) {
@@ -332,7 +333,7 @@ export function ratioDates(breakdownHistory, name) {
  * by date — recharts plots cleanly without further sorting. */
 export function ratioHistorySeries(breakdownHistory, portKey, benchName, ratioKey) {
   const portByDate = (breakdownHistory && breakdownHistory[portKey]) || {};
-  const benchByDate = (breakdownHistory && breakdownHistory[benchName]) || {};
+  const benchByDate = resolveBenchByDate(breakdownHistory, benchName) || {};
   const dateSet = new Set([
     ...Object.keys(portByDate),
     ...Object.keys(benchByDate),
