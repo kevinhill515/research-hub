@@ -4,7 +4,13 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   plugins: [tailwindcss(), react()],
-  base: '/research-hub/',
+  /* Private GitHub Pages (Silvercrest's plan) serves the site at the
+     root of a randomized hostname like
+     `<random>.pages.github.io/` — no /<repo>/ subpath. Use root
+     base so asset URLs resolve. If you ever switch to public Pages
+     under the standard `<org>.github.io/research-hub/` URL, change
+     this back to '/research-hub/' before deploying. */
+  base: '/',
   build: {
     rollupOptions: {
       output: {
