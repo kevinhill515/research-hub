@@ -20,39 +20,70 @@ function quarterLabel(iso) {
   return "Q" + q + " '" + y;
 }
 
-/* Build a 3-line history series for one ratio across portKey, coreBench,
- * and valueBench. Each row is { date, portfolio, core, value } with
- * missing sides as null. */
-function buildSeries(history, portKey, coreBench, valueBench, ratioKey) {
-  const get = function (name, d) {
-    const slot = history && history[name] && history[name][d];
+/* Resolve a benchmark name through FactSet ID aliases (mirror of the
+   helper in characteristics.js — kept local here to avoid importing
+   from a util that's also imported by callers). */
+const _BENCH_ID_TO_NAME = {
+  "892400":"ACWI","106039":"ACWI Value","899901":"ACWI ex US","106037":"ACWI ex US Value",
+  "891800":"MSCI EM","106063":"MSCI EM Value","655052":"ACWI ex US SC","655157":"ACWI ex US SC Value",
+};
+function resolveByDate(history, name) {
+  if (!history || !name) return null;
+  if (history[name]) return history[name];
+  const aliases = Object.keys(_BENCH_ID_TO_NAME).filter(function (id) { return _BENCH_ID_TO_NAME[id] === name; });
+  for (let i = 0; i < aliases.length; i++) {
+    if (history[aliases[i]]) return history[aliases[i]];
+    if (history["MS" + aliases[i]]) return history["MS" + aliases[i]];
+  }
+  return null;
+}
+
+/* Build a multi-line history series. portKey accepts either a single
+ * portfolio code or an array (e.g. ["FIN","IN"]) — one line per port
+ * plus the two benchmark lines. Each row's keys are the port codes
+ * themselves plus "core" and "value". */
+function buildSeries(history, portKeys, coreBench, valueBench, ratioKey) {
+  const get = function (byDate, d) {
+    const slot = byDate && byDate[d];
     if (!slot || !slot.ratios) return null;
     return ratioKey in slot.ratios ? slot.ratios[ratioKey] : null;
   };
+  /* Per-port lookups still use direct history[code] — portfolio codes
+     are never aliased. Benchmark lookups go through the resolver. */
+  const portByDate = {};
+  portKeys.forEach(function (p) { portByDate[p] = (history && history[p]) || null; });
+  const coreByDate = resolveByDate(history, coreBench);
+  const valueByDate = resolveByDate(history, valueBench);
   const dateSet = new Set();
-  [portKey, coreBench, valueBench].forEach(function (n) {
-    if (!n || !history || !history[n]) return;
-    Object.keys(history[n]).forEach(function (d) { dateSet.add(d); });
+  portKeys.forEach(function (p) {
+    if (portByDate[p]) Object.keys(portByDate[p]).forEach(function (d) { dateSet.add(d); });
   });
+  if (coreByDate)  Object.keys(coreByDate ).forEach(function (d) { dateSet.add(d); });
+  if (valueByDate) Object.keys(valueByDate).forEach(function (d) { dateSet.add(d); });
   return Array.from(dateSet).sort().map(function (d) {
-    return {
-      date: d,
-      portfolio: get(portKey, d),
-      core: get(coreBench, d),
-      value: get(valueBench, d),
-    };
+    const row = { date: d };
+    portKeys.forEach(function (p) { row[p] = get(portByDate[p], d); });
+    row.core  = get(coreByDate,  d);
+    row.value = get(valueByDate, d);
+    return row;
   }).filter(function (row) {
-    return row.portfolio !== null || row.core !== null || row.value !== null;
+    if (row.core !== null || row.value !== null) return true;
+    return portKeys.some(function (p) { return row[p] !== null; });
   });
 }
+
+/* Distinct colors for up to ~4 portfolio lines on one chart. */
+const PORT_COLORS = ["#1d4ed8", "#059669", "#7c3aed", "#0891b2"];
 
 export default function RatioHistoryChart({
   history, portKey, coreBench, valueBench, ratioKey, kind,
   height = 220,
 }) {
+  /* Accept either a single port code or an array. Normalize once. */
+  const portKeys = Array.isArray(portKey) ? portKey : (portKey ? [portKey] : []);
   const data = useMemo(function () {
-    return buildSeries(history, portKey, coreBench, valueBench, ratioKey);
-  }, [history, portKey, coreBench, valueBench, ratioKey]);
+    return buildSeries(history, portKeys, coreBench, valueBench, ratioKey);
+  }, [history, portKeys.join("|"), coreBench, valueBench, ratioKey]);
 
   if (data.length === 0) {
     return (
@@ -105,17 +136,22 @@ export default function RatioHistoryChart({
             contentStyle={{ fontSize: 11 }}
           />
           <Legend wrapperStyle={{ fontSize: 10, paddingTop: 4 }} />
-          <Line
-            type="monotone"
-            dataKey="portfolio"
-            name={portKey || "Portfolio"}
-            stroke="#1d4ed8"
-            strokeWidth={2}
-            dot={{ r: 2 }}
-            activeDot={{ r: 4 }}
-            isAnimationActive={false}
-            connectNulls
-          />
+          {portKeys.map(function (p, idx) {
+            return (
+              <Line
+                key={p}
+                type="monotone"
+                dataKey={p}
+                name={p}
+                stroke={PORT_COLORS[idx % PORT_COLORS.length]}
+                strokeWidth={2}
+                dot={{ r: 2 }}
+                activeDot={{ r: 4 }}
+                isAnimationActive={false}
+                connectNulls
+              />
+            );
+          })}
           <Line
             type="monotone"
             dataKey="core"

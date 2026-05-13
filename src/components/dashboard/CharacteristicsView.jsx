@@ -396,7 +396,7 @@ export default function CharacteristicsView() {
           <div className="px-2 py-1 border-b border-slate-100 dark:border-slate-800">
             <RatioHistoryChart
               history={breakdownHistory}
-              portKey={primaryPort}
+              portKey={activePorts}
               coreBench={coreBench}
               valueBench={valueBench}
               ratioKey={r.key}
