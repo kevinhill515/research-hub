@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useRef } from "react";
 import { supaGet, supaGetAll, supaUpsert, supaDelete } from '../api/index.js';
 import { todayStr } from '../utils/index.js';
+import { DEFAULT_PERF_SERIES, findDefaultSeries } from '../constants/perfDefaults.js';
 
 const CompanyContext=createContext(null);
 
@@ -661,6 +662,20 @@ export function CompanyProvider({children}){
           if(a&&lookup[a]===undefined)lookup[a]=i;
           if(a&&lookup[a.toUpperCase()]===undefined)lookup[a.toUpperCase()]=i;
         });
+        /* Also index by DEFAULT-known aliases/ticker/name for this portfolio,
+           so a CSV header like "MS899901" matches an existing series whose
+           stored name is "ACWI ex US" even when no alias has been recorded
+           yet. This is what makes the defaults map work as a "shared brain"
+           — every known synonym points at the same series. */
+        var defForExisting=findDefaultSeries(portfolio,s.name)||findDefaultSeries(portfolio,s.ticker);
+        if(defForExisting){
+          var keys=[defForExisting.name,defForExisting.ticker].concat(defForExisting.aliases||[]);
+          keys.forEach(function(k){
+            if(!k)return;
+            if(lookup[k]===undefined)lookup[k]=i;
+            if(lookup[k.toUpperCase()]===undefined)lookup[k.toUpperCase()]=i;
+          });
+        }
       });
       /* Names the user explicitly deleted — skip them so paste doesn't
          re-create the same dup series the user just removed. */
@@ -683,13 +698,49 @@ export function CompanyProvider({children}){
           var existing=newSeries[idx];
           var aliases=(existing.aliases||[]).slice();
           if(n&&n!==existing.name&&n!==existing.ticker&&aliases.indexOf(n)<0)aliases.push(n);
-          newSeries[idx]=Object.assign({},existing,{aliases:aliases,returns:Object.assign({},existing.returns||{})});
+          /* Backfill role/ticker from defaults if missing. Preserves any
+             user-customized display name. */
+          var defMatch=findDefaultSeries(portfolio,n)||findDefaultSeries(portfolio,existing.name)||findDefaultSeries(portfolio,existing.ticker);
+          var roleFill=existing.role||(defMatch?defMatch.role:undefined);
+          var tickerFill=existing.ticker||(defMatch?defMatch.ticker:"");
+          newSeries[idx]=Object.assign({},existing,{role:roleFill,ticker:tickerFill,aliases:aliases,returns:Object.assign({},existing.returns||{})});
           headerIdx[n]=idx;
         }else{
+          /* New series — use default mapping (name/role/ticker) when this
+             header matches a known entry for the target portfolio.
+             Falls back to the legacy "first column = portfolio, rest =
+             competitor" heuristic when the header isn't recognized. */
+          var def=findDefaultSeries(portfolio,n);
           headerIdx[n]=newSeries.length;
           lookup[n]=newSeries.length;
-          newSeries.push({name:n,role:newSeries.length===0?"portfolio":"competitor",ticker:"",returns:{}});
+          if(def){
+            var initialAliases=(def.aliases||[]).slice();
+            if(n&&n!==def.name&&n!==def.ticker&&initialAliases.indexOf(n)<0)initialAliases.push(n);
+            newSeries.push({name:def.name,role:def.role,ticker:def.ticker||"",aliases:initialAliases,returns:{}});
+            /* Index the new series under every known synonym so the next
+               column for the same series (e.g. an alternative header
+               format on a later upload) finds it. */
+            var keys=[def.name,def.ticker].concat(def.aliases||[]);
+            keys.forEach(function(k){if(k&&lookup[k.toUpperCase()]===undefined)lookup[k.toUpperCase()]=headerIdx[n];});
+          }else{
+            newSeries.push({name:n,role:newSeries.length===0?"portfolio":"competitor",ticker:"",returns:{}});
+          }
         }
+      });
+      /* Seed any defaults that weren't already in the portfolio. This is
+         what makes the "set it up once" promise hold: even if a CSV is
+         missing a benchmark column, the empty series gets created so the
+         user can paste its returns later without re-rolling the whole
+         layout. Defaults are appended; user-added series keep their slots. */
+      (DEFAULT_PERF_SERIES[portfolio]||[]).forEach(function(def){
+        var nameU=(def.name||"").toUpperCase();
+        var tickU=(def.ticker||"").toUpperCase();
+        if(lookup[nameU]!==undefined||lookup[tickU]!==undefined)return;
+        var aliasHit=(def.aliases||[]).some(function(a){return lookup[(a||"").toUpperCase()]!==undefined;});
+        if(aliasHit)return;
+        var idx=newSeries.length;
+        newSeries.push({name:def.name,role:def.role,ticker:def.ticker||"",aliases:(def.aliases||[]).slice(),returns:{}});
+        lookup[nameU]=idx; if(tickU)lookup[tickU]=idx;
       });
       parsed.rows.forEach(function(row){
         parsed.seriesNames.forEach(function(n,i){

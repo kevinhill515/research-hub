@@ -95,6 +95,37 @@ export function PerformanceTab(){
     return { mergedSeries: finalOrder.map(function(n){return byName[n];}), portfolioEmvs: portEmvs };
   },[perfData, group.key, currentMVs, curMonth]);
 
+  /* Rename a series and propagate the new name to every sibling portfolio
+     in the group that had a series with the same old name. Without this,
+     renaming "ACWI ex US" on Int'l (which merges FIN + IN) would only
+     touch FIN, leaving IN's copy under the old name — the merge step
+     would then surface BOTH as separate series. */
+  function renameSeries(sourcePort, sourceIdx, oldName, newName){
+    var trimmed=(newName||"").trim();
+    if(!trimmed || trimmed===oldName) return;
+    setPerfSeries(sourcePort, sourceIdx, {name: trimmed});
+    group.portfolios.forEach(function(gp){
+      if(gp===sourcePort) return;
+      var gport=perfData[gp];
+      if(!gport) return;
+      var gi=(gport.series||[]).findIndex(function(x){return x.name===oldName;});
+      if(gi>=0) setPerfSeries(gp, gi, {name: trimmed});
+    });
+  }
+
+  /* Same idea for role + ticker: shared series across siblings should
+     stay in sync so the merge picks up consistent metadata. */
+  function setSeriesField(sourcePort, sourceIdx, oldName, patch){
+    setPerfSeries(sourcePort, sourceIdx, patch);
+    group.portfolios.forEach(function(gp){
+      if(gp===sourcePort) return;
+      var gport=perfData[gp];
+      if(!gport) return;
+      var gi=(gport.series||[]).findIndex(function(x){return x.name===oldName;});
+      if(gi>=0) setPerfSeries(gp, gi, patch);
+    });
+  }
+
   /* Swap positions in the group's displayed order (writes to primary's seriesOrder). */
   function moveInGroup(fromIdx, toIdx){
     if(fromIdx===toIdx)return;
@@ -225,13 +256,13 @@ export function PerformanceTab(){
                     <button type="button" disabled={i===0} onClick={function(){moveInGroup(i,i-1);}} className={"px-1 py-0 cursor-pointer hover:text-gray-700 dark:hover:text-slate-300 "+(i===0?"opacity-30 cursor-not-allowed":"")} title="Move up">{"\u25B2"}</button>
                     <button type="button" disabled={i===arr.length-1} onClick={function(){moveInGroup(i,i+1);}} className={"px-1 py-0 cursor-pointer hover:text-gray-700 dark:hover:text-slate-300 "+(i===arr.length-1?"opacity-30 cursor-not-allowed":"")} title="Move down">{"\u25BC"}</button>
                   </span>
-                  <input defaultValue={stored.name} key={p+"-sn-"+idx+"-"+stored.name} onBlur={function(e){setPerfSeries(p,idx,{name:e.target.value.trim()||stored.name});}} className={INP+" !text-xs w-48"} placeholder="Series name"/>
-                  <select value={stored.role||"competitor"} onChange={function(e){setPerfSeries(p,idx,{role:e.target.value});}} className={INP+" !text-xs"}>
+                  <input defaultValue={stored.name} key={p+"-sn-"+idx+"-"+stored.name} onBlur={function(e){renameSeries(p,idx,stored.name,e.target.value);}} className={INP+" !text-xs w-48"} placeholder="Series name"/>
+                  <select value={stored.role||"competitor"} onChange={function(e){setSeriesField(p,idx,stored.name,{role:e.target.value});}} className={INP+" !text-xs"}>
                     <option value="portfolio">Portfolio</option>
                     <option value="benchmark">Benchmark</option>
                     <option value="competitor">Competitor</option>
                   </select>
-                  <input defaultValue={stored.ticker||""} key={p+"-st-"+idx+"-"+(stored.ticker||"")} onBlur={function(e){setPerfSeries(p,idx,{ticker:e.target.value.trim().toUpperCase()});}} className={INP+" !text-xs w-24"} placeholder="Ticker"/>
+                  <input defaultValue={stored.ticker||""} key={p+"-st-"+idx+"-"+(stored.ticker||"")} onBlur={function(e){setSeriesField(p,idx,stored.name,{ticker:e.target.value.trim().toUpperCase()});}} className={INP+" !text-xs w-24"} placeholder="Ticker"/>
                   <span className="text-[10px] text-gray-500 dark:text-slate-400">MTD ({curMonth}):</span>
                   {stored.role==="portfolio"
                     ? <span className="text-[11px] text-gray-500 dark:text-slate-400 italic">auto</span>
