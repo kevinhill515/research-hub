@@ -313,14 +313,12 @@ export default function DiscussionsPanel({ open, onClose, initialScope, initialP
     return true;
   });
 
-  /* Archive sort: group by scope kind, then most-recently-resolved first
-     within each group. Active/Mentions stay in default chronological order. */
+  /* Archive sort: most-recently-resolved first, flat. Previously we
+     grouped by scope kind first which buried fresh archives behind
+     older ones in other kinds. Group-by is still available via the
+     archiveKind filter pills. */
   if(filter === "archive"){
-    var kindOrder = { portfolio: 0, company: 1, row: 2, cell: 3 };
     filtered = filtered.slice().sort(function(a, b){
-      var ka = kindOrder[a.scope] !== undefined ? kindOrder[a.scope] : 99;
-      var kb = kindOrder[b.scope] !== undefined ? kindOrder[b.scope] : 99;
-      if(ka !== kb) return ka - kb;
       var ra = a.resolvedDate || a.date || "";
       var rb = b.resolvedDate || b.date || "";
       return rb.localeCompare(ra);
