@@ -342,6 +342,48 @@ export function PortfoliosTable(props) {
     }
   }, [portTab, totalMV, totalRep, portCos, perRowData, tickerOwners]);
 
+  /* ---- FX diagnostic: surface positions whose currency conversion is
+     suspect, since silent FX failures are the #1 cause of impossible-looking
+     weights (e.g. a JPY ord showing 15% of a portfolio because its price
+     was never converted to USD).
+       - "assumedUSD": ticker has rep shares but no `currency` field, so
+         toUSD() treats the local price as USD. If the price was actually
+         ¥3,000 or ₩50,000, this massively inflates the position weight.
+       - "missingRate": ticker has a non-USD currency but no fxRates entry
+         for that currency, so toUSD() returns 0 and the position drops
+         out of the portfolio entirely (often shows as 0 weight).
+     Surfaced as a yellow banner the user can click through to fix data. */
+  const fxIssues = useMemo(function () {
+    const assumedUSD = [];
+    const missingRate = [];
+    portCos.forEach(function (c) {
+      (c.tickers || []).forEach(function (t) {
+        const tk = (t.ticker || "").toUpperCase();
+        if (!tk) return;
+        if (tickerOwners[tk] !== c.id) return;
+        const shares = repShares((repData[portTab] || {})[tk]);
+        if (!(shares > 0)) return;
+        const ccyRaw = (t.currency || "").toUpperCase().trim();
+        const price = parseFloat(t.price);
+        if (!ccyRaw) {
+          /* Heuristic: only flag if the price is "big" (>500), since
+             prices that small are plausibly USD even with no ccy field.
+             Big prices (¥3,000, ₩50,000, ¥152) are almost certainly local. */
+          if (isFinite(price) && price > 500) {
+            assumedUSD.push({ name: c.name, ticker: tk, price: price });
+          }
+          return;
+        }
+        if (ccyRaw === "USD") return;
+        const fx = parseFloat((fxRates || {})[ccyRaw]);
+        if (!isFinite(fx) || fx <= 0) {
+          missingRate.push({ name: c.name, ticker: tk, ccy: ccyRaw });
+        }
+      });
+    });
+    return { assumedUSD: assumedUSD, missingRate: missingRate };
+  }, [portCos, repData, fxRates, portTab, tickerOwners]);
+
   /* ---- Portfolio-level discussions button ---- */
   const portAnnotations = annotations.filter(function (a) {
     return !a.resolved && a.scope === "portfolio" && a.portfolio === portTab;
@@ -416,6 +458,35 @@ export function PortfoliosTable(props) {
           🖨 Print
         </button>
       </div>
+
+      {/* FX diagnostic banner — surfaces positions that will be miscounted
+          because of missing currency or missing fx rate. Yellow for
+          assumed-USD (silent inflation); red for missing-rate (silent
+          zeroing). Only shown when there's something to fix. */}
+      {(fxIssues.assumedUSD.length > 0 || fxIssues.missingRate.length > 0) && (
+        <div className="mb-2 space-y-1 no-print">
+          {fxIssues.assumedUSD.length > 0 && (
+            <div className="text-[11px] px-2.5 py-1.5 rounded border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/30 text-amber-900 dark:text-amber-200">
+              <span className="font-semibold">⚠ {fxIssues.assumedUSD.length} position{fxIssues.assumedUSD.length === 1 ? "" : "s"} with no currency set — assumed USD</span>
+              <span className="opacity-75"> (likely overweighted): </span>
+              {fxIssues.assumedUSD.slice(0, 8).map(function (r, i) {
+                return (i > 0 ? ", " : "") + r.ticker + " (" + r.name + ", price " + r.price + ")";
+              }).join("")}
+              {fxIssues.assumedUSD.length > 8 && " …and " + (fxIssues.assumedUSD.length - 8) + " more"}
+            </div>
+          )}
+          {fxIssues.missingRate.length > 0 && (
+            <div className="text-[11px] px-2.5 py-1.5 rounded border border-rose-300 dark:border-rose-700 bg-rose-50 dark:bg-rose-900/30 text-rose-900 dark:text-rose-200">
+              <span className="font-semibold">⚠ {fxIssues.missingRate.length} position{fxIssues.missingRate.length === 1 ? "" : "s"} missing FX rate</span>
+              <span className="opacity-75"> (dropped to 0): </span>
+              {fxIssues.missingRate.slice(0, 8).map(function (r, i) {
+                return (i > 0 ? ", " : "") + r.ticker + " (" + r.name + ", " + r.ccy + ")";
+              }).join("")}
+              {fxIssues.missingRate.length > 8 && " …and " + (fxIssues.missingRate.length - 8) + " more"}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Sort chips */}
       <div className="flex gap-1.5 mb-2 flex-wrap" role="toolbar" aria-label="Sort by">
