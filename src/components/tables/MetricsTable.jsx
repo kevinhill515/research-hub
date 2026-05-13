@@ -12,8 +12,11 @@
  * Row background tints follow the Tier-based coloring used in the
  * Standard view (light mode only, matching CoRow behavior). */
 
-import { useMemo, useState } from 'react';
-import { truncName, getTiers, tierBg, tierPillStyle } from '../../utils/index.js';
+import { useMemo, useState, useEffect, useRef } from 'react';
+import { truncName, getTiers, tierBg, tierPillStyle, todayStr } from '../../utils/index.js';
+import { supaGet, supaUpsert } from '../../api/index.js';
+import { useCompanyContext } from '../../context/CompanyContext.jsx';
+import { useClickOutside } from '../../hooks/useClickOutside.js';
 import FpeRangeMini from '../ui/FpeRangeMini.jsx';
 
 export const METRICS_COLS = [
@@ -205,8 +208,79 @@ export default function MetricsTable({ companies, search, onSelectCompany, dark,
   function setLeeway(v) { setLeeway1(v); try { localStorage.setItem("ccd:metricsLeeway1", v ? "1" : "0"); } catch (e) {} }
   function clearFilters() {
     setFilters({});
+    setActiveScreenId(null);
     try { localStorage.removeItem("ccd:metricsFilters"); } catch (e) {}
   }
+
+  /* Named saved screens — stored in Supabase `meta` so anyone on the
+     team can load them. The user's CURRENT filter state stays in
+     localStorage (per-browser) so two users can have different working
+     screens at once. Save As creates a named entry everyone sees;
+     loading a saved screen overwrites the working state. */
+  const { currentUser } = useCompanyContext();
+  const [savedScreens, setSavedScreens] = useState([]);
+  const [activeScreenId, setActiveScreenId] = useState(null); /* id of currently-loaded screen */
+  const [screenMenuOpen, setScreenMenuOpen] = useState(false);
+  const screenMenuRef = useRef();
+  useClickOutside(screenMenuRef, function () { setScreenMenuOpen(false); }, screenMenuOpen);
+
+  /* Load saved screens once on mount. */
+  useEffect(function () {
+    let cancelled = false;
+    supaGet("meta", "key", "metricsScreens").then(function (row) {
+      if (cancelled || !row || !row.value) return;
+      try {
+        const arr = JSON.parse(row.value);
+        if (Array.isArray(arr)) setSavedScreens(arr);
+      } catch (e) {}
+    }).catch(function () {});
+    return function () { cancelled = true; };
+  }, []);
+
+  function persistScreens(next) {
+    setSavedScreens(next);
+    supaUpsert("meta", { key: "metricsScreens", value: JSON.stringify(next) }).catch(function () {});
+  }
+
+  function loadScreen(s) {
+    setFilters(s.filters || {});
+    if (s.leeway1 !== undefined) setLeeway(!!s.leeway1);
+    setActiveScreenId(s.id);
+    try { localStorage.setItem("ccd:metricsFilters", JSON.stringify(s.filters || {})); } catch (e) {}
+    setScreenMenuOpen(false);
+  }
+
+  function saveAs() {
+    const name = (window.prompt("Save screen as:") || "").trim();
+    if (!name) return;
+    const id = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : (Date.now() + "-" + Math.random().toString(36).slice(2));
+    const entry = {
+      id: id, name: name, filters: filters, leeway1: leeway1,
+      createdBy: currentUser || "", createdAt: todayStr(), updatedAt: todayStr(),
+    };
+    persistScreens(savedScreens.concat([entry]));
+    setActiveScreenId(id);
+    setScreenMenuOpen(false);
+  }
+
+  function saveOverActive() {
+    if (!activeScreenId) return;
+    const next = savedScreens.map(function (s) {
+      if (s.id !== activeScreenId) return s;
+      return Object.assign({}, s, { filters: filters, leeway1: leeway1, updatedAt: todayStr() });
+    });
+    persistScreens(next);
+  }
+
+  function deleteScreen(id) {
+    if (!window.confirm("Delete this screen for everyone?")) return;
+    persistScreens(savedScreens.filter(function (s) { return s.id !== id; }));
+    if (activeScreenId === id) setActiveScreenId(null);
+  }
+
+  const activeScreen = savedScreens.find(function (s) { return s.id === activeScreenId; });
+  /* Has the current filter state diverged from the loaded screen? */
+  const screenDirty = !!activeScreen && JSON.stringify(activeScreen.filters || {}) !== JSON.stringify(filters);
 
   const filtered = useMemo(function () {
     if (!search) return companies;
@@ -320,6 +394,44 @@ export default function MetricsTable({ companies, search, onSelectCompany, dark,
         {activeFilterCount > 0 && (
           <button onClick={clearFilters} className="text-gray-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 underline">Clear filters</button>
         )}
+
+        {/* Saved screens — pulled from team-wide meta. The currently
+            loaded screen name appears on the button; ↻ marks unsaved
+            edits on top of a loaded screen. */}
+        <div className="relative ml-auto" ref={screenMenuRef}>
+          <button
+            onClick={function () { setScreenMenuOpen(function (s) { return !s; }); }}
+            className="px-2.5 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+          >
+            {activeScreen ? "📋 " + activeScreen.name + (screenDirty ? " ↻" : "") : "📋 Saved screens"} ▾
+          </button>
+          {screenMenuOpen && (
+            <div className="absolute right-0 top-[calc(100%+4px)] z-[200] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md shadow-lg min-w-[260px] max-h-[60vh] overflow-y-auto">
+              <div className="px-3 py-1.5 border-b border-slate-200 dark:border-slate-700 flex gap-2">
+                <button onClick={saveAs} disabled={activeFilterCount === 0} className="text-[11px] px-2 py-0.5 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed">Save as…</button>
+                {activeScreen && screenDirty && (
+                  <button onClick={saveOverActive} className="text-[11px] px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 text-gray-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">Save changes</button>
+                )}
+              </div>
+              {savedScreens.length === 0 ? (
+                <div className="px-3 py-2 text-[11px] text-gray-500 dark:text-slate-400 italic">No saved screens yet. Build a filter and click Save as.</div>
+              ) : (
+                savedScreens.slice().sort(function (a, b) { return (a.name || "").localeCompare(b.name || ""); }).map(function (s) {
+                  const active = s.id === activeScreenId;
+                  return (
+                    <div key={s.id} className={"flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-800 " + (active ? "bg-blue-50 dark:bg-blue-900/30" : "")}>
+                      <span onClick={function () { loadScreen(s); }} className="flex-1 cursor-pointer">
+                        <span className={"text-xs " + (active ? "font-semibold text-blue-800 dark:text-blue-300" : "text-gray-900 dark:text-slate-100")}>{s.name}</span>
+                        <span className="text-[10px] text-gray-400 dark:text-slate-500 ml-1.5">{Object.keys(s.filters || {}).length} criteri{Object.keys(s.filters || {}).length === 1 ? "on" : "a"}{s.createdBy ? " · " + s.createdBy : ""}</span>
+                      </span>
+                      <span onClick={function () { deleteScreen(s.id); }} title="Delete screen" className="text-[11px] text-red-500 dark:text-red-400 cursor-pointer hover:text-red-700 dark:hover:text-red-300">×</span>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="text-xs text-gray-500 dark:text-slate-400 mb-2">
