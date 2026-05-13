@@ -19,9 +19,15 @@
          logo centered on a black background, generated from
          public/favicon.png. Android/PWA reads icon-192/512 via the
          manifest below. -->
-    <link rel="icon" type="image/png" href="./favicon.png" />
-    <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
-    <link rel="manifest" href="./manifest.webmanifest" />
+    <!-- Absolute paths (leading slash) because iOS's "Add to Home
+         Screen" lookup is fussy about ./relative URLs in some
+         contexts. Also declare apple-touch-icon-precomposed as a
+         belt-and-suspenders fallback — older iOS treats it as a
+         distinct hint and falls back to defaults if missing. -->
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="apple-touch-icon-precomposed" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#000000" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
