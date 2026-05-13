@@ -426,6 +426,34 @@ export function CompanyProvider({children}){
     lastSentRef.current[key]=json;
     return true;
   }
+  /* One-shot snapshot on ready=true. Without this, a transiently-failed
+     fetch (supaGet returns null on network blips or 5xx, indistinguishable
+     from a missing row) leaves state at its empty initial. Then the
+     auto-save effects below fire, see state !== lastSentRef (which is
+     undefined), and upload the empty initial OVER the real data in
+     Supabase. This snapshot captures whatever state landed after load,
+     so the first auto-save tick compares equal and skips. Critical for
+     perfData (reported lost), breakdownHistory (heavy), benchmarkWeights,
+     annotations, feedback, researchAssignments, entryComments, alertRules,
+     fxRates, repData, specialWeights, lastPriceUpdate. */
+  useEffect(function(){
+    if (!ready) return;
+    lastSentRef.current = Object.assign({}, lastSentRef.current, {
+      library:              JSON.stringify(saved),
+      perfData:             JSON.stringify(perfData),
+      breakdownHistory:     JSON.stringify(breakdownHistory),
+      benchmarkWeights:     JSON.stringify(benchmarkWeights),
+      annotations:          JSON.stringify(annotations),
+      feedback:             JSON.stringify(feedback),
+      researchAssignments:  JSON.stringify(researchAssignments),
+      entryComments:        JSON.stringify(entryComments),
+      alertRules:           JSON.stringify(alertRules),
+      fxRates:              JSON.stringify(fxRates),
+      repData:              JSON.stringify(repData),
+      specialWeights:       JSON.stringify(specialWeights),
+      lastPriceUpdate:      lastPriceUpdate || "",
+    });
+  }, [ready]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(saved);if(sendIfChanged("library",function(){return j;}))supaUpsert("library",{id:"shared",data:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[saved,ready]);
   /* Per-company write tracking. Replaces the old single-blob upsert so
      editing one company's name no longer re-uploads all 325. The ref
