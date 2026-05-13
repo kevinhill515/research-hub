@@ -18,9 +18,28 @@ export async function supaUpsert(table,obj){return fetch(SUPA_URL+"/rest/v1/"+ta
    "shared" row after migrating to per-row companies storage. */
 export async function supaDelete(table,key,val){return fetch(SUPA_URL+"/rest/v1/"+table+"?"+key+"=eq."+encodeURIComponent(val),{method:"DELETE",headers:{"apikey":"sb_publishable_7kqbGZlL_im9kIpgFXLA-A_9CdqsyiT","Authorization":"Bearer sb_publishable_7kqbGZlL_im9kIpgFXLA-A_9CdqsyiT"}});}
 
-export var ANTHROPIC_KEY=import.meta.env.VITE_ANTHROPIC_KEY||"";
+/* Anthropic API key — stored per-browser in localStorage and NEVER
+   bundled into the production JS. Reading the env var at build time
+   embedded the key in the public Pages bundle (GitHub's secret
+   scanning correctly blocked the deploy). Now: each user pastes
+   their own key into the in-app Settings modal once; it persists
+   per-browser. No secrets in any build artifact.
+   ANTHROPIC_KEY is a live-binding export — apiCall reads it on each
+   call so users picking up a new key don't need to reload. */
+export var ANTHROPIC_KEY = "";
+const ANTHROPIC_KEY_LS = "ccd:anthropicKey";
+try { ANTHROPIC_KEY = localStorage.getItem(ANTHROPIC_KEY_LS) || ""; } catch (e) {}
+export function setAnthropicKey(k) {
+  ANTHROPIC_KEY = (k || "").trim();
+  try {
+    if (ANTHROPIC_KEY) localStorage.setItem(ANTHROPIC_KEY_LS, ANTHROPIC_KEY);
+    else localStorage.removeItem(ANTHROPIC_KEY_LS);
+  } catch (e) {}
+}
+export function hasAnthropicKey() { return !!ANTHROPIC_KEY; }
 
 export async function apiCall(system,content,maxTokens){
+  if(!ANTHROPIC_KEY) throw new Error("Anthropic API key not set. Open Settings (top-right ⚙) and paste your key.");
   var mt=maxTokens||1200;var blocks=typeof content==="string"?[{type:"text",text:content}]:content;
   var res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":ANTHROPIC_KEY,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:mt,system,messages:[{role:"user",content:blocks}]})});
   var data=await res.json();if(data.error)throw new Error(JSON.stringify(data.error));
