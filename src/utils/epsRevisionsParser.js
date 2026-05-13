@@ -104,27 +104,49 @@ function iso(y, mo, d) {
   return String(y).padStart(4, "0") + "-" + String(mo).padStart(2, "0") + "-" + String(d).padStart(2, "0");
 }
 
+/* Generate 13 last-of-month dates ending in the current month.
+   Used when the paste has no header row — the absolute dates don't
+   really matter (the chart just plots monthly snapshots), but having
+   plausible recent dates keeps the axis labels useful. */
+function defaultDates(count) {
+  const out = [];
+  const t = new Date();
+  for (let i = count - 1; i >= 0; i--) {
+    /* End-of-month for (currentMonth - i): day=0 of next month. */
+    const d = new Date(t.getFullYear(), t.getMonth() - i + 1, 0);
+    out.push(iso(d.getFullYear(), d.getMonth() + 1, d.getDate()));
+  }
+  return out;
+}
+
 export function parseEpsRevisionsPaste(text) {
   const lines = (text || "").split(/\r?\n/).filter(function (l) { return l.trim(); });
-  if (lines.length < 2) {
-    return { error: "Need a header row and at least one data row." };
+  if (lines.length < 1) {
+    return { error: "Empty paste — need at least one data row." };
   }
 
-  /* Row 1 = header. Pull dates from columns E1..Q1 (indices 4..16). */
-  const header = splitRow(lines[0]);
-  const dates = [];
+  /* Header is now optional. We try to parse the first row's
+     columns E..Q (indices 4..16) as dates; if 6+ parse, treat it as
+     the header (and skip when reading data rows). Otherwise the
+     first row IS a data row and we auto-generate 13 last-of-month
+     dates ending in the current month. This matches the lenient
+     behavior of every other manual upload. */
+  let firstDataRow = 0;
+  let dates = [];
+  const firstRow = splitRow(lines[0]);
+  const headerDates = [];
   for (let i = 4; i <= 16; i++) {
-    const d = parseDate(header[i]);
-    if (d) dates.push(d);
+    const d = parseDate(firstRow[i]);
+    if (d) headerDates.push(d);
   }
-  if (dates.length < 6) {
-    return {
-      error: "Couldn't find a date row in cells E1:Q1. Expected 13 monthly dates (oldest first) starting at column E.",
-    };
+  if (headerDates.length >= 6) {
+    dates = headerDates;
+    firstDataRow = 1;
+  } else {
+    dates = defaultDates(13);
+    firstDataRow = 0;
   }
 
-  /* Even if user's E1:Q1 has fewer than 13 dates, we still use that
-     count consistently across all four horizons. */
   const N = dates.length;
 
   /* Each horizon block = 1 anchor + N monthly values. Layout assumes:
@@ -137,7 +159,7 @@ export function parseEpsRevisionsPaste(text) {
   const rows = [];
   let dropped = 0;
 
-  for (let r = 1; r < lines.length; r++) {
+  for (let r = firstDataRow; r < lines.length; r++) {
     const cells = splitRow(lines[r]);
     const ticker = (cells[0] || "").trim();
     const name = (cells[2] || "").trim();

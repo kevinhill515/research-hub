@@ -83,10 +83,25 @@ describe("parseEpsRevisionsPaste", function () {
     expect(r.rows[0].series[0].monthly[12]).toBeCloseTo(7.6, 2);  /* still parses */
   });
 
-  it("returns error when no date header is present", function () {
-    const data = "Ticker\t\tCompany\tEPS\nSU-FR\t\tSchneider\t7.85";
-    const r = parseEpsRevisionsPaste(data);
-    expect(r.error).toBeDefined();
+  it("works without a date header — synthesizes 13 monthly dates", function () {
+    /* 59 columns: A=ticker, B (blank), C=name, D=EPS0 anchor,
+       E..Q=13 EPS0 monthly, R=EPS1 anchor, S..AE=13 EPS1 monthly,
+       AF=EPS2 anchor, AG..AS=13 EPS2 monthly, AT=EPS3 anchor,
+       AU..BG=13 EPS3 monthly. */
+    const cols = ["SU-FR", "", "Schneider", "7.85"];
+    for (let h = 0; h < 4; h++) {
+      for (let i = 0; i < 13; i++) cols.push(String(7 + h * 0.1 + i * 0.01));
+      if (h < 3) cols.push(String(8 + h)); /* next anchor */
+    }
+    const r = parseEpsRevisionsPaste(cols.join("\t"));
+    expect(r.error).toBeUndefined();
+    expect(r.dates.length).toBe(13);
+    expect(r.rows.length).toBe(1);
+    expect(r.rows[0].ticker).toBe("SU-FR");
+    /* Last date should be in the current month (year-month match). */
+    const t = new Date();
+    const ym = t.getFullYear() + "-" + String(t.getMonth() + 1).padStart(2, "0");
+    expect(r.dates[12].startsWith(ym)).toBe(true);
   });
 
   it("drops rows with no ticker or name", function () {
