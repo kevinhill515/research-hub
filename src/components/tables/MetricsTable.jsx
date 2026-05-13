@@ -134,6 +134,40 @@ function TierCell({ tier }) {
   );
 }
 
+/* Kinds that can be numerically screened. Tier / Name / FPE-range
+   aren't comparable so they don't get a filter row. */
+const SCREENABLE_KINDS = new Set(["bn", "x", "pct", "perf", "ratio"]);
+
+/* Normalize the user's typed value to match the storage scale of the
+   column. Percent / perf columns store decimals (0.07 = 7%), so a user
+   typing "7" means 0.07. All other numeric kinds compare 1:1. */
+function userInputToStorageScale(rawInput, kind) {
+  if (rawInput === "" || rawInput == null) return null;
+  const cleaned = String(rawInput).replace(/[%,\s]/g, "");
+  const n = parseFloat(cleaned);
+  if (!isFinite(n)) return null;
+  if (kind === "pct" || kind === "perf") return n / 100;
+  return n;
+}
+
+/* Given a cell's raw stored value + a filter spec, returns:
+   - "pass"   the cell satisfies the constraint
+   - "fail"   the cell exists but breaks the constraint
+   - "none"   no filter on this column, or cell has no value to compare
+*/
+function evalCell(rawValue, filter, kind) {
+  if (!filter || !filter.op || filter.value === "" || filter.value == null) return "none";
+  const threshold = userInputToStorageScale(filter.value, kind);
+  if (threshold === null) return "none";
+  const n = typeof rawValue === "number" ? rawValue : parseFloat(rawValue);
+  if (!isFinite(n)) return "fail"; /* missing data counts as a fail */
+  if (filter.op === ">") return n > threshold ? "pass" : "fail";
+  if (filter.op === "<") return n < threshold ? "pass" : "fail";
+  if (filter.op === ">=") return n >= threshold ? "pass" : "fail";
+  if (filter.op === "<=") return n <= threshold ? "pass" : "fail";
+  return "none";
+}
+
 export default function MetricsTable({ companies, search, onSelectCompany, dark, visible }) {
   /* null sortKey = use parent-supplied order (Standard sort). */
   const [sortKey, setSortKey] = useState(null);
@@ -141,6 +175,38 @@ export default function MetricsTable({ companies, search, onSelectCompany, dark,
   /* Visibility is controlled by the parent (unified Columns picker in
      App.jsx). Fall back to the default set if not provided. */
   const effectiveVisible = visible || DEFAULT_METRICS_VISIBLE;
+
+  /* Screen state.
+     - filters: per-column { op, value }. Sticky across re-renders.
+     - screenActive: when true, rows that don't pass are hidden.
+       When false, all rows render but failing cells are tinted red so
+       the user can preview which names would survive a screen.
+     - leeway1: allow ONE failed condition per company (escape-hatch for
+       borderline candidates).
+     Restored from localStorage so a half-built screen survives page
+     reloads — set up once and refine over multiple sessions. */
+  const [filters, setFilters] = useState(function () {
+    try { return JSON.parse(localStorage.getItem("ccd:metricsFilters") || "{}"); } catch (e) { return {}; }
+  });
+  const [screenActive, setScreenActive] = useState(false);
+  const [leeway1, setLeeway1] = useState(function () {
+    try { return localStorage.getItem("ccd:metricsLeeway1") === "1"; } catch (e) { return false; }
+  });
+  function updateFilter(key, patch) {
+    setFilters(function (prev) {
+      const next = Object.assign({}, prev);
+      const cur = Object.assign({ op: ">", value: "" }, prev[key] || {}, patch);
+      if (!cur.value) delete next[key];
+      else next[key] = cur;
+      try { localStorage.setItem("ccd:metricsFilters", JSON.stringify(next)); } catch (e) {}
+      return next;
+    });
+  }
+  function setLeeway(v) { setLeeway1(v); try { localStorage.setItem("ccd:metricsLeeway1", v ? "1" : "0"); } catch (e) {} }
+  function clearFilters() {
+    setFilters({});
+    try { localStorage.removeItem("ccd:metricsFilters"); } catch (e) {}
+  }
 
   const filtered = useMemo(function () {
     if (!search) return companies;
@@ -151,10 +217,44 @@ export default function MetricsTable({ companies, search, onSelectCompany, dark,
     });
   }, [companies, search]);
 
+  /* Per-(company, col) pass/fail map and per-company fail count.
+     Precompute once so cell rendering is cheap. */
+  const screenStats = useMemo(function () {
+    const activeCols = Object.keys(filters).filter(function (k) {
+      const col = METRICS_COLS.find(function (c) { return c.key === k; });
+      return col && SCREENABLE_KINDS.has(col.kind) && filters[k].value !== "";
+    });
+    const byCo = {};
+    filtered.forEach(function (c) {
+      let fails = 0;
+      const cell = {};
+      activeCols.forEach(function (k) {
+        const col = METRICS_COLS.find(function (cc) { return cc.key === k; });
+        const v = getCellValue(c, k);
+        const status = evalCell(v, filters[k], col.kind);
+        cell[k] = status;
+        if (status === "fail") fails++;
+      });
+      const passes = leeway1 ? fails <= 1 : fails === 0;
+      byCo[c.id] = { cell: cell, fails: fails, passes: passes, activeColCount: activeCols.length };
+    });
+    return { byCo: byCo, activeColCount: activeCols.length };
+  }, [filtered, filters, leeway1]);
+
+  /* Apply screen if user has activated it. Skip when no active filters
+     so toggling Screen on with no filters doesn't hide everything. */
+  const screened = useMemo(function () {
+    if (!screenActive || screenStats.activeColCount === 0) return filtered;
+    return filtered.filter(function (c) {
+      const s = screenStats.byCo[c.id];
+      return s && s.passes;
+    });
+  }, [filtered, screenActive, screenStats]);
+
   const rendered = useMemo(function () {
-    if (sortKey === null) return filtered; /* parent order */
+    if (sortKey === null) return screened; /* parent order */
     const mult = sortDir === "asc" ? 1 : -1;
-    return filtered.slice().sort(function (a, b) {
+    return screened.slice().sort(function (a, b) {
       const va = getCellValue(a, sortKey);
       const vb = getCellValue(b, sortKey);
       if (sortKey === "__name" || sortKey === "__tier") {
@@ -169,7 +269,7 @@ export default function MetricsTable({ companies, search, onSelectCompany, dark,
       if (bBad) return -1;
       return mult * (na - nb);
     });
-  }, [filtered, sortKey, sortDir]);
+  }, [screened, sortKey, sortDir]);
 
   function handleHeaderClick(key) {
     const col = METRICS_COLS.find(function (c) { return c.key === key; });
@@ -190,8 +290,38 @@ export default function MetricsTable({ companies, search, onSelectCompany, dark,
   const visibleCols = METRICS_COLS.filter(function (c) { return effectiveVisible.has(c.key); });
   const hasMetrics = rendered.filter(function (c) { return c.metrics; }).length;
 
+  const activeFilterCount = screenStats.activeColCount;
+  const passingCount = activeFilterCount > 0 ? filtered.filter(function (c) { return (screenStats.byCo[c.id] || {}).passes; }).length : filtered.length;
+
   return (
     <div>
+      {/* Screen toolbar — sits above the table so the user can toggle
+          screening + leeway without scrolling away from the data. */}
+      <div className="flex items-center gap-2 flex-wrap mb-2 text-xs">
+        <button
+          onClick={function () { setScreenActive(function (s) { return !s; }); }}
+          disabled={activeFilterCount === 0}
+          className={"px-3 py-1 rounded-md font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed " + (screenActive
+            ? "bg-emerald-600 text-white hover:bg-emerald-700"
+            : "border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800")}
+          title={activeFilterCount === 0 ? "Set at least one filter on a column header" : (screenActive ? "Showing names that pass the screen — click to show all" : "Filter to names that pass all set criteria")}
+        >
+          {screenActive ? "✓ Screen on" : "Screen"}
+        </button>
+        <label className="inline-flex items-center gap-1.5 cursor-pointer select-none text-gray-700 dark:text-slate-300">
+          <input type="checkbox" checked={leeway1} onChange={function (e) { setLeeway(e.target.checked); }} className="cursor-pointer" />
+          <span>Allow 1 fail</span>
+        </label>
+        {activeFilterCount > 0 && (
+          <span className="text-gray-500 dark:text-slate-400">
+            {activeFilterCount} criteri{activeFilterCount === 1 ? "on" : "a"} active · <span className="font-semibold text-gray-700 dark:text-slate-300">{passingCount}</span> of {filtered.length} pass{leeway1 ? " (≤1 fail)" : ""}
+          </span>
+        )}
+        {activeFilterCount > 0 && (
+          <button onClick={clearFilters} className="text-gray-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 underline">Clear filters</button>
+        )}
+      </div>
+
       <div className="text-xs text-gray-500 dark:text-slate-400 mb-2">
         {hasMetrics} of {rendered.length} companies have metrics data.
       </div>
@@ -230,6 +360,48 @@ export default function MetricsTable({ companies, search, onSelectCompany, dark,
                     style={{ minWidth: col.w }}
                   >
                     {col.label}{arrow}
+                  </th>
+                );
+              })}
+            </tr>
+            {/* Filter row — one cell per column. Screenable columns get
+                an op + value input; others are blank. Inputs stop click
+                propagation so typing doesn't trigger header sort. */}
+            <tr>
+              {visibleCols.map(function (col) {
+                const isName = col.kind === "name";
+                const screenable = SCREENABLE_KINDS.has(col.kind);
+                const f = filters[col.key] || { op: ">", value: "" };
+                return (
+                  <th
+                    key={col.key + "-flt"}
+                    className={"sticky bg-slate-50 dark:bg-slate-800 px-1 py-1 border-b border-slate-200 dark:border-slate-700 " + (isName ? "left-0 z-20 " : "z-10 ")}
+                    style={{ top: 28, minWidth: col.w }}
+                  >
+                    {screenable ? (
+                      <div className="flex items-center gap-0.5" onClick={function (e) { e.stopPropagation(); }}>
+                        <select
+                          value={f.op}
+                          onChange={function (e) { updateFilter(col.key, { op: e.target.value }); }}
+                          className="text-[10px] px-0.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 font-mono"
+                        >
+                          <option value=">">&gt;</option>
+                          <option value="<">&lt;</option>
+                          <option value=">=">≥</option>
+                          <option value="<=">≤</option>
+                        </select>
+                        <input
+                          type="text"
+                          value={f.value}
+                          onChange={function (e) { updateFilter(col.key, { value: e.target.value }); }}
+                          placeholder={col.kind === "pct" || col.kind === "perf" ? "%" : (col.kind === "bn" ? "B" : col.kind === "x" ? "x" : "")}
+                          className="text-[10px] w-full px-1 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 font-mono"
+                          style={{ minWidth: 32 }}
+                        />
+                      </div>
+                    ) : (
+                      <span />
+                    )}
                   </th>
                 );
               })}
@@ -284,11 +456,22 @@ export default function MetricsTable({ companies, search, onSelectCompany, dark,
                     const v = getCellValue(c, col.key);
                     const text = fmt(v, col.kind);
                     const style = col.kind === "perf" ? perfStyle(v) : null;
+                    /* Screen tint: failing cells get a red overlay
+                       regardless of whether Screen is active, so the
+                       user can preview which cells break which
+                       criteria. The perf-style tint is replaced (not
+                       layered) so a perf cell that also fails reads
+                       as "failed" rather than "green and red." */
+                    const screenStatus = (screenStats.byCo[c.id] || { cell: {} }).cell[col.key];
+                    const cellStyle = screenStatus === "fail"
+                      ? Object.assign({ minWidth: col.w }, { background: "rgba(220,38,38,0.22)", color: dark ? "#fca5a5" : "#7f1d1d", fontWeight: 600 })
+                      : Object.assign({ minWidth: col.w }, style || {});
                     return (
                       <td
                         key={col.key}
                         className="px-2 py-1 text-right font-mono text-gray-700 dark:text-slate-300 whitespace-nowrap"
-                        style={Object.assign({ minWidth: col.w }, style || {})}
+                        style={cellStyle}
+                        title={screenStatus === "fail" && filters[col.key] ? "Fails " + filters[col.key].op + " " + filters[col.key].value : undefined}
                       >
                         {text}
                       </td>
