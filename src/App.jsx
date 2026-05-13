@@ -271,22 +271,34 @@ export default function App(){
         <button onClick={function(){setDark(function(d){return !d;});}} className={BTN}>{dark?"\u2600 Light":"\uD83C\uDF19 Dark"}</button>
         <button onClick={function(){setCompact(function(c){var next=!c;setVisibleCols(next?COMPACT_COLS:new Set(ALL_COLS));return next;});}} className={BTN}>{compact?"\u229E Default":"\u229F Compact"}</button>
         <button onClick={function(){
-          /* Full hard reload: clears any service-worker / Cache Storage
-             entries first (so a new deploy's bundle is pulled fresh
-             from the network), then reloads the page. Without this,
-             users could be working off a stale JS bundle for hours
-             after a deploy because the browser respects the disk
-             cache for the index.html \u2192 assets references. */
+          /* Hard reload that picks up new deploys. Strategy:
+             1. Bust any service-worker / Cache Storage entries (some
+                browsers cache HTML+assets there).
+             2. Force a no-cache reload by navigating to the same URL
+                with a fresh cache-busting query param. Plain
+                location.reload() respects HTTP caches; query change
+                forces the browser to round-trip.
+             3. Hard timeout: if caches.keys() hangs (seen on some
+                Safari/Firefox builds), reload anyway after 1.2s so
+                users don't get stuck staring at the spinner. */
+          var reloaded = false;
+          function doReload(){
+            if (reloaded) return;
+            reloaded = true;
+            var u = new URL(window.location.href);
+            u.searchParams.set("_r", Date.now().toString(36));
+            window.location.replace(u.toString());
+          }
+          setTimeout(doReload, 1200);
           try {
             if (typeof caches !== "undefined" && caches.keys) {
               caches.keys().then(function(keys){
-                Promise.all(keys.map(function(k){return caches.delete(k);}))
-                  .finally(function(){ window.location.reload(); });
-              });
+                return Promise.all(keys.map(function(k){return caches.delete(k);}));
+              }).finally(doReload).catch(doReload);
               return;
             }
           } catch (e) {}
-          window.location.reload();
+          doReload();
         }} className={BTN} title="Refresh page from network \u2014 picks up any new deploy + reloads all data">{"\u21BA"} Reload</button>
         <button onClick={function(){setShowShortcuts(true);}} className={BTN}>? Keys</button>
         <button onClick={function(){setShowDataPanel(function(s){return !s;});}} className={BTN}>{showDataPanel?"Close":"Import/Export"}</button>
