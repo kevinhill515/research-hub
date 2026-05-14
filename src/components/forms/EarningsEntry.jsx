@@ -26,7 +26,16 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
   /* fxRates is needed to convert local-currency sales/EPS into USD for
      the secondary line on the stats strip. fxRates[ccy] is stored as
      local-per-USD (so amountUSD = amountLocal / fxRates[ccy]). */
-  var { fxRates } = useCompanyContext();
+  var { fxRates, submitTpApproval, tpApprovals } = useCompanyContext();
+  /* Local UI feedback after submitting a TP change for approval. Set
+     to a short status string for ~3s, then cleared. Avoids needing a
+     toast system. */
+  var [tpSubmitMsg, setTpSubmitMsg] = useState("");
+  /* True when this entry has already spawned a pending approval — used
+     to disable the submit button and avoid duplicate requests. */
+  var hasPending = (tpApprovals||[]).some(function(r){
+    return r.earningsEntryId === entry.id && r.status === "pending";
+  });
   var [e, setE] = useState(entry);
   var [open, setOpen] = useState(entry.open || false);
   /* Auto-expand for print so all entries are visible in the printout.
@@ -428,13 +437,62 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
           </div>
 
           {/* Actions */}
-          <div className="flex gap-2 pt-2.5 border-t border-slate-200 dark:border-slate-700">
+          <div className="flex gap-2 pt-2.5 border-t border-slate-200 dark:border-slate-700 flex-wrap items-center">
             <button
               onClick={function () { onSave(e); setOpen(false); }}
               className="text-xs px-4 py-1.5 font-semibold bg-blue-700 text-white border-none rounded-md cursor-pointer hover:bg-blue-800 transition-colors"
             >
               Save entry
             </button>
+            {/* Submit TP change for approval. Only enabled when the user
+                has actually proposed a new TP. Saves the entry first (so
+                the rationale + takeaway are persisted) and then queues an
+                approval record linked to this entry. We keep EPS constant
+                and back into a new PE so the operational TP becomes the
+                suggested value — the approver can still adjust PE/EPS
+                breakdown after the fact on the Valuation card. */}
+            {(function(){
+              var newTpNum = parseFloat(e.newTP);
+              var canSubmit = e.tpChange !== "Unchanged" && isFinite(newTpNum) && newTpNum > 0 && !hasPending;
+              return (
+                <button
+                  type="button"
+                  onClick={function(){
+                    if(!canSubmit||!company) return;
+                    var v = company.valuation || {};
+                    var currentPE = parseFloat(v.pe);
+                    var currentEPS = parseFloat(v.eps1);
+                    var currentTP = (isFinite(currentPE)&&isFinite(currentEPS)) ? currentPE*currentEPS : null;
+                    /* Keep EPS, change PE to back into the requested TP. If
+                       EPS isn't set, just store toTP and let the approver
+                       fill in PE/EPS manually on approval. */
+                    var toPE = isFinite(currentEPS)&&currentEPS>0 ? newTpNum/currentEPS : null;
+                    onSave(e); /* persist the entry first */
+                    submitTpApproval({
+                      companyId: company.id,
+                      fromPE: isFinite(currentPE) ? currentPE : null,
+                      fromEPS: isFinite(currentEPS) ? currentEPS : null,
+                      fromTP: currentTP,
+                      toPE: toPE,
+                      toEPS: isFinite(currentEPS) ? currentEPS : null,
+                      toTP: newTpNum,
+                      rationale: e.tpRationale || e.extendedTakeaway || "",
+                      earningsEntryId: entry.id,
+                    });
+                    setTpSubmitMsg("✓ Submitted for approval");
+                    setTimeout(function(){setTpSubmitMsg("");}, 3000);
+                  }}
+                  disabled={!canSubmit}
+                  className={"text-xs px-3 py-1.5 font-semibold rounded-md transition-colors " + (canSubmit ? "bg-amber-600 text-white border-none cursor-pointer hover:bg-amber-700" : "bg-slate-200 dark:bg-slate-700 text-gray-400 dark:text-slate-500 border-none cursor-not-allowed")}
+                  title={hasPending ? "A TP change for this entry is already pending review" : "Submit the proposed TP for approval by another teammate"}
+                >
+                  {hasPending ? "TP change pending" : "Submit TP change for approval"}
+                </button>
+              );
+            })()}
+            {tpSubmitMsg && (
+              <span className="text-[11px] text-emerald-700 dark:text-emerald-300">{tpSubmitMsg}</span>
+            )}
             <button
               onClick={function () { setOpen(false); }}
               className="text-xs px-3 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"

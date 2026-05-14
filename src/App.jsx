@@ -8,7 +8,7 @@ import AlertsPanel from './components/dashboard/AlertsPanel.jsx';
 import ThisWeekEarnings from './components/dashboard/ThisWeekEarnings.jsx';
 import { PriceAgeIndicator, BarRow, PillEl, PortPicker, SectionBlock, StatusPill, DiffView } from './components/ui/index.js';
 import { SectionEditTab, EarningsEntry, NotesCell, ActionCell, FlagCell, DatePicker } from './components/forms/index.js';
-import { GlobalSearch, TemplateSearch, QuickUploadModal, DiscussionsPanel } from './components/modals/index.js';
+import { GlobalSearch, TemplateSearch, QuickUploadModal, DiscussionsPanel, TpApprovalsPanel } from './components/modals/index.js';
 import { CoRow, OverlapMatrix } from './components/tables/index.js';
 import { EarningsCalendar } from './components/calendar/index.js';
 import { useCompanyContext } from './context/CompanyContext.jsx';
@@ -37,7 +37,7 @@ import { FeedbackTab } from './components/feedback/FeedbackTab.jsx';
 
 /* Components extracted to src/components/ — see barrel index.js files in each subdirectory */
 export default function App(){
-  const { companies, setCompanies, saved, setSaved, ready, setReady, loadStatus, setLoadStatus, loadFailed, lastPriceUpdate, setLastPriceUpdate, lastPriceUpdatedBy, setLastPriceUpdatedBy, entryComments, setEntryComments, newCommentText, setNewCommentText, repData, setRepData, fxRates, setFxRates, specialWeights, setSpecialWeights, benchmarkWeights, alertRules, currentUser, setCurrentUser, dark, setDark, authed, setAuthed, showUserPicker, setShowUserPicker, calLastUpdated, setCalLastUpdated, calLastUpdatedBy, setCalLastUpdatedBy, repLastUpdated, setRepLastUpdated, fxLastUpdated, setFxLastUpdated, copied, setCopied, loadFromStorage, addComment, deleteComment, updateCo, cp, annotations, updateTargetWeight, addTargetHistoryEntry, deleteTargetHistoryEntry, addTransaction, deleteTransaction, setTxInitOverride, updateInitiatedDate } = useCompanyContext();
+  const { companies, setCompanies, saved, setSaved, ready, setReady, loadStatus, setLoadStatus, loadFailed, tpApprovals, lastPriceUpdate, setLastPriceUpdate, lastPriceUpdatedBy, setLastPriceUpdatedBy, entryComments, setEntryComments, newCommentText, setNewCommentText, repData, setRepData, fxRates, setFxRates, specialWeights, setSpecialWeights, benchmarkWeights, alertRules, currentUser, setCurrentUser, dark, setDark, authed, setAuthed, showUserPicker, setShowUserPicker, calLastUpdated, setCalLastUpdated, calLastUpdatedBy, setCalLastUpdatedBy, repLastUpdated, setRepLastUpdated, fxLastUpdated, setFxLastUpdated, copied, setCopied, loadFromStorage, addComment, deleteComment, updateCo, cp, annotations, updateTargetWeight, addTargetHistoryEntry, deleteTargetHistoryEntry, addTransaction, deleteTransaction, setTxInitOverride, updateInitiatedDate } = useCompanyContext();
 
   /* Memoize the per-company warn-alerts map so CoRow can read its own
      entry without re-evaluating alerts on every render. Recomputes only
@@ -118,6 +118,7 @@ export default function App(){
   const [calFilter,setCalFilter]=useState("All");
   const [calPortFilter,setCalPortFilter]=useState("All");
   const [showDiscussions,setShowDiscussions]=useState(false);
+  const [showTpApprovals,setShowTpApprovals]=useState(false);
   const [discussionScope,setDiscussionScope]=useState({scope:null,portfolio:null,companyId:null});
   function openDiscussions(scope){
     setDiscussionScope(scope||{scope:null,portfolio:null,companyId:null});
@@ -312,6 +313,7 @@ export default function App(){
       {showTmplSearch&&<TemplateSearch companies={companies.filter(function(c){return Object.keys(c.sections||{}).length>0;})} onSelect={function(c,q){setSelCo(c);setTab("companies");setCoView("dashboard");setTmplHighlight(q);setTmplSearch(q);}} onClose={function(){setShowTmplSearch(false);}}/>} {showGlobalSearch&&<GlobalSearch companies={companies} saved={saved} onSelectCompany={function(c){setSelCo(c);setTab("companies");setCoView("dashboard");}} onSelectEntry={function(s){setTab("library");setExpanded(s.id);}} onClose={function(){setShowGlobalSearch(false);}}/>}
       {quickUploadCo&&<QuickUploadModal company={quickUploadCo} onClose={function(){setQuickUploadCo(null);}} onAccept={acceptQuickDiff}/>}
       <DiscussionsPanel open={showDiscussions} onClose={function(){setShowDiscussions(false);}} initialScope={discussionScope.scope} initialPortfolio={discussionScope.portfolio} initialCompanyId={discussionScope.companyId} companies={companies}/>
+      <TpApprovalsPanel open={showTpApprovals} onClose={function(){setShowTpApprovals(false);}}/>
 
       <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 shadow-sm pb-2 -mx-4 -mt-4 px-4 pt-4 mb-2">
         {/* Storage row \u2014 own line at the top so it never competes with
@@ -326,6 +328,22 @@ export default function App(){
         <div className="flex gap-2 items-center flex-wrap">
         <button onClick={function(){setShowGlobalSearch(true);}} className={BTN}>{"\uD83D\uDD0D"} Search</button> <button onClick={function(){setShowTmplSearch(true);}} className={BTN}>Templates</button>
         {(function(){var active=annotations.filter(function(a){return !a.resolved;});var mentionCount=active.filter(function(a){return ((a.mentions||[]).indexOf(currentUser)>=0||((a.replies||[]).some(function(r){return(r.mentions||[]).indexOf(currentUser)>=0;})))&&((a.readBy||[]).indexOf(currentUser)<0);}).length;var todayIso=new Date().toISOString().slice(0,10);var dueCount=annotations.filter(function(a){return a.followUpDate&&a.followUpDate<=todayIso;}).length;return(<button onClick={function(){openDiscussions();}} className={BTN+" relative"}>{"\uD83D\uDCAC"} Discussions{dueCount>0&&<span className="ml-1 text-[10px] px-1.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 font-semibold" title={dueCount+" follow-up"+(dueCount===1?"":"s")+" due"}>\uD83D\uDCC5 {dueCount}</span>}{active.length>0&&<span className="ml-1 text-[10px] px-1.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-semibold">{active.length}</span>}{mentionCount>0&&<span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-red-500"/>}</button>);})()}
+        {(function(){
+          /* TP Approvals button \u2014 mirrors the Discussions chip pattern.
+             Amber count = total pending. Red dot when there's a pending
+             record this user has the power to act on (suggester \u2260 me).
+             Unread tracking reuses readBy[], so the dot clears the next
+             time the panel is opened and the cards mark themselves read. */
+          var pending=(tpApprovals||[]).filter(function(r){return r.status==="pending";});
+          var actionable=pending.filter(function(r){return r.suggestedBy!==currentUser&&!(r.readBy||[]).includes(currentUser);}).length;
+          return (
+            <button onClick={function(){setShowTpApprovals(true);}} className={BTN+" relative"} title="TP changes awaiting review">
+              {"\uD83C\uDFAF"} TP Approvals
+              {pending.length>0 && <span className="ml-1 text-[10px] px-1.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 font-semibold">{pending.length}</span>}
+              {actionable>0 && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-red-500"/>}
+            </button>
+          );
+        })()}
         <button onClick={function(){setDark(function(d){return !d;});}} className={BTN}>{dark?"\u2600 Light":"\uD83C\uDF19 Dark"}</button>
         <button onClick={function(){setCompact(function(c){var next=!c;setVisibleCols(next?COMPACT_COLS:new Set(ALL_COLS));return next;});}} className={BTN}>{compact?"\u229E Default":"\u229F Compact"}</button>
         <button onClick={function(){

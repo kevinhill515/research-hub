@@ -50,6 +50,23 @@ export function CompanyProvider({children}){
   const [fxLastUpdated,setFxLastUpdated]=useState("");
   const [copied,setCopied]=useState(null);
   const [annotations,setAnnotations]=useState([]);
+  /* TP-change approval queue. Flat list stored under meta.tpApprovals,
+     loaded/auto-saved like annotations. Each record represents a
+     suggested change to a company's TP inputs (PE and/or EPS) plus
+     its eventual disposition. Status flows: pending → approved | rejected.
+     Approver must differ from suggester (enforced in the UI). Approved
+     entries are KEPT for audit — they're how we tell who signed off on
+     a TP change historically. Shape:
+       { id, companyId,
+         suggestedBy, suggestedAt, rationale,
+         fromPE, fromEPS, fromTP,
+         toPE, toEPS, toTP,
+         earningsEntryId,            // optional link back to earnings
+         status: "pending" | "approved" | "rejected",
+         approvedBy, approvedAt,
+         rejectedBy, rejectedAt, rejectReason,
+         readBy:[users] }            // for the unread/mention pattern */
+  const [tpApprovals,setTpApprovals]=useState([]);
   /* Research priority board: per-member slot assignments + shared reorgs list.
      Shape: { byMember: { [name]: { gbl: {primary:[], secondary:[]}, intl:{...}, intSmall:{...}, em:{...}, existingHlds:[] } }, reorgs:[] } */
   const [researchAssignments,setResearchAssignments]=useState({byMember:{},reorgs:[]});
@@ -177,7 +194,7 @@ export function CompanyProvider({children}){
        start. Wrap each in a try so a single failure doesn't block the
        rest, and let Promise.all return the array. */
     var safe=function(p){return p.then(function(r){return r;},function(){return null;});};
-    var [r,r2,r3,r4,r5,r6,r7,r8,r9,r10,r11,r12,r13,r14,r15]=await Promise.all([
+    var [r,r2,r3,r4,r5,r6,r7,r8,r9,r10,r11,r12,r13,r14,r15,r16]=await Promise.all([
       safe(supaGet("library","id","shared")),
       /* Companies are now stored as one Supabase row per company (each
          row's data column holds a single company JSON, ~30KB typical).
@@ -197,6 +214,7 @@ export function CompanyProvider({children}){
       safe(supaGet("meta","key","benchmarkWeights")),
       safe(supaGet("meta","key","alertRules")),
       safe(supaGet("meta","key","breakdownHistory")),
+      safe(supaGet("meta","key","tpApprovals")),
     ]);
     try{if(r){var d=JSON.parse(r.data);if(Array.isArray(d)&&d.length){var libMig=migrateTags(d);setSaved(libMig.data);libOk=libMig.data.length;if(libMig.changed)supaUpsert("library",{id:"shared",data:JSON.stringify(libMig.data)});}}}catch(e){}
     try{if(r2&&Array.isArray(r2)){
@@ -260,6 +278,7 @@ export function CompanyProvider({children}){
     try{if(r7&&r7.value)setFxRates(JSON.parse(r7.value));}catch(e){}
     try{if(r8&&r8.value){var swRaw=JSON.parse(r8.value);var swMig=migrateSpecialWeights(swRaw);setSpecialWeights(swMig.data);if(swMig.changed)supaUpsert("meta",{key:"specialWeights",value:JSON.stringify(swMig.data)});}}catch(e){}
     try{if(r9&&r9.value){var ann=JSON.parse(r9.value);if(Array.isArray(ann))setAnnotations(ann);}}catch(e){}
+    try{if(r16&&r16.value){var tpa=JSON.parse(r16.value);if(Array.isArray(tpa))setTpApprovals(tpa);}}catch(e){}
     try{if(r10&&r10.value){var ra=JSON.parse(r10.value);if(ra&&typeof ra==="object"){if(!ra.byMember)ra.byMember={};if(!Array.isArray(ra.reorgs))ra.reorgs=[];/* Migrate legacy category keys: gbl→gl, intl→in, intSmall→sc */var RA_RENAMES={gbl:"gl",intl:"in",intSmall:"sc"};var raChanged=false;Object.keys(ra.byMember).forEach(function(m){var mb=ra.byMember[m]||{};Object.keys(RA_RENAMES).forEach(function(oldK){if(mb[oldK]!==undefined){mb[RA_RENAMES[oldK]]=mb[oldK];delete mb[oldK];raChanged=true;}});ra.byMember[m]=mb;});setResearchAssignments(ra);if(raChanged)supaUpsert("meta",{key:"researchAssignments",value:JSON.stringify(ra)});}}}catch(e){}
     try{if(r11&&r11.value){var pd=JSON.parse(r11.value);if(pd&&typeof pd==="object")setPerfData(pd);}}catch(e){}
     try{if(r12&&r12.value){var fb=JSON.parse(r12.value);if(Array.isArray(fb))setFeedback(fb);}}catch(e){}
@@ -457,6 +476,7 @@ export function CompanyProvider({children}){
       breakdownHistory:     JSON.stringify(breakdownHistory),
       benchmarkWeights:     JSON.stringify(benchmarkWeights),
       annotations:          JSON.stringify(annotations),
+      tpApprovals:          JSON.stringify(tpApprovals),
       feedback:             JSON.stringify(feedback),
       researchAssignments:  JSON.stringify(researchAssignments),
       entryComments:        JSON.stringify(entryComments),
@@ -502,6 +522,7 @@ export function CompanyProvider({children}){
   useEffect(function(){if(!ready||!lastPriceUpdate)return;var t=setTimeout(function(){if(sendIfChanged("lastPriceUpdate",function(){return lastPriceUpdate;}))supaUpsert("meta",{key:"lastPriceUpdate",value:lastPriceUpdate});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[lastPriceUpdate,ready]);
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(entryComments);if(sendIfChanged("entryComments",function(){return j;}))supaUpsert("meta",{key:"entryComments",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[entryComments,ready]);
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(annotations);if(sendIfChanged("annotations",function(){return j;}))supaUpsert("meta",{key:"annotations",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[annotations,ready]);
+  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(tpApprovals);if(sendIfChanged("tpApprovals",function(){return j;}))supaUpsert("meta",{key:"tpApprovals",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[tpApprovals,ready]);
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(researchAssignments);if(sendIfChanged("researchAssignments",function(){return j;}))supaUpsert("meta",{key:"researchAssignments",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[researchAssignments,ready]);
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(perfData);if(sendIfChanged("perfData",function(){return j;}))supaUpsert("meta",{key:"perfData",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[perfData,ready]);
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(feedback);if(sendIfChanged("feedback",function(){return j;}))supaUpsert("meta",{key:"feedback",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[feedback,ready]);
@@ -519,6 +540,86 @@ export function CompanyProvider({children}){
   function unresolveAnnotation(id){setAnnotations(function(prev){return prev.map(function(a){return a.id===id?Object.assign({},a,{resolved:false,resolvedBy:null,resolvedDate:null}):a;});});}
   function addReply(annotationId,text){if(!text.trim())return;var reply={id:(typeof crypto!=="undefined"&&crypto.randomUUID)?crypto.randomUUID():(Date.now()+"-"+Math.random().toString(36).slice(2)),author:currentUser||"Unknown",date:todayStr(),text:text.trim(),mentions:parseMentions(text)};setAnnotations(function(prev){return prev.map(function(a){return a.id===annotationId?Object.assign({},a,{replies:(a.replies||[]).concat([reply]),readBy:[currentUser||"Unknown"]}):a;});});}
   function markAnnotationRead(id){if(!currentUser)return;setAnnotations(function(prev){return prev.map(function(a){if(a.id!==id)return a;var rb=a.readBy||[];if(rb.indexOf(currentUser)>=0)return a;return Object.assign({},a,{readBy:rb.concat([currentUser])});});});}
+
+  /* TP approval helpers. Mirror the annotation API (add/update/resolve)
+     but with the extra constraint that approvers must differ from the
+     submitter — enforced at the call site (the UI hides the Approve
+     button when suggestedBy === currentUser) and again here as a hard
+     guard so a programmatic caller can't bypass it. */
+  function newId(){return (typeof crypto!=="undefined"&&crypto.randomUUID)?crypto.randomUUID():(Date.now()+"-"+Math.random().toString(36).slice(2));}
+  function submitTpApproval(payload){
+    /* payload: { companyId, fromPE, fromEPS, fromTP, toPE, toEPS, toTP,
+                  rationale, earningsEntryId? }
+       Adds a new pending record. Multiple pending records per company
+       are allowed — the approver picks one, which auto-rejects siblings
+       (see approveTpApproval below). */
+    var rec=Object.assign({
+      id:newId(),
+      suggestedBy:currentUser||"Unknown",
+      suggestedAt:todayStr(),
+      status:"pending",
+      readBy:[currentUser||"Unknown"],
+    },payload);
+    setTpApprovals(function(prev){return [rec].concat(prev);});
+    return rec;
+  }
+  function approveTpApproval(id){
+    if(!currentUser)return;
+    var rec=null;
+    setTpApprovals(function(prev){
+      rec=prev.find(function(a){return a.id===id;});
+      if(!rec||rec.status!=="pending"||rec.suggestedBy===currentUser)return prev;
+      var approvedAt=todayStr();
+      return prev.map(function(a){
+        /* Approve the target. Sibling pending records on the SAME company
+           get auto-rejected so a stale change can't sneak in later. */
+        if(a.id===id)return Object.assign({},a,{status:"approved",approvedBy:currentUser,approvedAt:approvedAt});
+        if(a.status==="pending"&&a.companyId===rec.companyId){
+          return Object.assign({},a,{status:"rejected",rejectedBy:currentUser,rejectedAt:approvedAt,rejectReason:"Superseded by another approval"});
+        }
+        return a;
+      });
+    });
+    /* Apply the change to the company's valuation + push to tpHistory. */
+    if(!rec||rec.status!=="pending"||rec.suggestedBy===currentUser)return;
+    setCompanies(function(cs){
+      return cs.map(function(c){
+        if(c.id!==rec.companyId)return c;
+        var v=Object.assign({},c.valuation||{});
+        if(rec.toPE!==null&&rec.toPE!==undefined&&rec.toPE!=="")v.pe=rec.toPE;
+        if(rec.toEPS!==null&&rec.toEPS!==undefined&&rec.toEPS!=="")v.eps1=rec.toEPS;
+        var tpEntry={
+          date:todayStr(),
+          tp:rec.toTP,
+          pe:rec.toPE,
+          eps:rec.toEPS,
+          currency:(c.valuation&&c.valuation.currency)||"USD",
+          source:"approval",
+          by:rec.suggestedBy,
+          approvedBy:currentUser,
+          rationale:rec.rationale||"",
+        };
+        return Object.assign({},c,{
+          valuation:v,
+          tpHistory:[tpEntry].concat(c.tpHistory||[]),
+          lastUpdated:todayStr(),
+        });
+      });
+    });
+  }
+  function rejectTpApproval(id,reason){
+    if(!currentUser)return;
+    setTpApprovals(function(prev){
+      return prev.map(function(a){
+        if(a.id!==id||a.status!=="pending"||a.suggestedBy===currentUser)return a;
+        return Object.assign({},a,{status:"rejected",rejectedBy:currentUser,rejectedAt:todayStr(),rejectReason:reason||""});
+      });
+    });
+  }
+  function markTpApprovalRead(id){
+    if(!currentUser)return;
+    setTpApprovals(function(prev){return prev.map(function(a){if(a.id!==id)return a;var rb=a.readBy||[];if(rb.indexOf(currentUser)>=0)return a;return Object.assign({},a,{readBy:rb.concat([currentUser])});});});
+  }
 
   function updateCo(id,ch){setCompanies(function(cs){return cs.map(function(c){return c.id===id?Object.assign({},c,ch):c;});});}
 
@@ -909,6 +1010,7 @@ export function CompanyProvider({children}){
     updateCo,
     cp,
     annotations,setAnnotations,
+    tpApprovals,setTpApprovals,submitTpApproval,approveTpApproval,rejectTpApproval,markTpApprovalRead,
     addAnnotation,updateAnnotation,deleteAnnotation,resolveAnnotation,unresolveAnnotation,addReply,markAnnotationRead,parseMentions,
     updateTargetWeight,addTargetHistoryEntry,deleteTargetHistoryEntry,
     addTransaction,deleteTransaction,setTxInitOverride,setTxCashFlow,updateInitiatedDate,
