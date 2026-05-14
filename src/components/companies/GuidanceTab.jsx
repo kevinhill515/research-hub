@@ -22,9 +22,63 @@
  *   3. Else show absolute values only with a "no Y/Y baseline" note.
  */
 
+import { useState, useEffect, useRef } from 'react';
 import { fmtMoney, fmtPct, lastFinite } from '../../utils/chart.js';
 import { isFiniteNum } from '../../utils/numbers.js';
 import { parseDate, printPage } from '../../utils/index.js';
+import { useCompanyContext } from '../../context/CompanyContext.jsx';
+
+/* Auto-grow textarea — same pattern used elsewhere in the app. */
+function AutoGrowTextarea(props) {
+  const ref = useRef();
+  useEffect(function () {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const maxPx = Math.floor(window.innerHeight * 0.5);
+    el.style.height = Math.min(el.scrollHeight, maxPx) + "px";
+  }, [props.value]);
+  return <textarea ref={ref} {...props} />;
+}
+
+/* Free-text Guidance notes — debounced save so typing stays snappy and
+   we don't trigger a per-company write on every keystroke. Stored at
+   company.guidance.notes so it persists alongside the rest of the
+   guidance state (history, nextReportDate, etc). */
+function GuidanceNotes({ company }) {
+  const { setCompanies } = useCompanyContext();
+  const stored = (company && company.guidance && company.guidance.notes) || "";
+  const [draft, setDraft] = useState(stored);
+  /* Keep in sync if the stored value changes externally (teammate edit). */
+  useEffect(function () { setDraft(stored); }, [stored]);
+  useEffect(function () {
+    if (draft === stored) return;
+    const t = setTimeout(function () {
+      setCompanies(function (cs) {
+        return cs.map(function (c) {
+          if (c.id !== company.id) return c;
+          return Object.assign({}, c, {
+            guidance: Object.assign({}, c.guidance || {}, { notes: draft }),
+          });
+        });
+      });
+    }, 600);
+    return function () { clearTimeout(t); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft]);
+  return (
+    <div className="mb-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3">
+      <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-slate-400 mb-1.5">Notes</div>
+      <AutoGrowTextarea
+        value={draft}
+        onChange={function (e) { setDraft(e.target.value); }}
+        placeholder="Free-form notes on this company's guidance — pace of upgrades, history of beats/misses, tone shifts, anything not captured by the numbers…"
+        rows={2}
+        className="w-full text-xs px-2 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 placeholder:text-gray-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none leading-relaxed"
+      />
+    </div>
+  );
+}
 
 /* "2026-03-31" → "FY26". Uses the year from the period date.
  * (Some companies have non-Dec FYs where this matters: Sony's "FY26"
@@ -413,9 +467,15 @@ export default function GuidanceTab({ company }) {
   const history = (guidance && guidance.history) || [];
 
   if (history.length === 0) {
+    /* No imported history yet — but still expose the Notes box so the
+       analyst can record qualitative observations (e.g. "guidance not
+       given, only a high-level outlook") before any data lands. */
     return (
-      <div className="text-sm text-gray-500 dark:text-slate-400 italic py-8 text-center border border-dashed border-slate-300 dark:border-slate-700 rounded-lg">
-        No guidance imported yet. Upload a FactSet "Guidance History" block from Data Hub → Guidance.
+      <div>
+        <GuidanceNotes company={company} />
+        <div className="text-sm text-gray-500 dark:text-slate-400 italic py-8 text-center border border-dashed border-slate-300 dark:border-slate-700 rounded-lg">
+          No guidance imported yet. Upload a FactSet "Guidance History" block from Data Hub → Guidance.
+        </div>
       </div>
     );
   }
@@ -549,6 +609,7 @@ export default function GuidanceTab({ company }) {
           </div>
         );
       })()}
+      <GuidanceNotes company={company} />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {metrics.map(function (m) {
           return <MetricTile key={m} company={company} metric={m} rowsByMetric={rowsByMetric} currency={currency}/>;
