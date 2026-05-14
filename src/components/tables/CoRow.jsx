@@ -1,7 +1,7 @@
 import { useState, useRef, memo } from "react";
 import { useClickOutside } from '../../hooks/useClickOutside.js';
 import { PORTFOLIOS, TIER_ORDER, COUNTRY_ORDER, SECTOR_ORDER } from '../../constants/index.js';
-import { shortSector, sectorStyle, countryStyle, getTiers, tierPillStyle, tierBg, reviewedColor, daysSince, todayStr, calcNormEPS, calcTP, calcMOS, fmtMOS, fmtMOS0, mosBg, getTpFixed, tierToStatus, truncName, getLastReportedEntry } from '../../utils/index.js';
+import { shortSector, sectorStyle, countryStyle, getTiers, tierPillStyle, tierBg, reviewedColor, daysSince, todayStr, calcNormEPS, calcTP, calcMOS, fmtMOS, fmtMOS0, mosBg, getTpFixed, tierToStatus, truncName, getLastReportedEntry, parseDate } from '../../utils/index.js';
 import StatusPill from '../ui/StatusPill.jsx';
 import NotesCell from '../forms/NotesCell.jsx';
 import ActionCell from '../forms/ActionCell.jsx';
@@ -48,6 +48,35 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
   var ss = company.sector ? sectorStyle(company.sector) : null;
   var availPortNote = PORTFOLIOS.filter(function (p) { return portfolios.indexOf(p) < 0; });
   var show = function (col) { return visibleCols.has(col); };
+
+  /* "Reported this quarter" indicator. Action / Notes / Updated / Thesis
+     all reflect the most recent earnings entry — so when those columns
+     are visible, the question 'has this company reported in the current
+     calendar quarter?' is critical for reading the row. We surface it
+     as a small Q-chip next to the name:
+       - Green 'Q2' = the latest entry's reportDate is on/after the start
+         of the current calendar quarter ("they've reported this quarter")
+       - Amber 'Q1 pending' = latest entry predates the current quarter
+         ("they haven't reported this quarter yet")
+       - No chip = no earnings entries at all
+     Calendar quarter is used (not fiscal) so the indicator is consistent
+     across the whole portfolio regardless of each company's FY end. */
+  var latestEntry = getLastReportedEntry(company.earningsEntries || []);
+  var qBadge = null;
+  if (latestEntry && latestEntry.reportDate) {
+    var rd = parseDate(latestEntry.reportDate);
+    if (rd) {
+      var now = new Date();
+      var curQ = Math.floor(now.getMonth() / 3);
+      var qStart = new Date(now.getFullYear(), curQ * 3, 1);
+      var reportedThisQ = rd >= qStart;
+      var rdQ = Math.floor(rd.getMonth() / 3);
+      var label = "Q" + (reportedThisQ ? curQ + 1 : rdQ + 1);
+      qBadge = reportedThisQ
+        ? { label: label + " ✓", cls: "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800", title: "Reported this quarter (" + latestEntry.reportDate + ")" }
+        : { label: label,         cls: "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800",        title: "Last reported " + latestEntry.reportDate + " — hasn't reported this quarter yet" };
+    }
+  }
   var hasTemplate = Object.keys(company.sections || {}).length > 0;
   var rColor = reviewedColor(company.lastReviewed);
   var rBold = daysSince(company.lastReviewed) > 60;
@@ -149,6 +178,13 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
               >
                 {truncName(company.name, 15)}
               </span>
+            )}
+
+            {qBadge && (
+              <span
+                title={qBadge.title}
+                className={"text-[9px] font-semibold px-1 py-px rounded border shrink-0 leading-none " + qBadge.cls}
+              >{qBadge.label}</span>
             )}
 
             {rowAlerts.length > 0 && (

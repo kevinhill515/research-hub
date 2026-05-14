@@ -22,8 +22,8 @@ export const COMPANY_COLUMNS = [
   { id: "Action",    label: "Action",    sort: null,            compact: false },
   { id: "Notes",     label: "Notes",     sort: null,            compact: false },
   { id: "Updated",   label: "Updated",   sort: "Last Updated",  compact: false },
-  { id: "Status",    label: "Status",    sort: null,            compact: true  },
   { id: "Thesis",    label: "Thesis",    sort: null,            compact: true  },
+  { id: "Status",    label: "Status",    sort: null,            compact: true  },
   { id: "Del",       label: "Del",       sort: null,            compact: true  },
 ];
 
