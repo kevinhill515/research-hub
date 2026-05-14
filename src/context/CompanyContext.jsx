@@ -651,6 +651,19 @@ export function CompanyProvider({children}){
       });
     });
   }
+  /* Withdraw your OWN pending suggestion. Distinct from reject: only the
+     suggester can withdraw, and the record is marked rejected with a
+     'Withdrawn by suggester' reason so the audit trail stays explicit
+     (rather than appearing as a peer rejection). */
+  function withdrawTpApproval(id){
+    if(!currentUser)return;
+    setTpApprovals(function(prev){
+      return prev.map(function(a){
+        if(a.id!==id||a.status!=="pending"||a.suggestedBy!==currentUser)return a;
+        return Object.assign({},a,{status:"rejected",rejectedBy:currentUser,rejectedAt:todayStr(),rejectReason:"Withdrawn by suggester"});
+      });
+    });
+  }
   function markTpApprovalRead(id){
     if(!currentUser)return;
     setTpApprovals(function(prev){return prev.map(function(a){if(a.id!==id)return a;var rb=a.readBy||[];if(rb.indexOf(currentUser)>=0)return a;return Object.assign({},a,{readBy:rb.concat([currentUser])});});});
@@ -1045,7 +1058,7 @@ export function CompanyProvider({children}){
     updateCo,
     cp,
     annotations,setAnnotations,
-    tpApprovals,setTpApprovals,submitTpApproval,approveTpApproval,rejectTpApproval,markTpApprovalRead,
+    tpApprovals,setTpApprovals,submitTpApproval,approveTpApproval,rejectTpApproval,withdrawTpApproval,markTpApprovalRead,
     addAnnotation,updateAnnotation,deleteAnnotation,resolveAnnotation,unresolveAnnotation,addReply,markAnnotationRead,parseMentions,
     updateTargetWeight,addTargetHistoryEntry,deleteTargetHistoryEntry,
     addTransaction,deleteTransaction,setTxInitOverride,setTxCashFlow,updateInitiatedDate,

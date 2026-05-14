@@ -31,7 +31,7 @@ function fmtNum(v, dp){
   return n.toFixed(dp===undefined?2:dp);
 }
 
-function ApprovalCard({ rec, companyName, onApprove, onReject }){
+function ApprovalCard({ rec, companyName, onApprove, onReject, onWithdraw }){
   var { currentUser, markTpApprovalRead } = useCompanyContext();
   var [showReject, setShowReject] = useState(false);
   var [rejectReason, setRejectReason] = useState("");
@@ -81,6 +81,17 @@ function ApprovalCard({ rec, companyName, onApprove, onReject }){
         <span className="text-[10px] text-gray-500 dark:text-slate-400">{rec.suggestedAt}</span>
         <span className="text-sm font-semibold text-gray-900 dark:text-slate-100">· {companyName}</span>
         <span className="ml-auto">{statusBadge}</span>
+        {/* Withdraw button — only on your OWN pending records. Distinct
+            from Reject (which is for peers); withdrawing leaves a clear
+            audit reason rather than looking like a peer turn-down. */}
+        {rec.status === "pending" && isOwnSuggestion && (
+          <button
+            onClick={function(){onWithdraw(rec.id);}}
+            title="Withdraw this suggestion"
+            aria-label="Withdraw suggestion"
+            className="text-xs text-gray-400 dark:text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 cursor-pointer px-1 leading-none"
+          >✕</button>
+        )}
       </div>
       <div className="text-xs font-mono text-gray-700 dark:text-slate-300 mb-1.5">{changes.join("  ·  ")}</div>
       {rec.rationale && (
@@ -120,7 +131,7 @@ function ApprovalCard({ rec, companyName, onApprove, onReject }){
 }
 
 export function TpApprovalsPanel({ open, onClose }){
-  var { tpApprovals, companies, approveTpApproval, rejectTpApproval } = useCompanyContext();
+  var { tpApprovals, companies, approveTpApproval, rejectTpApproval, withdrawTpApproval } = useCompanyContext();
   var [view, setView] = useState("pending"); /* "pending" | "decided" */
 
   /* Lookup company name for each record. Done once per render. */
@@ -160,7 +171,7 @@ export function TpApprovalsPanel({ open, onClose }){
               <div className="text-sm text-gray-500 dark:text-slate-400 italic text-center py-8">No TP changes pending approval.</div>
             ) : (
               pending.map(function(rec){
-                return <ApprovalCard key={rec.id} rec={rec} companyName={nameById[rec.companyId] || "(unknown)"} onApprove={approveTpApproval} onReject={rejectTpApproval}/>;
+                return <ApprovalCard key={rec.id} rec={rec} companyName={nameById[rec.companyId] || "(unknown)"} onApprove={approveTpApproval} onReject={rejectTpApproval} onWithdraw={withdrawTpApproval}/>;
               })
             )
           ) : (
@@ -168,7 +179,7 @@ export function TpApprovalsPanel({ open, onClose }){
               <div className="text-sm text-gray-500 dark:text-slate-400 italic text-center py-8">No decided TP changes yet.</div>
             ) : (
               decided.map(function(rec){
-                return <ApprovalCard key={rec.id} rec={rec} companyName={nameById[rec.companyId] || "(unknown)"} onApprove={approveTpApproval} onReject={rejectTpApproval}/>;
+                return <ApprovalCard key={rec.id} rec={rec} companyName={nameById[rec.companyId] || "(unknown)"} onApprove={approveTpApproval} onReject={rejectTpApproval} onWithdraw={withdrawTpApproval}/>;
               })
             )
           )}
