@@ -560,7 +560,7 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
                 <div className="text-[11px] text-gray-600 dark:text-slate-300 mb-2 font-mono">
                   Norm EPS = {normEPS!==null ? normEPS.toFixed(2) : "—"}
                   &nbsp;·&nbsp; Computed TP = {computedTP!==null ? (currency + " " + computedTP.toFixed(2)) : "—"}
-                  {isFinite(enteredTP) && computedTP!==null && Math.abs(computedTP - enteredTP) > 0.01 && (
+                  {isFinite(enteredTP) && enteredTP > 0 && computedTP!==null && Math.abs(computedTP - enteredTP) / enteredTP > 0.02 && (
                     <span className="ml-2 text-rose-600 dark:text-rose-400">Doesn't match entry's New TP ({currency} {enteredTP.toFixed(2)}) — review inputs</span>
                   )}
                   {!weightsOK && (
