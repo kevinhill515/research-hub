@@ -196,10 +196,13 @@ export function PortfoliosTable(props) {
       const initDate = getInitiatedDate(c, portTab);
       const monthsHeld = monthsSince(initDate);
 
-      /* 5D perf from ordinary ticker. */
-      const perfRaw = ordTicker && ordTicker.perf5d;
-      const perfNum = (!perfRaw || perfRaw === "#N/A") ? null
-        : (function () { const n = parseFloat(perfRaw); return isNaN(n) ? null : n; })();
+      /* 5D perf from ordinary ticker. Use the shared getPerf5d() helper
+         so this matches the Companies-tab 5D% cell exactly. Earlier this
+         only read the legacy `ord.perf5d` string, while CoRow.jsx already
+         preferred the new `ord.perf["5D"]` decimal form — so the two
+         tables showed different numbers whenever those two fields drifted
+         apart (server script writes one but not the other, etc.). */
+      const perfNum = getPerf5d(c);
 
       rowData[c.id] = {
         /* Valuation */
