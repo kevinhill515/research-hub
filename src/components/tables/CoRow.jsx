@@ -402,6 +402,28 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
       )}
 
       {/* Status */}
+      {/* Thesis — derived from most recent earnings entry's thesisStatus
+         (On track / Watch / Broken). Read-only cell; users update it
+         from the Earnings & Thesis Check tab. Renders BEFORE Status
+         (matching companyColumns.js order) so it sits visually next to
+         the other most-recent-earnings columns (Action / Notes /
+         Updated). */}
+      {show("Thesis") && (
+        <div className={tdBase} style={rowBg ? { background: rowBg } : undefined}>
+          {(function(){
+            var last = getLastReportedEntry(company.earningsEntries);
+            var ts = last && last.thesisStatus;
+            if (!ts) return <span className="text-xs text-slate-300 dark:text-slate-600">—</span>;
+            var cfg = { "On track": { bg: "#dcfce7", color: "#166534" }, "Watch": { bg: "#fef9c3", color: "#854d0e" }, "Broken": { bg: "#fee2e2", color: "#991b1b" } }[ts] || { bg: "#f1f5f9", color: "#475569" };
+            return (
+              <span title={"From earnings " + (last.reportDate || "?")} className="text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap" style={{ background: cfg.bg, color: cfg.color }}>
+                📊 {ts}
+              </span>
+            );
+          })()}
+        </div>
+      )}
+
       {show("Status") && (
         <div className={tdBase} style={rowBg ? { background: rowBg } : undefined} onClick={function (e) { e.stopPropagation(); }}>
           {missing.length > 0 && (
@@ -419,25 +441,6 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
             <option>Watch</option>
             <option>Sold</option>
           </select>
-        </div>
-      )}
-
-      {/* Thesis — derived from most recent earnings entry's thesisStatus
-         (On track / Watch / Broken). Read-only cell; users update it
-         from the Earnings & Thesis Check tab. */}
-      {show("Thesis") && (
-        <div className={tdBase} style={rowBg ? { background: rowBg } : undefined}>
-          {(function(){
-            var last = getLastReportedEntry(company.earningsEntries);
-            var ts = last && last.thesisStatus;
-            if (!ts) return <span className="text-xs text-slate-300 dark:text-slate-600">—</span>;
-            var cfg = { "On track": { bg: "#dcfce7", color: "#166534" }, "Watch": { bg: "#fef9c3", color: "#854d0e" }, "Broken": { bg: "#fee2e2", color: "#991b1b" } }[ts] || { bg: "#f1f5f9", color: "#475569" };
-            return (
-              <span title={"From earnings " + (last.reportDate || "?")} className="text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap" style={{ background: cfg.bg, color: cfg.color }}>
-                📊 {ts}
-              </span>
-            );
-          })()}
         </div>
       )}
 
