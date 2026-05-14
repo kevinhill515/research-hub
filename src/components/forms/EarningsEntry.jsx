@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { TP_CHANGES, THESIS_STATUSES } from '../../constants/index.js';
 import { apiCall } from '../../api/index.js';
 import { useAlert } from '../ui/DialogProvider.jsx';
-import { inferQuarter, calcNormEPS, calcTP } from '../../utils/index.js';
+import { inferQuarter, calcNormEPS, calcTP, getTpFixed, parseDate } from '../../utils/index.js';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import GuidanceVsActual from '../companies/GuidanceVsActual.jsx';
 
@@ -62,20 +62,38 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
   var [aiText, setAiText] = useState("");
   var [aiLoading, setAiLoading] = useState(false);
 
-  /* Compute the current TP from the company's valuation. Used in two
-     spots below: (a) auto-fill newTP when tpChange is "Unchanged" so
-     the value is captured for the tile and downstream consumers,
-     and (b) the tile readout for "Unchanged TP → currency value". */
+  /* Compute the current TP from the company's valuation. Used to
+     auto-fill newTP when tpChange is "Unchanged" so the entry
+     persists the actual target price even when the user didn't change
+     it. Uses TP FIXED rather than the live PE × normEPS calc — an
+     "unchanged" disposition means the analyst is reaffirming the
+     committed TP, which is the fixed value (the one the firm voted
+     on); the live value drifts as EPS estimates revise and would
+     misrepresent the call. Falls back to live TP only when no fixed
+     value is stored (older companies that haven't been re-voted). */
   var v = (company && company.valuation) || {};
   var currentNormEPS = calcNormEPS(v);
-  var currentTP = calcTP(v.pe, currentNormEPS);
+  var liveTP = calcTP(v.pe, currentNormEPS);
+  var fixedTP = getTpFixed(v);
+  var currentTP = fixedTP !== null ? fixedTP : liveTP;
 
-  /* Auto-fill newTP with the current TP whenever the user selects
-     "Unchanged". Means the entry persists the actual target price even
-     when the user didn't change it — useful for the tile and for any
-     downstream tools that look at e.newTP as "the TP as of this
-     earnings entry". If the user explicitly types something after
-     this, normal onChange takes over and the manual value wins. */
+  /* Has this earnings entry actually happened yet? Treat any entry
+     whose reportDate is strictly in the future as "future" — its
+     thesis/TP fields are placeholders until the actual report drops,
+     so the tile header shouldn't surface them as if they were real
+     decisions yet. Entries with no reportDate are treated as current
+     (assume the user is mid-fill, not pre-filling). */
+  var isFutureEntry = (function(){
+    if (!e.reportDate) return false;
+    var rd = parseDate(e.reportDate);
+    if (!rd) return false;
+    var today0 = new Date(); today0.setHours(0,0,0,0);
+    return rd.getTime() > today0.getTime();
+  })();
+
+  /* Auto-fill newTP with the current TP (Fixed) whenever the user
+     selects "Unchanged". If the user explicitly types something
+     after this, normal onChange takes over and the manual value wins. */
   useEffect(function(){
     if (e.tpChange === "Unchanged" && currentTP !== null) {
       var s = String(currentTP);
@@ -263,7 +281,12 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
         <span className="text-base font-bold text-gray-900 dark:text-slate-100 flex-1">
           {headerTitle}
         </span>
-        {e.tpChange && (
+        {/* TP and thesis status are placeholders until the report
+            actually happens \u2014 hide both on future-dated entries so the
+            tile header doesn't claim a decision that hasn't been made.
+            The fields are still editable inside the open entry; we
+            just don't promote them to the closed-tile summary yet. */}
+        {!isFutureEntry && e.tpChange && (
           <span
             className="text-sm px-2 py-0.5 rounded-full font-medium"
             style={{ background: tpBg, color: tpColor }}
@@ -273,12 +296,17 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
               : e.tpChange + " TP" + (e.newTP ? " \u2192 " + currency + " " + e.newTP : "")}
           </span>
         )}
-        {e.thesisStatus && (
+        {!isFutureEntry && e.thesisStatus && (
           <span
             className="text-sm px-2 py-0.5 rounded-full font-medium"
             style={{ background: tcBg, color: tcColor }}
           >
             {e.thesisStatus}
+          </span>
+        )}
+        {isFutureEntry && (
+          <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-slate-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 italic" title={"Scheduled for " + e.reportDate}>
+            Upcoming
           </span>
         )}
         {e.shortTakeaway && (
