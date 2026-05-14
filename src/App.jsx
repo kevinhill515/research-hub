@@ -37,7 +37,7 @@ import { FeedbackTab } from './components/feedback/FeedbackTab.jsx';
 
 /* Components extracted to src/components/ — see barrel index.js files in each subdirectory */
 export default function App(){
-  const { companies, setCompanies, saved, setSaved, ready, setReady, loadStatus, setLoadStatus, lastPriceUpdate, setLastPriceUpdate, lastPriceUpdatedBy, setLastPriceUpdatedBy, entryComments, setEntryComments, newCommentText, setNewCommentText, repData, setRepData, fxRates, setFxRates, specialWeights, setSpecialWeights, benchmarkWeights, alertRules, currentUser, setCurrentUser, dark, setDark, authed, setAuthed, showUserPicker, setShowUserPicker, calLastUpdated, setCalLastUpdated, calLastUpdatedBy, setCalLastUpdatedBy, repLastUpdated, setRepLastUpdated, fxLastUpdated, setFxLastUpdated, copied, setCopied, loadFromStorage, addComment, deleteComment, updateCo, cp, annotations, updateTargetWeight, addTargetHistoryEntry, deleteTargetHistoryEntry, addTransaction, deleteTransaction, setTxInitOverride, updateInitiatedDate } = useCompanyContext();
+  const { companies, setCompanies, saved, setSaved, ready, setReady, loadStatus, setLoadStatus, loadFailed, lastPriceUpdate, setLastPriceUpdate, lastPriceUpdatedBy, setLastPriceUpdatedBy, entryComments, setEntryComments, newCommentText, setNewCommentText, repData, setRepData, fxRates, setFxRates, specialWeights, setSpecialWeights, benchmarkWeights, alertRules, currentUser, setCurrentUser, dark, setDark, authed, setAuthed, showUserPicker, setShowUserPicker, calLastUpdated, setCalLastUpdated, calLastUpdatedBy, setCalLastUpdatedBy, repLastUpdated, setRepLastUpdated, fxLastUpdated, setFxLastUpdated, copied, setCopied, loadFromStorage, addComment, deleteComment, updateCo, cp, annotations, updateTargetWeight, addTargetHistoryEntry, deleteTargetHistoryEntry, addTransaction, deleteTransaction, setTxInitOverride, updateInitiatedDate } = useCompanyContext();
 
   /* Memoize the per-company warn-alerts map so CoRow can read its own
      entry without re-evaluating alerts on every render. Recomputes only
@@ -251,6 +251,38 @@ export default function App(){
 
   return(
     <div className={"min-h-screen p-4 font-[system-ui,sans-serif] text-sm text-gray-900 dark:text-slate-100 bg-white dark:bg-slate-950 " + (dark ? "dark" : "")}>
+      {/* Blocking overlay when the initial Supabase load failed after
+          exhausting retries. Critical to render BEFORE the rest of the
+          UI: with an empty companies array, any user edit (e.g. saving
+          earnings entries) routes through `setCompanies(cs=>cs.map(...))`
+          which silently no-ops because the company isn't in cs. The
+          local view updates via setSelCo but the edit never reaches
+          state.companies — auto-save sees no change — Supabase never
+          gets the update — the edit dies on next reload. Four companies
+          worth of earnings/thesis edits were lost this way in May 2026.
+          Forcing a reload gate stops the silent-drop. */}
+      {loadFailed && (
+        <div className="fixed inset-0 bg-black/60 z-[3000] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-700 rounded-xl p-7 max-w-md shadow-2xl">
+            <div className="text-base font-semibold text-rose-700 dark:text-rose-300 mb-2">⚠ Could not load data</div>
+            <div className="text-sm text-gray-700 dark:text-slate-300 mb-4">
+              The app could not reach Supabase after 60 retries. Editing is blocked
+              until the load succeeds — if you edit while loaded-empty, your changes
+              will appear on screen but get silently dropped instead of saving.
+            </div>
+            <div className="text-xs text-gray-500 dark:text-slate-400 mb-4">
+              Check your network connection, then reload the page. If the problem
+              persists, the Supabase project may be paused or rate-limited.
+            </div>
+            <button
+              onClick={function(){ window.location.reload(); }}
+              className="w-full py-2 px-4 text-sm font-medium rounded-md border border-blue-300 dark:border-blue-700 bg-blue-600 text-white cursor-pointer hover:bg-blue-700 transition-colors"
+            >
+              Reload page
+            </button>
+          </div>
+        </div>
+      )}
       {(!currentUser||showUserPicker)&&(<div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center"><div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-7 w-80 shadow-2xl"><div className="text-base font-semibold text-gray-900 dark:text-slate-100 mb-1.5">Who are you?</div><div className="text-sm text-gray-500 dark:text-slate-400 mb-4">Select your name so edits are tracked correctly.</div><div className="flex flex-col gap-2">{TEAM_MEMBERS.map(function(name){return(<button key={name} onClick={function(){setCurrentUser(name);setShowUserPicker(false);}} className={"py-2.5 px-4 text-sm border rounded-lg cursor-pointer text-left transition-colors " + (currentUser===name ? "font-semibold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700" : "font-normal bg-slate-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700")}>{name}</button>);})}</div>{currentUser&&<div className="mt-3 text-xs text-gray-500 dark:text-slate-400 text-right cursor-pointer hover:text-gray-700 dark:hover:text-slate-300" onClick={function(){setShowUserPicker(false);}}>Cancel</div>}</div></div>)}
       {showShortcuts&&(<div className="fixed inset-0 bg-black/40 z-[1000] flex items-center justify-center" onClick={function(){setShowShortcuts(false);}}><div onClick={function(e){e.stopPropagation();}} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-6 py-5 min-w-[320px] shadow-2xl"><div className="text-[15px] font-semibold text-gray-900 dark:text-slate-100 mb-3.5">Keyboard Shortcuts</div>{SHORTCUTS.map(function(s){return(<div key={s.key} className="flex items-center gap-3 mb-2"><span className="text-xs px-2 py-0.5 rounded-[5px] border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-mono text-gray-900 dark:text-slate-100 min-w-[28px] text-center">{s.key}</span><span className="text-sm text-gray-500 dark:text-slate-400">{s.desc}</span></div>);})}<div className="mt-3.5 text-xs text-gray-500 dark:text-slate-400 text-right cursor-pointer hover:text-gray-700 dark:hover:text-slate-300" onClick={function(){setShowShortcuts(false);}}>Close (Esc)</div></div></div>)}
       {showSettings&&(<div className="fixed inset-0 bg-black/40 z-[1000] flex items-center justify-center" onClick={function(){setShowSettings(false);}}>

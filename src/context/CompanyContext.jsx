@@ -17,6 +17,12 @@ export function CompanyProvider({children}){
   const [saved,setSaved]=useState([]);
   const [ready,setReady]=useState(false);
   const [loadStatus,setLoadStatus]=useState({companies:null,library:null});
+  /* True when the initial supabase load gave up after retries with no
+     data ever loaded. Distinct from "loaded successfully but empty".
+     Used to block the editing UI so user edits don't drop into an empty
+     companies array (which would silently no-op cs.map() updates and
+     lose data on the next refresh). */
+  const [loadFailed,setLoadFailed]=useState(false);
   const [lastPriceUpdate,setLastPriceUpdate]=useState(null);
   /* Who ran the most recent price update. Mirrors calLastUpdatedBy /
      repLastUpdated patterns. Empty string when unknown (e.g. updated
@@ -387,7 +393,10 @@ export function CompanyProvider({children}){
         if (cancelled) return;
         if (got) return; /* success — done */
         if (attempts >= 60) {
+          /* Exhausted retries with no data — flag loadFailed so the app
+             shows a blocking banner instead of an editable empty state. */
           setLoadStatus({ companies: 0, library: 0 });
+          setLoadFailed(true);
           setReady(true);
           return;
         }
@@ -395,7 +404,10 @@ export function CompanyProvider({children}){
       }).catch(function () {
         if (cancelled) return;
         if (attempts >= 60) {
+          /* Exhausted retries with no data — flag loadFailed so the app
+             shows a blocking banner instead of an editable empty state. */
           setLoadStatus({ companies: 0, library: 0 });
+          setLoadFailed(true);
           setReady(true);
           return;
         }
@@ -872,7 +884,7 @@ export function CompanyProvider({children}){
     companies,setCompanies,
     saved,setSaved,
     ready,setReady,
-    loadStatus,setLoadStatus,
+    loadStatus,setLoadStatus,loadFailed,
     lastPriceUpdate,setLastPriceUpdate,
     lastPriceUpdatedBy,setLastPriceUpdatedBy,
     entryComments,setEntryComments,
