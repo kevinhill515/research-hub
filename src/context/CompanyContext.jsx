@@ -276,6 +276,37 @@ export function CompanyProvider({children}){
             supaUpsert("meta",{key:"cleanup_blank_tpchange_2026_05_14",value:"1"});
           }
         }catch(_e){}
+        /* Twin migration for thesisStatus: same conservative criterion
+           (all content fields empty AND the value is the old auto-default
+           "On track"). Reviewed-but-positive entries — anyone who
+           actively set 'On track' with notes — stay put. Gated by its
+           own flag since the tpChange migration may have already run. */
+        try{
+          var rTsFlag=await supaGet("meta","key","cleanup_blank_thesisstatus_2026_05_14");
+          if(!(rTsFlag&&rTsFlag.value)){
+            var tsChanged=false;
+            coMig.data.forEach(function(c){
+              var es=c.earningsEntries;
+              if(!es||!es.length)return;
+              es.forEach(function(e){
+                if(e.thesisStatus!=="On track")return;
+                var allEmpty = !(e.shortTakeaway||"").trim()
+                  && !(e.extendedTakeaway||"").trim()
+                  && !(e.tpRationale||"").trim()
+                  && !(e.thesisNote||"").trim()
+                  && !(e.bullets||[]).some(function(b){return (b||"").trim();});
+                if(allEmpty){
+                  e.thesisStatus="";
+                  tsChanged=true;
+                }
+              });
+            });
+            if(tsChanged){
+              coMig.changed=true;
+            }
+            supaUpsert("meta",{key:"cleanup_blank_thesisstatus_2026_05_14",value:"1"});
+          }
+        }catch(_e){}
         setCompanies(coMig.data);
         coOk=coMig.data.length;
         /* If we read from the legacy "shared" row, write each company

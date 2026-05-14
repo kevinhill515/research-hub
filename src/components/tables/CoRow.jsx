@@ -489,26 +489,11 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
           {(function(){
             var last = getLastReportedEntry(company.earningsEntries);
             var ts = last && last.thesisStatus;
-            var cfg = ts ? ({ "On track": { bg: "#dcfce7", color: "#166534" }, "Watch": { bg: "#fef9c3", color: "#854d0e" }, "Broken": { bg: "#fee2e2", color: "#991b1b" } }[ts] || { bg: "#f1f5f9", color: "#475569" }) : null;
+            if (!ts) return <span className="text-xs text-slate-300 dark:text-slate-600">—</span>;
+            var cfg = { "On track": { bg: "#dcfce7", color: "#166534" }, "Watch": { bg: "#fef9c3", color: "#854d0e" }, "Broken": { bg: "#fee2e2", color: "#991b1b" } }[ts] || { bg: "#f1f5f9", color: "#475569" };
             return (
-              <span className="inline-flex items-center gap-1">
-                {ts ? (
-                  <span title={"From earnings " + (last.reportDate || "?")} className="text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap" style={{ background: cfg.bg, color: cfg.color }}>
-                    📊 {ts}
-                  </span>
-                ) : !(pendingTpCount > 0) && <span className="text-xs text-slate-300 dark:text-slate-600">—</span>}
-                {/* In-flight TP-change approval often implies a thesis
-                    re-evaluation is pending too, so surface the same
-                    pending chip on Thesis as on TP Change — gives the
-                    approver one signal to act on across both columns. */}
-                {pendingTpCount > 0 && (
-                  <span
-                    className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800"
-                    title={pendingTpCount + " TP change" + (pendingTpCount === 1 ? "" : "s") + " awaiting approval"}
-                  >
-                    ⏳ Pending
-                  </span>
-                )}
+              <span title={"From earnings " + (last.reportDate || "?")} className="text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap" style={{ background: cfg.bg, color: cfg.color }}>
+                📊 {ts}
               </span>
             );
           })()}

@@ -241,8 +241,10 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
   function addBullet() { if (e.bullets.length < 15) upd({ bullets: e.bullets.concat([""]) }); }
   function removeBullet(i) { upd({ bullets: e.bullets.filter(function (_, j) { return j !== i; }) }); }
 
-  var tcColor = e.thesisStatus === "On track" ? "#166534" : e.thesisStatus === "Watch" ? "#854d0e" : "#991b1b";
-  var tcBg = e.thesisStatus === "On track" ? "#dcfce7" : e.thesisStatus === "Watch" ? "#fef9c3" : "#fee2e2";
+  /* Neutral when blank ("" / --) so the empty default doesn't read as
+     "Broken" (red). On track = green, Watch = amber, Broken = red. */
+  var tcColor = !e.thesisStatus ? "#475569" : e.thesisStatus === "On track" ? "#166534" : e.thesisStatus === "Watch" ? "#854d0e" : "#991b1b";
+  var tcBg    = !e.thesisStatus ? "#f1f5f9" : e.thesisStatus === "On track" ? "#dcfce7" : e.thesisStatus === "Watch" ? "#fef9c3" : "#fee2e2";
   /* Tile palette: green = Increased, red = Decreased, amber = Unchanged.
      Previously Unchanged used neutral grey, but grey reads as "no info"
      when the actual signal is "actively reviewed and held steady" —
@@ -441,6 +443,10 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
                 className={inputClasses + " appearance-none font-medium"}
                 style={{ background: tcBg, color: tcColor }}
               >
+                {/* Blank/-- option so a new entry doesn't auto-claim
+                    'On track' before the analyst has reviewed the
+                    report. Mirrors the tpChange dropdown's blank slot. */}
+                <option value="">--</option>
                 {THESIS_STATUSES.map(function (s) { return <option key={s}>{s}</option>; })}
               </select>
             </div>

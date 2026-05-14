@@ -111,12 +111,11 @@ export function getTpFixed(val){if(!val)return null;var t=parseFloat(val.tpFixed
 export function getCompanyMOSFixed(c){var val=c.valuation||{};var tp=getTpFixed(val);if(tp===null)return null;var ord=((c.tickers||[]).find(function(t){return t.isOrdinary;})||{});var price=ord.price||val.price;return calcMOS(tp,price);}
 /* Same as fmtMOS but rounded to 0 decimals — used in dense table cells. */
 export function fmtMOS0(mos){if(mos===null||mos===undefined)return null;var n=Math.round(mos);return(n>0?"+":"")+n+"%";}
-/* New earnings entry defaults. tpChange starts as "" (rendered as --
-   in the dropdown) rather than auto-selecting "Unchanged"; an entry
-   that hasn't been reviewed yet shouldn't claim a TP disposition.
-   thesisStatus stays "On track" — that's a positive default the analyst
-   has to actively change if the thesis breaks. */
-export function blankEarnings(){return{id:(typeof crypto!=="undefined"&&crypto.randomUUID)?crypto.randomUUID():(Date.now()+"-"+Math.random().toString(36).slice(2)),quarter:"",reportDate:"",eps:"",tpChange:"",newTP:"",tpRationale:"",bullets:["","","","",""],shortTakeaway:"",extendedTakeaway:"",thesisStatus:"On track",thesisNote:"",open:true};}
+/* New earnings entry defaults. Both tpChange and thesisStatus start as
+   "" (rendered as -- in the dropdowns) rather than auto-selecting
+   "Unchanged" / "On track"; an entry that hasn't been reviewed yet
+   shouldn't claim either disposition. */
+export function blankEarnings(){return{id:(typeof crypto!=="undefined"&&crypto.randomUUID)?crypto.randomUUID():(Date.now()+"-"+Math.random().toString(36).slice(2)),quarter:"",reportDate:"",eps:"",tpChange:"",newTP:"",tpRationale:"",bullets:["","","","",""],shortTakeaway:"",extendedTakeaway:"",thesisStatus:"",thesisNote:"",open:true};}
 
 /* Rep-data entries are normalized to {shares, avgCost} via migrateRepData, but old numeric values may appear briefly during load. These helpers read either safely. */
 /* Trigger browser print with body.printing class so the @media print rules
