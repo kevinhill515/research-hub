@@ -47,10 +47,21 @@ function ApprovalCard({ rec, companyName, onApprove, onReject }){
 
   /* Compute a tidy change-summary line. Show only the fields that
      actually changed (e.g. an EPS-only revision shouldn't print "PE
-     12.0 → 12.0"). */
+     12.0 → 12.0"). Newer records carry the full breakdown
+     (EPS1/EPS2/W1/W2) — older records only have a single EPS field. */
+  function diff(a,b){return a!==b&&!(a==null&&b==null);}
   var changes = [];
-  if(rec.fromPE !== rec.toPE) changes.push("PE " + fmtNum(rec.fromPE,1) + " → " + fmtNum(rec.toPE,1));
-  if(rec.fromEPS !== rec.toEPS) changes.push("EPS " + fmtNum(rec.fromEPS,2) + " → " + fmtNum(rec.toEPS,2));
+  if(diff(rec.fromPE, rec.toPE)) changes.push("PE " + fmtNum(rec.fromPE,1) + " → " + fmtNum(rec.toPE,1));
+  if(diff(rec.fromEPS1, rec.toEPS1)) changes.push("EPS1 " + fmtNum(rec.fromEPS1,2) + " → " + fmtNum(rec.toEPS1,2));
+  if(diff(rec.fromEPS2, rec.toEPS2)) changes.push("EPS2 " + fmtNum(rec.fromEPS2,2) + " → " + fmtNum(rec.toEPS2,2));
+  if(diff(rec.fromW1, rec.toW1) || diff(rec.fromW2, rec.toW2)){
+    changes.push("Weights " + fmtNum(rec.fromW1,0) + "/" + fmtNum(rec.fromW2,0) + " → " + fmtNum(rec.toW1,0) + "/" + fmtNum(rec.toW2,0));
+  }
+  /* Fallback for legacy records (pre-breakdown), which only had a
+     blended EPS field. */
+  if(rec.fromEPS1==null && rec.toEPS1==null && diff(rec.fromEPS, rec.toEPS)){
+    changes.push("EPS " + fmtNum(rec.fromEPS,2) + " → " + fmtNum(rec.toEPS,2));
+  }
   changes.push("TP " + fmtNum(rec.fromTP,2) + " → " + fmtNum(rec.toTP,2));
 
   var statusBadge;

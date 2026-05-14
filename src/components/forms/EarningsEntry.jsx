@@ -31,6 +31,12 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
      to a short status string for ~3s, then cleared. Avoids needing a
      toast system. */
   var [tpSubmitMsg, setTpSubmitMsg] = useState("");
+  /* Inline submission form: shown after the user clicks "Submit TP change
+     for approval". Pre-fills from current valuation so common cases need
+     only one edit (e.g. change w1 from 50 to 0 and w2 from 50 to 100,
+     leave PE/EPS alone). */
+  var [showSubmitForm, setShowSubmitForm] = useState(false);
+  var [tpForm, setTpForm] = useState({pe:"", eps1:"", eps2:"", w1:"", w2:""});
   /* True when this entry has already spawned a pending approval — used
      to disable the submit button and avoid duplicate requests. */
   var hasPending = (tpApprovals||[]).some(function(r){
@@ -452,38 +458,27 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
                 suggested value — the approver can still adjust PE/EPS
                 breakdown after the fact on the Valuation card. */}
             {(function(){
-              var newTpNum = parseFloat(e.newTP);
-              var canSubmit = e.tpChange !== "Unchanged" && isFinite(newTpNum) && newTpNum > 0 && !hasPending;
+              /* The trigger button — opens the inline form, pre-filling
+                 with the company's current valuation breakdown so the
+                 user only edits what's actually changing. */
+              var canOpen = e.tpChange !== "Unchanged" && !hasPending && !!company;
               return (
                 <button
                   type="button"
                   onClick={function(){
-                    if(!canSubmit||!company) return;
+                    if(!canOpen) return;
                     var v = company.valuation || {};
-                    var currentPE = parseFloat(v.pe);
-                    var currentEPS = parseFloat(v.eps1);
-                    var currentTP = (isFinite(currentPE)&&isFinite(currentEPS)) ? currentPE*currentEPS : null;
-                    /* Keep EPS, change PE to back into the requested TP. If
-                       EPS isn't set, just store toTP and let the approver
-                       fill in PE/EPS manually on approval. */
-                    var toPE = isFinite(currentEPS)&&currentEPS>0 ? newTpNum/currentEPS : null;
-                    onSave(e); /* persist the entry first */
-                    submitTpApproval({
-                      companyId: company.id,
-                      fromPE: isFinite(currentPE) ? currentPE : null,
-                      fromEPS: isFinite(currentEPS) ? currentEPS : null,
-                      fromTP: currentTP,
-                      toPE: toPE,
-                      toEPS: isFinite(currentEPS) ? currentEPS : null,
-                      toTP: newTpNum,
-                      rationale: e.tpRationale || e.extendedTakeaway || "",
-                      earningsEntryId: entry.id,
+                    setTpForm({
+                      pe:   v.pe   != null && v.pe   !== "" ? String(v.pe)   : "",
+                      eps1: v.eps1 != null && v.eps1 !== "" ? String(v.eps1) : "",
+                      eps2: v.eps2 != null && v.eps2 !== "" ? String(v.eps2) : "",
+                      w1:   v.w1   != null && v.w1   !== "" ? String(v.w1)   : "",
+                      w2:   v.w2   != null && v.w2   !== "" ? String(v.w2)   : "",
                     });
-                    setTpSubmitMsg("✓ Submitted for approval");
-                    setTimeout(function(){setTpSubmitMsg("");}, 3000);
+                    setShowSubmitForm(true);
                   }}
-                  disabled={!canSubmit}
-                  className={"text-xs px-3 py-1.5 font-semibold rounded-md transition-colors " + (canSubmit ? "bg-amber-600 text-white border-none cursor-pointer hover:bg-amber-700" : "bg-slate-200 dark:bg-slate-700 text-gray-400 dark:text-slate-500 border-none cursor-not-allowed")}
+                  disabled={!canOpen}
+                  className={"text-xs px-3 py-1.5 font-semibold rounded-md transition-colors " + (canOpen ? "bg-amber-600 text-white border-none cursor-pointer hover:bg-amber-700" : "bg-slate-200 dark:bg-slate-700 text-gray-400 dark:text-slate-500 border-none cursor-not-allowed")}
                   title={hasPending ? "A TP change for this entry is already pending review" : "Submit the proposed TP for approval by another teammate"}
                 >
                   {hasPending ? "TP change pending" : "Submit TP change for approval"}
@@ -506,6 +501,124 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
               Delete entry
             </span>
           </div>
+
+          {/* Inline TP-approval submission form. Captures the full
+              valuation breakdown (PE + EPS1 + EPS2 + W1 + W2) so the
+              approver receives a complete, applies-as-is proposal rather
+              than a single TP number with implied math. Computed TP is
+              shown live so the user can see whether their inputs match
+              the New TP they put in the entry. */}
+          {showSubmitForm && (function(){
+            var pe   = parseFloat(tpForm.pe);
+            var eps1 = parseFloat(tpForm.eps1);
+            var eps2 = parseFloat(tpForm.eps2);
+            var w1   = parseFloat(tpForm.w1);
+            var w2   = parseFloat(tpForm.w2);
+            /* normEPS uses the same weighted-blend formula as calcNormEPS
+               in utils/index.js. If only eps1 is set with no weights,
+               fall back to eps1 alone — same as the existing behavior. */
+            var normEPS = null;
+            if(isFinite(eps1) && isFinite(eps2) && isFinite(w1) && isFinite(w2)){
+              normEPS = (eps1*w1 + eps2*w2) / 100;
+            } else if(isFinite(eps1) && !isFinite(eps2)){
+              normEPS = eps1;
+            }
+            var computedTP = (isFinite(pe) && pe>0 && normEPS!==null) ? pe*normEPS : null;
+            var enteredTP = parseFloat(e.newTP);
+            var weightsTotal = (isFinite(w1)?w1:0) + (isFinite(w2)?w2:0);
+            var weightsOK = !isFinite(w1) && !isFinite(w2) ? true : Math.abs(weightsTotal - 100) < 0.01;
+            var canSubmit = isFinite(pe) && pe>0 && normEPS!==null && computedTP!==null && weightsOK;
+            var INP="text-xs px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 focus:ring-2 focus:ring-amber-500 focus:outline-none w-20";
+            var LBL="text-[10px] text-gray-500 dark:text-slate-400 block mb-0.5 uppercase tracking-wide";
+            return (
+              <div className="mt-2 p-3 rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/30">
+                <div className="text-[11px] font-semibold text-amber-800 dark:text-amber-200 mb-2">Submit TP change for approval — full breakdown</div>
+                <div className="flex gap-3 flex-wrap items-end mb-2">
+                  <div>
+                    <label className={LBL}>PE</label>
+                    <input type="number" step="0.1" value={tpForm.pe} onChange={function(ev){setTpForm(Object.assign({},tpForm,{pe:ev.target.value}));}} className={INP}/>
+                  </div>
+                  <span className="text-gray-500 dark:text-slate-400 pb-1">×</span>
+                  <div>
+                    <label className={LBL}>EPS FY1</label>
+                    <input type="number" step="0.01" value={tpForm.eps1} onChange={function(ev){setTpForm(Object.assign({},tpForm,{eps1:ev.target.value}));}} className={INP}/>
+                  </div>
+                  <div>
+                    <label className={LBL}>W1 %</label>
+                    <input type="number" step="1" value={tpForm.w1} onChange={function(ev){setTpForm(Object.assign({},tpForm,{w1:ev.target.value}));}} className={INP}/>
+                  </div>
+                  <span className="text-gray-500 dark:text-slate-400 pb-1">+</span>
+                  <div>
+                    <label className={LBL}>EPS FY2</label>
+                    <input type="number" step="0.01" value={tpForm.eps2} onChange={function(ev){setTpForm(Object.assign({},tpForm,{eps2:ev.target.value}));}} className={INP}/>
+                  </div>
+                  <div>
+                    <label className={LBL}>W2 %</label>
+                    <input type="number" step="1" value={tpForm.w2} onChange={function(ev){setTpForm(Object.assign({},tpForm,{w2:ev.target.value}));}} className={INP}/>
+                  </div>
+                </div>
+                <div className="text-[11px] text-gray-600 dark:text-slate-300 mb-2 font-mono">
+                  Norm EPS = {normEPS!==null ? normEPS.toFixed(2) : "—"}
+                  &nbsp;·&nbsp; Computed TP = {computedTP!==null ? (currency + " " + computedTP.toFixed(2)) : "—"}
+                  {isFinite(enteredTP) && computedTP!==null && Math.abs(computedTP - enteredTP) > 0.01 && (
+                    <span className="ml-2 text-rose-600 dark:text-rose-400">Doesn't match entry's New TP ({currency} {enteredTP.toFixed(2)}) — review inputs</span>
+                  )}
+                  {!weightsOK && (
+                    <span className="ml-2 text-rose-600 dark:text-rose-400">Weights must sum to 100 (currently {weightsTotal})</span>
+                  )}
+                </div>
+                <div className="flex gap-2 items-center">
+                  <button
+                    type="button"
+                    disabled={!canSubmit}
+                    onClick={function(){
+                      if(!canSubmit||!company) return;
+                      var v = company.valuation || {};
+                      var fromPE   = parseFloat(v.pe);
+                      var fromEPS1 = parseFloat(v.eps1);
+                      var fromEPS2 = parseFloat(v.eps2);
+                      var fromW1   = parseFloat(v.w1);
+                      var fromW2   = parseFloat(v.w2);
+                      var fromNormEPS = null;
+                      if(isFinite(fromEPS1) && isFinite(fromEPS2) && isFinite(fromW1) && isFinite(fromW2)){
+                        fromNormEPS = (fromEPS1*fromW1 + fromEPS2*fromW2) / 100;
+                      } else if(isFinite(fromEPS1) && !isFinite(fromEPS2)){
+                        fromNormEPS = fromEPS1;
+                      }
+                      var fromTP = (isFinite(fromPE)&&fromNormEPS!==null) ? fromPE*fromNormEPS : null;
+                      onSave(e);
+                      submitTpApproval({
+                        companyId: company.id,
+                        fromPE: isFinite(fromPE) ? fromPE : null,
+                        fromEPS1: isFinite(fromEPS1) ? fromEPS1 : null,
+                        fromEPS2: isFinite(fromEPS2) ? fromEPS2 : null,
+                        fromW1: isFinite(fromW1) ? fromW1 : null,
+                        fromW2: isFinite(fromW2) ? fromW2 : null,
+                        fromEPS: fromNormEPS,
+                        fromTP: fromTP,
+                        toPE: pe,
+                        toEPS1: isFinite(eps1) ? eps1 : null,
+                        toEPS2: isFinite(eps2) ? eps2 : null,
+                        toW1: isFinite(w1) ? w1 : null,
+                        toW2: isFinite(w2) ? w2 : null,
+                        toEPS: normEPS,
+                        toTP: computedTP,
+                        rationale: e.tpRationale || e.extendedTakeaway || "",
+                        earningsEntryId: entry.id,
+                      });
+                      setTpSubmitMsg("✓ Submitted for approval");
+                      setTimeout(function(){setTpSubmitMsg("");}, 3000);
+                      setShowSubmitForm(false);
+                    }}
+                    className={"text-xs px-3 py-1 font-semibold rounded-md transition-colors " + (canSubmit ? "bg-amber-600 text-white border-none cursor-pointer hover:bg-amber-700" : "bg-slate-200 dark:bg-slate-700 text-gray-400 dark:text-slate-500 border-none cursor-not-allowed")}
+                  >
+                    Submit for approval
+                  </button>
+                  <button type="button" onClick={function(){setShowSubmitForm(false);}} className="text-xs px-3 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">Cancel</button>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
     </div>
