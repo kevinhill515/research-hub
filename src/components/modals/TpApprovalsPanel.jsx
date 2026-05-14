@@ -19,6 +19,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { TEAM_COLORS } from "../../constants/index.js";
 import { useCompanyContext } from "../../context/CompanyContext.jsx";
+import { ccyPrefix, calcMOS } from "../../utils/index.js";
 
 const BTN_PRIMARY = "text-xs px-3 py-1 font-medium bg-blue-600 text-white rounded-md cursor-pointer hover:bg-blue-700 transition-colors";
 const BTN_DANGER  = "text-xs px-3 py-1 font-medium bg-rose-600 text-white rounded-md cursor-pointer hover:bg-rose-700 transition-colors";
@@ -31,7 +32,7 @@ function fmtNum(v, dp){
   return n.toFixed(dp===undefined?2:dp);
 }
 
-function ApprovalCard({ rec, companyName, onApprove, onReject, onWithdraw, onNavigate }){
+function ApprovalCard({ rec, company, companyName, onApprove, onReject, onWithdraw, onNavigate }){
   var { currentUser, markTpApprovalRead } = useCompanyContext();
   var [showReject, setShowReject] = useState(false);
   var [rejectReason, setRejectReason] = useState("");
@@ -65,13 +66,33 @@ function ApprovalCard({ rec, companyName, onApprove, onReject, onWithdraw, onNav
   if(rec.fromEPS1==null && rec.toEPS1==null && diff(rec.fromEPS, rec.toEPS)){
     changes.push("EPS " + fmtNum(rec.fromEPS,2) + " → " + fmtNum(rec.toEPS,2));
   }
+  /* Pull currency + most-recent ord-ticker price from the live company.
+     Lets us prefix TPs with the currency symbol and show what the
+     proposed TP implies for MOS at today's price. Falls back gracefully
+     when company isn't found (legacy records, deleted companies). */
+  var v = (company && company.valuation) || {};
+  var ord = ((company && company.tickers) || []).find(function(t){return t.isOrdinary;}) || ((company && company.tickers) || [])[0] || null;
+  var currentPrice = ord && ord.price !== undefined && ord.price !== "" ? parseFloat(ord.price) : parseFloat(v.price);
+  var ccy = (ord && ord.currency) || v.currency || "USD";
+  var pfx = ccyPrefix(ccy);
   /* TP row: show the COMPUTED TP (what PE × normEPS produces, i.e. what
      actually gets written on approve). If the suggester also typed a
      proposed TP into the entry and it differs from computed by more
      than a cent, surface both so the approver sees the gap. */
-  var tpLabel = "TP " + fmtNum(rec.fromTP,2) + " → " + fmtNum(rec.toTP,2);
+  var tpLabel = "TP " + pfx + fmtNum(rec.fromTP,2) + " → " + pfx + fmtNum(rec.toTP,2);
   if(rec.proposedTP!=null && isFinite(rec.proposedTP) && rec.toTP!=null && Math.abs(rec.proposedTP - rec.toTP) > 0.01){
-    tpLabel += " (computed; proposed " + fmtNum(rec.proposedTP,2) + ")";
+    tpLabel += " (computed; proposed " + pfx + fmtNum(rec.proposedTP,2) + ")";
+  }
+  /* New MOS at today's price using the proposed TP — answers the
+     approver's natural question "if I approve, what's the new MOS?"
+     We use calcMOS the same way the Valuation card does. Only show
+     when we have both a price and a toTP. */
+  if(isFinite(currentPrice) && currentPrice > 0 && rec.toTP != null && isFinite(rec.toTP) && rec.toTP > 0){
+    var newMOS = calcMOS(rec.toTP, currentPrice);
+    if(newMOS !== null){
+      var sign = newMOS >= 0 ? "+" : "";
+      tpLabel += "  ·  New MOS " + sign + newMOS.toFixed(1) + "% @ " + pfx + fmtNum(currentPrice,2);
+    }
   }
   changes.push(tpLabel);
 
@@ -155,10 +176,12 @@ export function TpApprovalsPanel({ open, onClose, onNavigate }){
   var { tpApprovals, companies, approveTpApproval, rejectTpApproval, withdrawTpApproval } = useCompanyContext();
   var [view, setView] = useState("pending"); /* "pending" | "decided" */
 
-  /* Lookup company name for each record. Done once per render. */
-  var nameById = useMemo(function(){
+  /* Lookup the full company by id. Used by ApprovalCard to display the
+     name, derive the current ord-ticker price, and pick the currency
+     for the TP prefix. Done once per render. */
+  var coById = useMemo(function(){
     var m={};
-    (companies||[]).forEach(function(c){m[c.id]=c.name;});
+    (companies||[]).forEach(function(c){m[c.id]=c;});
     return m;
   }, [companies]);
 
@@ -200,7 +223,8 @@ export function TpApprovalsPanel({ open, onClose, onNavigate }){
               <div className="text-sm text-gray-500 dark:text-slate-400 italic text-center py-8">No TP changes pending approval.</div>
             ) : (
               pending.map(function(rec){
-                return <ApprovalCard key={rec.id} rec={rec} companyName={nameById[rec.companyId] || "(unknown)"} onApprove={approveTpApproval} onReject={rejectTpApproval} onWithdraw={withdrawTpApproval} onNavigate={onNavigate}/>;
+                var co = coById[rec.companyId];
+                return <ApprovalCard key={rec.id} rec={rec} company={co} companyName={(co && co.name) || "(unknown)"} onApprove={approveTpApproval} onReject={rejectTpApproval} onWithdraw={withdrawTpApproval} onNavigate={onNavigate}/>;
               })
             )
           ) : (
@@ -208,7 +232,8 @@ export function TpApprovalsPanel({ open, onClose, onNavigate }){
               <div className="text-sm text-gray-500 dark:text-slate-400 italic text-center py-8">No decided TP changes yet.</div>
             ) : (
               decided.map(function(rec){
-                return <ApprovalCard key={rec.id} rec={rec} companyName={nameById[rec.companyId] || "(unknown)"} onApprove={approveTpApproval} onReject={rejectTpApproval} onWithdraw={withdrawTpApproval} onNavigate={onNavigate}/>;
+                var co = coById[rec.companyId];
+                return <ApprovalCard key={rec.id} rec={rec} company={co} companyName={(co && co.name) || "(unknown)"} onApprove={approveTpApproval} onReject={rejectTpApproval} onWithdraw={withdrawTpApproval} onNavigate={onNavigate}/>;
               })
             )
           )}
