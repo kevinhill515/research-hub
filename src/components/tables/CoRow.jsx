@@ -11,7 +11,7 @@ import PortPicker from '../ui/PortPicker.jsx';
 import PillEl from '../ui/PillEl.jsx';
 import FpeRangeMini from '../ui/FpeRangeMini.jsx';
 
-function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, selected, onToggleSelect, onQuickUpload, dark, rowAlerts }) {
+function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, selected, onToggleSelect, onQuickUpload, dark, rowAlerts, pendingTpCount }) {
   /* `rowAlerts` and `dark` are now lifted to props so this component
      doesn't subscribe to the global context. Combined with React.memo
      below, that means a context update unrelated to this row (e.g. a
@@ -422,12 +422,29 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
               displayValue = TP_CHANGE_TO_ACTION[last.tpChange];
               derivedFromEarnings = true;
             }
-            if (!displayValue) return <span className="text-xs text-slate-300 dark:text-slate-600">--</span>;
+            if (!displayValue && !(pendingTpCount > 0)) return <span className="text-xs text-slate-300 dark:text-slate-600">--</span>;
             var aColor = displayValue === "Increase TP" ? "#166534" : displayValue === "Decrease TP" ? "#dc2626" : displayValue === "No Action" ? "#854d0e" : "#6b7280";
             var aBg    = displayValue === "Increase TP" ? "#dcfce7" : displayValue === "Decrease TP" ? "#fee2e2" : displayValue === "No Action" ? "#fef9c3" : "#f1f5f9";
             return (
-              <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: aBg, color: aColor }}>
-                {derivedFromEarnings ? "📊 " : ""}{displayValue}
+              <span className="inline-flex items-center gap-1">
+                {displayValue && (
+                  <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: aBg, color: aColor }}>
+                    {derivedFromEarnings ? "📊 " : ""}{displayValue}
+                  </span>
+                )}
+                {/* Pending-TP-approval indicator: surfaces when a teammate
+                    submitted a TP change suggestion that hasn't been
+                    approved/rejected yet. Amber clock chip so it visually
+                    parallels the earnings-derived pill but signals
+                    "in-flight, not yet committed". */}
+                {pendingTpCount > 0 && (
+                  <span
+                    className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800"
+                    title={pendingTpCount + " TP change" + (pendingTpCount === 1 ? "" : "s") + " awaiting approval"}
+                  >
+                    ⏳ Pending
+                  </span>
+                )}
               </span>
             );
           })()}

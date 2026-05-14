@@ -239,6 +239,43 @@ export function CompanyProvider({children}){
       }
       if (loadedArr && loadedArr.length) {
         var coMig=migratePortfolioKeys(loadedArr);
+        /* One-shot: blank out tpChange="Unchanged" on earnings entries
+           that were clearly never reviewed. Old blankEarnings defaulted
+           tpChange to "Unchanged" before the new default ("") landed —
+           which meant entries the analyst hadn't touched still claimed
+           a TP disposition. Criterion is conservative: ALL of
+           shortTakeaway, extendedTakeaway, tpRationale, thesisNote, and
+           every bullet must be empty. If those are empty AND tpChange
+           happens to be "Unchanged", that's the auto-default never
+           edited. Reviewed-but-uneventful entries (someone actively
+           set Unchanged with notes) are preserved. Gated by a meta
+           flag so it runs exactly once. */
+        try{
+          var rTpFlag=await supaGet("meta","key","cleanup_blank_tpchange_2026_05_14");
+          if(!(rTpFlag&&rTpFlag.value)){
+            var tpChanged=false;
+            coMig.data.forEach(function(c){
+              var es=c.earningsEntries;
+              if(!es||!es.length)return;
+              es.forEach(function(e){
+                if(e.tpChange!=="Unchanged")return;
+                var allEmpty = !(e.shortTakeaway||"").trim()
+                  && !(e.extendedTakeaway||"").trim()
+                  && !(e.tpRationale||"").trim()
+                  && !(e.thesisNote||"").trim()
+                  && !(e.bullets||[]).some(function(b){return (b||"").trim();});
+                if(allEmpty){
+                  e.tpChange="";
+                  tpChanged=true;
+                }
+              });
+            });
+            if(tpChanged){
+              coMig.changed=true; /* triggers the bulk re-upsert below */
+            }
+            supaUpsert("meta",{key:"cleanup_blank_tpchange_2026_05_14",value:"1"});
+          }
+        }catch(_e){}
         setCompanies(coMig.data);
         coOk=coMig.data.length;
         /* If we read from the legacy "shared" row, write each company
@@ -253,13 +290,17 @@ export function CompanyProvider({children}){
             supaDelete("companies", "id", "shared");
           });
         } else if (coMig.changed) {
-          /* Migration pass touched data — re-upsert all changed entries.
-             Bulk upsert is safe to over-write; PostgREST handles the
-             ON CONFLICT per row. */
+          /* Migration pass touched data — re-upsert in 50-row chunks
+             so a single 325-row JSON payload can't trip Postgres's
+             statement_timeout the way it did in May 2026. Bulk upsert
+             is safe to over-write; PostgREST handles ON CONFLICT per row. */
           var bulk2 = coMig.data.map(function(c){
             return { id: c.id, data: JSON.stringify(c) };
           });
-          supaUpsert("companies", bulk2);
+          var CHUNK2=50;
+          for(var ii2=0; ii2<bulk2.length; ii2+=CHUNK2){
+            supaUpsert("companies", bulk2.slice(ii2, ii2+CHUNK2));
+          }
         }
       }
     }}catch(e){}

@@ -52,6 +52,19 @@ export default function App(){
     return out;
   }, [companies, alertRules, lastPriceUpdate]);
 
+  /* Pending-TP-approval count by company id, so the Companies row's
+     TP Change cell can show 'awaiting approval' when a suggestion is
+     in flight. Memoized to avoid recomputing on every unrelated render
+     of App.jsx. */
+  const pendingTpByCoId = useMemo(function () {
+    const out = {};
+    (tpApprovals || []).forEach(function (r) {
+      if (r.status !== "pending" || !r.companyId) return;
+      out[r.companyId] = (out[r.companyId] || 0) + 1;
+    });
+    return out;
+  }, [tpApprovals]);
+
   /* Stable handlers so React.memo on CoRow is effective — without
      useCallback, every parent render creates a new function ref and
      defeats the memo's prop-equality check. */
@@ -865,7 +878,7 @@ export default function App(){
               <div style={{display:"table-cell",paddingBottom:4,paddingRight:6,position:"sticky",top:0,background:"var(--tw-prose-body,#fff)",zIndex:10}} className="bg-white dark:bg-slate-950"><span onClick={function(e){e.stopPropagation();if(selectedIds.size>0){clearSelected();}else{selectAll();}}} className="cursor-pointer inline-flex items-center justify-center w-4 h-4 rounded border border-slate-300 dark:border-slate-600 text-[10px] leading-none select-none hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" style={{background:selectedIds.size===displayedCos.length&&displayedCos.length>0?"#2563eb":selectedIds.size>0?"#93c5fd":undefined,color:selectedIds.size>0?"#fff":undefined}}>{selectedIds.size===displayedCos.length&&displayedCos.length>0?"\u2713":selectedIds.size>0?"\u2013":""}</span></div>
               {HEADER_COLS.filter(function(col){return col.label===""||visibleCols.has(col.label);}).map(function(col,i){var cs=col.sort;var active=cs&&coSort===cs;var arrow=active?(coSortDir==="asc"?" \u2191":" \u2193"):"";var isName=col.label==="Name";return(<div key={i} onClick={cs?function(){handleSortClick(cs);}:undefined} className={"text-[10px] uppercase tracking-wide pb-1 pr-2.5 whitespace-nowrap select-none sticky top-0 bg-white dark:bg-slate-950 " + (isName?"left-0 z-20 ":"z-10 ") + (active?"font-semibold text-gray-900 dark:text-slate-100":"font-normal text-gray-500 dark:text-slate-400") + (cs?" cursor-pointer":" cursor-default")} style={{display:"table-cell"}}>{col.label}{arrow}</div>);})}
             </div>
-            {displayedCos.map(function(c,i){return <CoRow key={c.id+"-"+i} company={c} compact={compact} visibleCols={visibleCols} selected={selectedIds.has(c.id)} onToggleSelect={toggleSelect} onSelect={handleCoSelect} onDelete={handleCoDelete} onUpdate={updateCo} onQuickUpload={handleCoQuickUpload} dark={dark} rowAlerts={coAlertsByCoId[c.id]}/>;  })}
+            {displayedCos.map(function(c,i){return <CoRow key={c.id+"-"+i} company={c} compact={compact} visibleCols={visibleCols} selected={selectedIds.has(c.id)} onToggleSelect={toggleSelect} onSelect={handleCoSelect} onDelete={handleCoDelete} onUpdate={updateCo} onQuickUpload={handleCoQuickUpload} dark={dark} rowAlerts={coAlertsByCoId[c.id]} pendingTpCount={pendingTpByCoId[c.id] || 0}/>;  })}
           </div>
           </div>
         )}</div>)}
