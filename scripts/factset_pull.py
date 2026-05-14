@@ -1005,31 +1005,44 @@ def read_prices(xl: ExcelSession) -> tuple[dict[str, dict], dict[str, list]]:
         Auto-detects whether the sheet values are percent-form (1.2 for
         1.2%) or decimal-form (0.012 for 1.2%). Excel cells formatted
         as Percentage store the underlying decimal (0.012) but display
-        '1.2%'; cells formatted as Number store 1.2 directly. Both
-        formats are common in FactSet templates; we pick the right
-        interpretation per row by looking at the magnitude of values
-        in the block:
+        '1.2%'; cells formatted as Number store 1.2 directly. Text
+        cells come through as strings like '1.2%'. All three formats
+        are common in FactSet templates.
 
-           max(|v|) >= 1.5  →  percent-form, divide by 100
-           max(|v|) <  1.5  →  decimal-form, use as-is
-
-        The 1.5 threshold means a row of returns where any window
-        exceeds ~1.5 (i.e. >150% if decimal would be implausible,
-        whereas 1.5%+ is unremarkable in percent form) trips the
-        percent-form path. Returns the dict of populated entries.
+        Detection priority (most-specific first):
+          1. If ANY raw cell is a string containing '%', the values are
+             in percent form — divide everything by 100. This is the
+             only deterministic signal; magnitude can't help once
+             '%' is present.
+          2. Otherwise (all-numeric cells), assume decimal form unless
+             the max magnitude is implausibly large (>= 50, i.e. the
+             values look like raw percent numbers rather than decimals).
+             The earlier 1.5 threshold misfired on hot stocks: Cisco's
+             3Y return of +168.8% returns as 1.688 from a Percentage-
+             formatted cell, which 1.5 mis-classified as percent form
+             and then divided again, yielding 0.3% on the 5D column.
+             50 is well above any plausible decimal-form 3Y return
+             (50.0 == 5000%) so the false-positive class is closed.
 
         Returns are stored as DECIMALS in the perf object (0.012 for
         1.2%) so the display layer just multiplies by 100. """
         raw_values = []
+        any_percent_string = False
         for i, _ in enumerate(PRICES_PERF_KEYS):
             idx = start + i
             if idx >= len(row): break
-            v = _num(row[idx])
+            cell = row[idx]
+            if isinstance(cell, str) and "%" in cell:
+                any_percent_string = True
+            v = _num(cell)
             raw_values.append(v)
         finite = [abs(v) for v in raw_values if v is not None]
         if not finite:
             return {}
-        is_percent_form = max(finite) >= 1.5
+        if any_percent_string:
+            is_percent_form = True
+        else:
+            is_percent_form = max(finite) >= 50
         block: dict = {}
         for i, key in enumerate(PRICES_PERF_KEYS):
             if i >= len(raw_values): break
