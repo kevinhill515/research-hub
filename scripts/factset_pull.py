@@ -1096,7 +1096,17 @@ def read_prices(xl: ExcelSession) -> tuple[dict[str, dict], dict[str, list]]:
                     history.setdefault(canonical_ticker(ord_tk), []).append({"d": hist[0], "p": hist[1]})
         if len(row) > US_TICKER_IDX:
             us_tk = _str(row[US_TICKER_IDX])
-            if us_tk:
+            # Skip the US block when it's the same ticker as the Ord block
+            # (typical for natively US-listed names — e.g. Cisco lists CSCO
+            # in both ord and us columns). Without this guard, the US block
+            # silently overwrites the ord write, and if the two blocks
+            # carry different values for the same metric (timing, partial
+            # fill from FactSet, different price source) the wrong number
+            # wins. The JS importer already has this guard; bug here was
+            # a parity gap. Cisco's 5D was reading 5.4% (the US-block
+            # value) instead of the correct 25.3% (ord-block value) until
+            # this was added.
+            if us_tk and us_tk.upper() != (ord_tk or "").upper():
                 us_price = _num(row[US_PRICE_IDX]) if len(row) > US_PRICE_IDX else None
                 us_perf  = parse_perf_block(row, US_PERF_START)
                 us_entry: dict = {"price": us_price, "perf": us_perf}
