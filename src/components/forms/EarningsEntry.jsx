@@ -225,8 +225,12 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
 
   var tcColor = e.thesisStatus === "On track" ? "#166534" : e.thesisStatus === "Watch" ? "#854d0e" : "#991b1b";
   var tcBg = e.thesisStatus === "On track" ? "#dcfce7" : e.thesisStatus === "Watch" ? "#fef9c3" : "#fee2e2";
-  var tpColor = e.tpChange === "Increased" ? "#166534" : e.tpChange === "Decreased" ? "#991b1b" : "#475569";
-  var tpBg = e.tpChange === "Increased" ? "#dcfce7" : e.tpChange === "Decreased" ? "#fee2e2" : "#f1f5f9";
+  /* Tile palette: green = Increased, red = Decreased, amber = Unchanged.
+     Previously Unchanged used neutral grey, but grey reads as "no info"
+     when the actual signal is "actively reviewed and held steady" —
+     amber distinguishes it from a not-yet-reviewed entry. */
+  var tpColor = e.tpChange === "Increased" ? "#166534" : e.tpChange === "Decreased" ? "#991b1b" : "#854d0e";
+  var tpBg    = e.tpChange === "Increased" ? "#dcfce7" : e.tpChange === "Decreased" ? "#fee2e2" : "#fef9c3";
 
   /* Bumped text sizes one tier across the form so the earnings tab
      reads cleanly without squinting. Inputs go xs→sm; labels go

@@ -14,22 +14,34 @@ function ActionCell({ value, earningsEntries, onUpdate }) {
      manual entry, so the user knows it'll auto-update when the next
      earnings entry is logged. */
   /* Earnings-driven: when the latest earnings entry has a usable
-     tpChange (Increase TP / Decrease TP / No Action), it wins over
-     any manual company.action. The manual value still shows as a
-     fallback for companies with no earnings entries yet — useful
-     during a name's first review when there's nothing logged. The
-     📊 prefix + tooltip make the source obvious. */
+     tpChange, map it to the matching ACTIONS value and let it win
+     over any manual company.action. The earnings form uses the verbs
+     'Increased / Decreased / Unchanged' (past-tense, describing what
+     happened) while the Action column uses the imperatives 'Increase
+     TP / Decrease TP / No Action' (the resulting recommendation).
+     Without this mapping the strings never matched and the fallback
+     was effectively dead code — Action stayed stuck on stale manual
+     values forever even after the earnings entry said otherwise. */
+  var TP_CHANGE_TO_ACTION = {
+    "Increased":  "Increase TP",
+    "Decreased":  "Decrease TP",
+    "Unchanged":  "No Action",
+  };
   var derivedFromEarnings = false;
   var displayValue = value;
   if (earningsEntries && earningsEntries.length > 0) {
     var last = getLastReportedEntry(earningsEntries);
-    if (last && last.tpChange && ["Increase TP", "Decrease TP", "No Action"].indexOf(last.tpChange) >= 0) {
-      displayValue = last.tpChange;
+    if (last && last.tpChange && TP_CHANGE_TO_ACTION[last.tpChange]) {
+      displayValue = TP_CHANGE_TO_ACTION[last.tpChange];
       derivedFromEarnings = true;
     }
   }
-  var aColor = displayValue === "Increase TP" ? "#166534" : displayValue === "Decrease TP" ? "#dc2626" : "#6b7280";
-  var aBg = displayValue === "Increase TP" ? "#dcfce7" : displayValue === "Decrease TP" ? "#fee2e2" : displayValue ? "#f1f5f9" : "transparent";
+  /* Pill palette matches the earnings tile: green = Increase TP,
+     red = Decrease TP, amber = No Action. 'No Action' was grey, but
+     grey reads as "no info" — amber signals "actively reviewed, no
+     change called for" which is what the earnings entry meant. */
+  var aColor = displayValue === "Increase TP" ? "#166534" : displayValue === "Decrease TP" ? "#dc2626" : displayValue === "No Action" ? "#854d0e" : "#6b7280";
+  var aBg    = displayValue === "Increase TP" ? "#dcfce7" : displayValue === "Decrease TP" ? "#fee2e2" : displayValue === "No Action" ? "#fef9c3" : displayValue ? "#f1f5f9" : "transparent";
 
   return (
     <div className="relative" ref={ref} onClick={function (e) { e.stopPropagation(); }}>
