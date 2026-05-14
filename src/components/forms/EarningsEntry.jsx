@@ -603,6 +603,16 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
                         toW2: isFinite(w2) ? w2 : null,
                         toEPS: normEPS,
                         toTP: computedTP,
+                        /* The TP the suggester typed into the entry's
+                           "New TP" field. Stored alongside the computed
+                           TP so the approver sees both — the proposal
+                           and what PE × normEPS actually produces. */
+                        proposedTP: isFinite(enteredTP) ? enteredTP : null,
+                        /* Snapshot FY labels at submission time so the
+                           Weights display can read "FY26/FY27 50/50 →
+                           0/100" rather than the ambiguous "W1/W2". */
+                        fy1: v.fy1 || "",
+                        fy2: v.fy2 || "",
                         rationale: e.tpRationale || e.extendedTakeaway || "",
                         earningsEntryId: entry.id,
                       });

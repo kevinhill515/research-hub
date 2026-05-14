@@ -313,7 +313,29 @@ export default function App(){
       {showTmplSearch&&<TemplateSearch companies={companies.filter(function(c){return Object.keys(c.sections||{}).length>0;})} onSelect={function(c,q){setSelCo(c);setTab("companies");setCoView("dashboard");setTmplHighlight(q);setTmplSearch(q);}} onClose={function(){setShowTmplSearch(false);}}/>} {showGlobalSearch&&<GlobalSearch companies={companies} saved={saved} onSelectCompany={function(c){setSelCo(c);setTab("companies");setCoView("dashboard");}} onSelectEntry={function(s){setTab("library");setExpanded(s.id);}} onClose={function(){setShowGlobalSearch(false);}}/>}
       {quickUploadCo&&<QuickUploadModal company={quickUploadCo} onClose={function(){setQuickUploadCo(null);}} onAccept={acceptQuickDiff}/>}
       <DiscussionsPanel open={showDiscussions} onClose={function(){setShowDiscussions(false);}} initialScope={discussionScope.scope} initialPortfolio={discussionScope.portfolio} initialCompanyId={discussionScope.companyId} companies={companies}/>
-      <TpApprovalsPanel open={showTpApprovals} onClose={function(){setShowTpApprovals(false);}}/>
+      <TpApprovalsPanel
+        open={showTpApprovals}
+        onClose={function(){setShowTpApprovals(false);}}
+        onNavigate={function(companyId, earningsEntryId){
+          /* Jump to the company's Earnings & Thesis Check tab and scroll
+             to the linked entry. Closes the panel first so the user
+             actually sees the destination. The entry's DOM id is set in
+             CompanyDetail.jsx as 'earnings-entry-{id}'. */
+          var co = companies.find(function(c){return c.id===companyId;});
+          if(!co) return;
+          setShowTpApprovals(false);
+          setSelCo(co);
+          setTab("companies");
+          setCoView("earnings");
+          /* Defer scroll so the earnings tab has mounted. 100ms is plenty
+             on modern hardware; if the entry's collapsed, the scroll lands
+             on the header strip which is still useful context. */
+          setTimeout(function(){
+            var el = document.getElementById("earnings-entry-" + earningsEntryId);
+            if(el && el.scrollIntoView) el.scrollIntoView({behavior:"smooth", block:"start"});
+          }, 100);
+        }}
+      />
 
       <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 shadow-sm pb-2 -mx-4 -mt-4 px-4 pt-4 mb-2">
         {/* Storage row \u2014 own line at the top so it never competes with

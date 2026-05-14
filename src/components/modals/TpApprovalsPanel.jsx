@@ -31,7 +31,7 @@ function fmtNum(v, dp){
   return n.toFixed(dp===undefined?2:dp);
 }
 
-function ApprovalCard({ rec, companyName, onApprove, onReject, onWithdraw }){
+function ApprovalCard({ rec, companyName, onApprove, onReject, onWithdraw, onNavigate }){
   var { currentUser, markTpApprovalRead } = useCompanyContext();
   var [showReject, setShowReject] = useState(false);
   var [rejectReason, setRejectReason] = useState("");
@@ -55,14 +55,25 @@ function ApprovalCard({ rec, companyName, onApprove, onReject, onWithdraw }){
   if(diff(rec.fromEPS1, rec.toEPS1)) changes.push("EPS1 " + fmtNum(rec.fromEPS1,2) + " → " + fmtNum(rec.toEPS1,2));
   if(diff(rec.fromEPS2, rec.toEPS2)) changes.push("EPS2 " + fmtNum(rec.fromEPS2,2) + " → " + fmtNum(rec.toEPS2,2));
   if(diff(rec.fromW1, rec.toW1) || diff(rec.fromW2, rec.toW2)){
-    changes.push("Weights " + fmtNum(rec.fromW1,0) + "/" + fmtNum(rec.fromW2,0) + " → " + fmtNum(rec.toW1,0) + "/" + fmtNum(rec.toW2,0));
+    /* Include the FY labels (snapshotted on submission, e.g. "FY26/FY27")
+       so the reader doesn't have to remember which weight is which. */
+    var fyTag = (rec.fy1 || rec.fy2) ? " (" + (rec.fy1 || "FY1") + "/" + (rec.fy2 || "FY2") + ")" : "";
+    changes.push("Weights" + fyTag + " " + fmtNum(rec.fromW1,0) + "/" + fmtNum(rec.fromW2,0) + " → " + fmtNum(rec.toW1,0) + "/" + fmtNum(rec.toW2,0));
   }
   /* Fallback for legacy records (pre-breakdown), which only had a
      blended EPS field. */
   if(rec.fromEPS1==null && rec.toEPS1==null && diff(rec.fromEPS, rec.toEPS)){
     changes.push("EPS " + fmtNum(rec.fromEPS,2) + " → " + fmtNum(rec.toEPS,2));
   }
-  changes.push("TP " + fmtNum(rec.fromTP,2) + " → " + fmtNum(rec.toTP,2));
+  /* TP row: show the COMPUTED TP (what PE × normEPS produces, i.e. what
+     actually gets written on approve). If the suggester also typed a
+     proposed TP into the entry and it differs from computed by more
+     than a cent, surface both so the approver sees the gap. */
+  var tpLabel = "TP " + fmtNum(rec.fromTP,2) + " → " + fmtNum(rec.toTP,2);
+  if(rec.proposedTP!=null && isFinite(rec.proposedTP) && rec.toTP!=null && Math.abs(rec.proposedTP - rec.toTP) > 0.01){
+    tpLabel += " (computed; proposed " + fmtNum(rec.proposedTP,2) + ")";
+  }
+  changes.push(tpLabel);
 
   var statusBadge;
   if(rec.status === "approved"){
@@ -97,6 +108,16 @@ function ApprovalCard({ rec, companyName, onApprove, onReject, onWithdraw }){
       {rec.rationale && (
         <div className="text-xs text-gray-600 dark:text-slate-400 mb-2 whitespace-pre-wrap leading-relaxed">{rec.rationale}</div>
       )}
+      {rec.earningsEntryId && onNavigate && (
+        <div className="mb-2">
+          <button
+            onClick={function(){onNavigate(rec.companyId, rec.earningsEntryId);}}
+            className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline cursor-pointer bg-transparent border-none p-0"
+          >
+            → View source earnings entry
+          </button>
+        </div>
+      )}
       {rec.status === "rejected" && rec.rejectReason && (
         <div className="text-[11px] italic text-rose-700 dark:text-rose-300 mb-2">Rejection note: {rec.rejectReason}</div>
       )}
@@ -130,7 +151,7 @@ function ApprovalCard({ rec, companyName, onApprove, onReject, onWithdraw }){
   );
 }
 
-export function TpApprovalsPanel({ open, onClose }){
+export function TpApprovalsPanel({ open, onClose, onNavigate }){
   var { tpApprovals, companies, approveTpApproval, rejectTpApproval, withdrawTpApproval } = useCompanyContext();
   var [view, setView] = useState("pending"); /* "pending" | "decided" */
 
@@ -171,7 +192,7 @@ export function TpApprovalsPanel({ open, onClose }){
               <div className="text-sm text-gray-500 dark:text-slate-400 italic text-center py-8">No TP changes pending approval.</div>
             ) : (
               pending.map(function(rec){
-                return <ApprovalCard key={rec.id} rec={rec} companyName={nameById[rec.companyId] || "(unknown)"} onApprove={approveTpApproval} onReject={rejectTpApproval} onWithdraw={withdrawTpApproval}/>;
+                return <ApprovalCard key={rec.id} rec={rec} companyName={nameById[rec.companyId] || "(unknown)"} onApprove={approveTpApproval} onReject={rejectTpApproval} onWithdraw={withdrawTpApproval} onNavigate={onNavigate}/>;
               })
             )
           ) : (
@@ -179,7 +200,7 @@ export function TpApprovalsPanel({ open, onClose }){
               <div className="text-sm text-gray-500 dark:text-slate-400 italic text-center py-8">No decided TP changes yet.</div>
             ) : (
               decided.map(function(rec){
-                return <ApprovalCard key={rec.id} rec={rec} companyName={nameById[rec.companyId] || "(unknown)"} onApprove={approveTpApproval} onReject={rejectTpApproval} onWithdraw={withdrawTpApproval}/>;
+                return <ApprovalCard key={rec.id} rec={rec} companyName={nameById[rec.companyId] || "(unknown)"} onApprove={approveTpApproval} onReject={rejectTpApproval} onWithdraw={withdrawTpApproval} onNavigate={onNavigate}/>;
               })
             )
           )}
