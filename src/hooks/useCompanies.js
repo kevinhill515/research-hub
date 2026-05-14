@@ -372,13 +372,20 @@ export function useCompanies(){
       var ordTicker = (parts[1]||"").toUpperCase();
       var ordPrice = NaN;
 
-      /* Detect layout by length:
-           >=31  → new layout with date-1/price-1 columns
+      /* Detect layout by length AND by whether col 2 looks like a date.
+         An ord-only file from the new layout has 16 columns (Company,
+         Ticker, Date-1, Price-1, Price, then 11 perf cells); without
+         the date-check it'd fall into the 27-col legacy branch and
+         every perf cell would be off by one, which produced bogus 5D%
+         readings on both Companies and Portfolios tabs.
+           >=31  → full new layout with both ord + US blocks
+           date in col 2 and >=16 cols → new layout, ord-only
            >=14  → 27-col legacy (no date-1/price-1)
            else  → 7-col legacy */
       var ordPerf = {};
       var usTicker = "", usPrice = NaN;
       var usPerf = {};
+      var col2LooksLikeDate = normIsoDate(parts[2]) !== null;
       if(parts.length >= 31){
         /* Current layout. Ord: ticker[1], date-1[2], price-1[3], price[4],
            perf[5..15]. US: ticker[16], date-1[17], price-1[18], price[19],
@@ -396,6 +403,15 @@ export function useCompanies(){
         for(var k=0; k<PRICE_PERF_KEYS.length; k++){ usCells.push(parts[20 + k]); }
         var usVals = parsePerfRow(usCells);
         usVals.forEach(function(v, idx){ if(v !== null) usPerf[PRICE_PERF_KEYS[idx]] = v; });
+      } else if(col2LooksLikeDate && parts.length >= 16){
+        /* New-layout ord-only (16 cols). Same positions as the full 31-col
+           layout for the ord block, but no US ticker section. */
+        recordHistory(ordTicker, parts[2], parts[3]);
+        ordPrice = parts[4] ? parseFloat(parts[4].replace(/,/g,"")) : NaN;
+        var ordOnlyCells = [];
+        for(var ii=0; ii<PRICE_PERF_KEYS.length; ii++){ ordOnlyCells.push(parts[5 + ii]); }
+        var ordOnlyVals = parsePerfRow(ordOnlyCells);
+        ordOnlyVals.forEach(function(v, idx){ if(v !== null) ordPerf[PRICE_PERF_KEYS[idx]] = v; });
       } else if(parts.length >= 14){
         /* 27-col legacy. Ord perf cells 3..13, US ticker 14, US perf 16..26. */
         ordPrice = parts[2] ? parseFloat(parts[2].replace(/,/g,"")) : NaN;
