@@ -49,18 +49,21 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
   var availPortNote = PORTFOLIOS.filter(function (p) { return portfolios.indexOf(p) < 0; });
   var show = function (col) { return visibleCols.has(col); };
 
-  /* "Reported this quarter" indicator. Action / Notes / Updated / Thesis
-     all reflect the most recent earnings entry — so when those columns
-     are visible, the question 'has this company reported in the current
-     calendar quarter?' is critical for reading the row. We surface it
-     as a small Q-chip next to the name:
-       - Green 'Q2' = the latest entry's reportDate is on/after the start
-         of the current calendar quarter ("they've reported this quarter")
-       - Amber 'Q1 pending' = latest entry predates the current quarter
-         ("they haven't reported this quarter yet")
-       - No chip = no earnings entries at all
-     Calendar quarter is used (not fiscal) so the indicator is consistent
-     across the whole portfolio regardless of each company's FY end. */
+  /* Q-chip next to the name. Shows the QUARTER REPORTED ON (the period
+     the earnings entry covered, not the calendar quarter it was filed
+     in). Color still keys off the calendar-quarter freshness check so
+     "did they file this quarter?" is the visual signal:
+       - Green = latest entry's reportDate is on/after the start of the
+         current calendar quarter (they've filed during this window).
+       - Amber = latest entry predates the current calendar quarter
+         (haven't filed yet this cycle).
+     Label = the FY-period quarter from the earnings entry, e.g. a
+     company that reports Q1 FY26 results in April 2026 shows 'Q1'
+     (not the calendar-Q2 in which it was filed). Prefer the entry's
+     `quarter` string ("Q1 FY26") when set, since that's what the user
+     typed; otherwise derive a sensible default by subtracting ~60
+     days from reportDate (typical reporting lag) and taking that
+     calendar quarter as the period. */
   var latestEntry = getLastReportedEntry(company.earningsEntries || []);
   var qBadge = null;
   if (latestEntry && latestEntry.reportDate) {
@@ -70,11 +73,20 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
       var curQ = Math.floor(now.getMonth() / 3);
       var qStart = new Date(now.getFullYear(), curQ * 3, 1);
       var reportedThisQ = rd >= qStart;
-      var rdQ = Math.floor(rd.getMonth() / 3);
-      var label = "Q" + (reportedThisQ ? curQ + 1 : rdQ + 1);
+      /* Quarter LABEL — what period the report covered. */
+      var label;
+      var m = (latestEntry.quarter || "").match(/^Q([1-4])/i);
+      if (m) {
+        label = "Q" + m[1];
+      } else {
+        /* Fallback: lag the reportDate by 60 days to estimate the
+           reported-period end, then take that calendar quarter. */
+        var periodEnd = new Date(rd.getTime() - 60 * 86400000);
+        label = "Q" + (Math.floor(periodEnd.getMonth() / 3) + 1);
+      }
       qBadge = reportedThisQ
-        ? { label: label + " ✓", cls: "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800", title: "Reported this quarter (" + latestEntry.reportDate + ")" }
-        : { label: label,         cls: "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800",        title: "Last reported " + latestEntry.reportDate + " — hasn't reported this quarter yet" };
+        ? { label: label + " ✓", cls: "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800", title: "Reported " + (latestEntry.quarter || label) + " on " + latestEntry.reportDate }
+        : { label: label,         cls: "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800",        title: "Last reported " + (latestEntry.quarter || label) + " on " + latestEntry.reportDate + " — hasn't filed this quarter yet" };
     }
   }
   var hasTemplate = Object.keys(company.sections || {}).length > 0;
