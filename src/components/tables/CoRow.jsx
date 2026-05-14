@@ -439,10 +439,10 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
                     "in-flight, not yet committed". */}
                 {pendingTpCount > 0 && (
                   <span
-                    className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800"
+                    className="text-[11px] leading-none"
                     title={pendingTpCount + " TP change" + (pendingTpCount === 1 ? "" : "s") + " awaiting approval"}
                   >
-                    ⏳ Pending
+                    ⏳
                   </span>
                 )}
               </span>
