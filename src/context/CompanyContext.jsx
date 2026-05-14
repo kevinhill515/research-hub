@@ -651,16 +651,16 @@ export function CompanyProvider({children}){
       });
     });
   }
-  /* Withdraw your OWN pending suggestion. Distinct from reject: only the
-     suggester can withdraw, and the record is marked rejected with a
-     'Withdrawn by suggester' reason so the audit trail stays explicit
-     (rather than appearing as a peer rejection). */
+  /* Withdraw your OWN pending suggestion. Only the suggester can call
+     this. Deletes the record outright — withdrawn-by-author isn't audit-
+     interesting (nothing was ever approved, nothing peer-reviewed), so
+     keeping it would just clutter the Decided list. Peer rejections,
+     by contrast, stay in Decided as a real audit trail. */
   function withdrawTpApproval(id){
     if(!currentUser)return;
     setTpApprovals(function(prev){
-      return prev.map(function(a){
-        if(a.id!==id||a.status!=="pending"||a.suggestedBy!==currentUser)return a;
-        return Object.assign({},a,{status:"rejected",rejectedBy:currentUser,rejectedAt:todayStr(),rejectReason:"Withdrawn by suggester"});
+      return prev.filter(function(a){
+        return !(a.id===id&&a.status==="pending"&&a.suggestedBy===currentUser);
       });
     });
   }
