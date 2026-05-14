@@ -922,6 +922,25 @@ def _num(v) -> float | None:
     if v is None or v == "": return None
     if isinstance(v, str) and v.startswith("#"): return None
     if _is_excel_error(v): return None   # guards against #NAME?/#N/A etc.
+    if isinstance(v, str):
+        # Excel cells formatted as Percentage normally come back through
+        # pywin32 as the underlying decimal (0.01 for 1.0%). But cells
+        # formatted as Text — or FactSet formulas that emit a formatted
+        # string — arrive here as "1.0%" / "(0.9)%" / "1,234.5". Bare
+        # float() rejects those, the perf key never gets written, and the
+        # UI silently falls back to a stale legacy perf5d (or shows the
+        # wrong number entirely). Strip the common decorations before
+        # parsing so the script tolerates either cell format. Percent-
+        # vs-decimal interpretation is decided downstream by magnitude
+        # (parse_perf_block's >=1.5 threshold), so removing the '%' here
+        # just preserves the magnitude — we don't divide by 100.
+        s = v.strip()
+        had_paren = s.startswith("(") and s.endswith(")")
+        if had_paren: s = "-" + s[1:-1]
+        s = s.replace(",", "").rstrip("%").strip()
+        if not s: return None
+        try: return float(s)
+        except (TypeError, ValueError): return None
     try: return float(v)
     except (TypeError, ValueError): return None
 
