@@ -15,7 +15,6 @@ function NotesCell({ company, onUpdate }) {
      gives users an already-typed-out starting point from the latest
      earnings (they can edit, then Save to lift it onto the company-
      level fields). */
-  var derivedFromEarnings = false;
   var displayShort = company.takeaway || "";
   var displayLong = company.takeawayLong || "";
   var earningsShort = "", earningsLong = "";
@@ -24,11 +23,16 @@ function NotesCell({ company, onUpdate }) {
     earningsShort = last.shortTakeaway || "";
     earningsLong = last.extendedTakeaway || "";
   }
-  if (!displayShort && !displayLong && (earningsShort || earningsLong)) {
-    displayShort = earningsShort;
-    displayLong = earningsLong;
-    derivedFromEarnings = true;
-  }
+  /* Per-field fallback to the latest earnings takeaways. Earlier this
+     only fell back when BOTH company-level fields were empty, which
+     meant clearing only the Short takeaway (while Extended notes still
+     had content) left the cell stuck at "add note…" instead of
+     surfacing the fresh shortTakeaway from the most recent earnings
+     entry. Falling back per-field handles partial-delete cleanly. */
+  var derivedShort = false, derivedLong = false;
+  if (!displayShort && earningsShort) { displayShort = earningsShort; derivedShort = true; }
+  if (!displayLong  && earningsLong)  { displayLong  = earningsLong;  derivedLong  = true; }
+  var derivedFromEarnings = derivedShort || derivedLong;
   var hasLong = !!(displayLong && displayLong.trim());
 
   function save() {
