@@ -429,7 +429,7 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
               <span className="inline-flex items-center gap-1">
                 {displayValue && (
                   <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: aBg, color: aColor }}>
-                    {derivedFromEarnings ? "📊 " : ""}{displayValue}
+                    {displayValue}
                   </span>
                 )}
                 {/* Pending-TP-approval indicator: surfaces when a teammate
@@ -493,7 +493,7 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
             var cfg = { "On track": { bg: "#dcfce7", color: "#166534" }, "Watch": { bg: "#fef9c3", color: "#854d0e" }, "Broken": { bg: "#fee2e2", color: "#991b1b" } }[ts] || { bg: "#f1f5f9", color: "#475569" };
             return (
               <span title={"From earnings " + (last.reportDate || "?")} className="text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap" style={{ background: cfg.bg, color: cfg.color }}>
-                📊 {ts}
+                {ts}
               </span>
             );
           })()}
