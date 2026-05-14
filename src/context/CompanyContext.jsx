@@ -452,6 +452,13 @@ export function CompanyProvider({children}){
   var DEBOUNCE_MS=500;
   var DEBOUNCE_HEAVY_MS=1500;
   var lastSentRef=useRef({});
+  /* Per-company write tracking. Holds last-sent JSON keyed by company id.
+     Declared up here (not next to the per-company effect) so the
+     ready-snapshot below can populate it — otherwise the first auto-save
+     tick sees every company as "changed" and bulk-uploads all 325, which
+     timed out the Postgres statement-timeout in May 2026 and put the
+     whole project into 'unhealthy'. */
+  var lastSentCompaniesRef = useRef({});
   function sendIfChanged(key, fn){
     var json=fn();
     if(lastSentRef.current[key]===json)return false;
@@ -486,14 +493,22 @@ export function CompanyProvider({children}){
       specialWeights:       JSON.stringify(specialWeights),
       lastPriceUpdate:      lastPriceUpdate || "",
     });
+    /* Critical: also snapshot per-company JSON. Without this, the first
+       auto-save tick sees every company as "changed" (the ref is empty
+       on mount), and the resulting 325-row bulk upsert times out
+       Postgres's statement_timeout. That hammers the DB so badly the
+       project's Supabase status goes 'unhealthy'. */
+    var byId={};
+    (companies||[]).forEach(function(c){
+      if(c&&c.id)byId[c.id]=JSON.stringify(c);
+    });
+    lastSentCompaniesRef.current = byId;
   }, [ready]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(saved);if(sendIfChanged("library",function(){return j;}))supaUpsert("library",{id:"shared",data:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[saved,ready]);
-  /* Per-company write tracking. Replaces the old single-blob upsert so
-     editing one company's name no longer re-uploads all 325. The ref
-     holds last-sent JSON keyed by company id; on each debounce we diff
-     the current array, bulk-upsert the changed rows, and DELETE any
-     ids that disappeared from the array. */
-  var lastSentCompaniesRef = useRef({});
+  /* Per-company auto-save. The ref is declared above (so the ready
+     snapshot can populate it). On each debounce we diff the current
+     companies array against the ref, bulk-upsert the changed rows,
+     and DELETE any ids that disappeared from the array. */
   useEffect(function(){
     if(!ready)return;
     var t=setTimeout(function(){
@@ -511,7 +526,14 @@ export function CompanyProvider({children}){
       var deletedIds=Object.keys(lastSentCompaniesRef.current).filter(function(id){return !seenIds[id];});
       deletedIds.forEach(function(id){delete lastSentCompaniesRef.current[id];});
       if(changed.length>0){
-        supaUpsert("companies",changed);
+        /* Chunk large bulk upserts. A single 325-row upsert serializes
+           ~10 MB of JSON, which routinely takes 10+ seconds on Supabase
+           Free/Pro and trips Postgres's statement_timeout. Chunks of 50
+           comfortably finish in well under a second each. */
+        var CHUNK=50;
+        for(var i=0;i<changed.length;i+=CHUNK){
+          supaUpsert("companies",changed.slice(i,i+CHUNK));
+        }
       }
       deletedIds.forEach(function(id){
         supaDelete("companies","id",id);
