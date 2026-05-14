@@ -113,7 +113,7 @@ function MobilePortfolioCard(props) {
       {/* Valuation row: MOS / MOS Fixed (with divergence dot) / 5D */}
       <div className="grid grid-cols-3 gap-1.5 mb-1.5 text-[11px]">
         <div className="flex items-center justify-between">
-          <span className="text-[9px] uppercase tracking-wide text-gray-500 dark:text-slate-400">MOS</span>
+          <span className="text-[9px] uppercase tracking-wide text-gray-500 dark:text-slate-400">MOS Live</span>
           {mosStyle ? (
             <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold" style={{ background: mosStyle.bg, color: mosStyle.color }}>{fmtMOS0(mos)}</span>
           ) : <span className="text-gray-400 dark:text-slate-500">--</span>}

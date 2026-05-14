@@ -13,13 +13,22 @@ export const COMPANY_COLUMNS = [
   { id: "Tier(s)",   label: "Tier(s)",   sort: "Tier",          compact: true  },
   { id: "Name",      label: "Name",      sort: "Name",          compact: true  },
   { id: "5D%",       label: "5D%",       sort: "5D%",           compact: true  },
-  { id: "MOS",       label: "MOS",       sort: "MOS",           compact: true  },
+  /* "MOS Live" = MOS computed from the LIVE PE × normalized EPS. Renamed
+     from bare "MOS" to make the contrast with "MOS Fixed" (committed
+     firm TP) visually explicit. The id stays "MOS" so saved column-
+     visibility sets and sort state don't break. */
+  { id: "MOS",       label: "MOS Live",  sort: "MOS",           compact: true  },
   { id: "MOS Fixed", label: "MOS Fixed", sort: "MOS Fixed",     compact: true  },
   { id: "FPE Range", label: "FPE Range", sort: null,            compact: true  },
   { id: "Country",   label: "Country",   sort: "Country",       compact: false },
   { id: "Sector",    label: "Sector",    sort: "Sector",        compact: false },
   { id: "Portfolio", label: "Portfolio", sort: null,            compact: false },
-  { id: "Action",    label: "Action",    sort: null,            compact: false },
+  /* "TP Change" = the recommendation derived from the most recent
+     earnings entry's tpChange (Increase/Decrease/No Action). Renamed
+     from generic "Action" to name what it actually represents. id
+     stays "Action" so saved visibility sets and the CoRow render
+     case keep working without touching every reference. */
+  { id: "Action",    label: "TP Change", sort: null,            compact: false },
   { id: "Notes",     label: "Notes",     sort: null,            compact: false },
   { id: "Updated",   label: "Updated",   sort: "Last Updated",  compact: false },
   { id: "Thesis",    label: "Thesis",    sort: null,            compact: true  },

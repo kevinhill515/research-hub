@@ -390,10 +390,47 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
          entered" so the user can tell at a glance. */}
       {(function(){ return null; })()}
 
-      {/* Action */}
+      {/* Action / Updated / Thesis are all backed by the most recent
+         earnings entry, so clicking any of these cells jumps the user
+         straight to the Earnings & Thesis Check tab where the source
+         lives. ActionCell's old inline dropdown is preserved (you can
+         still edit company.action manually inside it via the chevron),
+         but clicking the pill itself or any empty cell area navigates. */}
       {show("Action") && (
-        <div className={tdBase} style={rowBg ? { background: rowBg } : undefined} onClick={function (e) { e.stopPropagation(); }}>
-          <ActionCell value={company.action || ""} earningsEntries={company.earningsEntries} onUpdate={function (v) { onUpdate(company.id, { action: v }); }} />
+        <div
+          className={tdBase + " cursor-pointer"}
+          style={rowBg ? { background: rowBg } : undefined}
+          onClick={function (e) { e.stopPropagation(); onSelect(company, "earnings"); }}
+          title="Open Earnings & Thesis Check"
+        >
+          {(function(){
+            /* Inline render of the TP-change pill. Previously used
+               ActionCell which exposed an inline edit dropdown, but the
+               cell now navigates to the earnings tab on click (where
+               the value's actually sourced), so the inline editor is
+               redundant — any manual override should happen at the
+               source. Logic mirrors ActionCell: map the most recent
+               earnings entry's tpChange (Increased/Decreased/Unchanged)
+               into the imperative (Increase TP / Decrease TP /
+               No Action), falling back to company.action only when
+               there are no entries yet. */
+            var TP_CHANGE_TO_ACTION = {Increased:"Increase TP", Decreased:"Decrease TP", Unchanged:"No Action"};
+            var derivedFromEarnings = false;
+            var displayValue = company.action || "";
+            var last = getLastReportedEntry(company.earningsEntries);
+            if (last && last.tpChange && TP_CHANGE_TO_ACTION[last.tpChange]) {
+              displayValue = TP_CHANGE_TO_ACTION[last.tpChange];
+              derivedFromEarnings = true;
+            }
+            if (!displayValue) return <span className="text-xs text-slate-300 dark:text-slate-600">--</span>;
+            var aColor = displayValue === "Increase TP" ? "#166534" : displayValue === "Decrease TP" ? "#dc2626" : displayValue === "No Action" ? "#854d0e" : "#6b7280";
+            var aBg    = displayValue === "Increase TP" ? "#dcfce7" : displayValue === "Decrease TP" ? "#fee2e2" : displayValue === "No Action" ? "#fef9c3" : "#f1f5f9";
+            return (
+              <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: aBg, color: aColor }}>
+                {derivedFromEarnings ? "📊 " : ""}{displayValue}
+              </span>
+            );
+          })()}
         </div>
       )}
 
@@ -406,7 +443,12 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
 
       {/* Updated */}
       {show("Updated") && (
-        <div className={tdBase} style={rowBg ? { background: rowBg } : undefined}>
+        <div
+          className={tdBase + " cursor-pointer"}
+          style={rowBg ? { background: rowBg } : undefined}
+          onClick={function (e) { e.stopPropagation(); onSelect(company, "earnings"); }}
+          title="Open Earnings & Thesis Check"
+        >
           <span className={"text-[10px] " + (company.lastUpdated ? "text-emerald-600 dark:text-emerald-400" : "text-slate-300 dark:text-slate-600")}>
             {company.lastUpdated || "--"}
           </span>
@@ -421,7 +463,12 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
          the other most-recent-earnings columns (Action / Notes /
          Updated). */}
       {show("Thesis") && (
-        <div className={tdBase} style={rowBg ? { background: rowBg } : undefined}>
+        <div
+          className={tdBase + " cursor-pointer"}
+          style={rowBg ? { background: rowBg } : undefined}
+          onClick={function (e) { e.stopPropagation(); onSelect(company, "earnings"); }}
+          title="Open Earnings & Thesis Check"
+        >
           {(function(){
             var last = getLastReportedEntry(company.earningsEntries);
             var ts = last && last.thesisStatus;

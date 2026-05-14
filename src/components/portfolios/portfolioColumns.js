@@ -13,7 +13,7 @@ export const PORTFOLIO_COLUMNS = [
   { id: "avgCost",     label: "Avg Cost",     sort: null,          align: "left"  },
   { id: "unreal",      label: "Unreal",       sort: "unreal",      align: "left"  },
   { id: "perf",        label: "5D%",          sort: "perf",        align: "left"  },
-  { id: "mos",         label: "MOS",          sort: "mos",         align: "left"  },
+  { id: "mos",         label: "MOS Live",     sort: "mos",         align: "left"  },
   { id: "mosFixed",    label: "MOS Fixed",    sort: "mosFixed",    align: "left"  },
   { id: "fpeRange",    label: "FPE Range",    sort: null,          align: "left"  },
   { id: "target",      label: "Target %",     sort: "target",      align: "left"  },

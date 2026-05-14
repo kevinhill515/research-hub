@@ -55,8 +55,13 @@ export default function App(){
   /* Stable handlers so React.memo on CoRow is effective — without
      useCallback, every parent render creates a new function ref and
      defeats the memo's prop-equality check. */
-  const handleCoSelect = useCallback(function (co) {
-    setSelCo(co); setCoView("dashboard"); setTmplHighlight(""); setFlashSections({});
+  const handleCoSelect = useCallback(function (co, view) {
+    /* Optional 2nd arg lets specific cells deep-link to a different
+       sub-view — e.g. the Action / Updated / Thesis cells on the
+       Companies row open straight to "earnings" since that's the page
+       backing those values. Default to "dashboard" when no view is
+       passed. */
+    setSelCo(co); setCoView(view || "dashboard"); setTmplHighlight(""); setFlashSections({});
   }, []);
   const handleCoDelete = useCallback(function (id) {
     setCompanies(function (cs) { return cs.filter(function (c) { return c.id !== id; }); });

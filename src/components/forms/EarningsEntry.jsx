@@ -405,6 +405,11 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
                 onChange={function (ev) { upd({ tpChange: ev.target.value }); }}
                 className={inputClasses + " appearance-none"}
               >
+                {/* Blank/-- option so a new entry doesn't auto-claim
+                    'Unchanged' before the analyst has actually reviewed
+                    the report. Stays selectable so the user can revert
+                    to unset if they cleared an entry mid-review. */}
+                <option value="">--</option>
                 {TP_CHANGES.map(function (t) { return <option key={t}>{t}</option>; })}
               </select>
             </div>
@@ -534,7 +539,11 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
               /* The trigger button — opens the inline form, pre-filling
                  with the company's current valuation breakdown so the
                  user only edits what's actually changing. */
-              var canOpen = e.tpChange !== "Unchanged" && !hasPending && !!company;
+              /* Submit-for-approval is for actual increases/decreases.
+                 Empty tpChange (a new entry not yet reviewed) and
+                 'Unchanged' (reaffirm, no TP movement) both skip the
+                 approval flow. */
+              var canOpen = (e.tpChange === "Increased" || e.tpChange === "Decreased") && !hasPending && !!company;
               return (
                 <button
                   type="button"
