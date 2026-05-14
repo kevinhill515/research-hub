@@ -233,14 +233,42 @@ export function tierToStatus(tier){
   return null;
 }
 
-export function sortCos(list,by,dir){
+/* Portfolio order used by the Overlap subtab — FIN first, then IN,
+ * FGL, GL, EM, SC. Exported so other surfaces (Companies tab default
+ * sort) can match Overlap's ranking without duplicating the list. */
+export const OVERLAP_PORT_ORDER = ["FIN","IN","FGL","GL","EM","SC"];
+export function sortCos(list,by,dir,opts){
   var c=list.slice();var WF=new Set(["F MC","W MC","F SC","W SC"]);
   function al(a,b){return a.name.localeCompare(b.name);}
   function isWF(x){var ts=getTiers(x.tier);return ts.length>0&&WF.has(ts[0]);}
   var m=dir==="desc"?-1:1;
+  /* Optional overlap-style ordering for Own companies. When both rows
+     under comparison are status==="Own", rank them by their target
+     weight in the portfolios listed in OVERLAP_PORT_ORDER — highest
+     weight in FIN first, ties broken by IN, then FGL, etc. — matching
+     the Portfolios → Overlap subtab. Non-Own rows (or mixed pairs)
+     fall through to the existing tier-based logic. Only applies under
+     the default "Tier" sort; user-selected column sorts are unaffected. */
+  var useOwnOverlap = !!(opts && opts.ownOverlapOrder && opts.ownOverlapOrder.length);
+  var ownOrder = useOwnOverlap ? opts.ownOverlapOrder : null;
+  function overlapCmp(a,b){
+    for(var i=0;i<ownOrder.length;i++){
+      var pp=ownOrder[i];
+      var aw=parseFloat((a.portWeights||{})[pp])||0;
+      var bw=parseFloat((b.portWeights||{})[pp])||0;
+      if(aw!==bw)return bw-aw;
+    }
+    return al(a,b);
+  }
   return c.sort(function(a,b){
     var p=0;
-    if(by==="Tier"){var ta=getTierIndex(a),tb=getTierIndex(b);if(ta===999&&tb!==999)return 1;if(tb===999&&ta!==999)return -1;p=(ta-tb)*m;if(p!==0)return p;if(isWF(a)&&isWF(b)){var cp=(a.country||"").localeCompare(b.country||"");if(cp!==0)return cp;}var sd=getStatusRank(a.status)-getStatusRank(b.status);if(sd!==0)return sd;return al(a,b);}
+    if(by==="Tier"){
+      if(useOwnOverlap){
+        var aOwn=a.status==="Own", bOwn=b.status==="Own";
+        if(aOwn&&bOwn)return overlapCmp(a,b);
+      }
+      var ta=getTierIndex(a),tb=getTierIndex(b);if(ta===999&&tb!==999)return 1;if(tb===999&&ta!==999)return -1;p=(ta-tb)*m;if(p!==0)return p;if(isWF(a)&&isWF(b)){var cp=(a.country||"").localeCompare(b.country||"");if(cp!==0)return cp;}var sd=getStatusRank(a.status)-getStatusRank(b.status);if(sd!==0)return sd;return al(a,b);
+    }
     if(by==="Last Reviewed"){var hA=!!a.lastReviewed,hB=!!b.lastReviewed;if(!hA&&!hB)return al(a,b);if(!hA)return 1;if(!hB)return -1;var da=parseDate(a.lastReviewed),db=parseDate(b.lastReviewed);if(!da)return 1;if(!db)return -1;p=(db.getTime()-da.getTime())*m;if(p!==0)return p;return al(a,b);}
     if(by==="MOS"){var ma=getCompanyMOS(a),mb=getCompanyMOS(b);if(ma===null&&mb===null)return al(a,b);if(ma===null)return 1;if(mb===null)return -1;p=(ma-mb)*m;if(p!==0)return p;return al(a,b);}
     if(by==="MOS Fixed"){var mfa=getCompanyMOSFixed(a),mfb=getCompanyMOSFixed(b);if(mfa===null&&mfb===null)return al(a,b);if(mfa===null)return 1;if(mfb===null)return -1;p=(mfa-mfb)*m;if(p!==0)return p;return al(a,b);}

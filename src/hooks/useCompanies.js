@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useCompanyContext } from '../context/CompanyContext.jsx';
 import { PORTFOLIOS, TIER_ORDER, SECTOR_ORDER, COUNTRY_ORDER, ALL_COLS, COMPACT_COLS, TEMPLATE_SECTIONS, UPLOAD_TYPES, REP_ACCOUNTS } from '../constants/index.js';
-import { getCurrency, calcNormEPS, calcTP, calcMOS, fmtPrice, fmtTP, fmtMOS, impliedFYLabel, todayStr, parseDate, sortCos, blankEarnings, toHTML, downloadMD, getTiers } from '../utils/index.js';
+import { getCurrency, calcNormEPS, calcTP, calcMOS, fmtPrice, fmtTP, fmtMOS, impliedFYLabel, todayStr, parseDate, sortCos, OVERLAP_PORT_ORDER, blankEarnings, toHTML, downloadMD, getTiers } from '../utils/index.js';
 import { ANTHROPIC_KEY, apiCall, supaUpsert, supaGet } from '../api/index.js';
 import { mergePriceSeries } from '../utils/priceHistoryParser.js';
 import { invalidatePriceHistory } from './usePriceHistory.js';
@@ -601,7 +601,7 @@ export function useCompanies(){
       if(coFilterSector!=="All"&&c.sector!==coFilterSector)return false;
       if(coSearch){var s=coSearch.toLowerCase();if(c.name.toLowerCase().indexOf(s)<0&&(c.ticker||"").toLowerCase().indexOf(s)<0)return false;}
       return true;
-    }),coSort,coSortDir);
+    }),coSort,coSortDir,{ ownOverlapOrder: OVERLAP_PORT_ORDER });
   },[companies,coFilter,coStatusFilter,coStatusSubFilter,coFilterCountry,coFilterSector,coSearch,coSort,coSortDir]);
 
   return {
