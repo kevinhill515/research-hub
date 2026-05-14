@@ -169,7 +169,15 @@ export function TpApprovalsPanel({ open, onClose, onNavigate }){
   }, [tpApprovals]);
 
   var pending = sorted.filter(function(r){return r.status === "pending";});
-  var decided = sorted.filter(function(r){return r.status !== "pending";});
+  /* Decided excludes self-withdrawals. New withdraws delete the record
+     outright, but records from before that change persist as rejected
+     with reason 'Withdrawn by suggester' — filter those out here so the
+     Decided list stays focused on genuine peer-rejection / approval audit. */
+  var decided = sorted.filter(function(r){
+    if(r.status === "pending") return false;
+    if(r.status === "rejected" && r.rejectReason === "Withdrawn by suggester") return false;
+    return true;
+  });
 
   if(!open) return null;
 
