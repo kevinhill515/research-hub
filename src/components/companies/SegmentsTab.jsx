@@ -18,7 +18,7 @@
  * rendered as "M{CCY}" alongside Sales/EBIT figures.
  */
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import { useConfirm } from '../ui/DialogProvider.jsx';
 import { getCurrency, printPage } from '../../utils/index.js';
@@ -30,6 +30,22 @@ import {
 } from '../../utils/chart.js';
 
 const TILE = "rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3";
+
+/* Auto-grow textarea — same pattern used in EarningsEntry. Resets
+   height to "auto" before each measurement so deletions actually
+   shrink it. Capped at 50vh so a runaway paste doesn't take over a
+   segment tile. */
+function AutoGrowTextarea(props) {
+  const ref = useRef();
+  useEffect(function () {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const maxPx = Math.floor(window.innerHeight * 0.5);
+    el.style.height = Math.min(el.scrollHeight, maxPx) + "px";
+  }, [props.value]);
+  return <textarea ref={ref} {...props} />;
+}
 
 const MONTH_NAMES = ["", "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December"];
@@ -61,6 +77,26 @@ export default function SegmentsTab({ company }) {
   const confirm = useConfirm();
   const data = company && company.segments;
   const hasData = !!(data && data.years && data.years.length > 0);
+
+  /* Update a single segment's free-text note. Matched by segment.name
+     (the same key used everywhere else in this file) so renames in the
+     underlying segments array invalidate the note rather than orphaning
+     it under a stale identifier. */
+  function updateSegmentNote(segmentName, note) {
+    if (!company || !company.segments) return;
+    setCompanies(function (cs) {
+      return cs.map(function (c) {
+        if (c.id !== company.id) return c;
+        const segs = ((c.segments && c.segments.segments) || []).map(function (s) {
+          if (s.name !== segmentName) return s;
+          return Object.assign({}, s, { note: note });
+        });
+        return Object.assign({}, c, {
+          segments: Object.assign({}, c.segments, { segments: segs }),
+        });
+      });
+    });
+  }
 
   function clearSegments() {
     confirm("Clear all segment data for " + (company.name || "this company") + "?").then(function (ok) {
@@ -194,11 +230,11 @@ export default function SegmentsTab({ company }) {
               )}
               {activeOpSegs.map(function (s, i) {
                 return <SegmentCard key={s.name} segment={s} years={data.years} color={colorFor(i)} ccy={ccy}
-                  totalSales={totalSales} totalEbit={totalEbit} />;
+                  totalSales={totalSales} totalEbit={totalEbit} onUpdateNote={updateSegmentNote} />;
               })}
               {costCenters.map(function (s) {
                 return <SegmentCard key={s.name} segment={s} years={data.years} color="#64748b" ccy={ccy}
-                  totalSales={totalSales} totalEbit={totalEbit} />;
+                  totalSales={totalSales} totalEbit={totalEbit} onUpdateNote={updateSegmentNote} />;
               })}
             </div>
           </>
@@ -581,7 +617,20 @@ function TotalCard({ years, totalSales, totalEbit, totalMargin, ccy, parsedTotal
   );
 }
 
-function SegmentCard({ segment, years, color, ccy, totalSales, totalEbit }) {
+function SegmentCard({ segment, years, color, ccy, totalSales, totalEbit, onUpdateNote }) {
+  /* Local note state for snappy typing — debounce-commits to the parent
+     so we don't trigger a full SegmentsTab re-render (and Supabase
+     write) on every keystroke. Keep the field in sync if the segment's
+     stored note changes externally (e.g. another teammate edits the
+     same company while you have the page open). */
+  const [noteDraft, setNoteDraft] = useState(segment.note || "");
+  useEffect(function () { setNoteDraft(segment.note || ""); }, [segment.note]);
+  useEffect(function () {
+    if (noteDraft === (segment.note || "")) return;
+    const t = setTimeout(function () { if (onUpdateNote) onUpdateNote(segment.name, noteDraft); }, 600);
+    return function () { clearTimeout(t); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [noteDraft]);
   const [chartOpen, setChartOpen] = useState(null); /* null | "sales" | "ebit" | "margin" | "roa" */
   const lastSalesIdx = lastFiniteIndex(segment.sales);
   const lastEbitIdx  = lastFiniteIndex(segment.ebit);
@@ -646,6 +695,18 @@ function SegmentCard({ segment, years, color, ccy, totalSales, totalEbit }) {
           />
         </div>
       )}
+
+      {/* Free-text note per segment. Auto-grows with content; debounced
+          save so typing doesn't hammer the per-company write loop. */}
+      <div className="mt-2 border-t border-slate-100 dark:border-slate-800 pt-2">
+        <AutoGrowTextarea
+          value={noteDraft}
+          onChange={function (ev) { setNoteDraft(ev.target.value); }}
+          placeholder="Notes about this segment…"
+          rows={1}
+          className="w-full text-[11px] px-2 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder:text-gray-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none leading-relaxed"
+        />
+      </div>
     </div>
   );
 }

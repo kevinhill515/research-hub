@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { TP_CHANGES, THESIS_STATUSES } from '../../constants/index.js';
 import { apiCall } from '../../api/index.js';
 import { useAlert } from '../ui/DialogProvider.jsx';
-import { inferQuarter } from '../../utils/index.js';
+import { inferQuarter, calcNormEPS, calcTP } from '../../utils/index.js';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import GuidanceVsActual from '../companies/GuidanceVsActual.jsx';
 
@@ -61,6 +61,30 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
   var [aiOpen, setAiOpen] = useState(false);
   var [aiText, setAiText] = useState("");
   var [aiLoading, setAiLoading] = useState(false);
+
+  /* Compute the current TP from the company's valuation. Used in two
+     spots below: (a) auto-fill newTP when tpChange is "Unchanged" so
+     the value is captured for the tile and downstream consumers,
+     and (b) the tile readout for "Unchanged TP → currency value". */
+  var v = (company && company.valuation) || {};
+  var currentNormEPS = calcNormEPS(v);
+  var currentTP = calcTP(v.pe, currentNormEPS);
+
+  /* Auto-fill newTP with the current TP whenever the user selects
+     "Unchanged". Means the entry persists the actual target price even
+     when the user didn't change it — useful for the tile and for any
+     downstream tools that look at e.newTP as "the TP as of this
+     earnings entry". If the user explicitly types something after
+     this, normal onChange takes over and the manual value wins. */
+  useEffect(function(){
+    if (e.tpChange === "Unchanged" && currentTP !== null) {
+      var s = String(currentTP);
+      if (e.newTP !== s) {
+        setE(function(prev){ return Object.assign({}, prev, { newTP: s }); });
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [e.tpChange, currentTP]);
   var alertFn = useAlert();
 
   /* Build a structured context block from c.guidance / c.epsRevisions /
@@ -235,12 +259,14 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
         <span className="text-base font-bold text-gray-900 dark:text-slate-100 flex-1">
           {headerTitle}
         </span>
-        {e.tpChange && e.tpChange !== "Unchanged" && (
+        {e.tpChange && (
           <span
             className="text-sm px-2 py-0.5 rounded-full font-medium"
             style={{ background: tpBg, color: tpColor }}
           >
-            {e.tpChange} TP{e.newTP ? " \u2192 " + currency + " " + e.newTP : ""}
+            {e.tpChange === "Unchanged"
+              ? "TP Unchanged" + (e.newTP ? " \u2192 " + currency + " " + e.newTP : "")
+              : e.tpChange + " TP" + (e.newTP ? " \u2192 " + currency + " " + e.newTP : "")}
           </span>
         )}
         {e.thesisStatus && (
@@ -356,7 +382,15 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
             </div>
             <div>
               <label className={labelClasses}>TP Rationale</label>
-              <input value={e.tpRationale} onChange={function (ev) { upd({ tpRationale: ev.target.value }); }} placeholder="Brief reason" className={inputClasses} />
+              {/* Auto-grow so longer rationales aren't truncated. Same
+                  pattern as the AI-paste box and Extended Takeaway. */}
+              <AutoGrowTextarea
+                value={e.tpRationale}
+                onChange={function (ev) { upd({ tpRationale: ev.target.value }); }}
+                placeholder="Brief reason"
+                rows={1}
+                className={inputClasses + " resize-none leading-relaxed"}
+              />
             </div>
           </div>
 
@@ -375,7 +409,13 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
             </div>
             <div>
               <label className={labelClasses}>Thesis Note</label>
-              <input value={e.thesisNote} onChange={function (ev) { upd({ thesisNote: ev.target.value }); }} placeholder="What changed / what to watch" className={inputClasses} />
+              <AutoGrowTextarea
+                value={e.thesisNote}
+                onChange={function (ev) { upd({ thesisNote: ev.target.value }); }}
+                placeholder="What changed / what to watch"
+                rows={1}
+                className={inputClasses + " resize-none leading-relaxed"}
+              />
             </div>
           </div>
 
@@ -421,18 +461,19 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
             </div>
             {e.bullets.map(function (b, i) {
               return (
-                <div key={i} className="flex gap-1.5 mb-1 items-center">
-                  <span className="text-xs text-gray-500 dark:text-slate-400 shrink-0">{"\u2022"}</span>
-                  <input
+                <div key={i} className="flex gap-1.5 mb-1 items-start">
+                  <span className="text-xs text-gray-500 dark:text-slate-400 shrink-0 pt-1.5">{"\u2022"}</span>
+                  <AutoGrowTextarea
                     value={b}
                     onChange={function (ev) { updBullet(i, ev.target.value); }}
                     placeholder={"Bullet " + (i + 1)}
-                    className={inputClasses + " flex-1"}
+                    rows={1}
+                    className={inputClasses + " flex-1 resize-none leading-relaxed"}
                   />
                   {e.bullets.length > 1 && (
                     <span
                       onClick={function () { removeBullet(i); }}
-                      className="text-xs text-red-600 dark:text-red-400 cursor-pointer shrink-0 hover:text-red-800 dark:hover:text-red-300 transition-colors"
+                      className="text-xs text-red-600 dark:text-red-400 cursor-pointer shrink-0 hover:text-red-800 dark:hover:text-red-300 transition-colors pt-1.5"
                     >
                       x
                     </span>
