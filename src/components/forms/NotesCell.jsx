@@ -79,9 +79,14 @@ function NotesCell({ company, onUpdate }) {
       </div>
 
       {open && (
+        /* Widened from 300px → 640px and the extended textarea grew from
+           5 → 14 rows + larger base font (sm vs xs) so extended notes
+           are actually readable inline without opening the full company
+           page. Anchored top-left and bumped to z-[300] so it floats
+           above sticky table cells. */
         <div
           ref={ref}
-          className="absolute top-full left-0 z-[300] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-3 w-[300px] shadow-xl"
+          className="absolute top-full left-0 z-[300] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-4 w-[640px] max-w-[92vw] shadow-2xl"
         >
           <div className="text-xs text-gray-500 dark:text-slate-400 mb-1">
             Short takeaway
@@ -89,7 +94,7 @@ function NotesCell({ company, onUpdate }) {
           <input
             value={sv}
             onChange={function (e) { setSv(e.target.value); }}
-            className="w-full text-xs px-2 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 mb-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            className="w-full text-sm px-2.5 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 mb-3 focus:ring-2 focus:ring-blue-500 focus:outline-none"
           />
 
           <div className="text-xs text-gray-500 dark:text-slate-400 mb-1">
@@ -98,8 +103,8 @@ function NotesCell({ company, onUpdate }) {
           <textarea
             value={lv}
             onChange={function (e) { setLv(e.target.value); }}
-            rows={5}
-            className="w-full text-xs px-2 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 resize-y font-[inherit] leading-relaxed mb-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            rows={14}
+            className="w-full text-sm px-2.5 py-2 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 resize-y font-[inherit] leading-relaxed mb-3 focus:ring-2 focus:ring-blue-500 focus:outline-none"
           />
 
           <div className="flex gap-2 justify-end">
