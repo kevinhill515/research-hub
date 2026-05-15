@@ -451,9 +451,11 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
         </div>
       )}
 
-      {/* Notes */}
+      {/* Notes — widened from 170 → 280 so a full 6-word takeaway
+         (typically ~30-40 chars at the small font size) fits without
+         eliding mid-sentence. */}
       {show("Notes") && (
-        <div className={tdBase + " max-w-[170px]"} style={rowBg ? { background: rowBg } : undefined}>
+        <div className={tdBase + " max-w-[280px]"} style={rowBg ? { background: rowBg } : undefined}>
           <NotesCell company={company} onUpdate={onUpdate} />
         </div>
       )}

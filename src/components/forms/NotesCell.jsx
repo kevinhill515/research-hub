@@ -57,7 +57,9 @@ function NotesCell({ company, onUpdate }) {
           onClick={openEditor}
           title={derivedFromEarnings ? "From most recent earnings — open to set a manual note" : undefined}
           className={
-            "text-xs block max-w-[150px] overflow-hidden text-ellipsis whitespace-nowrap cursor-pointer border-b border-dashed border-slate-300 dark:border-slate-600 " +
+            /* Widened from 150 → 260 so a 6-word takeaway typically
+               fits inline without ellipsis cutting it mid-sentence. */
+            "text-xs block max-w-[260px] overflow-hidden text-ellipsis whitespace-nowrap cursor-pointer border-b border-dashed border-slate-300 dark:border-slate-600 " +
             (displayShort
               ? "text-gray-500 dark:text-slate-400"
               : "text-slate-300 dark:text-slate-600 italic")
