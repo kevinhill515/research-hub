@@ -740,13 +740,25 @@ class ExcelSession:
     # -- Refresh: FactSet --
     def refresh_factset(self) -> None:
         log("Triggering FactSet refresh...")
+        # Previously this loop silently swallowed every failed macro
+        # attempt — if NONE of the names existed in the workbook the
+        # script would proceed to read stale cached values with no
+        # warning. Log each attempt's outcome so the user can tell.
+        macro_ok = False
         for macro in ("FDS.Refresh", "FdsRefreshWorkbook", "FactSet.Refresh"):
             try:
                 self.xl.Run(macro)
                 log(f"  Ran macro: {macro}")
+                macro_ok = True
                 break
-            except Exception:
-                pass
+            except Exception as e:
+                log(f"  Macro {macro} unavailable: {type(e).__name__}")
+        if not macro_ok:
+            log("  WARNING: no FactSet refresh macro fired — _xll.FDS UDFs")
+            log("  will only recompute against whatever data the workbook")
+            log("  already has cached. If TODAY / 1D values look stale,")
+            log("  manually open the workbook, click the FactSet 'Refresh")
+            log("  Workbook' button, save, then re-run this script.")
         # Always also do a full rebuild — forces _xll.FDS UDFs to recompute.
         try:
             self.xl.CalculateFullRebuild()
@@ -1132,6 +1144,24 @@ def read_prices(xl: ExcelSession) -> tuple[dict[str, dict], dict[str, list]]:
                     if hist:
                         history.setdefault(canonical_ticker(us_tk), []).append({"d": hist[0], "p": hist[1]})
     log(f"  Prices: {len(out)} tickers, {len(history)} with history entries")
+    # Sample a few tickers' 1D values so the user can sanity-check on the
+    # spot that the script captured what they expected. Picks a stable
+    # set (AAPL, CSCO if present, plus the first three alphabetically) so
+    # spot-checks are reproducible across runs.
+    sample_keys = []
+    for prefer in ("AAPL", "CSCO", "AU", "MSFT", "NVDA"):
+        if prefer in out and prefer not in sample_keys:
+            sample_keys.append(prefer)
+    for k in sorted(out.keys()):
+        if len(sample_keys) >= 5: break
+        if k not in sample_keys: sample_keys.append(k)
+    for k in sample_keys[:5]:
+        entry = out.get(k, {})
+        perf = entry.get("perf", {})
+        one_d = perf.get("1D")
+        price = entry.get("price")
+        one_d_str = f"{one_d*100:+.2f}%" if isinstance(one_d, (int, float)) else "—"
+        log(f"  Sample {k}: price={price}, 1D={one_d_str}")
     return out, history
 
 
