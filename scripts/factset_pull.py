@@ -890,12 +890,57 @@ class ExcelSession:
                         continue
             except Exception as e:
                 log(f"  COMAddIn method probe failed: {type(e).__name__}: {e}")
+        # CommandBars probe — walk Application.CommandBars looking for
+        # any control whose caption contains 'Refresh Workbook'. The
+        # ribbon registers itself in CommandBars too on most Office
+        # versions, so we can find FactSet's button and .Execute() it
+        # without needing the COI control ID. Logs every match we
+        # find so we can see what's there even if Execute fails.
+        if not macro_ok:
+            try:
+                cb = self.xl.CommandBars
+                found = []
+                for i in range(1, cb.Count + 1):
+                    try:
+                        bar = cb.Item(i)
+                        ctrls = bar.Controls
+                        for j in range(1, ctrls.Count + 1):
+                            try:
+                                ctrl = ctrls.Item(j)
+                                cap = (getattr(ctrl, "Caption", "") or "")
+                                low = cap.lower()
+                                if ("refresh" in low and ("workbook" in low or "factset" in low or "fds" in low)) \
+                                        or (low.strip() == "refresh"):
+                                    found.append((bar.Name, cap))
+                            except Exception:
+                                continue
+                    except Exception:
+                        continue
+                if found:
+                    log(f"  CommandBars matches for refresh: {found[:10]}")
+                    # Try executing the first match.
+                    for bar_name, cap in found[:5]:
+                        try:
+                            bar = cb.Item(bar_name)
+                            ctrl = bar.FindControl(Tag="", Visible=True) or bar.Controls.Item(cap)
+                            ctrl.Execute()
+                            log(f"  Executed CommandBar control: {bar_name} / {cap}")
+                            macro_ok = True
+                            break
+                        except Exception as e:
+                            log(f"  Execute {bar_name}/{cap} failed: {type(e).__name__}")
+                else:
+                    log("  CommandBars: no refresh-shaped controls found")
+            except Exception as e:
+                log(f"  CommandBars probe failed: {type(e).__name__}: {e}")
         if not macro_ok:
             log("  WARNING: no FactSet refresh path worked — _xll.FDS UDFs")
             log("  will only recompute against whatever data the workbook")
-            log("  already has cached. If TODAY / 1D values look stale,")
-            log("  manually open the workbook, click the FactSet 'Refresh")
-            log("  Workbook' button, save, then re-run this script.")
+            log("  already has cached. Workaround: add FactSet's 'Refresh")
+            log("  Workbook' button to the Quick Access Toolbar in Excel,")
+            log("  note its position (1st button = Alt+1, etc.), and we")
+            log("  can SendKeys that shortcut from the script. Reply with")
+            log("  the QAT position and I'll wire it up.")
         # Always also do a full rebuild — forces _xll.FDS UDFs to recompute.
         try:
             self.xl.CalculateFullRebuild()
