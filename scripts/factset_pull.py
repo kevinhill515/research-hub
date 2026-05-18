@@ -2017,6 +2017,27 @@ def merge_metrics(companies: list[dict], metrics: dict[str, dict]) -> int:
 
 def merge_companies(companies, prices, valuations, earnings):
     n_p = n_v = n_e = 0
+    # Sentinel: scan for companies whose tickers look like valuation
+    # values (pure numeric strings) before we do any merging. Real
+    # tickers always contain at least one alpha char — AAPL, DG-FR,
+    # 005490-KR, MS892400. If many companies have all-numeric ticker
+    # strings, the storage has been corrupted upstream (likely by a
+    # misformatted applyPriceImport paste that wrote pe / w1 / w2 into
+    # the tickers array — happened May 2026). Surface it loudly so we
+    # catch a repeat within seconds, not days.
+    import re
+    bogus = []
+    for c in companies:
+        for t in (c.get("tickers") or []):
+            tk = (t.get("ticker") or "").strip()
+            if tk and re.match(r"^[0-9.]+$", tk):
+                bogus.append((c.get("name", "?"), tk))
+                break
+    if bogus:
+        log(f"  WARNING: {len(bogus)} companies have numeric-only ticker strings")
+        log("  (looks like a Valuation paste corrupted the tickers array).")
+        log("  Sample: " + ", ".join(f"{n}={tk}" for n, tk in bogus[:5]))
+        log("  Rebuild via Data Hub → Price Import using the Prices spreadsheet.")
     for c in companies:
         all_tks = []
         for t in (c.get("tickers") or []):
