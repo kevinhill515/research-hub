@@ -737,9 +737,35 @@ class ExcelSession:
         if opened and run_macro("CloseConnection"):
             log("  CloseConnection done")
 
+    def _log_factset_addin_surface(self) -> None:
+        """Enumerate Application.COMAddIns for anything FactSet-shaped and
+        log its ProgID, Description, and Connect status. Helps identify
+        what the current FactSet install actually exposes when the named
+        refresh macros have all gone missing. Best-effort — wrapped in
+        try so a hostile COM addin doesn't crash the script."""
+        try:
+            addins = self.xl.COMAddIns
+            log(f"  COM add-ins loaded: {addins.Count}")
+            for i in range(1, addins.Count + 1):
+                try:
+                    a = addins.Item(i)
+                    progid = a.ProgId or ""
+                    desc = a.Description or ""
+                    connected = bool(a.Connect)
+                    if "FACTSET" in (progid + desc).upper() or "FDS" in (progid + desc).upper():
+                        log(f"    [{i}] ProgId={progid!r} Description={desc!r} Connect={connected}")
+                except Exception as e:
+                    log(f"    [{i}] inspect failed: {type(e).__name__}")
+        except Exception as e:
+            log(f"  COMAddIns enumeration failed: {type(e).__name__}: {e}")
+
     # -- Refresh: FactSet --
     def refresh_factset(self) -> None:
         log("Triggering FactSet refresh...")
+        # Log what FactSet add-in surface is actually loaded — useful
+        # diagnostic when the named macros stop working after a vendor
+        # update (May 2026 install lost FDSREFRESHWORKBOOK entirely).
+        self._log_factset_addin_surface()
         # Expanded set of refresh entry points to try, since the original
         # three (FDS.Refresh / FdsRefreshWorkbook / FactSet.Refresh) all
         # com_error on the May 2026 FactSet version. The current API
@@ -788,6 +814,42 @@ class ExcelSession:
                 macro_ok = True
             except Exception as e:
                 log(f"  Formula fallback failed: {type(e).__name__}: {e}")
+        # Excel-native ActiveWorkbook.RefreshAll — refreshes data
+        # connections / queries / pivots. Some FactSet integrations
+        # register as data connections rather than UDFs.
+        if not macro_ok:
+            try:
+                self.wb.RefreshAll()
+                log("  ActiveWorkbook.RefreshAll done")
+            except Exception as e:
+                log(f"  RefreshAll failed: {type(e).__name__}: {e}")
+        # Direct COM-addin method probe — try every plausible "Refresh"
+        # method name on every loaded FactSet COM add-in. Some installs
+        # expose a Refresh() / RefreshWorkbook() method on the addin
+        # object itself, callable without going through Application.Run.
+        if not macro_ok:
+            try:
+                addins = self.xl.COMAddIns
+                for i in range(1, addins.Count + 1):
+                    try:
+                        a = addins.Item(i)
+                        pid = (a.ProgId or "").upper()
+                        if "FACTSET" not in pid and "FDS" not in pid: continue
+                        obj = a.Object
+                        if obj is None: continue
+                        for meth in ("Refresh", "RefreshWorkbook", "RefreshAll", "RecalcAll", "ForceRefresh"):
+                            try:
+                                getattr(obj, meth)()
+                                log(f"  Called COMAddIn[{pid}].{meth}()")
+                                macro_ok = True
+                                break
+                            except Exception:
+                                continue
+                        if macro_ok: break
+                    except Exception:
+                        continue
+            except Exception as e:
+                log(f"  COMAddIn method probe failed: {type(e).__name__}: {e}")
         if not macro_ok:
             log("  WARNING: no FactSet refresh path worked — _xll.FDS UDFs")
             log("  will only recompute against whatever data the workbook")
