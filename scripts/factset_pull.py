@@ -775,6 +775,15 @@ class ExcelSession:
         # where macro-call dispatch is restricted.
         macro_ok = False
         candidates = (
+            # ProgID-derived names — May 2026 install registers as
+            # 'FactSet.OfficeAddin.1', so try variants of that first.
+            "FactSet.OfficeAddin.Refresh",
+            "FactSet.OfficeAddin.RefreshWorkbook",
+            "FactSet.OfficeAddin.1.Refresh",
+            "FactSet.OfficeAddin.1.RefreshWorkbook",
+            "OfficeAddin.Refresh",
+            "OfficeAddin.RefreshWorkbook",
+            # Generic FactSet refresh names
             "_xll.FDSREFRESHWORKBOOK",
             "_xll.FDSREFRESH",
             "FDSREFRESHWORKBOOK",
@@ -811,7 +820,15 @@ class ExcelSession:
                 ws.Calculate()
                 v = ws.Cells(1, 1).Value
                 log(f"  FDSREFRESHWORKBOOK() returned: {v}")
-                macro_ok = True
+                # Only treat the formula as success when it returned a
+                # benign value. Excel error sentinels arrive as large
+                # negative ints (-2146826xxx range, 0x800A07xx); any
+                # int < -2000000000 here is the marker for #NAME?,
+                # #REF!, etc. Previously this fallback set macro_ok=True
+                # even on #NAME?, which short-circuited the addin-method
+                # probe below and left the workbook un-refreshed.
+                if not (isinstance(v, int) and v < -2000000000):
+                    macro_ok = True
             except Exception as e:
                 log(f"  Formula fallback failed: {type(e).__name__}: {e}")
         # Excel-native ActiveWorkbook.RefreshAll — refreshes data
@@ -823,10 +840,12 @@ class ExcelSession:
                 log("  ActiveWorkbook.RefreshAll done")
             except Exception as e:
                 log(f"  RefreshAll failed: {type(e).__name__}: {e}")
-        # Direct COM-addin method probe — try every plausible "Refresh"
-        # method name on every loaded FactSet COM add-in. Some installs
-        # expose a Refresh() / RefreshWorkbook() method on the addin
-        # object itself, callable without going through Application.Run.
+        # Direct COM-addin method probe. The May 2026 FactSet install
+        # registers as FactSet.OfficeAddin.1 with .Object exposed, but
+        # the method name isn't one we've guessed. Enumerate the
+        # callable surface on the .Object via dir() and log it so we
+        # can identify and target whatever 'refresh-shaped' method
+        # actually exists, then try a broader list of names.
         if not macro_ok:
             try:
                 addins = self.xl.COMAddIns
@@ -836,15 +855,36 @@ class ExcelSession:
                         pid = (a.ProgId or "").upper()
                         if "FACTSET" not in pid and "FDS" not in pid: continue
                         obj = a.Object
-                        if obj is None: continue
-                        for meth in ("Refresh", "RefreshWorkbook", "RefreshAll", "RecalcAll", "ForceRefresh"):
+                        if obj is None:
+                            log(f"  COMAddIn[{pid}].Object is None (no automation interface exposed)")
+                            continue
+                        # Log every public attribute on the addin object
+                        # so we can see what's actually callable. Filter
+                        # to refresh-shaped names + a small sample.
+                        try:
+                            attrs = [x for x in dir(obj) if not x.startswith("_")]
+                            refreshy = [x for x in attrs if "refresh" in x.lower() or "recalc" in x.lower() or "calc" in x.lower()]
+                            log(f"  COMAddIn[{pid}] refresh-shaped methods: {refreshy or '(none found)'}")
+                            log(f"  COMAddIn[{pid}] first 30 attrs: {attrs[:30]}")
+                        except Exception as e:
+                            log(f"  dir() on addin obj failed: {type(e).__name__}")
+                        # Try the broader candidate list. Include the
+                        # auto-discovered refresh-shaped names first.
+                        method_candidates = list(refreshy) + [
+                            "Refresh", "RefreshWorkbook", "RefreshAll",
+                            "RecalcAll", "ForceRefresh", "RefreshActiveWorkbook",
+                            "RefreshFormulas", "UpdateWorkbook", "Update",
+                        ]
+                        for meth in method_candidates:
                             try:
-                                getattr(obj, meth)()
+                                fn = getattr(obj, meth, None)
+                                if fn is None: continue
+                                fn()
                                 log(f"  Called COMAddIn[{pid}].{meth}()")
                                 macro_ok = True
                                 break
-                            except Exception:
-                                continue
+                            except Exception as e:
+                                log(f"  COMAddIn[{pid}].{meth}() raised: {type(e).__name__}")
                         if macro_ok: break
                     except Exception:
                         continue
