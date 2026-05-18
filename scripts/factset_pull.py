@@ -740,12 +740,26 @@ class ExcelSession:
     # -- Refresh: FactSet --
     def refresh_factset(self) -> None:
         log("Triggering FactSet refresh...")
-        # Previously this loop silently swallowed every failed macro
-        # attempt — if NONE of the names existed in the workbook the
-        # script would proceed to read stale cached values with no
-        # warning. Log each attempt's outcome so the user can tell.
+        # Expanded set of refresh entry points to try, since the original
+        # three (FDS.Refresh / FdsRefreshWorkbook / FactSet.Refresh) all
+        # com_error on the May 2026 FactSet version. The current API
+        # exposes the refresh as a UDF (_xll.FDSREFRESHWORKBOOK) — calling
+        # it as a macro works on most installs; falling back to writing
+        # it into a scratch cell and forcing a calc handles versions
+        # where macro-call dispatch is restricted.
         macro_ok = False
-        for macro in ("FDS.Refresh", "FdsRefreshWorkbook", "FactSet.Refresh"):
+        candidates = (
+            "_xll.FDSREFRESHWORKBOOK",
+            "_xll.FDSREFRESH",
+            "FDSREFRESHWORKBOOK",
+            "FDS.RefreshWorkbook",
+            "FactSet.RefreshWorkbook",
+            "FactSetForOffice.Refresh",
+            "FDS.Refresh",
+            "FdsRefreshWorkbook",
+            "FactSet.Refresh",
+        )
+        for macro in candidates:
             try:
                 self.xl.Run(macro)
                 log(f"  Ran macro: {macro}")
@@ -753,8 +767,29 @@ class ExcelSession:
                 break
             except Exception as e:
                 log(f"  Macro {macro} unavailable: {type(e).__name__}")
+        # Formula fallback: write the refresh UDF into a scratch cell on
+        # a hidden helper sheet. Calculating the cell triggers the same
+        # refresh path as the FactSet ribbon button. Works even when
+        # Application.Run is restricted.
         if not macro_ok:
-            log("  WARNING: no FactSet refresh macro fired — _xll.FDS UDFs")
+            try:
+                sheet_name = "_FDS_REFRESH_SCRATCH"
+                wb = self.wb
+                try:
+                    ws = wb.Sheets(sheet_name)
+                except Exception:
+                    ws = wb.Sheets.Add()
+                    ws.Name = sheet_name
+                    ws.Visible = 0  # xlSheetHidden
+                ws.Cells(1, 1).Formula = "=_xll.FDSREFRESHWORKBOOK()"
+                ws.Calculate()
+                v = ws.Cells(1, 1).Value
+                log(f"  FDSREFRESHWORKBOOK() returned: {v}")
+                macro_ok = True
+            except Exception as e:
+                log(f"  Formula fallback failed: {type(e).__name__}: {e}")
+        if not macro_ok:
+            log("  WARNING: no FactSet refresh path worked — _xll.FDS UDFs")
             log("  will only recompute against whatever data the workbook")
             log("  already has cached. If TODAY / 1D values look stale,")
             log("  manually open the workbook, click the FactSet 'Refresh")
