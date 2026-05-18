@@ -55,6 +55,19 @@ SUPA_KEY = "sb_publishable_7kqbGZlL_im9kIpgFXLA-A_9CdqsyiT"
 REP_WAIT_SECONDS      = 25   # Refresh Positions — user said ~15s, give buffer
 FACTSET_WAIT_SECONDS  = 120  # FactSet full workbook refresh
 
+# Position of FactSet "Refresh Workbook" in the Quick Access Toolbar
+# (1 = leftmost). Set after FactSet (May 2026) removed every other
+# programmatic refresh entry point — Application.Run, _xll.FDS*
+# UDFs, the COMAddIn automation interface, and the CommandBars
+# enumeration all return empty/error on the current install. The
+# only remaining path is to SendKeys Alt+<N> to fire the ribbon
+# button via its QAT shortcut.
+# Setup once per Excel user: right-click FactSet's 'Refresh Workbook'
+# button on the ribbon → "Add to Quick Access Toolbar" → note the
+# button's position from the left (1-9) and update this number.
+# Set to None to skip the SendKeys step entirely.
+FACTSET_REFRESH_QAT_POS = 1
+
 # Last row of data per sheet — generous ceilings; script skips blanks.
 MAX_COMPANY_ROW      = 400
 MAX_REP_HOLDINGS_ROW = 5000
@@ -933,14 +946,49 @@ class ExcelSession:
                     log("  CommandBars: no refresh-shaped controls found")
             except Exception as e:
                 log(f"  CommandBars probe failed: {type(e).__name__}: {e}")
+        # SendKeys via Quick Access Toolbar — the LAST automation path
+        # FactSet's locked-down ribbon still leaves open. Pressing
+        # Alt+<N> in Excel fires the Nth QAT button. If the user has
+        # added 'Refresh Workbook' to QAT and set FACTSET_REFRESH_QAT_POS
+        # to its position, this triggers the same code path as a manual
+        # click. Uses WScript.Shell.SendKeys (more reliable than
+        # Application.SendKeys, which queues and can lose keystrokes
+        # when Excel is busy).
+        if not macro_ok and FACTSET_REFRESH_QAT_POS:
+            try:
+                import win32com.client
+                self.xl.Visible = True       # SendKeys needs the window visible
+                self.wb.Activate()
+                shell = win32com.client.Dispatch("WScript.Shell")
+                # AppActivate raises COMError if no window matches.
+                # The Excel caption usually ends with " - Excel"; try
+                # the workbook name first, then a bare "Excel" fallback.
+                activated = False
+                for title in (self.wb.Name, "Excel"):
+                    try:
+                        shell.AppActivate(title)
+                        activated = True
+                        break
+                    except Exception:
+                        continue
+                time.sleep(0.5)
+                shell.SendKeys("%" + str(FACTSET_REFRESH_QAT_POS))
+                log(f"  SendKeys Alt+{FACTSET_REFRESH_QAT_POS} (QAT position) "
+                    f"{'activated=' + str(activated)}")
+                # Click registers async — small delay before subsequent
+                # CalculateFullRebuild lets FactSet's button handler kick
+                # off the workbook refresh.
+                time.sleep(2)
+                macro_ok = True
+            except Exception as e:
+                log(f"  SendKeys QAT fallback failed: {type(e).__name__}: {e}")
         if not macro_ok:
             log("  WARNING: no FactSet refresh path worked — _xll.FDS UDFs")
             log("  will only recompute against whatever data the workbook")
             log("  already has cached. Workaround: add FactSet's 'Refresh")
             log("  Workbook' button to the Quick Access Toolbar in Excel,")
-            log("  note its position (1st button = Alt+1, etc.), and we")
-            log("  can SendKeys that shortcut from the script. Reply with")
-            log("  the QAT position and I'll wire it up.")
+            log("  note its position (1st button = Alt+1, etc.), and")
+            log("  update FACTSET_REFRESH_QAT_POS at the top of this script.")
         # Always also do a full rebuild — forces _xll.FDS UDFs to recompute.
         try:
             self.xl.CalculateFullRebuild()
