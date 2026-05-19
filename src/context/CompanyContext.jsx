@@ -524,6 +524,59 @@ export function CompanyProvider({children}){
   var DEBOUNCE_MS=500;
   var DEBOUNCE_HEAVY_MS=1500;
   var lastSentRef=useRef({});
+  /* Save-status tracking. Counts in-flight writes ("saving"), failed
+     writes that have exhausted retries ("failed"), and tracks the last
+     successful write timestamp. Exposed via context so the header can
+     show a small badge — green when all saved, amber when a write is
+     in progress, red with count when writes have failed permanently.
+     Critical because previously a transient fetch failure on the
+     auto-save effect silently dropped the write — local state showed
+     the edit but Supabase never got it, and the user only discovered
+     the data loss the next day. */
+  const [saveStatus,setSaveStatus]=useState({pending:0,failed:0,lastSavedAt:null,lastFailedAt:null});
+  /* Wraps supaUpsert with retry (3 attempts, exponential backoff) and
+     status accounting. Returns a promise that resolves on success and
+     rejects on final failure. Callers MUST chain a .then() that updates
+     their lastSentRef ONLY after success — otherwise a failed write
+     would mark the data as "sent" and the next auto-save tick wouldn't
+     retry, losing the edit permanently. */
+  function safeUpsert(table, payload){
+    setSaveStatus(function(s){return Object.assign({},s,{pending:s.pending+1});});
+    var attempt = 0;
+    function tryOnce(){
+      return supaUpsert(table, payload).then(function(r){
+        if(r && r.ok) return r;
+        throw new Error("HTTP " + (r && r.status));
+      });
+    }
+    function withRetry(){
+      return tryOnce().catch(function(err){
+        attempt++;
+        if(attempt >= 3) throw err;
+        var delay = 1000 * Math.pow(3, attempt - 1); /* 1s, 3s */
+        return new Promise(function(res){setTimeout(res, delay);}).then(withRetry);
+      });
+    }
+    return withRetry()
+      .then(function(r){
+        setSaveStatus(function(s){return Object.assign({},s,{
+          pending: Math.max(0, s.pending - 1),
+          lastSavedAt: Date.now(),
+        });});
+        return r;
+      })
+      .catch(function(err){
+        /* eslint-disable no-console */
+        console.warn("safeUpsert failed after retries", table, err);
+        /* eslint-enable no-console */
+        setSaveStatus(function(s){return Object.assign({},s,{
+          pending: Math.max(0, s.pending - 1),
+          failed: s.failed + 1,
+          lastFailedAt: Date.now(),
+        });});
+        throw err;
+      });
+  }
   /* Per-company write tracking. Holds last-sent JSON keyed by company id.
      Declared up here (not next to the per-company effect) so the
      ready-snapshot below can populate it — otherwise the first auto-save
@@ -531,6 +584,25 @@ export function CompanyProvider({children}){
      timed out the Postgres statement-timeout in May 2026 and put the
      whole project into 'unhealthy'. */
   var lastSentCompaniesRef = useRef({});
+  /* Convenience wrapper for the meta-blob auto-save pattern. Skips
+     the write when the value matches the last SUCCESSFULLY-sent one,
+     calls safeUpsert (which retries 3x), and updates lastSentRef
+     INSIDE the .then() so a failed write does NOT mark the data as
+     sent — the next tick will see ref != state and retry. Previously
+     each effect set lastSentRef BEFORE the network completed, which
+     meant a transient failure silently dropped the write and the
+     user only discovered the data loss the next day. */
+  function autoSendBlob(key, jsonStr, table, payload){
+    if(lastSentRef.current[key] === jsonStr) return;
+    safeUpsert(table, payload).then(function(){
+      lastSentRef.current[key] = jsonStr;
+    }).catch(function(){
+      /* lastSentRef NOT updated; next debounce tick retries. */
+    });
+  }
+  /* Legacy helper kept for callers I haven't migrated yet. Sets the
+     ref BEFORE the write completes — risky on failure. New code should
+     use autoSendBlob() instead. */
   function sendIfChanged(key, fn){
     var json=fn();
     if(lastSentRef.current[key]===json)return false;
@@ -576,7 +648,7 @@ export function CompanyProvider({children}){
     });
     lastSentCompaniesRef.current = byId;
   }, [ready]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(saved);if(sendIfChanged("library",function(){return j;}))supaUpsert("library",{id:"shared",data:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[saved,ready]);
+  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(saved);autoSendBlob("library",j,"library",{id:"shared",data:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[saved,ready]);
   /* Per-company auto-save. The ref is declared above (so the ready
      snapshot can populate it). On each debounce we diff the current
      companies array against the ref, bulk-upsert the changed rows,
@@ -591,37 +663,56 @@ export function CompanyProvider({children}){
         seenIds[c.id]=true;
         var j=JSON.stringify(c);
         if(lastSentCompaniesRef.current[c.id]!==j){
+          /* CRITICAL: do NOT update lastSentCompaniesRef here. A failed
+             write would leave the ref claiming "sent" and the next tick
+             would skip the retry, silently losing the edit (this is
+             exactly what bit four companies in May 2026 — user typed
+             thesis/valuation/earnings, the writes failed transiently,
+             nothing reached Supabase). The ref gets updated INSIDE
+             safeUpsert's .then() below, only after the chunk has
+             actually committed. */
           changed.push({id:c.id,data:j});
-          lastSentCompaniesRef.current[c.id]=j;
         }
       });
       var deletedIds=Object.keys(lastSentCompaniesRef.current).filter(function(id){return !seenIds[id];});
-      deletedIds.forEach(function(id){delete lastSentCompaniesRef.current[id];});
       if(changed.length>0){
         /* Chunk large bulk upserts. A single 325-row upsert serializes
            ~10 MB of JSON, which routinely takes 10+ seconds on Supabase
            Free/Pro and trips Postgres's statement_timeout. Chunks of 50
-           comfortably finish in well under a second each. */
+           comfortably finish in well under a second each. safeUpsert
+           retries 3x with exponential backoff and accounts the result
+           into saveStatus (visible in the header). On success the chunk's
+           rows get added to lastSentCompaniesRef; on failure they don't,
+           so the next debounce tick retries the same rows. */
         var CHUNK=50;
         for(var i=0;i<changed.length;i+=CHUNK){
-          supaUpsert("companies",changed.slice(i,i+CHUNK));
+          (function(chunk){
+            safeUpsert("companies", chunk).then(function(){
+              chunk.forEach(function(row){
+                lastSentCompaniesRef.current[row.id] = row.data;
+              });
+            }).catch(function(){
+              /* lastSentCompaniesRef NOT updated — next tick retries. */
+            });
+          })(changed.slice(i, i+CHUNK));
         }
       }
       deletedIds.forEach(function(id){
         supaDelete("companies","id",id);
+        delete lastSentCompaniesRef.current[id];
       });
     },DEBOUNCE_HEAVY_MS);
     return function(){clearTimeout(t);};
   },[companies,ready]);
-  useEffect(function(){if(!ready||!lastPriceUpdate)return;var t=setTimeout(function(){if(sendIfChanged("lastPriceUpdate",function(){return lastPriceUpdate;}))supaUpsert("meta",{key:"lastPriceUpdate",value:lastPriceUpdate});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[lastPriceUpdate,ready]);
-  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(entryComments);if(sendIfChanged("entryComments",function(){return j;}))supaUpsert("meta",{key:"entryComments",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[entryComments,ready]);
-  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(annotations);if(sendIfChanged("annotations",function(){return j;}))supaUpsert("meta",{key:"annotations",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[annotations,ready]);
-  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(tpApprovals);if(sendIfChanged("tpApprovals",function(){return j;}))supaUpsert("meta",{key:"tpApprovals",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[tpApprovals,ready]);
-  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(researchAssignments);if(sendIfChanged("researchAssignments",function(){return j;}))supaUpsert("meta",{key:"researchAssignments",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[researchAssignments,ready]);
-  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(perfData);if(sendIfChanged("perfData",function(){return j;}))supaUpsert("meta",{key:"perfData",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[perfData,ready]);
-  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(feedback);if(sendIfChanged("feedback",function(){return j;}))supaUpsert("meta",{key:"feedback",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[feedback,ready]);
-  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(benchmarkWeights);if(sendIfChanged("benchmarkWeights",function(){return j;}))supaUpsert("meta",{key:"benchmarkWeights",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[benchmarkWeights,ready]);
-  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(breakdownHistory);if(sendIfChanged("breakdownHistory",function(){return j;}))supaUpsert("meta",{key:"breakdownHistory",value:j});},DEBOUNCE_HEAVY_MS);return function(){clearTimeout(t);};},[breakdownHistory,ready]);
+  useEffect(function(){if(!ready||!lastPriceUpdate)return;var t=setTimeout(function(){autoSendBlob("lastPriceUpdate",lastPriceUpdate,"meta",{key:"lastPriceUpdate",value:lastPriceUpdate});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[lastPriceUpdate,ready]);
+  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(entryComments);autoSendBlob("entryComments",j,"meta",{key:"entryComments",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[entryComments,ready]);
+  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(annotations);autoSendBlob("annotations",j,"meta",{key:"annotations",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[annotations,ready]);
+  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(tpApprovals);autoSendBlob("tpApprovals",j,"meta",{key:"tpApprovals",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[tpApprovals,ready]);
+  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(researchAssignments);autoSendBlob("researchAssignments",j,"meta",{key:"researchAssignments",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[researchAssignments,ready]);
+  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(perfData);autoSendBlob("perfData",j,"meta",{key:"perfData",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[perfData,ready]);
+  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(feedback);autoSendBlob("feedback",j,"meta",{key:"feedback",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[feedback,ready]);
+  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(benchmarkWeights);autoSendBlob("benchmarkWeights",j,"meta",{key:"benchmarkWeights",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[benchmarkWeights,ready]);
+  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(breakdownHistory);autoSendBlob("breakdownHistory",j,"meta",{key:"breakdownHistory",value:j});},DEBOUNCE_HEAVY_MS);return function(){clearTimeout(t);};},[breakdownHistory,ready]);
 
   function addComment(entryId,text){   if(!text.trim())return;   var comment={id:Date.now(),text:text.trim(),author:currentUser||"Unknown",date:todayStr()};   setEntryComments(function(prev){return Object.assign({},prev,{[entryId]:([comment].concat(prev[entryId]||[]))});});   setNewCommentText(function(prev){return Object.assign({},prev,{[entryId]:""});}); }
   function deleteComment(entryId,commentId){   setEntryComments(function(prev){return Object.assign({},prev,{[entryId]:(prev[entryId]||[]).filter(function(c){return c.id!==commentId;})});}); }
@@ -1131,6 +1222,7 @@ export function CompanyProvider({children}){
     cp,
     annotations,setAnnotations,
     tpApprovals,setTpApprovals,submitTpApproval,approveTpApproval,rejectTpApproval,withdrawTpApproval,markTpApprovalRead,
+    saveStatus,
     addAnnotation,updateAnnotation,deleteAnnotation,resolveAnnotation,unresolveAnnotation,addReply,markAnnotationRead,parseMentions,
     updateTargetWeight,addTargetHistoryEntry,deleteTargetHistoryEntry,
     addTransaction,deleteTransaction,setTxInitOverride,setTxCashFlow,updateInitiatedDate,

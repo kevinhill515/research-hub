@@ -37,7 +37,7 @@ import { FeedbackTab } from './components/feedback/FeedbackTab.jsx';
 
 /* Components extracted to src/components/ — see barrel index.js files in each subdirectory */
 export default function App(){
-  const { companies, setCompanies, saved, setSaved, ready, setReady, loadStatus, setLoadStatus, loadFailed, tpApprovals, lastPriceUpdate, setLastPriceUpdate, lastPriceUpdatedBy, setLastPriceUpdatedBy, entryComments, setEntryComments, newCommentText, setNewCommentText, repData, setRepData, fxRates, setFxRates, specialWeights, setSpecialWeights, benchmarkWeights, alertRules, currentUser, setCurrentUser, dark, setDark, authed, setAuthed, showUserPicker, setShowUserPicker, calLastUpdated, setCalLastUpdated, calLastUpdatedBy, setCalLastUpdatedBy, repLastUpdated, setRepLastUpdated, fxLastUpdated, setFxLastUpdated, copied, setCopied, loadFromStorage, addComment, deleteComment, updateCo, cp, annotations, updateTargetWeight, addTargetHistoryEntry, deleteTargetHistoryEntry, addTransaction, deleteTransaction, setTxInitOverride, updateInitiatedDate } = useCompanyContext();
+  const { companies, setCompanies, saved, setSaved, ready, setReady, loadStatus, setLoadStatus, loadFailed, tpApprovals, saveStatus, lastPriceUpdate, setLastPriceUpdate, lastPriceUpdatedBy, setLastPriceUpdatedBy, entryComments, setEntryComments, newCommentText, setNewCommentText, repData, setRepData, fxRates, setFxRates, specialWeights, setSpecialWeights, benchmarkWeights, alertRules, currentUser, setCurrentUser, dark, setDark, authed, setAuthed, showUserPicker, setShowUserPicker, calLastUpdated, setCalLastUpdated, calLastUpdatedBy, setCalLastUpdatedBy, repLastUpdated, setRepLastUpdated, fxLastUpdated, setFxLastUpdated, copied, setCopied, loadFromStorage, addComment, deleteComment, updateCo, cp, annotations, updateTargetWeight, addTargetHistoryEntry, deleteTargetHistoryEntry, addTransaction, deleteTransaction, setTxInitOverride, updateInitiatedDate } = useCompanyContext();
 
   /* Memoize the per-company warn-alerts map so CoRow can read its own
      entry without re-evaluating alerts on every render. Recomputes only
@@ -362,6 +362,38 @@ export default function App(){
           <span className="text-[11px] text-gray-500 dark:text-slate-400">Storage:</span>
           <span className={PILL_BASE + " border-none"} style={{background:loadStatus.companies===null?undefined:loadStatus.companies>0?"#dcfce7":"#fef9c3",color:loadStatus.companies===null?undefined:loadStatus.companies>0?"#166534":"#854d0e"}}>{loadStatus.companies===null?"loading\u2026":loadStatus.companies>0?"\u2713 "+loadStatus.companies+" cos":"\u26A0 none"}</span>
           <span className={PILL_BASE + " border-none"} style={{background:loadStatus.library===null?undefined:loadStatus.library>0?"#dcfce7":"#fef9c3",color:loadStatus.library===null?undefined:loadStatus.library>0?"#166534":"#854d0e"}}>{loadStatus.library===null?"loading\u2026":loadStatus.library>0?"\u2713 "+loadStatus.library+" lib":"\u26A0 none"}</span>
+          {/* Save-status indicator. Shows the state of writes back to
+              Supabase so a silent failure can't go unnoticed. Three
+              states from quiet to loud:
+                green \u2713 saved   = \u22651 successful write this session, none pending/failed
+                amber saving\u2026   = at least one write in flight (debounce or retry)
+                red FAILED      = retries exhausted, data is local-only \u2014 click reload
+                                  or take action before navigating away.
+              Tooltip shows the last successful save time. */}
+          {(function(){
+            var hasFailed = saveStatus.failed > 0;
+            var hasPending = saveStatus.pending > 0;
+            var savedAt = saveStatus.lastSavedAt ? new Date(saveStatus.lastSavedAt).toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit",second:"2-digit"}) : null;
+            var bg, color, label, title;
+            if (hasFailed) {
+              bg = "#fee2e2"; color = "#991b1b";
+              label = "\u26A0 " + saveStatus.failed + " save" + (saveStatus.failed===1?"":"s") + " failed";
+              title = "One or more writes to Supabase exhausted all 3 retry attempts. Local edits are NOT in storage \u2014 hard-refresh the page to see what actually persisted, and re-do any missing edits.";
+            } else if (hasPending) {
+              bg = "#fef9c3"; color = "#854d0e";
+              label = "saving" + (saveStatus.pending>1 ? " (" + saveStatus.pending + ")" : "") + "\u2026";
+              title = "Auto-save in progress \u2014 wait before closing or refreshing.";
+            } else if (savedAt) {
+              bg = "#dcfce7"; color = "#166534";
+              label = "\u2713 saved " + savedAt;
+              title = "Last successful save: " + savedAt + ". Auto-save is healthy.";
+            } else {
+              bg = undefined; color = undefined;
+              label = "idle";
+              title = "No saves yet this session.";
+            }
+            return <span className={PILL_BASE + " border-none"} style={{background:bg,color:color}} title={title}>{label}</span>;
+          })()}
           <PriceAgeIndicator lastPriceUpdate={lastPriceUpdate} lastPriceUpdatedBy={lastPriceUpdatedBy}/>
         </div>
         {/* Buttons row \u2014 wraps naturally. */}
