@@ -110,8 +110,21 @@ export function CompanyDetail(props){
             {selCo.sector&&(function(){var ss=sectorStyle(selCo.sector);return <span className="text-[11px] px-1.5 py-0.5 rounded-full font-medium" style={{background:ss.bg,color:ss.color}}>{selCo.sector}</span>;}())}
             {portfolios.map(function(p){return <span key={p} className="text-[11px] px-1.5 py-0.5 rounded-full font-medium text-white border-none" style={{background:"#1a5c2a"}}>{p}</span>;})}
             {selCo.status&&<StatusPill status={selCo.status}/>}
-            {tp!==null&&<span className="text-xs px-2.5 py-0.5 rounded-full font-semibold" style={{background:"#dcfce7",color:"#166534"}}>TP: {fmtTP(tp,activeCurrency)}</span>}
-            {mosStyle&&<span className="text-xs px-2.5 py-0.5 rounded-full font-semibold" style={{background:mosStyle.bg,color:mosStyle.color}}>MOS: {fmtMOS(mos)}</span>}
+            {/* TP pill was redundant with the larger TP Live / TP Fixed
+                tiles in the Snapshot section below. Removed. The two
+                MOS pills are the at-a-glance signal — live (driven by
+                PE × normEPS, drifts with estimate revisions) and fixed
+                (the firm's committed-vote target, stable). */}
+            {mosStyle && (
+              <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold" style={{ background: mosStyle.bg, color: mosStyle.color }}>
+                MOS Live: {fmtMOS(mos)}
+              </span>
+            )}
+            {mosFixedStyle && (
+              <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold" style={{ background: mosFixedStyle.bg, color: mosFixedStyle.color }}>
+                MOS Fixed: {fmtMOS(mosFixed)}
+              </span>
+            )}
             {(function(){var coAnnotations=annotations.filter(function(a){return !a.resolved&&((a.scope==="company"&&a.companyId===selCo.id)||(a.scope==="row"&&a.companyId===selCo.id));});return <button onClick={function(){openDiscussions({scope:"company",companyId:selCo.id});}} className={BTN+" ml-auto"}>💬 Discuss{coAnnotations.length>0&&<span className="ml-1 text-[10px] px-1.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-semibold">{coAnnotations.length}</span>}</button>;})()}
             <button onClick={function(){setShowDiag(function(v){return !v;});}} className={BTN} title="Toggle diagnostic panel — what the app thinks it knows about this company">🔍 Debug</button>
           </div>

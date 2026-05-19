@@ -66,7 +66,7 @@ FACTSET_WAIT_SECONDS  = 120  # FactSet full workbook refresh
 # button on the ribbon → "Add to Quick Access Toolbar" → note the
 # button's position from the left (1-9) and update this number.
 # Set to None to skip the SendKeys step entirely.
-FACTSET_REFRESH_QAT_POS = 4
+FACTSET_REFRESH_QAT_POS = 5
 
 # Last row of data per sheet — generous ceilings; script skips blanks.
 MAX_COMPANY_ROW      = 400

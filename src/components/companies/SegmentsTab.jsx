@@ -78,6 +78,21 @@ export default function SegmentsTab({ company }) {
   const data = company && company.segments;
   const hasData = !!(data && data.years && data.years.length > 0);
 
+  /* Update the consolidated-Total card's free-text note. Stored at
+     c.segments.totalNote so it lives alongside the per-segment notes
+     but isn't associated with any one segment. */
+  function updateTotalNote(note) {
+    if (!company || !company.segments) return;
+    setCompanies(function (cs) {
+      return cs.map(function (c) {
+        if (c.id !== company.id) return c;
+        return Object.assign({}, c, {
+          segments: Object.assign({}, c.segments, { totalNote: note }),
+        });
+      });
+    });
+  }
+
   /* Update a single segment's free-text note. Matched by segment.name
      (the same key used everywhere else in this file) so renames in the
      underlying segments array invalidate the note rather than orphaning
@@ -226,6 +241,8 @@ export default function SegmentsTab({ company }) {
                   totalMargin={totalMargin}
                   ccy={ccy}
                   parsedTotal={data.parsedTotal}
+                  totalNote={data.totalNote}
+                  onUpdateTotalNote={updateTotalNote}
                 />
               )}
               {activeOpSegs.map(function (s, i) {
@@ -569,12 +586,22 @@ function MarginLadder({ years, segments, totalMargin, totalRoa }) {
 /* Aggregate "Total" card — same layout as a SegmentCard but pulls
  * its values from per-year totals (sales / ebit / margin) computed by
  * the parent. Always shown first in the segment grid. */
-function TotalCard({ years, totalSales, totalEbit, totalMargin, ccy, parsedTotal }) {
+function TotalCard({ years, totalSales, totalEbit, totalMargin, ccy, parsedTotal, totalNote, onUpdateTotalNote }) {
   const [chartOpen, setChartOpen] = useState(null);
   const lastSales = lastFinite(totalSales);
   const lastEbit  = lastFinite(totalEbit);
   const lastMgn   = lastFinite(totalMargin);
   const lastRoa   = parsedTotal ? lastFinite(parsedTotal.roa) : null;
+  /* Local draft + debounced commit — same pattern as SegmentCard's note
+     field. Snappy typing, no per-keystroke writes to the company state. */
+  const [noteDraft, setNoteDraft] = useState(totalNote || "");
+  useEffect(function () { setNoteDraft(totalNote || ""); }, [totalNote]);
+  useEffect(function () {
+    if (noteDraft === (totalNote || "")) return;
+    const t = setTimeout(function () { if (onUpdateTotalNote) onUpdateTotalNote(noteDraft); }, 600);
+    return function () { clearTimeout(t); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [noteDraft]);
 
   function chartFor(kind) {
     if (kind === "sales")  return { values: totalSales,  fmt: function (v) { return fmtMoney(v, ccy); } };
@@ -613,6 +640,17 @@ function TotalCard({ years, totalSales, totalEbit, totalMargin, ccy, parsedTotal
           />
         </div>
       )}
+
+      {/* Free-text note for the consolidated company — auto-grows. */}
+      <div className="mt-2 border-t border-slate-100 dark:border-slate-800 pt-2">
+        <AutoGrowTextarea
+          value={noteDraft}
+          onChange={function (ev) { setNoteDraft(ev.target.value); }}
+          placeholder="Notes about the company / total mix…"
+          rows={1}
+          className="w-full text-[11px] px-2 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder:text-gray-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none leading-relaxed"
+        />
+      </div>
     </div>
   );
 }
