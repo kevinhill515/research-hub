@@ -1104,7 +1104,14 @@ export function CompanyProvider({children}){
       nw[portfolio]=rawNewValue===""||rawNewValue===null||rawNewValue===undefined?"":rawNewValue;
       /* Only log if the numeric value actually changed */
       if(Math.abs(oldNum-newNum)<0.01)return Object.assign({},c,{portWeights:nw});
-      var entry={id:newId(),date:todayStr(),portfolio:portfolio,oldWeight:oldNum,newWeight:newNum,author:currentUser||"Unknown"};
+      /* New weight changes default to isAgenda: true — they represent
+         a decision made at the most recent IC meeting that hasn't been
+         executed yet. The PM Meeting Memo generator lists these in the
+         'Trading Agenda' section. After the trade lands (next-day
+         transactions upload) the user can run 'Clear executed agenda'
+         to flip isAgenda → false; those entries then surface in the
+         'Target Changes' section instead. */
+      var entry={id:newId(),date:todayStr(),portfolio:portfolio,oldWeight:oldNum,newWeight:newNum,author:currentUser||"Unknown",isAgenda:true};
       var hist=[entry].concat(c.portWeightHistory||[]);
       return Object.assign({},c,{portWeights:nw,portWeightHistory:hist});
     });});

@@ -8,7 +8,7 @@ import AlertsPanel from './components/dashboard/AlertsPanel.jsx';
 import ThisWeekEarnings from './components/dashboard/ThisWeekEarnings.jsx';
 import { PriceAgeIndicator, BarRow, PillEl, PortPicker, SectionBlock, StatusPill, DiffView } from './components/ui/index.js';
 import { SectionEditTab, EarningsEntry, NotesCell, ActionCell, FlagCell, DatePicker } from './components/forms/index.js';
-import { GlobalSearch, TemplateSearch, QuickUploadModal, DiscussionsPanel, TpApprovalsPanel } from './components/modals/index.js';
+import { GlobalSearch, TemplateSearch, QuickUploadModal, DiscussionsPanel, TpApprovalsPanel, MeetingMemoModal } from './components/modals/index.js';
 import { CoRow, OverlapMatrix } from './components/tables/index.js';
 import { EarningsCalendar } from './components/calendar/index.js';
 import { useCompanyContext } from './context/CompanyContext.jsx';
@@ -137,6 +137,7 @@ export default function App(){
   const [calPortFilter,setCalPortFilter]=useState("All");
   const [showDiscussions,setShowDiscussions]=useState(false);
   const [showTpApprovals,setShowTpApprovals]=useState(false);
+  const [showMeetingMemo,setShowMeetingMemo]=useState(false);
   const [discussionScope,setDiscussionScope]=useState({scope:null,portfolio:null,companyId:null});
   function openDiscussions(scope){
     setDiscussionScope(scope||{scope:null,portfolio:null,companyId:null});
@@ -331,6 +332,7 @@ export default function App(){
       {showTmplSearch&&<TemplateSearch companies={companies.filter(function(c){return Object.keys(c.sections||{}).length>0;})} onSelect={function(c,q){setSelCo(c);setTab("companies");setCoView("dashboard");setTmplHighlight(q);setTmplSearch(q);}} onClose={function(){setShowTmplSearch(false);}}/>} {showGlobalSearch&&<GlobalSearch companies={companies} saved={saved} onSelectCompany={function(c){setSelCo(c);setTab("companies");setCoView("dashboard");}} onSelectEntry={function(s){setTab("library");setExpanded(s.id);}} onClose={function(){setShowGlobalSearch(false);}}/>}
       {quickUploadCo&&<QuickUploadModal company={quickUploadCo} onClose={function(){setQuickUploadCo(null);}} onAccept={acceptQuickDiff}/>}
       <DiscussionsPanel open={showDiscussions} onClose={function(){setShowDiscussions(false);}} initialScope={discussionScope.scope} initialPortfolio={discussionScope.portfolio} initialCompanyId={discussionScope.companyId} companies={companies}/>
+      <MeetingMemoModal open={showMeetingMemo} onClose={function(){setShowMeetingMemo(false);}}/>
       <TpApprovalsPanel
         open={showTpApprovals}
         onClose={function(){setShowTpApprovals(false);}}
@@ -416,6 +418,7 @@ export default function App(){
             </button>
           );
         })()}
+        <button onClick={function(){setShowMeetingMemo(true);}} className={BTN} title="Generate the post-IC compliance memo (Tuesday MultiCap or Thursday EM/SC)">{"\uD83D\uDCDD"} PM Meeting Memo</button>
         <button onClick={function(){setDark(function(d){return !d;});}} className={BTN}>{dark?"\u2600 Light":"\uD83C\uDF19 Dark"}</button>
         <button onClick={function(){setCompact(function(c){var next=!c;setVisibleCols(next?COMPACT_COLS:new Set(ALL_COLS));return next;});}} className={BTN}>{compact?"\u229E Default":"\u229F Compact"}</button>
         <button onClick={function(){
