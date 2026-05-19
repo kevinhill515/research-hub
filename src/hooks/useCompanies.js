@@ -386,10 +386,18 @@ export function useCompanies(){
       var usTicker = "", usPrice = NaN;
       var usPerf = {};
       var col2LooksLikeDate = normIsoDate(parts[2]) !== null;
-      if(parts.length >= 31){
-        /* Current layout. Ord: ticker[1], date-1[2], price-1[3], price[4],
-           perf[5..15]. US: ticker[16], date-1[17], price-1[18], price[19],
-           perf[20..30]. */
+      /* Detect a US ticker at column Q (index 16) by content rather
+         than by overall row length. Excel-paste trims trailing empty
+         cells, so a Vinci-style row with US ticker + price but no US
+         perf data could come in as ~20 cols instead of 31 — the old
+         `parts.length >= 31` check would miss it and the row would
+         fall into the ord-only branch, dropping the US ticker. */
+      var col16HasTicker = !!(parts[16] && /[A-Za-z]/.test(parts[16]));
+      if(col2LooksLikeDate && col16HasTicker){
+        /* New layout, ord + US (US may have partial data — perf cells
+           U..AE often blank). Ord: ticker[1], date-1[2], price-1[3],
+           price[4], perf[5..15]. US: ticker[16], date-1[17],
+           price-1[18], price[19], perf[20..30]. */
         recordHistory(ordTicker, parts[2], parts[3]);
         ordPrice = parts[4] ? parseFloat(parts[4].replace(/,/g,"")) : NaN;
         var ordCells = [];
@@ -400,12 +408,11 @@ export function useCompanies(){
         recordHistory(usTicker, parts[17], parts[18]);
         usPrice  = parts[19] ? parseFloat(parts[19].replace(/,/g,"")) : NaN;
         var usCells = [];
-        for(var k=0; k<PRICE_PERF_KEYS.length; k++){ usCells.push(parts[20 + k]); }
+        for(var k=0; k<PRICE_PERF_KEYS.length; k++){ usCells.push(parts[20 + k] || ""); }
         var usVals = parsePerfRow(usCells);
         usVals.forEach(function(v, idx){ if(v !== null) usPerf[PRICE_PERF_KEYS[idx]] = v; });
       } else if(col2LooksLikeDate && parts.length >= 16){
-        /* New-layout ord-only (16 cols). Same positions as the full 31-col
-           layout for the ord block, but no US ticker section. */
+        /* New-layout ord-only (col 16 either missing or not alpha-shaped). */
         recordHistory(ordTicker, parts[2], parts[3]);
         ordPrice = parts[4] ? parseFloat(parts[4].replace(/,/g,"")) : NaN;
         var ordOnlyCells = [];
@@ -484,10 +491,17 @@ export function useCompanies(){
         perf5d:    legacy5d(match.ordPerf), /* legacy field — read by older UI surfaces */
         priceAsOf: priceAsOf,
       }];
-      if(match.usTicker && match.usPrice !== null && match.usTicker !== match.ordTicker){
+      /* Preserve the US ticker even when its price cell was blank in
+         the paste. The earlier `match.usPrice !== null` guard dropped
+         the US entry for any name where FactSet hadn't filled in a
+         US price yet, which broke future refreshes because the
+         factset_pull script only UPDATES existing tickers — it
+         doesn't ADD them. Keep the structure; price will populate on
+         the next successful refresh. */
+      if(match.usTicker && match.usTicker !== match.ordTicker){
         newTickers.push({
           ticker:    match.usTicker,
-          price:     match.usPrice,
+          price:     match.usPrice !== null ? match.usPrice : "",
           currency:  "USD",
           isOrdinary: hasMatch ? usIsExistingOrd : false,
           perf:      match.usPerf,
