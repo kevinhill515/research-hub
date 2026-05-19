@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import { PORTFOLIOS, TIER_ORDER } from '../../constants/index.js';
 import { repShares, tierBg, tierPillStyle, tierToStatus, getTiers, truncName,
@@ -5,13 +6,63 @@ import { repShares, tierBg, tierPillStyle, tierToStatus, getTiers, truncName,
 import { PortPicker } from '../ui/index.js';
 import FpeRangeMini from '../ui/FpeRangeMini.jsx';
 
+/* Inline editable weight cell for the Overlap target view. Click the
+ * value to switch to an input; Enter or blur to commit; Escape to
+ * cancel. Calls updateTargetWeight() which writes to
+ * c.portWeights[portfolio] AND logs an entry into c.portWeightHistory
+ * (used by the PM Meeting memo generator to surface "weight changes
+ * in the last 6 days"). Rep mode falls back to the read-only span. */
+function EditableWeightCell({ value, onSubmit, displayClassName, cellStyle }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  function startEdit() {
+    setDraft(value > 0 ? value.toFixed(1) : "");
+    setEditing(true);
+  }
+  function commit() {
+    if (draft.trim() === "" || isNaN(parseFloat(draft))) {
+      setEditing(false);
+      return;
+    }
+    onSubmit(parseFloat(draft));
+    setEditing(false);
+  }
+  if (editing) {
+    return (
+      <div className="align-middle pr-4 py-1.5" style={Object.assign({display:"table-cell"}, cellStyle || {})} onClick={function(e){e.stopPropagation();}}>
+        <input
+          autoFocus
+          value={draft}
+          onChange={function(e){setDraft(e.target.value);}}
+          onBlur={commit}
+          onKeyDown={function(e){
+            if(e.key==="Enter") commit();
+            if(e.key==="Escape") setEditing(false);
+          }}
+          className="text-sm w-16 px-1 py-0.5 rounded border border-blue-400 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        />
+      </div>
+    );
+  }
+  return (
+    <div
+      className={"align-middle pr-4 py-1.5 text-sm cursor-pointer hover:ring-1 hover:ring-blue-300 dark:hover:ring-blue-700 rounded " + (displayClassName || "text-gray-900 dark:text-slate-100")}
+      style={Object.assign({display:"table-cell"}, cellStyle || {})}
+      onClick={function(e){e.stopPropagation(); startEdit();}}
+      title="Click to edit target weight"
+    >
+      {value > 0 ? value.toFixed(1) + "%" : "--"}
+    </div>
+  );
+}
+
 /* Portfolio Overlap subtab. Extracted from App.jsx verbatim; original inline
    IIFE referenced parent-scope variables via closure, now explicit props +
    context. */
 export function OverlapTable(props){
   const { overlapMode, setOverlapMode, overlapFilter, setOverlapFilter,
           setSelCo, setTab, setCoView, setSelCoOrigin } = props;
-  const { companies, repData, fxRates, specialWeights, dark, updateCo } = useCompanyContext();
+  const { companies, repData, fxRates, specialWeights, dark, updateCo, updateTargetWeight } = useCompanyContext();
 
 var OVERLAP_ORDER=["FIN","IN","FGL","GL","EM","SC"];var OVERLAP_LABELS={"FIN":"FIN","IN":"IN","FGL":"FGL","GL":"GL","EM":"EM","SC":"SC"};var isRep=overlapMode==="rep";
 /* Precompute rep weights per company per portfolio */
@@ -55,7 +106,42 @@ return(<div key={c.id} onClick={function(){setSelCoOrigin("portfolios");setSelCo
 <div className="align-middle pr-4 py-1.5" style={{display:"table-cell",background:dark?undefined:rowBgColor}}>{rowMosStyle?<span className="text-[11px] px-1.5 py-0.5 rounded-full font-semibold" style={{background:rowMosStyle.bg,color:rowMosStyle.color}}>{fmtMOS0(rowMos)}</span>:<span className="text-xs text-gray-400 dark:text-slate-500">--</span>}</div>
 {/* MOS Fixed (with amber divergence dot when |mos - mosFixed| > 10pp) */}
 <div className="align-middle pr-4 py-1.5" style={{display:"table-cell",background:dark?undefined:rowBgColor}}>{rowMosFixedStyle?(<span className="inline-flex items-center gap-1 whitespace-nowrap"><span title={rowMosDiverges?"Diverges from MOS by "+rowMosGap.toFixed(1)+"pp — fixed TP may be stale":"MOS using fixed TP"} className="text-[11px] px-1.5 py-0.5 rounded-full font-semibold" style={{background:rowMosFixedStyle.bg,color:rowMosFixedStyle.color}}>{fmtMOS0(rowMosFixed)}</span>{rowMosDiverges&&<span title={"Diverges from MOS by "+rowMosGap.toFixed(1)+"pp"} className="inline-block w-2 h-2 rounded-full bg-amber-500 dark:bg-amber-400 shrink-0"/>}</span>):<span className="text-xs text-gray-400 dark:text-slate-500">--</span>}</div>
-{OVERLAP_ORDER.map(function(p,colIdx){var v=getVal(c,p);/* Find nearest non-blank row above */var pv=null;for(var k=rowIdx-1;k>=0;k--){var kv=getVal(overlapCos[k],p);if(kv>0){pv=kv;break;}}/* Find nearest non-blank row below */var nv=null;for(var k2=rowIdx+1;k2<overlapCos.length;k2++){var kv2=getVal(overlapCos[k2],p);if(kv2>0){nv=kv2;break;}}var cellBg=dark?undefined:rowBgColor;var cellColor=undefined;var cellFontWeight=undefined;if(colIdx>0&&v>0){if(pv!==null&&v>pv){cellBg=dark?"rgba(220,38,38,0.35)":"rgba(220,38,38,0.25)";cellColor=dark?"#fca5a5":"#991b1b";cellFontWeight=600;}else if(nv!==null&&nv>0&&v<nv){cellBg=dark?"rgba(22,101,52,0.35)":"rgba(22,101,52,0.25)";cellColor=dark?"#86efac":"#166534";cellFontWeight=600;}}return <div key={p} className="align-middle pr-4 py-1.5 text-sm text-gray-900 dark:text-slate-100" style={{display:"table-cell",background:cellBg,color:cellColor,fontWeight:cellFontWeight}}>{v>0?v.toFixed(1)+"%":"--"}</div>;})}<div className="align-middle pr-4 py-1.5" style={{display:"table-cell",background:dark?undefined:rowBgColor}} onClick={function(e){e.stopPropagation();}}>{(function(){var portNote=(c.portNote||"").split(/[,\s]+/).filter(Boolean);var availPortNote=PORTFOLIOS.filter(function(pp){return(c.portfolios||[]).indexOf(pp)<0;});return <PortPicker active={portNote} onChange={function(v){updateCo(c.id,{portNote:v.join(", ")});}} plusColor={dark?"#93c5fd":"#1a3a6b"} opts={availPortNote} dashedPills pillStyleFn={function(){return{bg:"transparent",color:dark?"#93c5fd":"#1a3a6b"};}}/>;})()}</div></div>);})}
+{OVERLAP_ORDER.map(function(p,colIdx){
+  var v=getVal(c,p);
+  /* Find nearest non-blank row above */
+  var pv=null;
+  for(var k=rowIdx-1;k>=0;k--){var kv=getVal(overlapCos[k],p);if(kv>0){pv=kv;break;}}
+  /* Find nearest non-blank row below */
+  var nv=null;
+  for(var k2=rowIdx+1;k2<overlapCos.length;k2++){var kv2=getVal(overlapCos[k2],p);if(kv2>0){nv=kv2;break;}}
+  /* Inconsistency coloring — only meaningful on column 1+ (first
+     portfolio column has no left neighbor to compare against). Red
+     when this row's weight is higher than the nearest non-blank row
+     above (cells violating monotonic order — the table is sorted so
+     higher weights should appear earlier). Green when this row's
+     weight is lower than the nearest non-blank row below. */
+  var cellBg=dark?undefined:rowBgColor;
+  var cellColor=undefined;
+  var cellFontWeight=undefined;
+  if(colIdx>0&&v>0){
+    if(pv!==null&&v>pv){cellBg=dark?"rgba(220,38,38,0.35)":"rgba(220,38,38,0.25)";cellColor=dark?"#fca5a5":"#991b1b";cellFontWeight=600;}
+    else if(nv!==null&&nv>0&&v<nv){cellBg=dark?"rgba(22,101,52,0.35)":"rgba(22,101,52,0.25)";cellColor=dark?"#86efac":"#166534";cellFontWeight=600;}
+  }
+  /* Target mode: editable. Rep mode: read-only (rep% is computed from
+     market values + shares, not stored — can't be edited directly). */
+  if (!isRep) {
+    return (
+      <EditableWeightCell
+        key={p}
+        value={v}
+        onSubmit={function(newVal){ updateTargetWeight(c.id, p, newVal); }}
+        displayClassName={cellColor ? "" : "text-gray-900 dark:text-slate-100"}
+        cellStyle={{background:cellBg,color:cellColor,fontWeight:cellFontWeight}}
+      />
+    );
+  }
+  return <div key={p} className="align-middle pr-4 py-1.5 text-sm text-gray-900 dark:text-slate-100" style={{display:"table-cell",background:cellBg,color:cellColor,fontWeight:cellFontWeight}}>{v>0?v.toFixed(1)+"%":"--"}</div>;
+})}<div className="align-middle pr-4 py-1.5" style={{display:"table-cell",background:dark?undefined:rowBgColor}} onClick={function(e){e.stopPropagation();}}>{(function(){var portNote=(c.portNote||"").split(/[,\s]+/).filter(Boolean);var availPortNote=PORTFOLIOS.filter(function(pp){return(c.portfolios||[]).indexOf(pp)<0;});return <PortPicker active={portNote} onChange={function(v){updateCo(c.id,{portNote:v.join(", ")});}} plusColor={dark?"#93c5fd":"#1a3a6b"} opts={availPortNote} dashedPills pillStyleFn={function(){return{bg:"transparent",color:dark?"#93c5fd":"#1a3a6b"};}}/>;})()}</div></div>);})}
 {/* TOTAL sum row — three blank cells for FPE / MOS / MOS Fixed */}
 <div style={{display:"table-row"}} className="bg-white dark:bg-slate-950"><div className="align-middle pr-4 pt-2 pb-2 text-sm font-bold text-gray-900 dark:text-slate-100 border-t-2 border-slate-200 dark:border-slate-700 sticky left-0 z-[5]" style={{display:"table-cell",background:dark?"#020617":"#ffffff"}}>TOTAL</div><div className="align-middle pr-4 pt-2 pb-2 border-t-2 border-slate-200 dark:border-slate-700" style={{display:"table-cell"}}>--</div><div className="align-middle pr-4 pt-2 pb-2 border-t-2 border-slate-200 dark:border-slate-700" style={{display:"table-cell"}}>--</div><div className="align-middle pr-4 pt-2 pb-2 border-t-2 border-slate-200 dark:border-slate-700" style={{display:"table-cell"}}>--</div><div className="align-middle pr-4 pt-2 pb-2 border-t-2 border-slate-200 dark:border-slate-700" style={{display:"table-cell"}}>--</div>{OVERLAP_ORDER.map(function(p){var s=colSums[p];var isOk=Math.abs(s-100)<0.2;var isEmpty=s===0;return <div key={p} className="align-middle pr-4 pt-2 pb-2 text-sm font-bold border-t-2 border-slate-200 dark:border-slate-700" style={{display:"table-cell",color:isEmpty?"#94a3b8":isOk?(dark?"#4ade80":"#166534"):(dark?"#f87171":"#991b1b")}}>{isEmpty?"--":s.toFixed(1)+"%"}</div>;})}<div className="align-middle pr-4 pt-2 pb-2 border-t-2 border-slate-200 dark:border-slate-700" style={{display:"table-cell"}}>--</div></div>
 </div>
