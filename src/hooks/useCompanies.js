@@ -393,28 +393,11 @@ export function useCompanies(){
          `parts.length >= 31` check would miss it and the row would
          fall into the ord-only branch, dropping the US ticker. */
       var col16HasTicker = !!(parts[16] && /[A-Za-z]/.test(parts[16]));
-      /* Per-row diagnostic counter so we can see why US tickers are
-         (or aren't) being picked up after a Price Import. Stored on a
-         closure-scope counter; logged once at the end via setTimeout. */
-      if (typeof window !== "undefined") {
-        window.__priceImportDiag = window.__priceImportDiag || {
-          rows: 0, ordPlusUs: 0, ordOnly: 0, legacy27: 0, legacy7: 0,
-          sampleOrdOnly: [], sampleOrdPlusUs: [],
-        };
-        var diag = window.__priceImportDiag;
-        diag.rows++;
-      }
       if(col2LooksLikeDate && col16HasTicker){
         /* New layout, ord + US (US may have partial data — perf cells
            U..AE often blank). Ord: ticker[1], date-1[2], price-1[3],
            price[4], perf[5..15]. US: ticker[16], date-1[17],
            price-1[18], price[19], perf[20..30]. */
-        if (typeof window !== "undefined") {
-          window.__priceImportDiag.ordPlusUs++;
-          if (window.__priceImportDiag.sampleOrdPlusUs.length < 3) {
-            window.__priceImportDiag.sampleOrdPlusUs.push({ name: name, ordTicker: ordTicker, col16: parts[16], partsLen: parts.length });
-          }
-        }
         recordHistory(ordTicker, parts[2], parts[3]);
         ordPrice = parts[4] ? parseFloat(parts[4].replace(/,/g,"")) : NaN;
         var ordCells = [];
@@ -430,12 +413,6 @@ export function useCompanies(){
         usVals.forEach(function(v, idx){ if(v !== null) usPerf[PRICE_PERF_KEYS[idx]] = v; });
       } else if(col2LooksLikeDate && parts.length >= 16){
         /* New-layout ord-only (col 16 either missing or not alpha-shaped). */
-        if (typeof window !== "undefined") {
-          window.__priceImportDiag.ordOnly++;
-          if (window.__priceImportDiag.sampleOrdOnly.length < 5) {
-            window.__priceImportDiag.sampleOrdOnly.push({ name: name, ordTicker: ordTicker, col16: parts[16], partsLen: parts.length });
-          }
-        }
         recordHistory(ordTicker, parts[2], parts[3]);
         ordPrice = parts[4] ? parseFloat(parts[4].replace(/,/g,"")) : NaN;
         var ordOnlyCells = [];
@@ -573,27 +550,7 @@ export function useCompanies(){
     setLastPriceUpdatedBy(userName);
     var stored = userName ? userName + " at " + priceUpdateStr : priceUpdateStr;
     supaUpsert("meta", { key: "lastPriceUpdate", value: stored });
-    setTimeout(function(){
-      /* Build a diagnostic line so the user can see exactly how many
-         rows hit each branch without opening DevTools. Critical for
-         the May 2026 US-ticker recovery — only 6/325 came through
-         with both tickers and we needed to know why. */
-      var diag = (typeof window !== "undefined" && window.__priceImportDiag) || null;
-      var diagLine = "";
-      if (diag) {
-        diagLine = "\n\nBranches: " + diag.ordPlusUs + " ord+US, "
-          + diag.ordOnly + " ord-only, "
-          + diag.legacy27 + " 27-col legacy, "
-          + diag.legacy7 + " 7-col legacy of " + diag.rows + " rows.";
-        if (diag.sampleOrdOnly.length > 0) {
-          diagLine += "\nSample ord-only rows: " + diag.sampleOrdOnly.map(function(s){
-            return s.name + " (col16=" + JSON.stringify(s.col16) + ", parts.length=" + s.partsLen + ")";
-          }).join("; ");
-        }
-        window.__priceImportDiag = null; /* reset for next import */
-      }
-      alertFn("Updated prices for " + count + " companies." + diagLine);
-    }, 100);
+    setTimeout(function(){ alertFn("Updated prices for " + count + " companies."); }, 100);
   }
   /* Three-state click cycle on column headers:
        0: (cold) column not active -> set to this col's default direction
