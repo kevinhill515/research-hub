@@ -65,7 +65,11 @@ function NotesCell({ company, onUpdate }) {
               : "text-slate-300 dark:text-slate-600 italic")
           }
         >
-          {displayShort ? (derivedFromEarnings ? "📊 " : "") + displayShort : "add note..."}
+          {/* 📊 prefix removed — was visual noise when most notes are
+              earnings-sourced anyway. The 'From most recent earnings…'
+              tooltip is preserved so the provenance is still
+              discoverable on hover. */}
+          {displayShort || "add note..."}
         </span>
         {hasLong && (
           <span
