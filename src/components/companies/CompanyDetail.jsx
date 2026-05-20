@@ -13,7 +13,7 @@ import {
   getTiers, tierToStatus, tierBg, tierPillStyle,
   isInitiationTx, getInitiatedDate, monthsSince, blankEarnings,
   escHTML, getCore, getConf, toHTML, toMD,
-  repShares, repAvgCost, printPage,
+  repShares, repAvgCost, printPage, getLastReportedEntry,
 } from '../../utils/index.js';
 import { StatusPill, PortPicker, SectionBlock, DiffView, BarRow, PillEl, PriceAgeIndicator } from '../ui/index.js';
 import { ErrorBoundary } from '../ErrorBoundary.jsx';
@@ -520,6 +520,64 @@ export function CompanyDetail(props){
                   <button onClick={importTemplate} disabled={tmplLoading||!tmplRaw.trim()} className={BTN_SM}>{tmplLoading?"Importing...":"Import"}</button>
                 </details>
                 {TEMPLATE_SECTIONS.map(function(s){return <SectionBlock key={s} title={s} content={selCo.sections&&selCo.sections[s]} highlight={tmplHighlight} flashKey={flashSections[s]}/>;  })}
+                {/* Most-recent earnings entry as a read-only block at
+                    the bottom of the Template view. The PDF export
+                    already includes the six-word takeaway here; the
+                    on-screen Template view was missing the full
+                    context (thesis status, TP change, extended
+                    takeaway, bullets) — useful when reviewing a
+                    company since the rest of the template doesn't
+                    auto-update with quarterly results. */}
+                {(function(){
+                  var last = getLastReportedEntry(selCo.earningsEntries);
+                  if (!last) return null;
+                  var bullets = (last.bullets || []).filter(function(b){return b && b.trim();});
+                  var tsCfg = last.thesisStatus
+                    ? ({ "On track": { bg: "#dcfce7", color: "#166534" },
+                         "Watch":    { bg: "#fef9c3", color: "#854d0e" },
+                         "Broken":   { bg: "#fee2e2", color: "#991b1b" } })[last.thesisStatus]
+                      || { bg: "#f1f5f9", color: "#475569" }
+                    : null;
+                  var tpCfg = last.tpChange === "Increased"
+                    ? { bg: "#dcfce7", color: "#166534", txt: "TP Increased" + (last.newTP ? " → " + activeCurrency + " " + last.newTP : "") }
+                    : last.tpChange === "Decreased"
+                    ? { bg: "#fee2e2", color: "#991b1b", txt: "TP Decreased" + (last.newTP ? " → " + activeCurrency + " " + last.newTP : "") }
+                    : last.tpChange === "Unchanged"
+                    ? { bg: "#fef9c3", color: "#854d0e", txt: "TP Unchanged" + (last.newTP ? " → " + activeCurrency + " " + last.newTP : "") }
+                    : null;
+                  return (
+                    <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-3 mt-4">
+                      <div className="flex items-center gap-2 mb-2 flex-wrap">
+                        <span className="text-sm font-semibold text-gray-900 dark:text-slate-100">Most Recent Earnings</span>
+                        {last.quarter && <span className="text-xs text-gray-500 dark:text-slate-400">{last.quarter}</span>}
+                        {last.reportDate && <span className="text-xs text-gray-500 dark:text-slate-400">{last.reportDate}</span>}
+                        {tpCfg && (
+                          <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: tpCfg.bg, color: tpCfg.color }}>{tpCfg.txt}</span>
+                        )}
+                        {tsCfg && (
+                          <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: tsCfg.bg, color: tsCfg.color }}>{last.thesisStatus}</span>
+                        )}
+                      </div>
+                      {last.shortTakeaway && (
+                        <div className="text-sm italic text-gray-700 dark:text-slate-300 mb-2">"{last.shortTakeaway}"</div>
+                      )}
+                      {last.tpRationale && (
+                        <div className="text-xs mb-2"><span className="text-gray-500 dark:text-slate-400">TP rationale: </span><span className="text-gray-700 dark:text-slate-200">{last.tpRationale}</span></div>
+                      )}
+                      {last.thesisNote && (
+                        <div className="text-xs mb-2"><span className="text-gray-500 dark:text-slate-400">Thesis note: </span><span className="text-gray-700 dark:text-slate-200">{last.thesisNote}</span></div>
+                      )}
+                      {bullets.length > 0 && (
+                        <ul className="text-xs text-gray-700 dark:text-slate-200 mb-2 pl-4 list-disc space-y-0.5">
+                          {bullets.map(function(b, i){ return <li key={i}>{b}</li>; })}
+                        </ul>
+                      )}
+                      {last.extendedTakeaway && (
+                        <div className="text-xs text-gray-700 dark:text-slate-200 whitespace-pre-wrap leading-relaxed border-t border-slate-200 dark:border-slate-700 pt-2 mt-2">{last.extendedTakeaway}</div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </div>)}
