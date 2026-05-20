@@ -53,7 +53,14 @@ SUPA_KEY = "sb_publishable_7kqbGZlL_im9kIpgFXLA-A_9CdqsyiT"
 
 # How long to wait after each refresh trigger.
 REP_WAIT_SECONDS      = 25   # Refresh Positions — user said ~15s, give buffer
-FACTSET_WAIT_SECONDS  = 120  # FactSet full workbook refresh
+FACTSET_WAIT_SECONDS  = 240  # FactSet full workbook refresh — initially
+                              # 120s, bumped to 240s after a May 20 2026
+                              # run captured stale Hitachi 1D (+3.4 vs
+                              # the post-refresh +0.3 in the workbook).
+                              # SendKeys fired refresh, but FactSet's
+                              # server fetch for the full set of UDFs
+                              # (FX + Perf1 + Valuation + Metrics +
+                              # Prices) hadn't completed by t+120.
 
 # Position of FactSet "Refresh Workbook" in the Quick Access Toolbar
 # (1 = leftmost). Set after FactSet (May 2026) removed every other
@@ -995,8 +1002,44 @@ class ExcelSession:
             log("  CalculateFullRebuild done")
         except Exception as e:
             log(f"  CalculateFullRebuild failed: {e}")
-        log(f"Waiting {FACTSET_WAIT_SECONDS}s for FactSet to finish...")
-        time.sleep(FACTSET_WAIT_SECONDS)
+        # Poll-then-wait: sample a few representative cells every 10s.
+        # When their values stay stable for two consecutive samples,
+        # FactSet is done fetching and we can read early. Falls back to
+        # the full FACTSET_WAIT_SECONDS cap if values keep changing
+        # (still settling) — better to read fresh-ish data than to
+        # bail entirely. Cells sampled: Prices!E2 (first row's price),
+        # Prices!T2 (first row's US price), Valuation!E2 (peCurrent),
+        # FX!B2 (a rate). Their values changing means UDFs are still
+        # firing.
+        log(f"Polling FactSet completion (up to {FACTSET_WAIT_SECONDS}s)...")
+        SAMPLE_CELLS = [
+            ("Prices", 2, 5),  ("Prices", 2, 20),
+            ("Valuation", 2, 5),
+        ]
+        def sample_snapshot():
+            snap = []
+            for sh, r, c in SAMPLE_CELLS:
+                try: snap.append(str(self.wb.Sheets(sh).Cells(r, c).Value))
+                except Exception: snap.append(None)
+            return tuple(snap)
+        prev = None
+        stable_streak = 0
+        POLL_INTERVAL = 10
+        elapsed = 0
+        while elapsed < FACTSET_WAIT_SECONDS:
+            time.sleep(POLL_INTERVAL)
+            elapsed += POLL_INTERVAL
+            cur = sample_snapshot()
+            if prev is not None and cur == prev and not any(v is None or "#" in (v or "") for v in cur):
+                stable_streak += 1
+                if stable_streak >= 2:
+                    log(f"  FactSet appears settled at t={elapsed}s (samples stable for 20s)")
+                    break
+            else:
+                stable_streak = 0
+            prev = cur
+        else:
+            log(f"  FactSet still changing at t={FACTSET_WAIT_SECONDS}s — reading anyway")
         # One more calc at the end to settle dependent cells.
         try:
             self.xl.Calculate()
