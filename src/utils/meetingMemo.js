@@ -64,39 +64,50 @@ function fmtWeight(n) {
 }
 
 /* Stock-centric Trading Agenda formatter.
- *   Input: [{company, port, oldW, newW, action}, ...]
- *   Output: "TICKER (Name) – Action W.W% (PORT1), W.W% (PORT2)"
- * Action priority:
- *   1. Explicit action stamped by markTradeAgenda (B/A/P/S buttons) —
- *      use that verb. "Sell" alone (no per-port weight) prints as
- *      "TICKER (Name) – Sell".
- *   2. Fallback: derive from each port's old→new direction. All new>old
- *      → Buy; all new<old → Pare to; mixed → Adjust to.
+ *   Input: [{company, port, oldW, newW, action}, ...] for ONE company
+ *   Output: 1+ lines — one per distinct action verb, since the same
+ *   stock can have different actions in different portfolios (e.g.
+ *   Buy in FOC + FGL but Pare in INTL).
+ * Format per line:
+ *   "TICKER (Name) – Buy W.W% (FOC), X.X% (FGL)"
+ *   "TICKER (Name) – Sell (FOC, GL)"     (no weights, closing)
+ *   "TICKER (Name) – Adjust to W.W% (..)" (fallback when no action stamped)
  */
-function formatAgendaLine(company, entries) {
+function formatAgendaLines(company, entries) {
   const ticker = pickDisplayTicker(company);
-  // Pick a single representative action — they should all match for a
-  // single agenda stamp; if mixed (e.g. user stamped Buy then later
-  // Pare), prefer the most recent (first in array since history is
-  // prepended).
-  const stampedAction = entries.find(e => e.action)?.action || null;
-  if (stampedAction === "Sell") {
-    // Sell prints without weights — closing the position entirely.
-    const ports = entries.map(e => PORT_MEMO_LABELS[e.port] || e.port).join(", ");
-    return ticker + " (" + (company.name || "?") + ") – Sell (" + ports + ")";
-  }
-  let verb;
-  if (stampedAction) {
-    verb = stampedAction === "Pare" ? "Pare to" : stampedAction; // "Buy" / "Add"
-  } else {
-    const allBuys  = entries.every(e => e.newW > e.oldW);
-    const allPares = entries.every(e => e.newW < e.oldW);
-    verb = allBuys ? "Buy" : allPares ? "Pare to" : "Adjust to";
-  }
-  const portsText = entries
-    .map(e => fmtWeight(e.newW) + "% (" + (PORT_MEMO_LABELS[e.port] || e.port) + ")")
-    .join(", ");
-  return ticker + " (" + (company.name || "?") + ") – " + verb + " " + portsText;
+  // Group entries by their stamped action. Entries with no action fall
+  // back to a delta-derived verb under a synthetic null-key bucket.
+  const byAction = {};
+  entries.forEach(e => {
+    const key = e.action || "_derive";
+    (byAction[key] = byAction[key] || []).push(e);
+  });
+  const lines = [];
+  // Preserve a consistent action order for readability.
+  const order = ["Buy", "Add", "Pare", "Sell", "_derive"];
+  order.forEach(action => {
+    const group = byAction[action];
+    if (!group || !group.length) return;
+    if (action === "Sell") {
+      const ports = group.map(e => PORT_MEMO_LABELS[e.port] || e.port).join(", ");
+      lines.push(ticker + " (" + (company.name || "?") + ") – Sell (" + ports + ")");
+      return;
+    }
+    let verb;
+    if (action === "_derive") {
+      // No explicit stamp — fall back to weight-delta inference.
+      const allBuys  = group.every(e => e.newW > e.oldW);
+      const allPares = group.every(e => e.newW < e.oldW);
+      verb = allBuys ? "Buy" : allPares ? "Pare to" : "Adjust to";
+    } else {
+      verb = action === "Pare" ? "Pare to" : action; // "Buy" / "Add"
+    }
+    const portsText = group
+      .map(e => fmtWeight(e.newW) + "% (" + (PORT_MEMO_LABELS[e.port] || e.port) + ")")
+      .join(", ");
+    lines.push(ticker + " (" + (company.name || "?") + ") – " + verb + " " + portsText);
+  });
+  return lines;
 }
 
 /* Picks the most-natural ticker for memo display. Prefers the ord
@@ -218,13 +229,14 @@ export function buildMeetingMemo(companies, profileName) {
   if (!profile) return "";
   const { agendaByCo, executedByPort } = partitionWeightChanges(companies, profile.ports);
 
-  // Trading Agenda — one line per company.
+  // Trading Agenda — 1+ lines per company (split when different
+  // actions stamped across portfolios).
   const agendaLines = [];
   Object.keys(agendaByCo).forEach(cid => {
     const entries = agendaByCo[cid];
     if (!entries.length) return;
     const company = entries[0].company;
-    agendaLines.push(formatAgendaLine(company, entries));
+    formatAgendaLines(company, entries).forEach(l => agendaLines.push(l));
   });
   // Sort agenda by company name for stable output.
   agendaLines.sort();
