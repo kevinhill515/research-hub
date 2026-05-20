@@ -2175,6 +2175,8 @@ def merge_companies(companies, prices, valuations, earnings):
                 if nxt:
                     found = next((e for e in entries if _same_date(e.get("reportDate"), nxt)), None)
                     if found is None:
+                        # First fallback: a "placeholder" entry with no
+                        # report date set yet — fill it in.
                         placeholder = next((e for e in entries
                                             if not e.get("eps") and not e.get("shortTakeaway")
                                             and not e.get("reportDate")), None)
@@ -2182,8 +2184,31 @@ def merge_companies(companies, prices, valuations, earnings):
                             placeholder["reportDate"] = nxt
                             found = placeholder
                         else:
-                            found = _new_entry(nxt)
-                            entries.append(found)
+                            # Second fallback (the dedupe one): an
+                            # unreviewed FUTURE entry whose date FactSet
+                            # has just revised. Match by 'no analyst
+                            # content + reportDate after today' and
+                            # update in place instead of creating a
+                            # duplicate. Without this guard the script
+                            # accumulates multiple consensus-only
+                            # entries for the same quarter as FactSet
+                            # nudges the date (e.g. 7/29 → 7/30).
+                            today_iso = datetime.now().strftime("%Y-%m-%d")
+                            stale_upcoming = next((e for e in entries
+                                if e.get("reportDate") and e["reportDate"] > today_iso
+                                and not (e.get("shortTakeaway") or "").strip()
+                                and not (e.get("extendedTakeaway") or "").strip()
+                                and not (e.get("tpRationale") or "").strip()
+                                and not (e.get("thesisNote") or "").strip()
+                                and not any((b or "").strip() for b in (e.get("bullets") or []))
+                                and not e.get("epsActual") and not e.get("salesActual")
+                            ), None)
+                            if stale_upcoming:
+                                stale_upcoming["reportDate"] = nxt
+                                found = stale_upcoming
+                            else:
+                                found = _new_entry(nxt)
+                                entries.append(found)
                     # Apply consensus-into-report estimates only when we
                     # actually got values from the sheet.
                     if "nextSalesEst" in info: found["salesEst"] = info["nextSalesEst"]

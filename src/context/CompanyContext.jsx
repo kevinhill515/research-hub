@@ -307,6 +307,56 @@ export function CompanyProvider({children}){
             supaUpsert("meta",{key:"cleanup_blank_thesisstatus_2026_05_14",value:"1"});
           }
         }catch(_e){}
+        /* Duplicate upcoming-earnings cleanup. The factset_pull script
+           creates a new earnings entry whenever the next-report date
+           changes (e.g. FactSet revises 7/29 → 7/30). Result: two or
+           more future entries for the same quarter, all consensus-only,
+           none reviewed. Keep the latest-dated one per (companyId,
+           quarter) for uneditedfuture entries and drop the rest. Idempotent
+           — only touches entries that look like duplicates (no
+           shortTakeaway/extendedTakeaway/tpRationale/thesisNote/bullets
+           and reportDate in the future). */
+        try {
+          var todayIso = todayStr();
+          var dupChanged = false;
+          coMig.data.forEach(function(c){
+            var es = c.earningsEntries || [];
+            if (es.length < 2) return;
+            /* Group future-unreviewed entries by quarter. Reviewed ones
+               (with any analyst content) are NEVER dropped. */
+            var unreviewedFuture = es.filter(function(e){
+              if (!e || !e.reportDate) return false;
+              if (e.reportDate <= todayIso) return false;
+              var hasContent = (e.shortTakeaway||"").trim()
+                || (e.extendedTakeaway||"").trim()
+                || (e.tpRationale||"").trim()
+                || (e.thesisNote||"").trim()
+                || (e.bullets||[]).some(function(b){return(b||"").trim();});
+              return !hasContent;
+            });
+            if (unreviewedFuture.length < 2) return;
+            /* Group by quarter (entries without quarter use a single
+               bucket so we still dedupe "quarter-less" upcoming entries). */
+            var byQ = {};
+            unreviewedFuture.forEach(function(e){
+              var q = e.quarter || "_noquarter";
+              (byQ[q] = byQ[q] || []).push(e);
+            });
+            /* For each quarter with 2+ candidates, keep the one with the
+               LATEST reportDate; mark the rest for removal. */
+            var toRemove = {};
+            Object.keys(byQ).forEach(function(q){
+              var arr = byQ[q];
+              if (arr.length < 2) return;
+              arr.sort(function(a,b){return (b.reportDate||"").localeCompare(a.reportDate||"");});
+              for (var k = 1; k < arr.length; k++) toRemove[arr[k].id] = true;
+            });
+            if (Object.keys(toRemove).length === 0) return;
+            c.earningsEntries = es.filter(function(e){return !toRemove[e.id];});
+            dupChanged = true;
+          });
+          if (dupChanged) coMig.changed = true;
+        } catch(_e){}
         setCompanies(coMig.data);
         coOk=coMig.data.length;
         /* If we read from the legacy "shared" row, write each company
