@@ -481,7 +481,7 @@ export default function App(){
             on each boundary clears stale error state on subtab switch. */}
         <Suspense fallback={<div className="text-xs italic text-gray-500 dark:text-slate-400 py-6 text-center">Loading…</div>}>
         {dashSubTab==="markets"        &&<ErrorBoundary resetKey="markets"><MarketsDashboard/></ErrorBoundary>}
-        {dashSubTab==="movers"         &&<ErrorBoundary resetKey="movers"><TopBottomMovers onSelectCompany={function(cid){var co=companies.find(function(c){return c.id===cid;});if(co){setSelCo(co);setTab("companies");setCoView("dashboard");}}}/></ErrorBoundary>}
+        {dashSubTab==="movers"         &&<ErrorBoundary resetKey="movers"><TopBottomMovers onSelectCompany={function(cid){var co=companies.find(function(c){return c.id===cid;});if(co){setSelCo(co);setTab("companies");setCoView("metrics");}}}/></ErrorBoundary>}
         {dashSubTab==="characteristics"&&<ErrorBoundary resetKey="characteristics"><CharacteristicsView/></ErrorBoundary>}
         {dashSubTab==="ratiocompare"   &&<ErrorBoundary resetKey="ratiocompare"><RatioCompareView/></ErrorBoundary>}
         {dashSubTab==="sectors"        &&<ErrorBoundary resetKey="sectors"><BreakdownView kind="sectors"/></ErrorBoundary>}

@@ -418,14 +418,15 @@ export function PortfoliosTable(props) {
   }
 
   /* ---- Row-click handlers passed to PortfolioRow ---- */
-  function onOpenCompany(c) {
+  function onOpenCompany(c, view) {
+    /* Optional 2nd arg lets specific cells deep-link to a particular
+       sub-view (5D% → Snapshot, MOS → Valuation section, etc.). The
+       row-level click still defaults to "dashboard" for the full
+       at-a-glance read. */
     setSelCoOrigin("portfolios");
     setSelCo(c);
     setTab("companies");
-    /* Land on the company Dashboard rather than the Valuation section.
-       Dashboard gives a fuller at-a-glance read; users wanting to edit
-       valuation can still click the Valuation subtab from there. */
-    setCoView("dashboard");
+    setCoView(view || "dashboard");
   }
   function onOpenTransactions(c) {
     setSelCoOrigin("portfolios");

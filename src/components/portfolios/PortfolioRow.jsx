@@ -283,8 +283,8 @@ function PortfolioRow(props) {
             </span>}
       </Cell>
 
-      {/* 5D% */}
-      <Cell className="text-sm text-gray-900 dark:text-slate-100" style={cellStyle}>
+      {/* 5D% — clicks to Snapshot. */}
+      <Cell className="text-sm text-gray-900 dark:text-slate-100 cursor-pointer" style={cellStyle} onClick={function(e){e.stopPropagation();onOpenCompany(c,"metrics");}}>
         {perf5d === null
           ? "--"
           : <span style={{ color: perf5d >= 0 ? "#166534" : "#dc2626" }} className="font-medium">
@@ -292,8 +292,8 @@ function PortfolioRow(props) {
             </span>}
       </Cell>
 
-      {/* MOS */}
-      <Cell className="text-sm text-gray-900 dark:text-slate-100" style={cellStyle}>
+      {/* MOS Live — clicks to Valuation section. */}
+      <Cell className="text-sm text-gray-900 dark:text-slate-100 cursor-pointer" style={cellStyle} onClick={function(e){e.stopPropagation();onOpenCompany(c,"section:Valuation");}}>
         {mosStyle
           ? <span className="text-[11px] px-1.5 py-0.5 rounded-full font-semibold"
                   style={{ background: mosStyle.bg, color: mosStyle.color }}>
@@ -302,10 +302,10 @@ function PortfolioRow(props) {
           : "--"}
       </Cell>
 
-      {/* MOS Fixed — amber dot when |mos - mosFixed| > 10pp (matches the
-          mos-divergence alert rule). Mirrors CoRow's behavior on the
-          Companies table so divergence is consistent across views. */}
-      <Cell className="text-sm text-gray-900 dark:text-slate-100" style={cellStyle}>
+      {/* MOS Fixed — clicks to Valuation section. Amber dot when
+          |mos - mosFixed| > 10pp (matches the mos-divergence alert
+          rule). */}
+      <Cell className="text-sm text-gray-900 dark:text-slate-100 cursor-pointer" style={cellStyle} onClick={function(e){e.stopPropagation();onOpenCompany(c,"section:Valuation");}}>
         {mosFixedStyle
           ? (function(){
               var gap = (mos !== null && mosFixed !== null) ? Math.abs(mos - mosFixed) : null;
@@ -323,8 +323,8 @@ function PortfolioRow(props) {
           : "--"}
       </Cell>
 
-      {/* FPE Range */}
-      <Cell style={cellStyle}>
+      {/* FPE Range — clicks to Valuation. */}
+      <Cell style={cellStyle} className="cursor-pointer" onClick={function(e){e.stopPropagation();onOpenCompany(c,"section:Valuation");}}>
         {(function () {
           const el = <FpeRangeMini valuation={val} width={100} />;
           return el || <Dash />;

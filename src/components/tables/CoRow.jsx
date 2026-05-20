@@ -239,9 +239,15 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
         </div>
       )}
 
-      {/* 5D% */}
+      {/* 5D% — clicks to Snapshot (where the trailing-period perf bars
+         and tables live). */}
       {show("5D%") && (
-        <div className={tdBase} style={rowBg ? { background: rowBg } : undefined}>
+        <div
+          className={tdBase + " cursor-pointer"}
+          style={rowBg ? { background: rowBg } : undefined}
+          onClick={function (e) { e.stopPropagation(); onSelect(company, "metrics"); }}
+          title="Open Snapshot"
+        >
           {(function () {
             var ord = (company.tickers || []).find(function (t) { return t.isOrdinary; });
             if (!ord) return <span className="text-xs text-gray-400 dark:text-slate-500">--</span>;
@@ -262,9 +268,15 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
         </div>
       )}
 
-      {/* MOS */}
+      {/* MOS Live / MOS Fixed — both click to the Valuation section
+         (where PE / EPS / TP inputs that drive these live). */}
       {show("MOS") && (
-        <div className={tdBase} style={rowBg ? { background: rowBg } : undefined}>
+        <div
+          className={tdBase + " cursor-pointer"}
+          style={rowBg ? { background: rowBg } : undefined}
+          onClick={function (e) { e.stopPropagation(); onSelect(company, "section:Valuation"); }}
+          title="Open Valuation"
+        >
           {mosStyle ? (
             <span title="Margin of Safety" className="text-[10px] px-1.5 rounded-full font-bold whitespace-nowrap" style={{ background: mosStyle.bg, color: mosStyle.color }}>
               {fmtMOS0(mos)}
@@ -277,7 +289,12 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
 
       {/* MOS Fixed */}
       {show("MOS Fixed") && (
-        <div className={tdBase} style={rowBg ? { background: rowBg } : undefined}>
+        <div
+          className={tdBase + " cursor-pointer"}
+          style={rowBg ? { background: rowBg } : undefined}
+          onClick={function (e) { e.stopPropagation(); onSelect(company, "section:Valuation"); }}
+          title="Open Valuation"
+        >
           {mosFixedStyle ? (
             <span className="inline-flex items-center gap-1 whitespace-nowrap">
               <span title={mosDiverges ? "MOS using fixed TP — diverges from current MOS by " + mosGap.toFixed(1) + "pp; review fixed TP" : "MOS using fixed TP"} className="text-[10px] px-1.5 rounded-full font-bold whitespace-nowrap" style={{ background: mosFixedStyle.bg, color: mosFixedStyle.color }}>
@@ -293,9 +310,15 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
         </div>
       )}
 
-      {/* FPE Range */}
+      {/* FPE Range — clicks to Valuation (where the FPE Low/Med/High
+         5y inputs live). */}
       {show("FPE Range") && (
-        <div className={tdBase} style={rowBg ? { background: rowBg } : undefined}>
+        <div
+          className={tdBase + " cursor-pointer"}
+          style={rowBg ? { background: rowBg } : undefined}
+          onClick={function (e) { e.stopPropagation(); onSelect(company, "section:Valuation"); }}
+          title="Open Valuation"
+        >
           {(function () {
             var el = <FpeRangeMini valuation={val} width={compact ? 80 : 100} />;
             return el || <span className="text-xs text-gray-400 dark:text-slate-500">--</span>;
