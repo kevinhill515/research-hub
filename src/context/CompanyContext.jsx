@@ -1090,14 +1090,17 @@ export function CompanyProvider({children}){
 
   function newId(){return(typeof crypto!=="undefined"&&crypto.randomUUID)?crypto.randomUUID():(Date.now()+"-"+Math.random().toString(36).slice(2));}
   /* Target-weight edits: log every meaningful change (|delta|>=0.01%) to portWeightHistory and save the new weight. */
-  /* Stamp a trade-agenda action for a single (company, portfolio)
-     pair. Used by the IC-meeting workflow: click B/A/P/S on a row in
-     the Portfolios table and we record a single entry so the next PM
-     Meeting Memo's Trading Agenda lists "TICKER – Buy 7.0% (FOC)" etc.
+  /* Toggle a trade-agenda action for a single (company, portfolio)
+     pair. Used by the IC-meeting workflow — click B/A/P/S in the
+     Portfolios table to mark a planned trade. Behavior:
+       - No existing stamp for this port: add the action.
+       - Same action already stamped: REMOVE it (toggle off).
+         If the prior stamp was Sell, also restore the previous target
+         that the Sell zeroed.
+       - Different action stamped: switch — remove the old, add the new.
+         If switching out of Sell, restore target first.
      Buy/Add/Pare keep the existing target weight (the trade just
-     drifts the holding back toward target). Sell zeros the target.
-     Per-portfolio so the PM can stamp different actions for the same
-     stock in different portfolios (e.g. Buy in FGL but Pare in IN). */
+     drifts holdings back to target). Sell zeros the target. */
   function markTradeAgenda(companyId, portfolio, action){
     if(!["Buy","Add","Pare","Sell"].includes(action))return;
     if(!portfolio)return;
@@ -1105,7 +1108,33 @@ export function CompanyProvider({children}){
     var author=currentUser||"Unknown";
     setCompanies(function(cs){return cs.map(function(c){
       if(c.id!==companyId)return c;
-      var oldRaw=(c.portWeights||{})[portfolio];
+      var hist=c.portWeightHistory||[];
+      /* Find the most recent agenda stamp for this portfolio. */
+      var existingStamp=null;
+      for(var i=0;i<hist.length;i++){
+        if(hist[i].isAgenda&&hist[i].portfolio===portfolio&&hist[i].action){
+          existingStamp=hist[i];break;
+        }
+      }
+      /* Wipe ALL prior agenda stamps for this portfolio (clean slate
+         for the new state) — keeps history compact and avoids
+         confusing the memo generator with multiple actions per port. */
+      var cleaned=hist.filter(function(h){
+        return !(h.isAgenda&&h.portfolio===portfolio&&h.action);
+      });
+      var nw=Object.assign({},c.portWeights||{});
+      /* If the previous stamp was Sell, it zeroed the target; in any
+         transition (toggle-off or switch) we restore the pre-Sell
+         target from the entry's oldWeight. */
+      if(existingStamp&&existingStamp.action==="Sell"){
+        nw[portfolio]=String(existingStamp.oldWeight);
+      }
+      if(existingStamp&&existingStamp.action===action){
+        /* Toggle OFF — same button clicked twice. No new entry. */
+        return Object.assign({},c,{portWeights:nw,portWeightHistory:cleaned});
+      }
+      /* Stamp the new action — either first stamp or switching verbs. */
+      var oldRaw=nw[portfolio]; /* after potential Sell-restore */
       var oldNum=parseFloat(oldRaw);if(isNaN(oldNum))oldNum=0;
       var newNum=action==="Sell"?0:oldNum;
       var entry={
@@ -1113,16 +1142,8 @@ export function CompanyProvider({children}){
         oldWeight:oldNum,newWeight:newNum,
         author:author,isAgenda:true,action:action,
       };
-      var hist=[entry].concat(c.portWeightHistory||[]);
-      /* Sell also flips this portfolio's target to 0 so the CASH math
-         reconciles immediately. Buy/Add/Pare leave portWeights alone —
-         the trade is implementation, not a target change. */
-      if(action==="Sell"){
-        var nw=Object.assign({},c.portWeights||{});
-        nw[portfolio]="0";
-        return Object.assign({},c,{portWeights:nw,portWeightHistory:hist});
-      }
-      return Object.assign({},c,{portWeightHistory:hist});
+      if(action==="Sell")nw[portfolio]="0";
+      return Object.assign({},c,{portWeights:nw,portWeightHistory:[entry].concat(cleaned)});
     });});
   }
   function updateTargetWeight(companyId,portfolio,rawNewValue){
