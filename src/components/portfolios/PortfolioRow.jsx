@@ -160,8 +160,13 @@ function PortfolioRow(props) {
         </span>
       </Cell>
 
-      {/* Next Report */}
-      <Cell className="text-xs" style={Object.assign({}, cellStyle, { color: nextReportColor })}>
+      {/* Next Report — clicks to Earnings & Thesis Check (where the
+         next-report date is set and prior reports are listed). */}
+      <Cell
+        className="text-xs cursor-pointer"
+        style={Object.assign({}, cellStyle, { color: nextReportColor })}
+        onClick={function (e) { e.stopPropagation(); onOpenCompany(c, "earnings"); }}
+      >
         {nextReport ? nextReport.toISOString().slice(0, 10) : "--"}
       </Cell>
 
@@ -213,39 +218,36 @@ function PortfolioRow(props) {
         </div>
       </Cell>
 
-      {/* Held (months) */}
+      {/* Held (months) — always opens Transactions (the page where
+         the months-held is derived from). Companies with no recorded
+         transactions still benefit from landing there to see the
+         empty state. */}
       <Cell
-        className="text-xs text-gray-700 dark:text-slate-300 font-mono"
+        className="text-xs text-gray-700 dark:text-slate-300 font-mono cursor-pointer"
         style={cellStyle}
-        onClick={function (e) {
-          if ((c.transactions || []).length > 0) {
-            e.stopPropagation();
-            onOpenTransactions(c);
-          }
-        }}
+        onClick={function (e) { e.stopPropagation(); onOpenTransactions(c); }}
       >
         {monthsHeld === null
           ? <Dash />
-          : <span className="cursor-pointer hover:underline">{monthsHeld.toFixed(1)}</span>}
+          : <span className="hover:underline">{monthsHeld.toFixed(1)}</span>}
       </Cell>
 
-      {/* Last Trade — clicking the date opens Transactions history; the
-          "+" button opens the Add Transaction form pre-filled with this
-          portfolio + today's date. */}
-      <Cell className="text-xs" style={cellStyle}>
+      {/* Last Trade — clicks open Transactions history; the "+" button
+          opens the Add Transaction form pre-filled with this portfolio
+          + today's date. Whole cell is clickable so "--" (no trades)
+          rows can also navigate to the empty Transactions view. */}
+      <Cell
+        className="text-xs cursor-pointer"
+        style={cellStyle}
+        onClick={function (e) { e.stopPropagation(); onOpenTransactions(c); }}
+      >
         <span className="inline-flex items-center gap-1">
           {lastTx === null
             ? <Dash />
             : (function () {
                 const isBuy = (parseFloat(lastTx.shares) || 0) >= 0;
                 return (
-                  <span
-                    className="inline-flex items-center gap-1 font-mono cursor-pointer hover:underline"
-                    onClick={function (e) {
-                      e.stopPropagation();
-                      if ((c.transactions || []).length > 0) onOpenTransactions(c);
-                    }}
-                  >
+                  <span className="inline-flex items-center gap-1 font-mono hover:underline">
                     <span style={{ color: isBuy ? "#166534" : "#dc2626", fontWeight: 700 }}>
                       {isBuy ? "▲" : "▼"}
                     </span>
@@ -274,8 +276,13 @@ function PortfolioRow(props) {
         {avgCostVal > 0 ? fmtPrice(avgCostVal) : "--"}
       </Cell>
 
-      {/* Unreal */}
-      <Cell className="text-sm font-medium" style={cellStyle}>
+      {/* Unreal — derived from avg cost vs current price, both of
+         which live on the Transactions page. Clicks there. */}
+      <Cell
+        className="text-sm font-medium cursor-pointer"
+        style={cellStyle}
+        onClick={function (e) { e.stopPropagation(); onOpenTransactions(c); }}
+      >
         {unrealVal === null
           ? <Dash />
           : <span style={{ color: unrealVal >= 0 ? "#166534" : "#dc2626" }}>
