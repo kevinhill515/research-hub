@@ -1002,44 +1002,67 @@ class ExcelSession:
             log("  CalculateFullRebuild done")
         except Exception as e:
             log(f"  CalculateFullRebuild failed: {e}")
-        # Poll-then-wait: sample a few representative cells every 10s.
-        # When their values stay stable for two consecutive samples,
-        # FactSet is done fetching and we can read early. Falls back to
-        # the full FACTSET_WAIT_SECONDS cap if values keep changing
-        # (still settling) — better to read fresh-ish data than to
-        # bail entirely. Cells sampled: Prices!E2 (first row's price),
-        # Prices!T2 (first row's US price), Valuation!E2 (peCurrent),
-        # FX!B2 (a rate). Their values changing means UDFs are still
-        # firing.
+        # Poll-then-wait: sample several perf cells every 10s and read
+        # as soon as ALL of them are populated with numeric values.
+        # Choosing perf cells specifically because:
+        #   - Prices!E (price) is LIVE intraday — ticks constantly,
+        #     never "stable" during market hours, useless as a settle
+        #     signal.
+        #   - Valuation cells (peCurrent etc.) can stay identical
+        #     day-to-day if estimates haven't revised — looking
+        #     "stable" doesn't mean refresh fired, just that nothing
+        #     changed.
+        #   - Perf cells (TODAY, 5D, MTD, etc.) get populated by
+        #     FactSet's UDF on each Refresh Workbook. While they
+        #     change tick-by-tick like price does during market hours,
+        #     the meaningful signal is going from #N/A / empty to a
+        #     finite value. Once they have numbers, the UDF fetch is
+        #     done; reading mid-tick is acceptable because we capture
+        #     a snapshot anyway.
+        # Read across several rows so we don't false-positive on a
+        # single lucky row settling early while others lag.
         log(f"Polling FactSet completion (up to {FACTSET_WAIT_SECONDS}s)...")
         SAMPLE_CELLS = [
-            ("Prices", 2, 5),  ("Prices", 2, 20),
-            ("Valuation", 2, 5),
+            ("Prices", 2,  6),  # row 2, col F = TODAY (ord)
+            ("Prices", 2,  7),  # row 2, col G = 5D (ord)
+            ("Prices", 3,  6),  # row 3, col F = TODAY (ord) — second row
+            ("Prices", 5,  6),  # row 5, col F = TODAY (ord) — fifth row
+            ("Prices", 2, 21),  # row 2, col U = TODAY (US)
         ]
-        def sample_snapshot():
-            snap = []
+        def cell_is_populated(v):
+            """True iff the cell is non-empty AND not a FactSet error
+            marker. Numeric values, percent-strings, and date-shaped
+            strings all count as populated; None, '', '#N/A', '#NAME?'
+            do not."""
+            if v is None: return False
+            s = str(v).strip()
+            if not s: return False
+            if s.startswith("#"): return False
+            return True
+        def sample_populated_count():
+            n = 0
             for sh, r, c in SAMPLE_CELLS:
-                try: snap.append(str(self.wb.Sheets(sh).Cells(r, c).Value))
-                except Exception: snap.append(None)
-            return tuple(snap)
-        prev = None
-        stable_streak = 0
+                try:
+                    v = self.wb.Sheets(sh).Cells(r, c).Value
+                    if cell_is_populated(v): n += 1
+                except Exception:
+                    pass
+            return n
         POLL_INTERVAL = 10
         elapsed = 0
+        target = len(SAMPLE_CELLS)
+        settled = False
         while elapsed < FACTSET_WAIT_SECONDS:
             time.sleep(POLL_INTERVAL)
             elapsed += POLL_INTERVAL
-            cur = sample_snapshot()
-            if prev is not None and cur == prev and not any(v is None or "#" in (v or "") for v in cur):
-                stable_streak += 1
-                if stable_streak >= 2:
-                    log(f"  FactSet appears settled at t={elapsed}s (samples stable for 20s)")
-                    break
-            else:
-                stable_streak = 0
-            prev = cur
-        else:
-            log(f"  FactSet still changing at t={FACTSET_WAIT_SECONDS}s — reading anyway")
+            n = sample_populated_count()
+            if n == target:
+                log(f"  FactSet perf cells populated at t={elapsed}s ({n}/{target})")
+                settled = True
+                break
+            log(f"  t={elapsed}s: {n}/{target} sample perf cells populated")
+        if not settled:
+            log(f"  FactSet perf cells not all populated by t={FACTSET_WAIT_SECONDS}s — reading anyway")
         # One more calc at the end to settle dependent cells.
         try:
             self.xl.Calculate()
