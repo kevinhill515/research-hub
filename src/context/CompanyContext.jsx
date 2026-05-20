@@ -1090,41 +1090,36 @@ export function CompanyProvider({children}){
 
   function newId(){return(typeof crypto!=="undefined"&&crypto.randomUUID)?crypto.randomUUID():(Date.now()+"-"+Math.random().toString(36).slice(2));}
   /* Target-weight edits: log every meaningful change (|delta|>=0.01%) to portWeightHistory and save the new weight. */
-  /* Stamp a trade-agenda action across every portfolio a company is
-     in. Used by the IC-meeting workflow: click B/A/P/S next to a name
-     and we record an entry per portfolio so the next PM Meeting Memo's
-     Trading Agenda lists "TICKER – Buy 7.0% (FOC), 4.0% (INTL)" etc.
-     Buy/Add/Pare keep the existing target weight (the trade is just to
-     drift the holding back toward target). Sell zeroes the target.
-     User can still edit individual port targets via the Overlap row
-     to override the default. */
-  function markTradeAgenda(companyId, action){
+  /* Stamp a trade-agenda action for a single (company, portfolio)
+     pair. Used by the IC-meeting workflow: click B/A/P/S on a row in
+     the Portfolios table and we record a single entry so the next PM
+     Meeting Memo's Trading Agenda lists "TICKER – Buy 7.0% (FOC)" etc.
+     Buy/Add/Pare keep the existing target weight (the trade just
+     drifts the holding back toward target). Sell zeros the target.
+     Per-portfolio so the PM can stamp different actions for the same
+     stock in different portfolios (e.g. Buy in FGL but Pare in IN). */
+  function markTradeAgenda(companyId, portfolio, action){
     if(!["Buy","Add","Pare","Sell"].includes(action))return;
+    if(!portfolio)return;
     var today=todayStr();
     var author=currentUser||"Unknown";
     setCompanies(function(cs){return cs.map(function(c){
       if(c.id!==companyId)return c;
-      var ports=(c.portfolios||[]);
-      if(!ports.length)return c;
-      var hist=(c.portWeightHistory||[]).slice();
-      ports.forEach(function(port){
-        var oldRaw=(c.portWeights||{})[port];
-        var oldNum=parseFloat(oldRaw);if(isNaN(oldNum))oldNum=0;
-        var newNum=action==="Sell"?0:oldNum;
-        var entry={
-          id:newId(),date:today,portfolio:port,
-          oldWeight:oldNum,newWeight:newNum,
-          author:author,isAgenda:true,action:action,
-        };
-        hist.unshift(entry);
-      });
-      /* Sell action also flips the portWeights to 0 so the target
-         shifts immediately and CASH drift can be computed. Buy/Add/
-         Pare leave portWeights alone — only the agenda action is
-         stamped. */
+      var oldRaw=(c.portWeights||{})[portfolio];
+      var oldNum=parseFloat(oldRaw);if(isNaN(oldNum))oldNum=0;
+      var newNum=action==="Sell"?0:oldNum;
+      var entry={
+        id:newId(),date:today,portfolio:portfolio,
+        oldWeight:oldNum,newWeight:newNum,
+        author:author,isAgenda:true,action:action,
+      };
+      var hist=[entry].concat(c.portWeightHistory||[]);
+      /* Sell also flips this portfolio's target to 0 so the CASH math
+         reconciles immediately. Buy/Add/Pare leave portWeights alone —
+         the trade is implementation, not a target change. */
       if(action==="Sell"){
         var nw=Object.assign({},c.portWeights||{});
-        ports.forEach(function(port){nw[port]="0";});
+        nw[portfolio]="0";
         return Object.assign({},c,{portWeights:nw,portWeightHistory:hist});
       }
       return Object.assign({},c,{portWeightHistory:hist});

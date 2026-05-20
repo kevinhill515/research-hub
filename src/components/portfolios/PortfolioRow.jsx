@@ -35,7 +35,7 @@ function Dash() {
 function PortfolioRow(props) {
   const {
     company, portTab, rowIdx, rowData, annotations, alertsForCompany, dark,
-    editingTarget, setEditingTarget, updateTargetWeight,
+    editingTarget, setEditingTarget, updateTargetWeight, markTradeAgenda,
     openDiscussions, onOpenCompany, onOpenTransactions, onAddTransaction,
   } = props;
 
@@ -74,6 +74,25 @@ function PortfolioRow(props) {
 
   const editingThis = editingTarget === c.id + "-" + portTab;
 
+  /* Currently-stamped agenda action for THIS (company, portfolio).
+     History is prepended, so the first matching entry is the most
+     recent stamp. Used to highlight the corresponding B/A/P/S button
+     so the PM sees what's already on the agenda during the meeting. */
+  const rowAgendaAction = (function () {
+    const hist = company.portWeightHistory || [];
+    for (let i = 0; i < hist.length; i++) {
+      const h = hist[i];
+      if (h.isAgenda && h.portfolio === portTab && h.action) return h.action;
+    }
+    return null;
+  })();
+  const TRADE_BTNS = [
+    ["B", "Buy",  "#16a34a"],
+    ["A", "Add",  "#0891b2"],
+    ["P", "Pare", "#d97706"],
+    ["S", "Sell", "#dc2626"],
+  ];
+
   return (
     <div
       onClick={function () { onOpenCompany(c); }}
@@ -98,6 +117,28 @@ function PortfolioRow(props) {
       >
         <span className="inline-flex items-center gap-1.5" title={c.name}>
           {truncName(c.name, 15)}
+          {/* B/A/P/S trade-agenda buttons — per (company, portfolio).
+              Click during the IC meeting to stamp the planned trade;
+              the PM Meeting Memo's Trading Agenda section reads these
+              entries. Highlighted when one's already stamped for this
+              row. */}
+          {markTradeAgenda && (
+            <span className="inline-flex gap-0.5 ml-0.5 shrink-0" onClick={function (e) { e.stopPropagation(); }}>
+              {TRADE_BTNS.map(function (b) {
+                const active = rowAgendaAction === b[1];
+                return (
+                  <button
+                    key={b[0]}
+                    type="button"
+                    onClick={function (e) { e.stopPropagation(); markTradeAgenda(c.id, portTab, b[1]); }}
+                    title={"Stamp " + b[1] + " on the trading agenda for " + portTab}
+                    className={"text-[10px] font-bold w-5 h-5 rounded-sm leading-none border transition-colors " + (active ? "text-white shadow" : "text-gray-500 dark:text-slate-400 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 hover:border-slate-400")}
+                    style={active ? { background: b[2], borderColor: b[2] } : undefined}
+                  >{b[0]}</button>
+                );
+              })}
+            </span>
+          )}
           {(alertsForCompany || []).length > 0 && (
             <span
               title={alertsForCompany.map(function(a){return "• " + a.message;}).join("\n")}

@@ -120,7 +120,7 @@ export function PortfoliosTable(props) {
   const [editingTarget, setEditingTarget] = useState(null);
   const {
     companies, repData, fxRates, specialWeights, annotations, dark,
-    updateTargetWeight, alertRules, lastPriceUpdate,
+    updateTargetWeight, markTradeAgenda, alertRules, lastPriceUpdate,
   } = useCompanyContext();
 
   /* ---- Per-company alerts, memoized so evaluateAlertsForCompany doesn't
@@ -622,6 +622,7 @@ export function PortfoliosTable(props) {
               editingTarget={editingTarget}
               setEditingTarget={setEditingTarget}
               updateTargetWeight={updateTargetWeight}
+              markTradeAgenda={markTradeAgenda}
               openDiscussions={openDiscussions}
               onOpenCompany={onOpenCompany}
               onOpenTransactions={onOpenTransactions}
