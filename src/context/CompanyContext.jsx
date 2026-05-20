@@ -1090,6 +1090,46 @@ export function CompanyProvider({children}){
 
   function newId(){return(typeof crypto!=="undefined"&&crypto.randomUUID)?crypto.randomUUID():(Date.now()+"-"+Math.random().toString(36).slice(2));}
   /* Target-weight edits: log every meaningful change (|delta|>=0.01%) to portWeightHistory and save the new weight. */
+  /* Stamp a trade-agenda action across every portfolio a company is
+     in. Used by the IC-meeting workflow: click B/A/P/S next to a name
+     and we record an entry per portfolio so the next PM Meeting Memo's
+     Trading Agenda lists "TICKER – Buy 7.0% (FOC), 4.0% (INTL)" etc.
+     Buy/Add/Pare keep the existing target weight (the trade is just to
+     drift the holding back toward target). Sell zeroes the target.
+     User can still edit individual port targets via the Overlap row
+     to override the default. */
+  function markTradeAgenda(companyId, action){
+    if(!["Buy","Add","Pare","Sell"].includes(action))return;
+    var today=todayStr();
+    var author=currentUser||"Unknown";
+    setCompanies(function(cs){return cs.map(function(c){
+      if(c.id!==companyId)return c;
+      var ports=(c.portfolios||[]);
+      if(!ports.length)return c;
+      var hist=(c.portWeightHistory||[]).slice();
+      ports.forEach(function(port){
+        var oldRaw=(c.portWeights||{})[port];
+        var oldNum=parseFloat(oldRaw);if(isNaN(oldNum))oldNum=0;
+        var newNum=action==="Sell"?0:oldNum;
+        var entry={
+          id:newId(),date:today,portfolio:port,
+          oldWeight:oldNum,newWeight:newNum,
+          author:author,isAgenda:true,action:action,
+        };
+        hist.unshift(entry);
+      });
+      /* Sell action also flips the portWeights to 0 so the target
+         shifts immediately and CASH drift can be computed. Buy/Add/
+         Pare leave portWeights alone — only the agenda action is
+         stamped. */
+      if(action==="Sell"){
+        var nw=Object.assign({},c.portWeights||{});
+        ports.forEach(function(port){nw[port]="0";});
+        return Object.assign({},c,{portWeights:nw,portWeightHistory:hist});
+      }
+      return Object.assign({},c,{portWeightHistory:hist});
+    });});
+  }
   function updateTargetWeight(companyId,portfolio,rawNewValue){
     /* Compute the delta first (in state-update-safe way), so we can
        shift CASH by the opposite amount to preserve target sum = 100%. */
@@ -1231,7 +1271,7 @@ export function CompanyProvider({children}){
     tpApprovals,setTpApprovals,submitTpApproval,approveTpApproval,rejectTpApproval,withdrawTpApproval,markTpApprovalRead,
     saveStatus,
     addAnnotation,updateAnnotation,deleteAnnotation,resolveAnnotation,unresolveAnnotation,addReply,markAnnotationRead,parseMentions,
-    updateTargetWeight,addTargetHistoryEntry,deleteTargetHistoryEntry,
+    updateTargetWeight,markTradeAgenda,addTargetHistoryEntry,deleteTargetHistoryEntry,
     addTransaction,deleteTransaction,setTxInitOverride,setTxCashFlow,updateInitiatedDate,
     researchAssignments,setResearchAssignments,setResearchSlot,setReorgSlot,
     perfData,setPerfData,setPerfSeries,addPerfSeries,removePerfSeries,movePerfSeries,setPerfSeriesOrder,setPerfReturn,setPerfLastMonthEMV,applyPerfBulk,

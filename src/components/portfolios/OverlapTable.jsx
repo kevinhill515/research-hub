@@ -62,7 +62,7 @@ function EditableWeightCell({ value, onSubmit, displayClassName, cellStyle }) {
 export function OverlapTable(props){
   const { overlapMode, setOverlapMode, overlapFilter, setOverlapFilter,
           setSelCo, setTab, setCoView, setSelCoOrigin } = props;
-  const { companies, repData, fxRates, specialWeights, dark, updateCo, updateTargetWeight } = useCompanyContext();
+  const { companies, repData, fxRates, specialWeights, dark, updateCo, updateTargetWeight, markTradeAgenda } = useCompanyContext();
 
 var OVERLAP_ORDER=["FIN","IN","FGL","GL","EM","SC"];var OVERLAP_LABELS={"FIN":"FIN","IN":"IN","FGL":"FGL","GL":"GL","EM":"EM","SC":"SC"};var isRep=overlapMode==="rep";
 /* Precompute rep weights per company per portfolio */
@@ -99,7 +99,29 @@ var rowMosFixed=rowTpFixed!==null?calcMOS(rowTpFixed,rowVal.price):null;
 var rowMosFixedStyle=mosBg(rowMosFixed);
 var rowMosGap=(rowMos!==null&&rowMosFixed!==null)?Math.abs(rowMos-rowMosFixed):null;
 var rowMosDiverges=rowMosGap!==null&&rowMosGap>10;
-return(<div key={c.id} onClick={function(){setSelCoOrigin("portfolios");setSelCo(c);setTab("companies");setCoView("dashboard");}} className="hover:brightness-110 transition-all" style={{display:"table-row",cursor:"pointer"}}><div className="align-middle pr-4 py-1.5 text-sm font-medium text-gray-900 dark:text-slate-100 sticky left-0 z-[5]" style={{display:"table-cell",background:dark?"#020617":(rowBgColor||"#ffffff")}}><span title={c.name}>{truncName(c.name,15)}</span></div><div className="align-middle pr-4 py-1.5" style={{display:"table-cell",background:dark?undefined:rowBgColor,maxWidth:80,minWidth:60}} onClick={function(e){e.stopPropagation();}}><PortPicker active={tiers} onChange={function(v){var nt=v.join(", ");var ch={tier:nt};var s=tierToStatus(nt);if(s)ch.status=s;updateCo(c.id,ch);}} plusColor="#334155" opts={TIER_ORDER} pillStyleFn={tierPillStyle} stack/></div>
+/* Whether THIS company already has a pending agenda action stamped.
+   Used to highlight the currently-stamped B/A/P/S button so a user
+   knows what they already clicked during the meeting. We pick the
+   most-recent agenda entry (history is prepended; index 0 is newest)
+   that has an explicit `action` field. */
+var rowAgendaAction = (function(){
+  var hist = c.portWeightHistory || [];
+  for (var i = 0; i < hist.length; i++) {
+    if (hist[i].isAgenda && hist[i].action) return hist[i].action;
+  }
+  return null;
+})();
+function stampAction(action, ev){
+  ev.stopPropagation();
+  markTradeAgenda(c.id, action);
+}
+var TRADE_BTNS = [
+  ["B", "Buy",  "#16a34a"],
+  ["A", "Add",  "#0891b2"],
+  ["P", "Pare", "#d97706"],
+  ["S", "Sell", "#dc2626"],
+];
+return(<div key={c.id} onClick={function(){setSelCoOrigin("portfolios");setSelCo(c);setTab("companies");setCoView("dashboard");}} className="hover:brightness-110 transition-all" style={{display:"table-row",cursor:"pointer"}}><div className="align-middle pr-4 py-1.5 text-sm font-medium text-gray-900 dark:text-slate-100 sticky left-0 z-[5]" style={{display:"table-cell",background:dark?"#020617":(rowBgColor||"#ffffff")}}><div className="flex items-center gap-1"><span title={c.name}>{truncName(c.name,15)}</span><span className="inline-flex gap-0.5 ml-1" onClick={function(e){e.stopPropagation();}}>{TRADE_BTNS.map(function(b){var active=rowAgendaAction===b[1];return <button key={b[0]} type="button" onClick={function(ev){stampAction(b[1], ev);}} title={"Stamp " + b[1] + " for trading agenda — all portfolios this company is in"} className={"text-[10px] font-bold w-5 h-5 rounded-sm leading-none border transition-colors " + (active?"text-white shadow":"text-gray-500 dark:text-slate-400 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 hover:border-slate-400")} style={active?{background:b[2],borderColor:b[2]}:undefined}>{b[0]}</button>;})}</span></div></div><div className="align-middle pr-4 py-1.5" style={{display:"table-cell",background:dark?undefined:rowBgColor,maxWidth:80,minWidth:60}} onClick={function(e){e.stopPropagation();}}><PortPicker active={tiers} onChange={function(v){var nt=v.join(", ");var ch={tier:nt};var s=tierToStatus(nt);if(s)ch.status=s;updateCo(c.id,ch);}} plusColor="#334155" opts={TIER_ORDER} pillStyleFn={tierPillStyle} stack/></div>
 {/* FPE Range mini */}
 <div className="align-middle pr-4 py-1.5" style={{display:"table-cell",background:dark?undefined:rowBgColor}}>{(function(){var el=<FpeRangeMini valuation={rowVal} width={100}/>;return el||<span className="text-xs text-gray-400 dark:text-slate-500">--</span>;})()}</div>
 {/* MOS */}

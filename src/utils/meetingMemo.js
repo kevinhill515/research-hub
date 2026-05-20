@@ -31,7 +31,7 @@ const PORT_MEMO_LABELS = {
 
 const PROFILES = {
   tuesday: {
-    header: "*** Multi Cap Strategies: International, Focused Intl and Global ***",
+    header: "*** Multi Cap Strategies: Focused International, International, Focused Global, and Global ***",
     ports: ["FIN", "IN", "FGL", "GL"],
   },
   thursday: {
@@ -64,16 +64,35 @@ function fmtWeight(n) {
 }
 
 /* Stock-centric Trading Agenda formatter.
- *   Input: [{company, port, oldW, newW}, ...]
+ *   Input: [{company, port, oldW, newW, action}, ...]
  *   Output: "TICKER (Name) – Action W.W% (PORT1), W.W% (PORT2)"
- * Action is derived from each port's old→new direction. If all ports
- * for this stock have new > old, the action is Buy. If all have new <
- * old, Pare. Mixed → "Adjust to" (rare). */
+ * Action priority:
+ *   1. Explicit action stamped by markTradeAgenda (B/A/P/S buttons) —
+ *      use that verb. "Sell" alone (no per-port weight) prints as
+ *      "TICKER (Name) – Sell".
+ *   2. Fallback: derive from each port's old→new direction. All new>old
+ *      → Buy; all new<old → Pare to; mixed → Adjust to.
+ */
 function formatAgendaLine(company, entries) {
   const ticker = pickDisplayTicker(company);
-  const allBuys  = entries.every(e => e.newW > e.oldW);
-  const allPares = entries.every(e => e.newW < e.oldW);
-  const verb = allBuys ? "Buy" : allPares ? "Pare to" : "Adjust to";
+  // Pick a single representative action — they should all match for a
+  // single agenda stamp; if mixed (e.g. user stamped Buy then later
+  // Pare), prefer the most recent (first in array since history is
+  // prepended).
+  const stampedAction = entries.find(e => e.action)?.action || null;
+  if (stampedAction === "Sell") {
+    // Sell prints without weights — closing the position entirely.
+    const ports = entries.map(e => PORT_MEMO_LABELS[e.port] || e.port).join(", ");
+    return ticker + " (" + (company.name || "?") + ") – Sell (" + ports + ")";
+  }
+  let verb;
+  if (stampedAction) {
+    verb = stampedAction === "Pare" ? "Pare to" : stampedAction; // "Buy" / "Add"
+  } else {
+    const allBuys  = entries.every(e => e.newW > e.oldW);
+    const allPares = entries.every(e => e.newW < e.oldW);
+    verb = allBuys ? "Buy" : allPares ? "Pare to" : "Adjust to";
+  }
   const portsText = entries
     .map(e => fmtWeight(e.newW) + "% (" + (PORT_MEMO_LABELS[e.port] || e.port) + ")")
     .join(", ");
@@ -153,6 +172,7 @@ function partitionWeightChanges(companies, ports) {
         (agendaByCo[c.id] = agendaByCo[c.id] || []).push({
           company: c, port: h.portfolio,
           oldW: h.oldWeight, newW: h.newWeight,
+          action: h.action || null,
         });
       } else if (isRecent(h.date)) {
         executedByPort[h.portfolio].push({
