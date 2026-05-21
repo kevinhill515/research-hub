@@ -7,16 +7,27 @@
  *   - Allocation Changes  = portWeightHistory entries from the last 6
  *                           calendar days that are NOT flagged agenda
  *                           (already executed). Portfolio-centric format.
- *   - FV Target Updates   = tpHistory entries with source==="approval"
+ *   - FV Target Changes   = tpHistory entries with source==="approval"
  *                           from the last 6 calendar days.
  *                           Portfolio-grouped.
  *
  * Two meeting profiles:
  *   tuesday — FIN, IN, FGL, GL — "Multi Cap Strategies"
  *   thursday — EM, SC — "EM ADR, International Small Cap"
+ *
+ * Section headers (Trading Agenda / Allocation Changes / FV Target
+ * Changes) are styled with the Unicode combining low-line (U+0332) so
+ * that when the memo is pasted into Outlook / Gmail the headers appear
+ * underlined without us needing rich-text clipboard support.
+ *
+ * Ticker selection: for each (company, portfolio) we pick whichever of
+ * the company's tickers actually has rep shares > 0 in that portfolio
+ * (the "held" ticker). Falls back to the ordinary ticker when no shares
+ * are recorded — covers brand-new agenda entries where a target weight
+ * exists but no shares have been bought yet.
  */
 
-import { parseDate, todayStr } from './index.js';
+import { parseDate, todayStr, repShares } from './index.js';
 
 /* Memo-style port labels. These are the abbreviations the IC uses in
  * compliance emails — distinct from the internal storage codes. */
@@ -63,121 +74,152 @@ function fmtWeight(n) {
     : n.toFixed(2);
 }
 
+/* Attach U+0332 (combining low line) to each character so the text
+ * renders as underlined when pasted into an email client. Spaces get
+ * the mark too so the underline is unbroken. */
+function underline(s) {
+  let out = "";
+  for (let i = 0; i < s.length; i++) {
+    out += s.charAt(i) + "̲";
+  }
+  return out;
+}
+
+/* "M/D - PM Meeting" using today's local date. No zero-pad to match the
+ * user's intent (5/21, not 05/21). Re-evaluated on each memo build so
+ * generating tomorrow updates the header without code changes. */
+function dateHeader() {
+  const d = new Date();
+  return (d.getMonth() + 1) + "/" + d.getDate() + " - PM Meeting";
+}
+
+/* Pick the ticker actually held in a given portfolio. Walks the
+ * company's tickers, returns the first one with rep shares > 0 in
+ * repData[port]. Falls back to ordinary, then first ticker, then "?". */
+function pickHeldTicker(company, port, repData) {
+  const ts = (company && company.tickers) || [];
+  const portRep = (repData || {})[port] || {};
+  for (let i = 0; i < ts.length; i++) {
+    const tk = (ts[i] && ts[i].ticker || "").toUpperCase();
+    if (!tk) continue;
+    if (repShares(portRep[tk]) > 0) return ts[i].ticker;
+  }
+  const ord = ts.find(function (t) { return t && t.isOrdinary; });
+  return (ord && ord.ticker) || (ts[0] && ts[0].ticker) || (company && company.ticker) || "?";
+}
+
 /* Stock-centric Trading Agenda formatter.
- *   Input: [{company, port, oldW, newW, action}, ...] for ONE company
- *   Output: 1+ lines — one per distinct action verb, since the same
- *   stock can have different actions in different portfolios (e.g.
- *   Buy in FOC + FGL but Pare in INTL).
+ *   entries: [{company, port, oldW, newW, action}, ...] for ONE company
+ *   repData: portfolio rep-share data, used to pick the held ticker.
+ *
+ * Output is one or more lines. Splits happen when:
+ *   - Different action verbs across portfolios (Buy in FOC + Pare in INTL)
+ *   - Same action but different held tickers across portfolios (rare —
+ *     e.g. ords in one port, ADR in another). We split here so the
+ *     memo accurately names what was traded where.
+ *
  * Format per line:
  *   "TICKER (Name) – Buy W.W% (FOC), X.X% (FGL)"
- *   "TICKER (Name) – Sell (FOC, GL)"     (no weights, closing)
+ *   "TICKER (Name) – Sell (FOC, GL)"      (no weights, closing)
  *   "TICKER (Name) – Adjust to W.W% (..)" (fallback when no action stamped)
  */
-function formatAgendaLines(company, entries) {
-  const ticker = pickDisplayTicker(company);
-  // Group entries by their stamped action. Entries with no action fall
-  // back to a delta-derived verb under a synthetic null-key bucket.
-  const byAction = {};
-  entries.forEach(e => {
-    const key = e.action || "_derive";
-    (byAction[key] = byAction[key] || []).push(e);
+function formatAgendaLines(company, entries, repData) {
+  /* Group by (heldTicker, action). */
+  const byKey = {};
+  entries.forEach(function (e) {
+    const tk = pickHeldTicker(company, e.port, repData);
+    const act = e.action || "_derive";
+    const key = tk + "|" + act;
+    if (!byKey[key]) byKey[key] = { ticker: tk, action: act, group: [] };
+    byKey[key].group.push(e);
   });
   const lines = [];
-  // Preserve a consistent action order for readability.
-  const order = ["Buy", "Add", "Pare", "Sell", "_derive"];
-  order.forEach(action => {
-    const group = byAction[action];
-    if (!group || !group.length) return;
+  /* Stable ordering: action precedence, then ticker alpha. */
+  const actionOrder = { Buy: 0, Add: 1, Pare: 2, Sell: 3, _derive: 4 };
+  const keys = Object.keys(byKey).sort(function (a, b) {
+    const A = byKey[a], B = byKey[b];
+    let oa = actionOrder[A.action]; if (oa === undefined) oa = 5;
+    let ob = actionOrder[B.action]; if (ob === undefined) ob = 5;
+    if (oa !== ob) return oa - ob;
+    return A.ticker.localeCompare(B.ticker);
+  });
+  keys.forEach(function (key) {
+    const slot = byKey[key];
+    const ticker = slot.ticker;
+    const action = slot.action;
+    const group = slot.group;
     if (action === "Sell") {
-      const ports = group.map(e => PORT_MEMO_LABELS[e.port] || e.port).join(", ");
+      const ports = group.map(function (e) { return PORT_MEMO_LABELS[e.port] || e.port; }).join(", ");
       lines.push(ticker + " (" + (company.name || "?") + ") – Sell (" + ports + ")");
       return;
     }
     let verb;
     if (action === "_derive") {
-      // No explicit stamp — fall back to weight-delta inference.
-      const allBuys  = group.every(e => e.newW > e.oldW);
-      const allPares = group.every(e => e.newW < e.oldW);
+      const allBuys  = group.every(function (e) { return e.newW > e.oldW; });
+      const allPares = group.every(function (e) { return e.newW < e.oldW; });
       verb = allBuys ? "Buy" : allPares ? "Pare to" : "Adjust to";
+    } else if (action === "Pare") {
+      verb = "Pare to";
+    } else if (action === "Add") {
+      verb = "Add to";
     } else {
-      verb = action === "Pare" ? "Pare to" : action; // "Buy" / "Add"
+      verb = action; /* "Buy" */
     }
     const portsText = group
-      .map(e => fmtWeight(e.newW) + "% (" + (PORT_MEMO_LABELS[e.port] || e.port) + ")")
+      .map(function (e) { return fmtWeight(e.newW) + "% (" + (PORT_MEMO_LABELS[e.port] || e.port) + ")"; })
       .join(", ");
     lines.push(ticker + " (" + (company.name || "?") + ") – " + verb + " " + portsText);
   });
   return lines;
 }
 
-/* Picks the most-natural ticker for memo display. Prefers the ord
- * ticker when present; otherwise falls back to whatever ticker is
- * first on the company. */
-function pickDisplayTicker(company) {
-  const ts = (company && company.tickers) || [];
-  const ord = ts.find(t => t && t.isOrdinary);
-  return (ord && ord.ticker) || (ts[0] && ts[0].ticker) || (company && company.ticker) || "?";
-}
-
-/* Portfolio-centric Allocation/Target Changes formatter.
- *   Input: { port: [{company, newW}, ...] }
- *   Output: lines of "PORT – Stock1 W.W%, Stock2 W.W%"
- * Ports with no entries are still emitted (e.g. "EM – ") so the format
- * mirrors what the user sends to compliance. */
-function formatAllocSection(byPort, ports) {
-  return ports.map(p => {
+/* Portfolio-centric formatter shared by Allocation Changes and FV Target
+ * Changes. Each item: "TICKER (Name) <value>" where the value is
+ * provided by the caller (weight % for Allocation, $price for FV Target). */
+function formatPortfolioSection(byPort, ports, repData, formatValue) {
+  return ports.map(function (p) {
     const items = byPort[p] || [];
-    const text = items
-      .map(it => (it.company.name || "?") + " " + fmtWeight(it.newW) + "%")
-      .join(", ");
+    const text = items.map(function (it) {
+      const tk = pickHeldTicker(it.company, p, repData);
+      return tk + " (" + (it.company.name || "?") + ") " + formatValue(it);
+    }).join(", ");
     return (PORT_MEMO_LABELS[p] || p) + " – " + text;
   }).join("\n");
 }
 
-/* FV Target Updates — TP changes from tpHistory in last 6 days where
+/* FV Target Changes — TP changes from tpHistory in last 6 days where
  * source === "approval" (i.e. they went through the approval workflow,
- * not other auto-write paths). Grouped per portfolio: a single TP
- * change is in effect for every portfolio the company belongs to. */
-function buildFvUpdates(companies, ports) {
+ * not other auto-write paths). Grouped per portfolio: a single TP change
+ * is in effect for every portfolio the company belongs to. */
+function buildFvUpdates(companies, ports, repData) {
   const byPort = {};
-  ports.forEach(p => { byPort[p] = []; });
-  (companies || []).forEach(c => {
-    (c.tpHistory || []).forEach(h => {
+  ports.forEach(function (p) { byPort[p] = []; });
+  (companies || []).forEach(function (c) {
+    (c.tpHistory || []).forEach(function (h) {
       if (h.source !== "approval") return;
       if (!isRecent(h.date)) return;
       const tpStr = h.tp != null && isFinite(h.tp) ? Number(h.tp).toFixed(2) : "";
-      (c.portfolios || []).forEach(p => {
+      (c.portfolios || []).forEach(function (p) {
         if (ports.indexOf(p) < 0) return;
         byPort[p].push({ company: c, newTp: tpStr });
       });
     });
   });
-  return ports.map(p => {
-    const items = byPort[p];
-    if (!items.length) return (PORT_MEMO_LABELS[p] || p) + " – ";
-    const text = items.map(it => (it.company.name || "?") + " " + it.newTp).join(", ");
-    return (PORT_MEMO_LABELS[p] || p) + " – " + text;
-  }).join("\n");
+  return formatPortfolioSection(byPort, ports, repData, function (it) {
+    return "$" + it.newTp;
+  });
 }
 
 /* Walk every company's portWeightHistory and partition entries by
  * agenda-vs-executed and recency. Returns:
- *   { agenda: Map<company.id, [entries]>, executed: { port: [entries] } }
- *
- * - agenda: any entry with isAgenda===true for a port in the meeting's
- *   profile, regardless of date (a forgotten agenda from 3 weeks ago
- *   should still show up rather than silently drop).
- * - executed: entries where isAgenda is false/missing AND date is
- *   within RECENT_DAYS, grouped by port. These are the
- *   already-executed weight changes for the "Allocation/Target
- *   Changes" section.
+ *   { agendaByCo: Map<company.id, [entries]>, executedByPort: { port: [entries] } }
  */
 function partitionWeightChanges(companies, ports) {
-  const agendaByCo = {};   // company.id -> [{company, port, oldW, newW}, ...]
-  const executedByPort = {}; // port -> [{company, newW, date}, ...]
-  ports.forEach(p => { executedByPort[p] = []; });
-  (companies || []).forEach(c => {
-    (c.portWeightHistory || []).forEach(h => {
+  const agendaByCo = {};
+  const executedByPort = {};
+  ports.forEach(function (p) { executedByPort[p] = []; });
+  (companies || []).forEach(function (c) {
+    (c.portWeightHistory || []).forEach(function (h) {
       if (ports.indexOf(h.portfolio) < 0) return;
       if (h.isAgenda) {
         (agendaByCo[c.id] = agendaByCo[c.id] || []).push({
@@ -192,27 +234,22 @@ function partitionWeightChanges(companies, ports) {
       }
     });
   });
-  // For agenda: collapse duplicates per (company, port) keeping the
-  // latest entry. Without this, multiple weight tweaks on the same
-  // stock during the meeting would all show up.
-  Object.keys(agendaByCo).forEach(cid => {
+  /* For agenda: collapse duplicates per (company, port) keeping the latest. */
+  Object.keys(agendaByCo).forEach(function (cid) {
     const seen = {};
-    const list = agendaByCo[cid];
-    // Walk in reverse (history is prepended; index 0 is newest) and
-    // keep the first occurrence per port.
     const kept = [];
-    list.forEach(e => {
+    agendaByCo[cid].forEach(function (e) {
       if (seen[e.port]) return;
       seen[e.port] = true;
       kept.push(e);
     });
     agendaByCo[cid] = kept;
   });
-  // For executed: dedupe per (company, port) similarly — keep latest.
-  Object.keys(executedByPort).forEach(p => {
+  /* For executed: dedupe per (company, port) — keep latest. */
+  Object.keys(executedByPort).forEach(function (p) {
     const seen = {};
     const kept = [];
-    executedByPort[p].forEach(e => {
+    executedByPort[p].forEach(function (e) {
       const k = e.company.id;
       if (seen[k]) return;
       seen[k] = true;
@@ -220,53 +257,62 @@ function partitionWeightChanges(companies, ports) {
     });
     executedByPort[p] = kept;
   });
-  return { agendaByCo, executedByPort };
+  return { agendaByCo: agendaByCo, executedByPort: executedByPort };
 }
 
-/* Top-level: build the memo string for a given profile. */
-export function buildMeetingMemo(companies, profileName) {
+/* Top-level: build the memo string for a given profile.
+ *   companies   — full company array
+ *   profileName — "tuesday" | "thursday"
+ *   repData     — { port: { TICKER: {shares, ...} } } so we can pick
+ *                 the actually-held ticker per portfolio. Optional;
+ *                 when omitted we fall back to the ordinary ticker. */
+export function buildMeetingMemo(companies, profileName, repData) {
   const profile = PROFILES[profileName];
   if (!profile) return "";
-  const { agendaByCo, executedByPort } = partitionWeightChanges(companies, profile.ports);
+  const part = partitionWeightChanges(companies, profile.ports);
+  const agendaByCo = part.agendaByCo;
+  const executedByPort = part.executedByPort;
 
-  // Trading Agenda — 1+ lines per company (split when different
-  // actions stamped across portfolios).
+  /* Trading Agenda. */
   const agendaLines = [];
-  Object.keys(agendaByCo).forEach(cid => {
+  Object.keys(agendaByCo).forEach(function (cid) {
     const entries = agendaByCo[cid];
     if (!entries.length) return;
     const company = entries[0].company;
-    formatAgendaLines(company, entries).forEach(l => agendaLines.push(l));
+    formatAgendaLines(company, entries, repData).forEach(function (l) { agendaLines.push(l); });
   });
-  // Sort agenda by company name for stable output.
   agendaLines.sort();
 
-  // Allocation/Target Changes — port-centric.
+  /* Allocation Changes — already-executed weight moves in the last 6 days. */
   const allocByPort = {};
-  profile.ports.forEach(p => {
-    allocByPort[p] = (executedByPort[p] || []).map(e => ({
-      company: e.company, newW: e.newW,
-    }));
+  profile.ports.forEach(function (p) {
+    allocByPort[p] = (executedByPort[p] || []).map(function (e) {
+      return { company: e.company, newW: e.newW };
+    });
   });
-  const allocLines = formatAllocSection(allocByPort, profile.ports);
+  const allocLines = formatPortfolioSection(allocByPort, profile.ports, repData, function (it) {
+    return fmtWeight(it.newW) + "%";
+  });
 
-  // FV Target Updates — port-centric, from tpHistory.
-  const fvLines = buildFvUpdates(companies, profile.ports);
+  /* FV Target Changes — TP approvals in the last 6 days. */
+  const fvLines = buildFvUpdates(companies, profile.ports, repData);
 
   const out = [];
+  out.push(dateHeader());
+  out.push("");
   out.push(profile.header);
   out.push("");
-  out.push("Trading Agenda");
+  out.push(underline("Trading Agenda"));
   if (agendaLines.length) {
-    agendaLines.forEach(l => out.push(l));
+    agendaLines.forEach(function (l) { out.push(l); });
   } else {
     out.push("(none)");
   }
   out.push("");
-  out.push("Allocation/FV Target Changes");
+  out.push(underline("Allocation Changes"));
   out.push(allocLines);
   out.push("");
-  out.push("FV Target Updates");
+  out.push(underline("FV Target Changes"));
   out.push(fvLines);
   out.push("");
   out.push("Generated " + todayStr());
@@ -275,16 +321,16 @@ export function buildMeetingMemo(companies, profileName) {
 
 /* Helper for the UI: after the memo is sent, the user can call this to
  * mark every agenda entry (for the given ports) as executed so it falls
- * out of the Trading Agenda section and into the Target Changes section
- * on the next memo. Returns a new companies array — caller passes to
- * setCompanies. */
+ * out of the Trading Agenda section and into the Allocation Changes
+ * section on the next memo. Returns a new companies array — caller
+ * passes to setCompanies. */
 export function clearAgendaFlags(companies, ports) {
   const portSet = {};
-  (ports || []).forEach(p => { portSet[p] = true; });
-  return (companies || []).map(c => {
+  (ports || []).forEach(function (p) { portSet[p] = true; });
+  return (companies || []).map(function (c) {
     const hist = c.portWeightHistory || [];
     let touched = false;
-    const next = hist.map(h => {
+    const next = hist.map(function (h) {
       if (h.isAgenda && portSet[h.portfolio]) {
         touched = true;
         return Object.assign({}, h, { isAgenda: false });

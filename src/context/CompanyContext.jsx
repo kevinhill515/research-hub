@@ -80,6 +80,12 @@ export function CompanyProvider({children}){
      Shape: [{ id, author, type:"bug"|"improvement", area, text, date, resolved }]
      Order in the array = priority (top → bottom). */
   const [feedback,setFeedback]=useState([]);
+  /* PM Meeting Memo log: snapshots of every memo that was distributed
+     via the "Clear agenda (mark executed)" button. Lets users refer
+     back to what was sent at each prior IC meeting.
+     Shape: [{ id, date, profile:"tuesday"|"thursday", author, memo }]
+     Order: newest first (matches feedback/annotations convention). */
+  const [memoLog,setMemoLog]=useState([]);
   /* marketsSnapshot — daily FactSet pull writes to meta.marketsSnapshot.
      Shape: { indices: [{label, ticker, "1d", "5d", ...}], sectors: [...],
      countries: [...], commodities: [...], bonds: [...], fx: {...} }.
@@ -194,7 +200,7 @@ export function CompanyProvider({children}){
        start. Wrap each in a try so a single failure doesn't block the
        rest, and let Promise.all return the array. */
     var safe=function(p){return p.then(function(r){return r;},function(){return null;});};
-    var [r,r2,r3,r4,r5,r6,r7,r8,r9,r10,r11,r12,r13,r14,r15,r16]=await Promise.all([
+    var [r,r2,r3,r4,r5,r6,r7,r8,r9,r10,r11,r12,r13,r14,r15,r16,r17]=await Promise.all([
       safe(supaGet("library","id","shared")),
       /* Companies are now stored as one Supabase row per company (each
          row's data column holds a single company JSON, ~30KB typical).
@@ -215,6 +221,7 @@ export function CompanyProvider({children}){
       safe(supaGet("meta","key","alertRules")),
       safe(supaGet("meta","key","breakdownHistory")),
       safe(supaGet("meta","key","tpApprovals")),
+      safe(supaGet("meta","key","memoLog")),
     ]);
     try{if(r){var d=JSON.parse(r.data);if(Array.isArray(d)&&d.length){var libMig=migrateTags(d);setSaved(libMig.data);libOk=libMig.data.length;if(libMig.changed)supaUpsert("library",{id:"shared",data:JSON.stringify(libMig.data)});}}}catch(e){}
     try{if(r2&&Array.isArray(r2)){
@@ -401,6 +408,7 @@ export function CompanyProvider({children}){
     try{if(r8&&r8.value){var swRaw=JSON.parse(r8.value);var swMig=migrateSpecialWeights(swRaw);setSpecialWeights(swMig.data);if(swMig.changed)supaUpsert("meta",{key:"specialWeights",value:JSON.stringify(swMig.data)});}}catch(e){}
     try{if(r9&&r9.value){var ann=JSON.parse(r9.value);if(Array.isArray(ann))setAnnotations(ann);}}catch(e){}
     try{if(r16&&r16.value){var tpa=JSON.parse(r16.value);if(Array.isArray(tpa))setTpApprovals(tpa);}}catch(e){}
+    try{if(r17&&r17.value){var ml=JSON.parse(r17.value);if(Array.isArray(ml))setMemoLog(ml);}}catch(e){}
     try{if(r10&&r10.value){var ra=JSON.parse(r10.value);if(ra&&typeof ra==="object"){if(!ra.byMember)ra.byMember={};if(!Array.isArray(ra.reorgs))ra.reorgs=[];/* Migrate legacy category keys: gbl→gl, intl→in, intSmall→sc */var RA_RENAMES={gbl:"gl",intl:"in",intSmall:"sc"};var raChanged=false;Object.keys(ra.byMember).forEach(function(m){var mb=ra.byMember[m]||{};Object.keys(RA_RENAMES).forEach(function(oldK){if(mb[oldK]!==undefined){mb[RA_RENAMES[oldK]]=mb[oldK];delete mb[oldK];raChanged=true;}});ra.byMember[m]=mb;});setResearchAssignments(ra);if(raChanged)supaUpsert("meta",{key:"researchAssignments",value:JSON.stringify(ra)});}}}catch(e){}
     try{if(r11&&r11.value){var pd=JSON.parse(r11.value);if(pd&&typeof pd==="object")setPerfData(pd);}}catch(e){}
     try{if(r12&&r12.value){var fb=JSON.parse(r12.value);if(Array.isArray(fb))setFeedback(fb);}}catch(e){}
@@ -679,6 +687,7 @@ export function CompanyProvider({children}){
       annotations:          JSON.stringify(annotations),
       tpApprovals:          JSON.stringify(tpApprovals),
       feedback:             JSON.stringify(feedback),
+      memoLog:              JSON.stringify(memoLog),
       researchAssignments:  JSON.stringify(researchAssignments),
       entryComments:        JSON.stringify(entryComments),
       alertRules:           JSON.stringify(alertRules),
@@ -761,6 +770,7 @@ export function CompanyProvider({children}){
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(researchAssignments);autoSendBlob("researchAssignments",j,"meta",{key:"researchAssignments",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[researchAssignments,ready]);
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(perfData);autoSendBlob("perfData",j,"meta",{key:"perfData",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[perfData,ready]);
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(feedback);autoSendBlob("feedback",j,"meta",{key:"feedback",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[feedback,ready]);
+  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(memoLog);autoSendBlob("memoLog",j,"meta",{key:"memoLog",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[memoLog,ready]);
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(benchmarkWeights);autoSendBlob("benchmarkWeights",j,"meta",{key:"benchmarkWeights",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[benchmarkWeights,ready]);
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(breakdownHistory);autoSendBlob("breakdownHistory",j,"meta",{key:"breakdownHistory",value:j});},DEBOUNCE_HEAVY_MS);return function(){clearTimeout(t);};},[breakdownHistory,ready]);
 
@@ -928,6 +938,22 @@ export function CompanyProvider({children}){
       arr.splice(to,0,moved);
       return arr;
     });
+  }
+  /* Memo log mutations. Append-only from the UI side (snapshot saved
+     when "Clear agenda" runs); delete is the only edit path. Stored
+     newest-first, mirroring feedback/annotations. */
+  function addMemoLog(entry){
+    var e=Object.assign({
+      id:newId(),
+      date:todayStr(),
+      author:currentUser||"Unknown",
+      profile:"",
+      memo:"",
+    },entry);
+    setMemoLog(function(prev){return [e].concat(prev||[]);});
+  }
+  function deleteMemoLog(id){
+    setMemoLog(function(prev){return(prev||[]).filter(function(e){return e.id!==id;});});
   }
   /* Performance data mutations. All operate on perfData[portfolio].
      When a series is renamed, the old name is pushed onto its aliases array
@@ -1342,6 +1368,7 @@ export function CompanyProvider({children}){
     researchAssignments,setResearchAssignments,setResearchSlot,setReorgSlot,
     perfData,setPerfData,setPerfSeries,addPerfSeries,removePerfSeries,movePerfSeries,setPerfSeriesOrder,setPerfReturn,setPerfLastMonthEMV,applyPerfBulk,
     feedback,setFeedback,addFeedback,updateFeedback,removeFeedback,moveFeedback,
+    memoLog,setMemoLog,addMemoLog,deleteMemoLog,
     marketsSnapshot,setMarketsSnapshot,marketsStatus,ensureMarketsSnapshot,
     alertRules,setAlertRules,
   };
