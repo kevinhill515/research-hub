@@ -32,13 +32,13 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
      toast system. */
   var [tpSubmitMsg, setTpSubmitMsg] = useState("");
   /* Inline submission form: shown after the user clicks "Submit TP change
-     for approval". Captures two simple fields — Previous TP Fixed and
-     New TP Fixed — both editable so the user can correct "Previous" if
-     they happened to commit a direct edit on the Valuation tab before
-     opening this form. The approval-card border / direction logic keys
-     off these two values via the existing fromTP / toTP fields. */
+     for approval". Captures the full PE × (EPS1×W1 + EPS2×W2)/100
+     breakdown — those are the working numbers that drive TP Live, and
+     their computed product becomes the new TP Fixed (frozen at the
+     approval moment so the firm has a stable target while TP Live
+     keeps refreshing daily as EPS estimates move). */
   var [showSubmitForm, setShowSubmitForm] = useState(false);
-  var [tpForm, setTpForm] = useState({fromTPFixed:"", toTPFixed:""});
+  var [tpForm, setTpForm] = useState({pe:"", eps1:"", eps2:"", w1:"", w2:""});
   /* True when this entry has already spawned a pending approval — used
      to disable the submit button and avoid duplicate requests. */
   var hasPending = (tpApprovals||[]).some(function(r){
@@ -539,15 +539,16 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
             {/* Submit TP change for approval. Only enabled when the user
                 has actually proposed a new TP. Saves the entry first (so
                 the rationale + takeaway are persisted) and then queues an
-                approval record linked to this entry. Approval target is
-                the TP Fixed field on company.valuation — when approved,
-                company.valuation.tpFixed becomes the new value. PE/EPS
-                are not touched by the approval flow. */}
+                approval record linked to this entry. On approve, the
+                proposed PE/EPS1/EPS2/W1/W2 are written to
+                company.valuation (driving TP Live going forward) AND
+                company.valuation.tpFixed is set to the computed TP at
+                the approval moment (so the team's "official" target
+                stays stable while TP Live keeps recalculating). */}
             {(function(){
               /* The trigger button — opens the inline form, pre-filling
-                 "Previous TP Fixed" with the company's current tpFixed
-                 (which uses getTpFixed to honor legacy normEPSFixed × PE)
-                 and leaving "New TP Fixed" empty so the user must type. */
+                 with the company's current valuation breakdown so the
+                 user only edits what's actually changing. */
               /* Submit-for-approval is for actual increases/decreases.
                  Empty tpChange (a new entry not yet reviewed) and
                  'Unchanged' (reaffirm, no TP movement) both skip the
@@ -558,16 +559,19 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
                   type="button"
                   onClick={function(){
                     if(!canOpen) return;
-                    var curFixed = getTpFixed(company.valuation || {});
+                    var v = company.valuation || {};
                     setTpForm({
-                      fromTPFixed: curFixed !== null && isFinite(curFixed) ? String(curFixed) : "",
-                      toTPFixed: "",
+                      pe:   v.pe   != null && v.pe   !== "" ? String(v.pe)   : "",
+                      eps1: v.eps1 != null && v.eps1 !== "" ? String(v.eps1) : "",
+                      eps2: v.eps2 != null && v.eps2 !== "" ? String(v.eps2) : "",
+                      w1:   v.w1   != null && v.w1   !== "" ? String(v.w1)   : "",
+                      w2:   v.w2   != null && v.w2   !== "" ? String(v.w2)   : "",
                     });
                     setShowSubmitForm(true);
                   }}
                   disabled={!canOpen}
                   className={"text-xs px-3 py-1.5 font-semibold rounded-md transition-colors " + (canOpen ? "bg-amber-600 text-white border-none cursor-pointer hover:bg-amber-700" : "bg-slate-200 dark:bg-slate-700 text-gray-400 dark:text-slate-500 border-none cursor-not-allowed")}
-                  title={hasPending ? "A TP change for this entry is already pending review" : "Submit a TP Fixed change for approval by another teammate"}
+                  title={hasPending ? "A TP change for this entry is already pending review" : "Submit the proposed TP for approval by another teammate"}
                 >
                   {hasPending ? "TP change pending" : "Submit TP change for approval"}
                 </button>
@@ -590,67 +594,69 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
             </span>
           </div>
 
-          {/* Inline TP-approval submission form. Captures the move on
-              TP Fixed: a "Previous" value (pre-filled from the company's
-              current tpFixed but editable so the user can correct it if
-              they already committed a direct change on the Valuation tab)
-              and a "New" value. PE / EPS / weights live on the Valuation
-              card and are NOT touched by approvals — this flow is purely
-              about the official TP Fixed number that the team agrees on. */}
+          {/* Inline TP-approval submission form. Captures the full
+              valuation breakdown (PE + EPS1 + EPS2 + W1 + W2) — those
+              are the working values that drive TP Live, and the
+              computed PE × normEPS is what becomes TP Fixed on approve.
+              Form pre-fills from company.valuation so the user only
+              edits what's actually changing. */}
           {showSubmitForm && (function(){
-            var fromVal = parseFloat(tpForm.fromTPFixed);
-            var toVal   = parseFloat(tpForm.toTPFixed);
+            var pe   = parseFloat(tpForm.pe);
+            var eps1 = parseFloat(tpForm.eps1);
+            var eps2 = parseFloat(tpForm.eps2);
+            var w1   = parseFloat(tpForm.w1);
+            var w2   = parseFloat(tpForm.w2);
+            /* normEPS uses the same weighted-blend formula as calcNormEPS
+               in utils/index.js. If only eps1 is set with no weights,
+               fall back to eps1 alone — same as the existing behavior. */
+            var normEPS = null;
+            if(isFinite(eps1) && isFinite(eps2) && isFinite(w1) && isFinite(w2)){
+              normEPS = (eps1*w1 + eps2*w2) / 100;
+            } else if(isFinite(eps1) && !isFinite(eps2)){
+              normEPS = eps1;
+            }
+            var computedTP = (isFinite(pe) && pe>0 && normEPS!==null) ? pe*normEPS : null;
             var enteredTP = parseFloat(e.newTP);
-            var canSubmit = isFinite(toVal) && toVal > 0
-              && isFinite(fromVal) && fromVal > 0
-              && Math.abs(toVal - fromVal) > 0.005;
-            var INP="text-xs px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 focus:ring-2 focus:ring-amber-500 focus:outline-none w-28";
+            var weightsTotal = (isFinite(w1)?w1:0) + (isFinite(w2)?w2:0);
+            var weightsOK = !isFinite(w1) && !isFinite(w2) ? true : Math.abs(weightsTotal - 100) < 0.01;
+            var canSubmit = isFinite(pe) && pe>0 && normEPS!==null && computedTP!==null && weightsOK;
+            var INP="text-xs px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 focus:ring-2 focus:ring-amber-500 focus:outline-none w-20";
             var LBL="text-[10px] text-gray-500 dark:text-slate-400 block mb-0.5 uppercase tracking-wide";
             return (
               <div className="mt-2 p-3 rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/30">
-                <div className="text-[11px] font-semibold text-amber-800 dark:text-amber-200 mb-2">Submit TP Fixed change for approval</div>
+                <div className="text-[11px] font-semibold text-amber-800 dark:text-amber-200 mb-2">Submit TP change for approval — full breakdown</div>
                 <div className="flex gap-3 flex-wrap items-end mb-2">
                   <div>
-                    <label className={LBL}>Previous TP Fixed ({currency})</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={tpForm.fromTPFixed}
-                      onChange={function(ev){setTpForm(Object.assign({},tpForm,{fromTPFixed:ev.target.value}));}}
-                      placeholder="e.g. 88.00"
-                      className={INP}
-                    />
+                    <label className={LBL}>PE</label>
+                    <input type="number" step="0.1" value={tpForm.pe} onChange={function(ev){setTpForm(Object.assign({},tpForm,{pe:ev.target.value}));}} className={INP}/>
                   </div>
-                  <span className="text-gray-500 dark:text-slate-400 pb-1.5">→</span>
+                  <span className="text-gray-500 dark:text-slate-400 pb-1">×</span>
                   <div>
-                    <label className={LBL}>New TP Fixed ({currency})</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={tpForm.toTPFixed}
-                      onChange={function(ev){setTpForm(Object.assign({},tpForm,{toTPFixed:ev.target.value}));}}
-                      placeholder="e.g. 111.00"
-                      className={INP}
-                      autoFocus
-                    />
+                    <label className={LBL}>EPS FY1</label>
+                    <input type="number" step="0.01" value={tpForm.eps1} onChange={function(ev){setTpForm(Object.assign({},tpForm,{eps1:ev.target.value}));}} className={INP}/>
                   </div>
-                  {isFinite(enteredTP) && enteredTP > 0 && (
-                    <button
-                      type="button"
-                      onClick={function(){setTpForm(Object.assign({},tpForm,{toTPFixed:String(enteredTP)}));}}
-                      className="text-[11px] px-2 py-1 rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer"
-                      title={"Copy the entry's \"New TP\" (" + currency + " " + enteredTP.toFixed(2) + ") into the New TP Fixed field"}
-                    >
-                      Use entry's New TP ({enteredTP.toFixed(2)})
-                    </button>
-                  )}
+                  <div>
+                    <label className={LBL}>W1 %</label>
+                    <input type="number" step="1" value={tpForm.w1} onChange={function(ev){setTpForm(Object.assign({},tpForm,{w1:ev.target.value}));}} className={INP}/>
+                  </div>
+                  <span className="text-gray-500 dark:text-slate-400 pb-1">+</span>
+                  <div>
+                    <label className={LBL}>EPS FY2</label>
+                    <input type="number" step="0.01" value={tpForm.eps2} onChange={function(ev){setTpForm(Object.assign({},tpForm,{eps2:ev.target.value}));}} className={INP}/>
+                  </div>
+                  <div>
+                    <label className={LBL}>W2 %</label>
+                    <input type="number" step="1" value={tpForm.w2} onChange={function(ev){setTpForm(Object.assign({},tpForm,{w2:ev.target.value}));}} className={INP}/>
+                  </div>
                 </div>
                 <div className="text-[11px] text-gray-600 dark:text-slate-300 mb-2 font-mono">
-                  {isFinite(fromVal) && isFinite(toVal) && Math.abs(toVal - fromVal) > 0.005 ? (
-                    <span>Change: {currency} {fromVal.toFixed(2)} → {currency} {toVal.toFixed(2)}
-                      {" "}({toVal > fromVal ? "+" : ""}{(((toVal - fromVal) / fromVal) * 100).toFixed(1)}%)</span>
-                  ) : (
-                    <span className="text-gray-400 dark:text-slate-500 italic">Enter Previous and New TP Fixed (must differ by &gt; $0.01)</span>
+                  Norm EPS = {normEPS!==null ? normEPS.toFixed(2) : "—"}
+                  &nbsp;·&nbsp; New TP Fixed = {computedTP!==null ? (currency + " " + computedTP.toFixed(2)) : "—"}
+                  {isFinite(enteredTP) && enteredTP > 0 && computedTP!==null && Math.abs(computedTP - enteredTP) / enteredTP > 0.02 && (
+                    <span className="ml-2 text-rose-600 dark:text-rose-400">Doesn't match entry's New TP ({currency} {enteredTP.toFixed(2)}) — review inputs</span>
+                  )}
+                  {!weightsOK && (
+                    <span className="ml-2 text-rose-600 dark:text-rose-400">Weights must sum to 100 (currently {weightsTotal})</span>
                   )}
                 </div>
                 <div className="flex gap-2 items-center">
@@ -660,21 +666,100 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
                     onClick={function(){
                       if(!canSubmit||!company) return;
                       var v = company.valuation || {};
+                      /* "From" snapshot strategy. The naive choice
+                         (company.valuation) breaks the moment the user
+                         commits new PE/EPS on the Valuation tab before
+                         opening this form: from === to and the approval
+                         card looks like a no-op. The semantically
+                         correct "from" is the LAST APPROVED state — the
+                         most recent tpHistory row tagged source:"approval".
+                         If no prior approval exists (first-time approval
+                         on a company), fall back to the first tpHistory
+                         row whose implied TP differs from the current
+                         valuation (catches commitValuation/earnings rows
+                         that represent a real earlier state). Last
+                         resort: current valuation. */
+                      function _impliedTp(src){
+                        var p = parseFloat(src.pe);
+                        var e1 = parseFloat(src.eps1);
+                        var e2 = parseFloat(src.eps2);
+                        var u1 = parseFloat(src.w1);
+                        var u2 = parseFloat(src.w2);
+                        var n = null;
+                        if(isFinite(e1) && isFinite(e2) && isFinite(u1) && isFinite(u2)){
+                          n = (e1*u1 + e2*u2) / 100;
+                        } else if(isFinite(e1)){
+                          n = e1;
+                        } else if(isFinite(parseFloat(src.eps))){
+                          n = parseFloat(src.eps);
+                        }
+                        return (isFinite(p) && n !== null) ? p*n : null;
+                      }
+                      var hist = company.tpHistory || [];
+                      var fromV = null;
+                      for(var hi = 0; hi < hist.length; hi++){
+                        if(hist[hi] && hist[hi].source === "approval"){
+                          fromV = hist[hi];
+                          break;
+                        }
+                      }
+                      if(!fromV){
+                        var currentImpliedTp = _impliedTp(v);
+                        if(currentImpliedTp !== null){
+                          for(var hj = 0; hj < hist.length; hj++){
+                            var h = hist[hj];
+                            if(!h) continue;
+                            var hTp = _impliedTp(h);
+                            if(hTp === null) continue;
+                            if(Math.abs(hTp - currentImpliedTp) < 0.01) continue;
+                            fromV = h;
+                            break;
+                          }
+                        }
+                      }
+                      if(!fromV) fromV = v;
+                      var fromPE   = parseFloat(fromV.pe);
+                      var fromEPS1 = parseFloat(fromV.eps1);
+                      var fromEPS2 = parseFloat(fromV.eps2);
+                      var fromW1   = parseFloat(fromV.w1);
+                      var fromW2   = parseFloat(fromV.w2);
+                      var fromNormEPS = null;
+                      if(isFinite(fromEPS1) && isFinite(fromEPS2) && isFinite(fromW1) && isFinite(fromW2)){
+                        fromNormEPS = (fromEPS1*fromW1 + fromEPS2*fromW2) / 100;
+                      } else if(isFinite(fromEPS1) && !isFinite(fromEPS2)){
+                        fromNormEPS = fromEPS1;
+                      } else if(isFinite(parseFloat(fromV.eps))){
+                        /* Legacy tpHistory entries only have blended `eps`. */
+                        fromNormEPS = parseFloat(fromV.eps);
+                      }
+                      var fromTP = (isFinite(fromPE)&&fromNormEPS!==null) ? fromPE*fromNormEPS : null;
                       onSave(e);
                       submitTpApproval({
                         companyId: company.id,
-                        kind: "tpFixed",
-                        /* fromTP / toTP are the canonical fields the
-                           approval card already renders and the border-
-                           color rule keys off. Under the TP-Fixed flow
-                           they're the previous and new tpFixed values. */
-                        fromTP: fromVal,
-                        toTP:   toVal,
+                        fromPE: isFinite(fromPE) ? fromPE : null,
+                        fromEPS1: isFinite(fromEPS1) ? fromEPS1 : null,
+                        fromEPS2: isFinite(fromEPS2) ? fromEPS2 : null,
+                        fromW1: isFinite(fromW1) ? fromW1 : null,
+                        fromW2: isFinite(fromW2) ? fromW2 : null,
+                        fromEPS: fromNormEPS,
+                        fromTP: fromTP,
+                        toPE: pe,
+                        toEPS1: isFinite(eps1) ? eps1 : null,
+                        toEPS2: isFinite(eps2) ? eps2 : null,
+                        toW1: isFinite(w1) ? w1 : null,
+                        toW2: isFinite(w2) ? w2 : null,
+                        toEPS: normEPS,
+                        toTP: computedTP,
                         /* The TP the suggester typed into the entry's
-                           "New TP" field. Kept as a sanity reference so
-                           the approver can see whether the entry text
-                           agrees with the value being voted on. */
+                           "New TP" field. Stored alongside the computed
+                           TP so the approver sees both — the proposal
+                           and what PE × normEPS actually produces. */
                         proposedTP: isFinite(enteredTP) ? enteredTP : null,
+                        /* Snapshot FY labels at submission time so the
+                           Weights display can read "FY26/FY27 50/50 →
+                           0/100" rather than the ambiguous "W1/W2". */
+                        fy1: v.fy1 || "",
+                        fy2: v.fy2 || "",
                         rationale: e.tpRationale || e.extendedTakeaway || "",
                         earningsEntryId: entry.id,
                       });

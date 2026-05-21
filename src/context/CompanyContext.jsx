@@ -833,41 +833,29 @@ export function CompanyProvider({children}){
         var v=Object.assign({},c.valuation||{});
         var today=todayStr();
         var ccy=(c.valuation&&c.valuation.currency)||"USD";
-        if(rec.kind==="tpFixed"){
-          /* New TP-Fixed flow: only tpFixed (and its date stamp) move.
-             PE / EPS / weights are intentionally untouched — they live
-             on the Valuation card and are not what this approval is
-             about. The tpHistory row is tagged kind:"tpFixed" so future
-             logic (and the approval card) can distinguish it from the
-             older PE/EPS flow rows. */
-          if(rec.toTP!==null&&rec.toTP!==undefined&&isFinite(rec.toTP)){
-            v.tpFixed=String(rec.toTP);
-            v.tpFixedDate=today;
-          }
-          var tpEntryFixed={
-            date:today,
-            tp:rec.toTP,
-            currency:ccy,
-            source:"approval",
-            kind:"tpFixed",
-            by:rec.suggestedBy,
-            approvedBy:currentUser,
-            rationale:rec.rationale||"",
-          };
-          return Object.assign({},c,{
-            valuation:v,
-            tpHistory:[tpEntryFixed].concat(c.tpHistory||[]),
-            lastUpdated:today,
-          });
-        }
-        /* Legacy PE/EPS flow (kept so any approval records that predate
-           the TP-Fixed refactor still apply cleanly when approved). */
+        /* Write every breakdown field the suggestion specifies. PE / EPS1
+           / EPS2 / W1 / W2 become the working valuation — these drive TP
+           Live, which keeps recomputing as EPS estimates update over
+           time. Then snapshot rec.toTP into tpFixed so the firm has a
+           stable target frozen at this approval's moment (PE × normEPS
+           at sign-off, regardless of subsequent EPS drift). Older records
+           that predate the breakdown only carry toPE/toEPS — handle
+           both for back-compat. */
         if(rec.toPE!==null&&rec.toPE!==undefined&&rec.toPE!=="")v.pe=rec.toPE;
         if(rec.toEPS1!==null&&rec.toEPS1!==undefined&&rec.toEPS1!=="")v.eps1=rec.toEPS1;
         else if(rec.toEPS!==null&&rec.toEPS!==undefined&&rec.toEPS!=="")v.eps1=rec.toEPS;
         if(rec.toEPS2!==null&&rec.toEPS2!==undefined&&rec.toEPS2!=="")v.eps2=rec.toEPS2;
         if(rec.toW1!==null&&rec.toW1!==undefined&&rec.toW1!=="")v.w1=rec.toW1;
         if(rec.toW2!==null&&rec.toW2!==undefined&&rec.toW2!=="")v.w2=rec.toW2;
+        /* TP Fixed snapshot at the approval moment. Uses the computed
+           toTP (PE × normEPS) — the moment-in-time target the team is
+           agreeing to. TP Live diverges from this going forward as EPS
+           estimates refresh; TP Fixed only changes via the next
+           approval. */
+        if(rec.toTP!==null&&rec.toTP!==undefined&&isFinite(rec.toTP)){
+          v.tpFixed=String(rec.toTP);
+          v.tpFixedDate=today;
+        }
         var tpEntry={
           date:today,
           tp:rec.toTP,

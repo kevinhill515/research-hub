@@ -46,27 +46,25 @@ function ApprovalCard({ rec, company, companyName, onApprove, onReject, onWithdr
 
   var authorColor = TEAM_COLORS[rec.suggestedBy] || "#6b7280";
 
-  /* Compute the change-summary line(s). TP-Fixed records (rec.kind ===
-     "tpFixed") just show the TP move; legacy PE/EPS records also show
-     the PE/EPS/Weights breakdown when those fields are present. */
+  /* Compute a tidy change-summary line. Show only the fields that
+     actually changed (e.g. an EPS-only revision shouldn't print "PE
+     12.0 → 12.0"). Newer records carry the full breakdown
+     (EPS1/EPS2/W1/W2) — older records only have a single EPS field. */
   function diff(a,b){return a!==b&&!(a==null&&b==null);}
   var changes = [];
-  var isTpFixed = rec.kind === "tpFixed";
-  if(!isTpFixed){
-    if(diff(rec.fromPE, rec.toPE)) changes.push("PE " + fmtNum(rec.fromPE,1) + " → " + fmtNum(rec.toPE,1));
-    if(diff(rec.fromEPS1, rec.toEPS1)) changes.push("EPS1 " + fmtNum(rec.fromEPS1,2) + " → " + fmtNum(rec.toEPS1,2));
-    if(diff(rec.fromEPS2, rec.toEPS2)) changes.push("EPS2 " + fmtNum(rec.fromEPS2,2) + " → " + fmtNum(rec.toEPS2,2));
-    if(diff(rec.fromW1, rec.toW1) || diff(rec.fromW2, rec.toW2)){
-      /* Include the FY labels (snapshotted on submission, e.g. "FY26/FY27")
-         so the reader doesn't have to remember which weight is which. */
-      var fyTag = (rec.fy1 || rec.fy2) ? " (" + (rec.fy1 || "FY1") + "/" + (rec.fy2 || "FY2") + ")" : "";
-      changes.push("Weights" + fyTag + " " + fmtNum(rec.fromW1,0) + "/" + fmtNum(rec.fromW2,0) + " → " + fmtNum(rec.toW1,0) + "/" + fmtNum(rec.toW2,0));
-    }
-    /* Fallback for legacy records (pre-breakdown), which only had a
-       blended EPS field. */
-    if(rec.fromEPS1==null && rec.toEPS1==null && diff(rec.fromEPS, rec.toEPS)){
-      changes.push("EPS " + fmtNum(rec.fromEPS,2) + " → " + fmtNum(rec.toEPS,2));
-    }
+  if(diff(rec.fromPE, rec.toPE)) changes.push("PE " + fmtNum(rec.fromPE,1) + " → " + fmtNum(rec.toPE,1));
+  if(diff(rec.fromEPS1, rec.toEPS1)) changes.push("EPS1 " + fmtNum(rec.fromEPS1,2) + " → " + fmtNum(rec.toEPS1,2));
+  if(diff(rec.fromEPS2, rec.toEPS2)) changes.push("EPS2 " + fmtNum(rec.fromEPS2,2) + " → " + fmtNum(rec.toEPS2,2));
+  if(diff(rec.fromW1, rec.toW1) || diff(rec.fromW2, rec.toW2)){
+    /* Include the FY labels (snapshotted on submission, e.g. "FY26/FY27")
+       so the reader doesn't have to remember which weight is which. */
+    var fyTag = (rec.fy1 || rec.fy2) ? " (" + (rec.fy1 || "FY1") + "/" + (rec.fy2 || "FY2") + ")" : "";
+    changes.push("Weights" + fyTag + " " + fmtNum(rec.fromW1,0) + "/" + fmtNum(rec.fromW2,0) + " → " + fmtNum(rec.toW1,0) + "/" + fmtNum(rec.toW2,0));
+  }
+  /* Fallback for legacy records (pre-breakdown), which only had a
+     blended EPS field. */
+  if(rec.fromEPS1==null && rec.toEPS1==null && diff(rec.fromEPS, rec.toEPS)){
+    changes.push("EPS " + fmtNum(rec.fromEPS,2) + " → " + fmtNum(rec.toEPS,2));
   }
   /* Pull currency + most-recent ord-ticker price from the live company.
      Lets us prefix TPs with the currency symbol and show what the
@@ -77,23 +75,15 @@ function ApprovalCard({ rec, company, companyName, onApprove, onReject, onWithdr
   var currentPrice = ord && ord.price !== undefined && ord.price !== "" ? parseFloat(ord.price) : parseFloat(v.price);
   var ccy = (ord && ord.currency) || v.currency || "USD";
   var pfx = ccyPrefix(ccy);
-  /* TP row:
-     - TP-Fixed flow: "TP Fixed X → Y" — what gets written to
-       company.valuation.tpFixed on approve.
-     - Legacy PE/EPS flow: the COMPUTED TP (PE × normEPS). If the
-       suggester also typed a proposed TP into the entry and it differs
-       from computed by more than a cent, surface both. */
-  var tpLabel;
-  if(isTpFixed){
-    tpLabel = "TP Fixed " + pfx + fmtNum(rec.fromTP,2) + " → " + pfx + fmtNum(rec.toTP,2);
-    if(rec.proposedTP!=null && isFinite(rec.proposedTP) && rec.toTP!=null && Math.abs(rec.proposedTP - rec.toTP) > 0.01){
-      tpLabel += "  ·  entry's New TP " + pfx + fmtNum(rec.proposedTP,2);
-    }
-  } else {
-    tpLabel = "TP " + pfx + fmtNum(rec.fromTP,2) + " → " + pfx + fmtNum(rec.toTP,2);
-    if(rec.proposedTP!=null && isFinite(rec.proposedTP) && rec.toTP!=null && Math.abs(rec.proposedTP - rec.toTP) > 0.01){
-      tpLabel += " (computed; proposed " + pfx + fmtNum(rec.proposedTP,2) + ")";
-    }
+  /* TP Fixed row. On approve, rec.toTP gets written to
+     company.valuation.tpFixed (the snapshot value), so this is exactly
+     what TP Fixed will be after sign-off. If the suggester also typed
+     a proposed TP into the entry's "New TP" field and it differs from
+     the computed value by more than a cent, surface both so the
+     approver sees the gap. */
+  var tpLabel = "TP Fixed " + pfx + fmtNum(rec.fromTP,2) + " → " + pfx + fmtNum(rec.toTP,2);
+  if(rec.proposedTP!=null && isFinite(rec.proposedTP) && rec.toTP!=null && Math.abs(rec.proposedTP - rec.toTP) > 0.01){
+    tpLabel += " (computed; proposed " + pfx + fmtNum(rec.proposedTP,2) + ")";
   }
   /* New MOS at today's price using the proposed TP — answers the
      approver's natural question "if I approve, what's the new MOS?"
