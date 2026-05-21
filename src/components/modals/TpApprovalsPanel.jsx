@@ -93,7 +93,10 @@ function ApprovalCard({ rec, company, companyName, onApprove, onReject, onWithdr
     var newMOS = calcMOS(rec.toTP, currentPrice);
     if(newMOS !== null){
       var sign = newMOS >= 0 ? "+" : "";
-      tpLabel += "  ·  New MOS " + sign + newMOS.toFixed(1) + "% @ " + pfx + fmtNum(currentPrice,2);
+      /* Explicitly label "price" so this isn't mistaken for an old TP
+         value — the @-clause is the current stock price used to compute
+         the new MOS, not a TP reference. */
+      tpLabel += "  ·  New MOS " + sign + newMOS.toFixed(1) + "% at price " + pfx + fmtNum(currentPrice,2);
     }
   }
   changes.push(tpLabel);

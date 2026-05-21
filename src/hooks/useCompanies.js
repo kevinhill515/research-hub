@@ -179,7 +179,24 @@ export function useCompanies(){
     var updates={valuation:newVal};
     if(newTp!==null&&newTp!==oldTp){
       var fyLabel=impliedFYLabel(newVal);
-      var entry={date:todayStr(),tp:newTp,pe:newVal.pe,eps:String(newNE||""),fyLabel,currency:activeCurrency};
+      /* Capture the FULL breakdown (eps1/eps2/w1/w2) alongside the
+         blended eps/pe/tp so future TP approvals can show a real "from"
+         on the diff card (PE X → Y, EPS1 X → Y, etc.) when the user
+         submits one after committing valuation edits here. Previously
+         only pe + blended eps were stored, which left the approval
+         card's "from" breakdown blank. */
+      var entry={
+        date:todayStr(),
+        tp:newTp,
+        pe:newVal.pe,
+        eps:String(newNE||""),
+        eps1:newVal.eps1,
+        eps2:newVal.eps2,
+        w1:newVal.w1,
+        w2:newVal.w2,
+        fyLabel,
+        currency:activeCurrency,
+      };
       updates.tpHistory=[entry].concat(co.tpHistory||[]);
     }
     var u=Object.assign({},co,updates);

@@ -666,58 +666,62 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
                     onClick={function(){
                       if(!canSubmit||!company) return;
                       var v = company.valuation || {};
-                      /* "From" snapshot strategy. The naive choice
-                         (company.valuation) breaks the moment the user
-                         commits new PE/EPS on the Valuation tab before
-                         opening this form: from === to and the approval
-                         card looks like a no-op. The semantically
-                         correct "from" is the LAST APPROVED state — the
-                         most recent tpHistory row tagged source:"approval".
-                         If no prior approval exists (first-time approval
-                         on a company), fall back to the first tpHistory
-                         row whose implied TP differs from the current
-                         valuation (catches commitValuation/earnings rows
-                         that represent a real earlier state). Last
-                         resort: current valuation. */
-                      function _impliedTp(src){
-                        var p = parseFloat(src.pe);
-                        var e1 = parseFloat(src.eps1);
-                        var e2 = parseFloat(src.eps2);
-                        var u1 = parseFloat(src.w1);
-                        var u2 = parseFloat(src.w2);
-                        var n = null;
-                        if(isFinite(e1) && isFinite(e2) && isFinite(u1) && isFinite(u2)){
-                          n = (e1*u1 + e2*u2) / 100;
-                        } else if(isFinite(e1)){
-                          n = e1;
-                        } else if(isFinite(parseFloat(src.eps))){
-                          n = parseFloat(src.eps);
-                        }
-                        return (isFinite(p) && n !== null) ? p*n : null;
+                      /* "From" snapshot strategy:
+                         - fromTP = the value of company.valuation.tpFixed
+                           AS IT STANDS RIGHT NOW. That's the previous
+                           official TP — whether it landed via a prior
+                           approval or a direct edit on the Valuation tab.
+                           Falls back to legacy normEPSFixed × PE when
+                           tpFixed isn't set.
+                         - From breakdown (PE/EPS1/EPS2/W1/W2): pull from
+                           the most recent tpHistory row that actually
+                           HAS the full breakdown. Prefer source:"approval"
+                           rows; if none, any row with the full breakdown
+                           fields; if still nothing, leave breakdown null
+                           (the card will show "—" rather than wrong data).
+                         The from-TP and from-breakdown can refer to
+                         different points in time when the user has done
+                         direct edits — we surface the breakdown we have
+                         on record while keeping fromTP truthful to the
+                         current TP Fixed shown on the Valuation card. */
+                      function _hasFullBreakdown(src){
+                        if(!src) return false;
+                        return isFinite(parseFloat(src.pe))
+                          && isFinite(parseFloat(src.eps1))
+                          && isFinite(parseFloat(src.eps2))
+                          && isFinite(parseFloat(src.w1))
+                          && isFinite(parseFloat(src.w2));
                       }
                       var hist = company.tpHistory || [];
                       var fromV = null;
+                      /* Pass 1: most recent approval row with full breakdown. */
                       for(var hi = 0; hi < hist.length; hi++){
-                        if(hist[hi] && hist[hi].source === "approval"){
+                        if(hist[hi] && hist[hi].source === "approval" && _hasFullBreakdown(hist[hi])){
                           fromV = hist[hi];
                           break;
                         }
                       }
+                      /* Pass 2: any row with full breakdown. */
                       if(!fromV){
-                        var currentImpliedTp = _impliedTp(v);
-                        if(currentImpliedTp !== null){
-                          for(var hj = 0; hj < hist.length; hj++){
-                            var h = hist[hj];
-                            if(!h) continue;
-                            var hTp = _impliedTp(h);
-                            if(hTp === null) continue;
-                            if(Math.abs(hTp - currentImpliedTp) < 0.01) continue;
+                        for(var hj = 0; hj < hist.length; hj++){
+                          if(_hasFullBreakdown(hist[hj])){
+                            fromV = hist[hj];
+                            break;
+                          }
+                        }
+                      }
+                      /* Pass 3: any row with at least a blended eps. */
+                      if(!fromV){
+                        for(var hk = 0; hk < hist.length; hk++){
+                          var h = hist[hk];
+                          if(h && isFinite(parseFloat(h.pe)) && isFinite(parseFloat(h.eps))){
                             fromV = h;
                             break;
                           }
                         }
                       }
-                      if(!fromV) fromV = v;
+                      /* Nothing usable in history — leave breakdown empty. */
+                      if(!fromV) fromV = {};
                       var fromPE   = parseFloat(fromV.pe);
                       var fromEPS1 = parseFloat(fromV.eps1);
                       var fromEPS2 = parseFloat(fromV.eps2);
@@ -732,7 +736,16 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
                         /* Legacy tpHistory entries only have blended `eps`. */
                         fromNormEPS = parseFloat(fromV.eps);
                       }
-                      var fromTP = (isFinite(fromPE)&&fromNormEPS!==null) ? fromPE*fromNormEPS : null;
+                      /* fromTP = the company's current TP Fixed (what the
+                         user sees as "previous" on the Valuation card).
+                         Uses getTpFixed so the legacy normEPSFixed × PE
+                         path still works for old data. */
+                      var fromTP = getTpFixed(v);
+                      if(fromTP === null && isFinite(fromPE) && fromNormEPS !== null){
+                        /* Last-ditch fallback when tpFixed has never been
+                           set: derive from whatever breakdown we found. */
+                        fromTP = fromPE * fromNormEPS;
+                      }
                       onSave(e);
                       submitTpApproval({
                         companyId: company.id,
