@@ -831,11 +831,37 @@ export function CompanyProvider({children}){
       return cs.map(function(c){
         if(c.id!==rec.companyId)return c;
         var v=Object.assign({},c.valuation||{});
-        /* Write every breakdown field the suggestion specifies. The
-           submission form captures the full PE+EPS1+EPS2+W1+W2 shape
-           the rest of the app uses, so approval can apply it verbatim
-           without back-solving anything. Older records (pre-breakdown
-           expansion) only have toPE/toEPS — handle both for back-compat. */
+        var today=todayStr();
+        var ccy=(c.valuation&&c.valuation.currency)||"USD";
+        if(rec.kind==="tpFixed"){
+          /* New TP-Fixed flow: only tpFixed (and its date stamp) move.
+             PE / EPS / weights are intentionally untouched — they live
+             on the Valuation card and are not what this approval is
+             about. The tpHistory row is tagged kind:"tpFixed" so future
+             logic (and the approval card) can distinguish it from the
+             older PE/EPS flow rows. */
+          if(rec.toTP!==null&&rec.toTP!==undefined&&isFinite(rec.toTP)){
+            v.tpFixed=String(rec.toTP);
+            v.tpFixedDate=today;
+          }
+          var tpEntryFixed={
+            date:today,
+            tp:rec.toTP,
+            currency:ccy,
+            source:"approval",
+            kind:"tpFixed",
+            by:rec.suggestedBy,
+            approvedBy:currentUser,
+            rationale:rec.rationale||"",
+          };
+          return Object.assign({},c,{
+            valuation:v,
+            tpHistory:[tpEntryFixed].concat(c.tpHistory||[]),
+            lastUpdated:today,
+          });
+        }
+        /* Legacy PE/EPS flow (kept so any approval records that predate
+           the TP-Fixed refactor still apply cleanly when approved). */
         if(rec.toPE!==null&&rec.toPE!==undefined&&rec.toPE!=="")v.pe=rec.toPE;
         if(rec.toEPS1!==null&&rec.toEPS1!==undefined&&rec.toEPS1!=="")v.eps1=rec.toEPS1;
         else if(rec.toEPS!==null&&rec.toEPS!==undefined&&rec.toEPS!=="")v.eps1=rec.toEPS;
@@ -843,7 +869,7 @@ export function CompanyProvider({children}){
         if(rec.toW1!==null&&rec.toW1!==undefined&&rec.toW1!=="")v.w1=rec.toW1;
         if(rec.toW2!==null&&rec.toW2!==undefined&&rec.toW2!=="")v.w2=rec.toW2;
         var tpEntry={
-          date:todayStr(),
+          date:today,
           tp:rec.toTP,
           pe:rec.toPE,
           eps:rec.toEPS,
@@ -851,7 +877,7 @@ export function CompanyProvider({children}){
           eps2:rec.toEPS2,
           w1:rec.toW1,
           w2:rec.toW2,
-          currency:(c.valuation&&c.valuation.currency)||"USD",
+          currency:ccy,
           source:"approval",
           by:rec.suggestedBy,
           approvedBy:currentUser,
@@ -860,7 +886,7 @@ export function CompanyProvider({children}){
         return Object.assign({},c,{
           valuation:v,
           tpHistory:[tpEntry].concat(c.tpHistory||[]),
-          lastUpdated:todayStr(),
+          lastUpdated:today,
         });
       });
     });
