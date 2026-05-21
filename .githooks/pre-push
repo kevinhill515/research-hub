@@ -9,6 +9,22 @@ set -e
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$REPO_ROOT"
 
+# Detect Windows-network-share situation. On Windows, cmd.exe (which npm
+# spawns to run scripts) refuses to use UNC paths like \\server\share as
+# a cwd and silently falls back to C:\Windows — which makes vite/vitest
+# look for the project in the wrong place. If we detect that, skip the
+# npm-based checks with a clear note. Pushing is still allowed; the
+# server-side CI (or a local clone on a fixed drive) is the real safety
+# net in that case.
+ON_WINDOWS_UNC=false
+case "$(uname -s 2>/dev/null)" in
+  MINGW*|MSYS*|CYGWIN*)
+    case "$REPO_ROOT" in
+      //*|\\\\*) ON_WINDOWS_UNC=true ;;
+    esac
+    ;;
+esac
+
 if [ ! -f "package.json" ]; then
   echo "pre-push: package.json not found, skipping check."
   exit 0
@@ -20,11 +36,33 @@ if ! command -v npm >/dev/null 2>&1; then
   exit 0
 fi
 
+if [ "$ON_WINDOWS_UNC" = "true" ]; then
+  echo "pre-push: repo is on a Windows network share (UNC path)."
+  echo "          cmd.exe can't use UNC paths as cwd, so npm test/build"
+  echo "          can't run reliably here. Skipping local gate — rely on"
+  echo "          CI or run \`npm run check\` manually before pushing."
+  exit 0
+fi
+
 echo "pre-push: running npm test…"
-if ! npm test --silent; then
-  echo ""
-  echo "pre-push: TESTS FAILED — fix failures above and retry, or push with --no-verify to bypass."
-  exit 1
+# Capture output so we can distinguish "no test files yet" from real failures.
+# Use `if !` so the command's non-zero exit doesn't trip `set -e` above; we
+# want to inspect the exit code ourselves.
+if ! TEST_OUT="$(npm test --silent 2>&1)"; then
+  echo "$TEST_OUT"
+  # Vitest exits 1 when there are zero test files. Treat that as a pass —
+  # the build check below is what actually gates broken pushes. Real test
+  # failures (assertions, syntax errors) still produce exit 1 but with
+  # different output, which we let fail.
+  if echo "$TEST_OUT" | grep -q "No test files found"; then
+    echo "pre-push: no test files yet — skipping test gate."
+  else
+    echo ""
+    echo "pre-push: TESTS FAILED — fix failures above and retry, or push with --no-verify to bypass."
+    exit 1
+  fi
+else
+  echo "$TEST_OUT"
 fi
 
 echo "pre-push: running npm run check (vite build)…"
