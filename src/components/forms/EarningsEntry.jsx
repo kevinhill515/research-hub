@@ -662,16 +662,65 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
                     onClick={function(){
                       if(!canSubmit||!company) return;
                       var v = company.valuation || {};
-                      var fromPE   = parseFloat(v.pe);
-                      var fromEPS1 = parseFloat(v.eps1);
-                      var fromEPS2 = parseFloat(v.eps2);
-                      var fromW1   = parseFloat(v.w1);
-                      var fromW2   = parseFloat(v.w2);
+                      /* Pick the "from" snapshot. Normally that's the company's
+                         CURRENT valuation — but if the user just committed
+                         new PE/EPS on the Valuation tab before opening this
+                         form, the "current" valuation already IS the new
+                         values, so fromTP would equal toTP and the approval
+                         card would show no movement. Detect that case by
+                         comparing the most recent tpHistory entry's TP to
+                         what the current valuation produces: if they match
+                         (within a penny), the most recent entry IS the
+                         just-committed change, so back up one step and use
+                         tpHistory[1] as the real prior state. */
+                      var fromV = v;
+                      var hist = company.tpHistory || [];
+                      if(hist.length >= 2){
+                        var vEps1 = parseFloat(v.eps1);
+                        var vEps2 = parseFloat(v.eps2);
+                        var vW1   = parseFloat(v.w1);
+                        var vW2   = parseFloat(v.w2);
+                        var vPe   = parseFloat(v.pe);
+                        var vNorm = null;
+                        if(isFinite(vEps1) && isFinite(vEps2) && isFinite(vW1) && isFinite(vW2)){
+                          vNorm = (vEps1*vW1 + vEps2*vW2) / 100;
+                        } else if(isFinite(vEps1)){
+                          vNorm = vEps1;
+                        } else if(isFinite(parseFloat(v.eps))){
+                          vNorm = parseFloat(v.eps);
+                        }
+                        var vTp = (isFinite(vPe) && vNorm !== null) ? vPe*vNorm : null;
+                        var topTp = hist[0] && hist[0].tp != null ? parseFloat(hist[0].tp) : null;
+                        if(vTp !== null && topTp !== null && isFinite(topTp) && Math.abs(topTp - vTp) < 0.01){
+                          /* Most recent history entry IS the current state —
+                             use the prior entry's breakdown for "from".
+                             Legacy entries only carry blended `eps`, so the
+                             breakdown fields may be missing; the approval
+                             card already handles that gracefully. */
+                          var prior = hist[1] || {};
+                          fromV = {
+                            pe:   prior.pe,
+                            eps:  prior.eps,
+                            eps1: prior.eps1,
+                            eps2: prior.eps2,
+                            w1:   prior.w1,
+                            w2:   prior.w2,
+                          };
+                        }
+                      }
+                      var fromPE   = parseFloat(fromV.pe);
+                      var fromEPS1 = parseFloat(fromV.eps1);
+                      var fromEPS2 = parseFloat(fromV.eps2);
+                      var fromW1   = parseFloat(fromV.w1);
+                      var fromW2   = parseFloat(fromV.w2);
                       var fromNormEPS = null;
                       if(isFinite(fromEPS1) && isFinite(fromEPS2) && isFinite(fromW1) && isFinite(fromW2)){
                         fromNormEPS = (fromEPS1*fromW1 + fromEPS2*fromW2) / 100;
                       } else if(isFinite(fromEPS1) && !isFinite(fromEPS2)){
                         fromNormEPS = fromEPS1;
+                      } else if(isFinite(parseFloat(fromV.eps))){
+                        /* Legacy tpHistory entries only have blended `eps`. */
+                        fromNormEPS = parseFloat(fromV.eps);
                       }
                       var fromTP = (isFinite(fromPE)&&fromNormEPS!==null) ? fromPE*fromNormEPS : null;
                       onSave(e);
