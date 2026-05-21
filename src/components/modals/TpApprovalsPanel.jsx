@@ -75,14 +75,23 @@ function ApprovalCard({ rec, company, companyName, onApprove, onReject, onWithdr
   var currentPrice = ord && ord.price !== undefined && ord.price !== "" ? parseFloat(ord.price) : parseFloat(v.price);
   var ccy = (ord && ord.currency) || v.currency || "USD";
   var pfx = ccyPrefix(ccy);
-  /* TP Fixed row. On approve, rec.toTP gets written to
-     company.valuation.tpFixed (the snapshot value), so this is exactly
-     what TP Fixed will be after sign-off. If the suggester also typed
-     a proposed TP into the entry's "New TP" field and it differs from
-     the computed value by more than a cent, surface both so the
-     approver sees the gap. */
+  /* TP Fixed row. rec.toTP is what gets written to
+     company.valuation.tpFixed on approve — for new records that's the
+     suggester's PROPOSED value (clean round number), and PE × normEPS
+     is saved separately as rec.computedTP for sanity. Old records
+     stored the computed value as rec.toTP and the proposed value as
+     rec.proposedTP — we handle both shapes here so the card reads
+     correctly regardless of when the record was submitted. */
   var tpLabel = "TP Fixed " + pfx + fmtNum(rec.fromTP,2) + " → " + pfx + fmtNum(rec.toTP,2);
-  if(rec.proposedTP!=null && isFinite(rec.proposedTP) && rec.toTP!=null && Math.abs(rec.proposedTP - rec.toTP) > 0.01){
+  if(rec.computedTP != null && isFinite(rec.computedTP) && rec.toTP != null
+      && Math.abs(rec.computedTP - rec.toTP) > 0.01){
+    /* New format: toTP is the proposed/official value; computedTP is the
+       PE × normEPS math, surfaced when it diverges from the proposed. */
+    tpLabel += " (PE × EPS = " + pfx + fmtNum(rec.computedTP,2) + ")";
+  } else if(rec.proposedTP != null && isFinite(rec.proposedTP) && rec.toTP != null
+      && Math.abs(rec.proposedTP - rec.toTP) > 0.01){
+    /* Old format: toTP is the computed value; proposedTP is the suggester's
+       typed New TP. Kept so existing pending records still render meaningfully. */
     tpLabel += " (computed; proposed " + pfx + fmtNum(rec.proposedTP,2) + ")";
   }
   /* New MOS at today's price using the proposed TP — answers the

@@ -747,6 +747,20 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
                         fromTP = fromPE * fromNormEPS;
                       }
                       onSave(e);
+                      /* toTP is what gets stamped onto company.valuation.tpFixed
+                         when approved. It's the suggester's PROPOSED value (the
+                         entry's "New TP" — typically a clean round number like
+                         £6.70 rather than the slightly-off-from-rounding
+                         PE × normEPS result of £6.71). Fall back to the
+                         computed value when no New TP was typed.
+
+                         computedTP is stored separately so the approval card
+                         can show "(PE × EPS ≈ £6.71)" as a sanity check when
+                         the proposed and computed values diverge. PE / EPS1 /
+                         EPS2 / W1 / W2 still flow through to company.valuation
+                         on approve, so TP Live keeps recomputing from them
+                         each day. */
+                      var finalToTP = isFinite(enteredTP) && enteredTP > 0 ? enteredTP : computedTP;
                       submitTpApproval({
                         companyId: company.id,
                         fromPE: isFinite(fromPE) ? fromPE : null,
@@ -762,11 +776,15 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
                         toW1: isFinite(w1) ? w1 : null,
                         toW2: isFinite(w2) ? w2 : null,
                         toEPS: normEPS,
-                        toTP: computedTP,
-                        /* The TP the suggester typed into the entry's
-                           "New TP" field. Stored alongside the computed
-                           TP so the approver sees both — the proposal
-                           and what PE × normEPS actually produces. */
+                        toTP: finalToTP,
+                        /* What the PE × normEPS math actually produces, even
+                           when the suggester rounded to a cleaner number for
+                           the proposed TP. Approval card displays this as a
+                           sanity check next to toTP if they differ. */
+                        computedTP: computedTP,
+                        /* Legacy field, kept for compat with older approval
+                           records and the approval-card display logic that
+                           reads it. For new records this equals finalToTP. */
                         proposedTP: isFinite(enteredTP) ? enteredTP : null,
                         /* Snapshot FY labels at submission time so the
                            Weights display can read "FY26/FY27 50/50 →
