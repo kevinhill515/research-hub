@@ -105,8 +105,33 @@ function ApprovalCard({ rec, company, companyName, onApprove, onReject, onWithdr
     statusBadge = <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 font-semibold">Pending</span>;
   }
 
+  /* TP direction → tile border color. Green for an increase, red for a
+     decrease — gives a glance-level read of whether each suggestion is
+     a TP raise or cut without parsing the From/To numbers. Falls back
+     to the previous neutral border colors when both TPs aren't parseable
+     or are equal (within a penny). */
+  var fromTPNum = parseFloat(rec.fromTP);
+  var toTPNum = parseFloat(rec.toTP);
+  var tpDirection = null; /* "up" | "down" | null */
+  if(isFinite(fromTPNum) && isFinite(toTPNum) && Math.abs(toTPNum - fromTPNum) > 0.005){
+    tpDirection = toTPNum > fromTPNum ? "up" : "down";
+  }
+  var tileBorder;
+  if(tpDirection === "up"){
+    tileBorder = "border-2 border-emerald-500 dark:border-emerald-500";
+  } else if(tpDirection === "down"){
+    tileBorder = "border-2 border-rose-500 dark:border-rose-500";
+  } else if(rec.status === "pending"){
+    tileBorder = "border border-amber-200 dark:border-amber-800";
+  } else {
+    tileBorder = "border border-slate-200 dark:border-slate-700";
+  }
+  var tileBg = rec.status === "pending"
+    ? "bg-white dark:bg-slate-900"
+    : "bg-slate-50 dark:bg-slate-800/50 opacity-80";
+
   return (
-    <div className={"rounded-lg border p-3 mb-2 " + (rec.status === "pending" ? "bg-white dark:bg-slate-900 border-amber-200 dark:border-amber-800" : "bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 opacity-80")}>
+    <div className={"rounded-lg p-3 mb-2 " + tileBorder + " " + tileBg}>
       <div className="flex items-center gap-2 mb-1.5 flex-wrap">
         <span className="w-2 h-2 rounded-full" style={{background: authorColor}}/>
         <span className="text-xs font-semibold text-gray-900 dark:text-slate-100">{rec.suggestedBy}</span>
