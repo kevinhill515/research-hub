@@ -662,50 +662,60 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
                     onClick={function(){
                       if(!canSubmit||!company) return;
                       var v = company.valuation || {};
-                      /* Pick the "from" snapshot. Normally that's the company's
-                         CURRENT valuation — but if the user just committed
-                         new PE/EPS on the Valuation tab before opening this
-                         form, the "current" valuation already IS the new
-                         values, so fromTP would equal toTP and the approval
-                         card would show no movement. Detect that case by
-                         comparing the most recent tpHistory entry's TP to
-                         what the current valuation produces: if they match
-                         (within a penny), the most recent entry IS the
-                         just-committed change, so back up one step and use
-                         tpHistory[1] as the real prior state. */
+                      /* Pick the "from" snapshot. The naive choice — read
+                         company.valuation — produces fromTP === toTP
+                         whenever the user committed new PE/EPS on the
+                         Valuation tab before opening this form (and also
+                         when saveEarningsEntry has auto-pushed a row to
+                         tpHistory carrying the current valuation's PE/EPS).
+                         To find the true prior state we walk tpHistory
+                         newest-first and pick the first entry whose
+                         IMPLIED TP (pe × normEPS, computed from whatever
+                         fields the row carries) differs from the current
+                         valuation's implied TP by more than a penny. That
+                         entry is the most recent state that was actually
+                         DIFFERENT from where we are now — i.e., the move
+                         this approval is meant to authorize. Falls back
+                         to current valuation when no such entry exists. */
+                      function _impliedTp(src){
+                        var p = parseFloat(src.pe);
+                        var e1 = parseFloat(src.eps1);
+                        var e2 = parseFloat(src.eps2);
+                        var u1 = parseFloat(src.w1);
+                        var u2 = parseFloat(src.w2);
+                        var n = null;
+                        if(isFinite(e1) && isFinite(e2) && isFinite(u1) && isFinite(u2)){
+                          n = (e1*u1 + e2*u2) / 100;
+                        } else if(isFinite(e1)){
+                          n = e1;
+                        } else if(isFinite(parseFloat(src.eps))){
+                          n = parseFloat(src.eps);
+                        }
+                        return (isFinite(p) && n !== null) ? p*n : null;
+                      }
                       var fromV = v;
                       var hist = company.tpHistory || [];
-                      if(hist.length >= 2){
-                        var vEps1 = parseFloat(v.eps1);
-                        var vEps2 = parseFloat(v.eps2);
-                        var vW1   = parseFloat(v.w1);
-                        var vW2   = parseFloat(v.w2);
-                        var vPe   = parseFloat(v.pe);
-                        var vNorm = null;
-                        if(isFinite(vEps1) && isFinite(vEps2) && isFinite(vW1) && isFinite(vW2)){
-                          vNorm = (vEps1*vW1 + vEps2*vW2) / 100;
-                        } else if(isFinite(vEps1)){
-                          vNorm = vEps1;
-                        } else if(isFinite(parseFloat(v.eps))){
-                          vNorm = parseFloat(v.eps);
-                        }
-                        var vTp = (isFinite(vPe) && vNorm !== null) ? vPe*vNorm : null;
-                        var topTp = hist[0] && hist[0].tp != null ? parseFloat(hist[0].tp) : null;
-                        if(vTp !== null && topTp !== null && isFinite(topTp) && Math.abs(topTp - vTp) < 0.01){
-                          /* Most recent history entry IS the current state —
-                             use the prior entry's breakdown for "from".
-                             Legacy entries only carry blended `eps`, so the
-                             breakdown fields may be missing; the approval
-                             card already handles that gracefully. */
-                          var prior = hist[1] || {};
+                      var currentImpliedTp = _impliedTp(v);
+                      if(currentImpliedTp !== null){
+                        for(var hi = 0; hi < hist.length; hi++){
+                          var h = hist[hi];
+                          if(!h) continue;
+                          var hTp = _impliedTp(h);
+                          if(hTp === null) continue;
+                          if(Math.abs(hTp - currentImpliedTp) < 0.01) continue;
+                          /* First meaningfully-different prior state. Use its
+                             pe/eps breakdown for "from". Legacy entries only
+                             have a blended `eps` — the fromNormEPS
+                             computation below handles that shape too. */
                           fromV = {
-                            pe:   prior.pe,
-                            eps:  prior.eps,
-                            eps1: prior.eps1,
-                            eps2: prior.eps2,
-                            w1:   prior.w1,
-                            w2:   prior.w2,
+                            pe:   h.pe,
+                            eps:  h.eps,
+                            eps1: h.eps1,
+                            eps2: h.eps2,
+                            w1:   h.w1,
+                            w2:   h.w2,
                           };
+                          break;
                         }
                       }
                       var fromPE   = parseFloat(fromV.pe);
