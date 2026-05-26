@@ -39,6 +39,18 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
      keeps refreshing daily as EPS estimates move). */
   var [showSubmitForm, setShowSubmitForm] = useState(false);
   var [tpForm, setTpForm] = useState({pe:"", eps1:"", eps2:"", w1:"", w2:""});
+  /* Snapshot of the LAST-APPROVED state captured at the moment the user
+     opens the proposal form. PE / W1 / W2 / TP come from
+     company.valuation (those are stable assumptions that don't change
+     with daily price/estimates pulls). EPS1 / EPS2 are user-entered
+     because valuation.eps1 / eps2 hold the DAILY-updated consensus
+     estimates, not the locked EPS values that were approved with the
+     last TP. When a prior approval row exists in tpHistory with a full
+     breakdown, those EPS fields get pre-filled from it; otherwise the
+     user types them in. Pinning the from-snapshot here (form open time)
+     instead of computing it at submit time means the approval card
+     always renders a meaningful From -> To. */
+  var [tpFrom, setTpFrom] = useState({pe:"", eps1:"", eps2:"", w1:"", w2:"", tp:""});
   /* True when this entry has already spawned a pending approval — used
      to disable the submit button and avoid duplicate requests. */
   var hasPending = (tpApprovals||[]).some(function(r){
@@ -567,6 +579,57 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
                       w1:   v.w1   != null && v.w1   !== "" ? String(v.w1)   : "",
                       w2:   v.w2   != null && v.w2   !== "" ? String(v.w2)   : "",
                     });
+                    /* Capture the last-approved baseline. Look up the most
+                       recent tpHistory row from an approval that has the
+                       full PE/EPS1/EPS2/W1/W2 breakdown — those are
+                       authoritative since they got blessed at approval
+                       time. If none exist, fall back to v.pe / v.w1 / v.w2
+                       (the stable target-PE and weight assumptions) and
+                       leave EPS slots blank for the user to fill in. */
+                    var hist = company.tpHistory || [];
+                    var priorApproval = null;
+                    for(var hi=0; hi<hist.length; hi++){
+                      var h = hist[hi];
+                      if(h && h.source === "approval"
+                          && isFinite(parseFloat(h.pe))
+                          && isFinite(parseFloat(h.eps1))
+                          && isFinite(parseFloat(h.eps2))
+                          && isFinite(parseFloat(h.w1))
+                          && isFinite(parseFloat(h.w2))){
+                        priorApproval = h;
+                        break;
+                      }
+                    }
+                    function _pickFromHistOrValuation(field){
+                      if(priorApproval && priorApproval[field] != null && priorApproval[field] !== ""){
+                        return String(priorApproval[field]);
+                      }
+                      return v[field] != null && v[field] !== "" ? String(v[field]) : "";
+                    }
+                    setTpFrom({
+                      /* PE / W1 / W2 are stable in valuation regardless of
+                         approval history — these are the "Target PE" and
+                         "Weights" the team locks in. Default from history
+                         if present so the approval card matches the
+                         immediately-prior approved state exactly. */
+                      pe:   _pickFromHistOrValuation("pe"),
+                      w1:   _pickFromHistOrValuation("w1"),
+                      w2:   _pickFromHistOrValuation("w2"),
+                      /* EPS1 / EPS2: only history is authoritative — the
+                         valuation values are DAILY updated and don't
+                         reflect what was locked at last approval. Leave
+                         blank when no history; user types the
+                         last-approved EPS values manually. */
+                      eps1: priorApproval && priorApproval.eps1 != null && priorApproval.eps1 !== "" ? String(priorApproval.eps1) : "",
+                      eps2: priorApproval && priorApproval.eps2 != null && priorApproval.eps2 !== "" ? String(priorApproval.eps2) : "",
+                      /* TP: use the company's current TP Fixed — that IS the
+                         last-approved TP regardless of whether the breakdown
+                         survives. getTpFixed handles legacy normEPSFixed × PE. */
+                      tp: (function(){
+                        var t = getTpFixed(v);
+                        return t != null && isFinite(t) ? String(t) : "";
+                      })(),
+                    });
                     setShowSubmitForm(true);
                   }}
                   disabled={!canOpen}
@@ -625,6 +688,45 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
             return (
               <div className="mt-2 p-3 rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/30">
                 <div className="text-[11px] font-semibold text-amber-800 dark:text-amber-200 mb-2">Submit TP change for approval — full breakdown</div>
+                {/* PREVIOUS (last-approved) row.
+                    PE / W1 / W2 / TP autofill from valuation + tpHistory
+                    when the form opens. EPS1 / EPS2 autofill ONLY from
+                    tpHistory (since valuation.eps holds the daily-updated
+                    consensus, not the EPS values locked at last
+                    approval). Every cell is editable so the user can
+                    correct or supply values the system doesn't have. */}
+                <div className="text-[10px] font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide mb-1">Previous (last approved)</div>
+                <div className="flex gap-3 flex-wrap items-end mb-2">
+                  <div>
+                    <label className={LBL}>PE</label>
+                    <input type="number" step="0.1" value={tpFrom.pe} onChange={function(ev){setTpFrom(Object.assign({},tpFrom,{pe:ev.target.value}));}} className={INP}/>
+                  </div>
+                  <span className="text-gray-500 dark:text-slate-400 pb-1">×</span>
+                  <div>
+                    <label className={LBL}>EPS FY1</label>
+                    <input type="number" step="0.01" value={tpFrom.eps1} onChange={function(ev){setTpFrom(Object.assign({},tpFrom,{eps1:ev.target.value}));}} className={INP} placeholder="enter"/>
+                  </div>
+                  <div>
+                    <label className={LBL}>W1 %</label>
+                    <input type="number" step="1" value={tpFrom.w1} onChange={function(ev){setTpFrom(Object.assign({},tpFrom,{w1:ev.target.value}));}} className={INP}/>
+                  </div>
+                  <span className="text-gray-500 dark:text-slate-400 pb-1">+</span>
+                  <div>
+                    <label className={LBL}>EPS FY2</label>
+                    <input type="number" step="0.01" value={tpFrom.eps2} onChange={function(ev){setTpFrom(Object.assign({},tpFrom,{eps2:ev.target.value}));}} className={INP} placeholder="enter"/>
+                  </div>
+                  <div>
+                    <label className={LBL}>W2 %</label>
+                    <input type="number" step="1" value={tpFrom.w2} onChange={function(ev){setTpFrom(Object.assign({},tpFrom,{w2:ev.target.value}));}} className={INP}/>
+                  </div>
+                  <span className="text-gray-400 dark:text-slate-500 pb-1">=</span>
+                  <div>
+                    <label className={LBL}>Prev TP</label>
+                    <input type="number" step="0.01" value={tpFrom.tp} onChange={function(ev){setTpFrom(Object.assign({},tpFrom,{tp:ev.target.value}));}} className={INP}/>
+                  </div>
+                </div>
+                {/* PROPOSED (new) row */}
+                <div className="text-[10px] font-semibold text-amber-700 dark:text-amber-300 uppercase tracking-wide mb-1">Proposed (new)</div>
                 <div className="flex gap-3 flex-wrap items-end mb-2">
                   <div>
                     <label className={LBL}>PE</label>
@@ -665,101 +767,30 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
                     disabled={!canSubmit}
                     onClick={function(){
                       if(!canSubmit||!company) return;
-                      var v = company.valuation || {};
-                      /* "From" snapshot strategy:
-                         - fromTP = the value of company.valuation.tpFixed
-                           AS IT STANDS RIGHT NOW. That's the previous
-                           official TP — whether it landed via a prior
-                           approval or a direct edit on the Valuation tab.
-                           Falls back to legacy normEPSFixed × PE when
-                           tpFixed isn't set.
-                         - From breakdown (PE/EPS1/EPS2/W1/W2): pull from
-                           the most recent tpHistory row that actually
-                           HAS the full breakdown. Prefer source:"approval"
-                           rows; if none, any row with the full breakdown
-                           fields; if still nothing, leave breakdown null
-                           (the card will show "—" rather than wrong data).
-                         The from-TP and from-breakdown can refer to
-                         different points in time when the user has done
-                         direct edits — we surface the breakdown we have
-                         on record while keeping fromTP truthful to the
-                         current TP Fixed shown on the Valuation card. */
-                      function _hasFullBreakdown(src){
-                        if(!src) return false;
-                        return isFinite(parseFloat(src.pe))
-                          && isFinite(parseFloat(src.eps1))
-                          && isFinite(parseFloat(src.eps2))
-                          && isFinite(parseFloat(src.w1))
-                          && isFinite(parseFloat(src.w2));
-                      }
-                      var hist = company.tpHistory || [];
-                      var fromV = null;
-                      /* Pass 1: most recent approval row with full breakdown. */
-                      for(var hi = 0; hi < hist.length; hi++){
-                        if(hist[hi] && hist[hi].source === "approval" && _hasFullBreakdown(hist[hi])){
-                          fromV = hist[hi];
-                          break;
-                        }
-                      }
-                      /* Pass 2: any row with full breakdown. */
-                      if(!fromV){
-                        for(var hj = 0; hj < hist.length; hj++){
-                          if(_hasFullBreakdown(hist[hj])){
-                            fromV = hist[hj];
-                            break;
-                          }
-                        }
-                      }
-                      /* Pass 3: any row with at least a blended eps. */
-                      if(!fromV){
-                        for(var hk = 0; hk < hist.length; hk++){
-                          var h = hist[hk];
-                          if(h && isFinite(parseFloat(h.pe)) && isFinite(parseFloat(h.eps))){
-                            fromV = h;
-                            break;
-                          }
-                        }
-                      }
-                      /* No fallback to the CURRENT company.valuation —
-                         tried that in commit f6dd406 but it backfired:
-                         the team's typical workflow is to update
-                         valuation BEFORE clicking Submit for approval
-                         (either via Estimates Import or a direct edit
-                         on the Valuation card), so by the time we read
-                         it here the valuation already holds the NEW
-                         proposed values, and fromV ends up == toV —
-                         producing cards that say "unchanged" when the
-                         values actually changed. Better to leave the
-                         from-side as "—" (honest empty state) than to
-                         lie about no-change. The right long-term fix
-                         is to capture the from-snapshot when the
-                         proposal form is OPENED, not when it's
-                         submitted. */
-                      if(!fromV) fromV = {};
-                      var fromPE   = parseFloat(fromV.pe);
-                      var fromEPS1 = parseFloat(fromV.eps1);
-                      var fromEPS2 = parseFloat(fromV.eps2);
-                      var fromW1   = parseFloat(fromV.w1);
-                      var fromW2   = parseFloat(fromV.w2);
+                      /* "From" values come directly from the tpFrom form
+                         state, which was snapshotted from valuation +
+                         tpHistory at form-open time AND can be edited
+                         by the user in the Previous-state inputs above.
+                         This replaces the old strategy of reconstructing
+                         "from" at submit time — that approach kept
+                         producing wrong values because the valuation
+                         had often already moved by submission time
+                         (Estimates Imports update v.eps1/v.eps2 daily). */
+                      var fromPE   = parseFloat(tpFrom.pe);
+                      var fromEPS1 = parseFloat(tpFrom.eps1);
+                      var fromEPS2 = parseFloat(tpFrom.eps2);
+                      var fromW1   = parseFloat(tpFrom.w1);
+                      var fromW2   = parseFloat(tpFrom.w2);
                       var fromNormEPS = null;
                       if(isFinite(fromEPS1) && isFinite(fromEPS2) && isFinite(fromW1) && isFinite(fromW2)){
                         fromNormEPS = (fromEPS1*fromW1 + fromEPS2*fromW2) / 100;
                       } else if(isFinite(fromEPS1) && !isFinite(fromEPS2)){
                         fromNormEPS = fromEPS1;
-                      } else if(isFinite(parseFloat(fromV.eps))){
-                        /* Legacy tpHistory entries only have blended `eps`. */
-                        fromNormEPS = parseFloat(fromV.eps);
+                      } else if(isFinite(fromEPS2) && !isFinite(fromEPS1)){
+                        fromNormEPS = fromEPS2;
                       }
-                      /* fromTP = the company's current TP Fixed (what the
-                         user sees as "previous" on the Valuation card).
-                         Uses getTpFixed so the legacy normEPSFixed × PE
-                         path still works for old data. */
-                      var fromTP = getTpFixed(v);
-                      if(fromTP === null && isFinite(fromPE) && fromNormEPS !== null){
-                        /* Last-ditch fallback when tpFixed has never been
-                           set: derive from whatever breakdown we found. */
-                        fromTP = fromPE * fromNormEPS;
-                      }
+                      var fromTP = parseFloat(tpFrom.tp);
+                      if(!isFinite(fromTP)) fromTP = null;
                       onSave(e);
                       /* toTP is what gets stamped onto company.valuation.tpFixed
                          when approved. It's the suggester's PROPOSED value (the
