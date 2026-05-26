@@ -46,25 +46,53 @@ function ApprovalCard({ rec, company, companyName, onApprove, onReject, onWithdr
 
   var authorColor = TEAM_COLORS[rec.suggestedBy] || "#6b7280";
 
-  /* Compute a tidy change-summary line. Show only the fields that
-     actually changed (e.g. an EPS-only revision shouldn't print "PE
-     12.0 → 12.0"). Newer records carry the full breakdown
-     (EPS1/EPS2/W1/W2) — older records only have a single EPS field. */
-  function diff(a,b){return a!==b&&!(a==null&&b==null);}
-  var changes = [];
-  if(diff(rec.fromPE, rec.toPE)) changes.push("PE " + fmtNum(rec.fromPE,1) + " → " + fmtNum(rec.toPE,1));
-  if(diff(rec.fromEPS1, rec.toEPS1)) changes.push("EPS1 " + fmtNum(rec.fromEPS1,2) + " → " + fmtNum(rec.toEPS1,2));
-  if(diff(rec.fromEPS2, rec.toEPS2)) changes.push("EPS2 " + fmtNum(rec.fromEPS2,2) + " → " + fmtNum(rec.toEPS2,2));
-  if(diff(rec.fromW1, rec.toW1) || diff(rec.fromW2, rec.toW2)){
-    /* Include the FY labels (snapshotted on submission, e.g. "FY26/FY27")
-       so the reader doesn't have to remember which weight is which. */
-    var fyTag = (rec.fy1 || rec.fy2) ? " (" + (rec.fy1 || "FY1") + "/" + (rec.fy2 || "FY2") + ")" : "";
-    changes.push("Weights" + fyTag + " " + fmtNum(rec.fromW1,0) + "/" + fmtNum(rec.fromW2,0) + " → " + fmtNum(rec.toW1,0) + "/" + fmtNum(rec.toW2,0));
+  /* Build the change-summary line. Show ALL four breakdown fields
+     consistently across every card (PE, EPS1, EPS2, Weights) — even when
+     a field is unchanged — so the reviewer always sees the full picture
+     and never has to wonder "why does this card have a PE line but the
+     other doesn't?" Unchanged values render with an equals sign instead
+     of an arrow so the change is still visually distinct. FY labels are
+     attached to BOTH EPS lines and the Weights line so it's obvious
+     which fiscal year each number maps to. */
+  var fy1Tag = rec.fy1 ? " " + rec.fy1 : "";
+  var fy2Tag = rec.fy2 ? " " + rec.fy2 : "";
+  function changeLine(label, from, to, dp){
+    var fromStr = fmtNum(from, dp);
+    var toStr   = fmtNum(to,   dp);
+    /* Treat null↔value as a change; null↔null as not-applicable. */
+    if(from == null && to == null) return null;
+    var same = (from != null && to != null
+                && Math.abs(parseFloat(from) - parseFloat(to)) < (dp >= 2 ? 0.005 : 0.05));
+    if(same) return label + " " + fromStr + " (unchanged)";
+    return label + " " + fromStr + " → " + toStr;
   }
-  /* Fallback for legacy records (pre-breakdown), which only had a
-     blended EPS field. */
-  if(rec.fromEPS1==null && rec.toEPS1==null && diff(rec.fromEPS, rec.toEPS)){
-    changes.push("EPS " + fmtNum(rec.fromEPS,2) + " → " + fmtNum(rec.toEPS,2));
+  var changes = [];
+  /* Legacy records (pre-breakdown) only have blended `eps` and PE. */
+  var isLegacy = rec.fromEPS1 == null && rec.toEPS1 == null && rec.fromEPS2 == null && rec.toEPS2 == null;
+  if(isLegacy){
+    var peLine = changeLine("PE", rec.fromPE, rec.toPE, 1);
+    if(peLine) changes.push(peLine);
+    var epsLine = changeLine("EPS", rec.fromEPS, rec.toEPS, 2);
+    if(epsLine) changes.push(epsLine);
+  } else {
+    var peLine = changeLine("PE", rec.fromPE, rec.toPE, 1);
+    if(peLine) changes.push(peLine);
+    var eps1Line = changeLine("EPS1" + fy1Tag, rec.fromEPS1, rec.toEPS1, 2);
+    if(eps1Line) changes.push(eps1Line);
+    var eps2Line = changeLine("EPS2" + fy2Tag, rec.fromEPS2, rec.toEPS2, 2);
+    if(eps2Line) changes.push(eps2Line);
+    /* Weights stays as a paired display since W1/W2 always move together. */
+    var fyTag = (rec.fy1 || rec.fy2) ? " (" + (rec.fy1 || "FY1") + "/" + (rec.fy2 || "FY2") + ")" : "";
+    var w1Same = rec.fromW1 != null && rec.toW1 != null && Math.abs(parseFloat(rec.fromW1) - parseFloat(rec.toW1)) < 0.5;
+    var w2Same = rec.fromW2 != null && rec.toW2 != null && Math.abs(parseFloat(rec.fromW2) - parseFloat(rec.toW2)) < 0.5;
+    var wAllNull = rec.fromW1 == null && rec.fromW2 == null && rec.toW1 == null && rec.toW2 == null;
+    if(!wAllNull){
+      if(w1Same && w2Same){
+        changes.push("Weights" + fyTag + " " + fmtNum(rec.fromW1,0) + "/" + fmtNum(rec.fromW2,0) + " (unchanged)");
+      } else {
+        changes.push("Weights" + fyTag + " " + fmtNum(rec.fromW1,0) + "/" + fmtNum(rec.fromW2,0) + " → " + fmtNum(rec.toW1,0) + "/" + fmtNum(rec.toW2,0));
+      }
+    }
   }
   /* Pull currency + most-recent ord-ticker price from the live company.
      Lets us prefix TPs with the currency symbol and show what the
@@ -105,7 +133,7 @@ function ApprovalCard({ rec, company, companyName, onApprove, onReject, onWithdr
       /* Explicitly label "price" so this isn't mistaken for an old TP
          value — the @-clause is the current stock price used to compute
          the new MOS, not a TP reference. */
-      tpLabel += "  ·  New MOS " + sign + newMOS.toFixed(1) + "% at price " + pfx + fmtNum(currentPrice,2);
+      tpLabel += "  ·  New MOS " + sign + newMOS.toFixed(1) + "% at current price " + pfx + fmtNum(currentPrice,2);
     }
   }
   changes.push(tpLabel);

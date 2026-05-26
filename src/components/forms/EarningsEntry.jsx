@@ -720,7 +720,17 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
                           }
                         }
                       }
-                      /* Nothing usable in history — leave breakdown empty. */
+                      /* Pass 4 (final fallback): current company.valuation.
+                         If tpHistory has nothing usable (typical for companies
+                         that have only been edited directly on the Valuation
+                         card, never gone through approval), the CURRENT
+                         valuation values ARE the pre-change snapshot — they're
+                         what the proposal is about to replace. Without this
+                         fallback the approval card renders "EPS1 — → 1.75"
+                         with no "from" context, defeating the point of the
+                         change summary. */
+                      if(!fromV && _hasFullBreakdown(v)) fromV = v;
+                      else if(!fromV && (isFinite(parseFloat(v.pe)) || isFinite(parseFloat(v.eps1)))) fromV = v;
                       if(!fromV) fromV = {};
                       var fromPE   = parseFloat(fromV.pe);
                       var fromEPS1 = parseFloat(fromV.eps1);
