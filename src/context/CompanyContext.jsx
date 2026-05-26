@@ -410,6 +410,73 @@ export function CompanyProvider({children}){
     try{if(r16&&r16.value){
       var tpa=JSON.parse(r16.value);
       if(Array.isArray(tpa)){
+        /* Targeted from-value backfill for the 9 pending tp approvals
+           outstanding on 2026-05-26. The user supplied the actual
+           pre-change values (last approved state) by hand because they
+           weren't recoverable from data (the team's workflow updates
+           valuation before submitting, so by submission time the "from"
+           context was already gone from every accessible source).
+           Match by case-insensitive substring on a key distinguishing
+           word in the company name. fromW1/fromW2 written even when
+           zero so the Weights line renders "100/0 → 50/50" rather than
+           "—/— → 50/50". Gated by its own flag so it runs once. */
+        try {
+          var rManualFlag = await supaGet("meta","key","manual_tpapproval_from_backfill_2026_05_26");
+          if (!(rManualFlag && rManualFlag.value)) {
+            var MANUAL_FROM = [
+              { match: "taiwan semiconductor", fromPE: 21,  fromEPS1: 64.41,  fromW1: 100, fromEPS2: 80.70,  fromW2: 0,   fromTP: 1700 },
+              { match: "infineon",             fromPE: 20,  fromEPS1: 2.26,   fromW1: 100, fromEPS2: null,   fromW2: 0,   fromTP: 45.10 },
+              { match: "allstate",             fromPE: 9.5, fromEPS1: 25.00,  fromW1: 100, fromEPS2: null,   fromW2: 0,   fromTP: 237.50 },
+              { match: "flex ltd",             fromPE: 18,  fromEPS1: 3.63,   fromW1: 50,  fromEPS2: 4.04,   fromW2: 50,  fromTP: 69 },
+              { match: "norsk hydro",          fromPE: 12,  fromEPS1: 6.94,   fromW1: 50,  fromEPS2: 7.71,   fromW2: 50,  fromTP: 88 },
+              { match: "prysmian",             fromPE: 23,  fromEPS1: 4.65,   fromW1: 50,  fromEPS2: 5.26,   fromW2: 50,  fromTP: 114 },
+              { match: "glencore",             fromPE: 17,  fromEPS1: 0.3256, fromW1: 50,  fromEPS2: 0.3474, fromW2: 50,  fromTP: 5.72 },
+              { match: "suncor",               fromPE: 18,  fromEPS1: null,   fromW1: 0,   fromEPS2: 5.44,   fromW2: 100, fromTP: 98 },
+              { match: "easyjet",              fromPE: 10,  fromEPS1: 0.76,   fromW1: 100, fromEPS2: null,   fromW2: 0,   fromTP: 7.60 },
+            ];
+            var manualById = {};
+            (coMig.data || []).forEach(function(c){
+              var n = (c.name || "").toLowerCase();
+              for (var i = 0; i < MANUAL_FROM.length; i++) {
+                if (n.indexOf(MANUAL_FROM[i].match) >= 0) {
+                  manualById[c.id] = MANUAL_FROM[i];
+                  break;
+                }
+              }
+            });
+            var manualChanged = false;
+            tpa.forEach(function(rec){
+              if (rec.status !== "pending") return;
+              var m = manualById[rec.companyId];
+              if (!m) return;
+              /* Set unconditionally — the previous undo cleared these to
+                 null, and these are user-supplied authoritative values
+                 the user explicitly asked to write. */
+              rec.fromPE   = m.fromPE;
+              rec.fromEPS1 = m.fromEPS1;
+              rec.fromEPS2 = m.fromEPS2;
+              rec.fromW1   = m.fromW1;
+              rec.fromW2   = m.fromW2;
+              /* Recompute blended fromEPS from the building blocks when
+                 both weights and EPS are present; otherwise use whichever
+                 single side has a value. Matches EarningsEntry's logic. */
+              if (isFinite(m.fromEPS1) && isFinite(m.fromEPS2) && isFinite(m.fromW1) && isFinite(m.fromW2)) {
+                rec.fromEPS = (m.fromEPS1 * m.fromW1 + m.fromEPS2 * m.fromW2) / 100;
+              } else if (isFinite(m.fromEPS1) && m.fromW1 === 100) {
+                rec.fromEPS = m.fromEPS1;
+              } else if (isFinite(m.fromEPS2) && m.fromW2 === 100) {
+                rec.fromEPS = m.fromEPS2;
+              }
+              if (isFinite(m.fromTP)) rec.fromTP = m.fromTP;
+              manualChanged = true;
+            });
+            if (manualChanged) {
+              supaUpsert("meta", { key: "tpApprovals", value: JSON.stringify(tpa) });
+            }
+            supaUpsert("meta", { key: "manual_tpapproval_from_backfill_2026_05_26", value: "1" });
+          }
+        } catch(_e) {}
+
         /* UNDO the May-26-2026 backfill (gated by
            backfill_tpapproval_from_2026_05_26). That backfill copied
            the company's current valuation into pending records'
