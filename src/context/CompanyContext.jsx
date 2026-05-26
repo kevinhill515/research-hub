@@ -410,61 +410,39 @@ export function CompanyProvider({children}){
     try{if(r16&&r16.value){
       var tpa=JSON.parse(r16.value);
       if(Array.isArray(tpa)){
-        /* One-shot backfill: PENDING approval records submitted before
-           the May-26-2026 EarningsEntry fix carry null fromPE / fromEPS1
-           / fromEPS2 / fromW1 / fromW2 / fromTP because the original
-           submission code only sourced "from" values from tpHistory and
-           bailed when history was empty. Fill the missing slots from the
-           company's CURRENT valuation — that IS the pre-change state for
-           companies whose valuation has only been edited directly on the
-           Valuation card. Conservative: only fills SLOTS THAT ARE NULL,
-           never overwrites a non-null from-value. Idempotent — gated by
-           a meta flag so it runs exactly once across the team, and the
-           per-record check means re-running it would be a no-op anyway. */
+        /* UNDO the May-26-2026 backfill (gated by
+           backfill_tpapproval_from_2026_05_26). That backfill copied
+           the company's current valuation into pending records'
+           from-fields, but in practice the team's workflow updates
+           valuation BEFORE submitting the approval (via Estimates
+           Import / direct edit), so by the time the migration ran the
+           valuation already held the proposed values and the backfill
+           produced from==to on every field — i.e. cards reported
+           "unchanged" when the values had actually changed.
+
+           This cleanup clears fromPE/fromEPS1/fromEPS2/fromW1/fromW2
+           (and the blended fromEPS) on PENDING records back to null so
+           the cards render an honest "—" rather than misleading
+           "unchanged". fromTP and fy1/fy2 are left alone — fromTP was
+           legitimately populated for most records, and the FY labels
+           are descriptive metadata that don't depend on which side of
+           the change they reference. Gated by its own flag so it runs
+           once. Decided (approved/rejected) records are immutable
+           history and never touched. */
         try {
-          var rTpaBackfillFlag = await supaGet("meta","key","backfill_tpapproval_from_2026_05_26");
-          if (!(rTpaBackfillFlag && rTpaBackfillFlag.value)) {
-            var tpaChanged = false;
-            var companiesById = {};
-            (coMig.data || []).forEach(function(c){ companiesById[c.id] = c; });
+          var rTpaUndoFlag = await supaGet("meta","key","undo_tpapproval_backfill_2026_05_26");
+          if (!(rTpaUndoFlag && rTpaUndoFlag.value)) {
+            var tpaUndoChanged = false;
             tpa.forEach(function(rec){
-              if (rec.status !== "pending") return; /* don't rewrite decided history */
-              var c = companiesById[rec.companyId];
-              if (!c) return;
-              var cv = c.valuation || {};
-              function _fillIfBlank(field, val){
-                if (rec[field] == null && val !== "" && val != null && isFinite(parseFloat(val))) {
-                  rec[field] = parseFloat(val);
-                  tpaChanged = true;
-                }
-              }
-              _fillIfBlank("fromPE",   cv.pe);
-              _fillIfBlank("fromEPS1", cv.eps1);
-              _fillIfBlank("fromEPS2", cv.eps2);
-              _fillIfBlank("fromW1",   cv.w1);
-              _fillIfBlank("fromW2",   cv.w2);
-              /* Recompute fromEPS (blended) when we now have all four
-                 building blocks but the blended value is still null. */
-              if (rec.fromEPS == null
-                  && isFinite(rec.fromEPS1) && isFinite(rec.fromEPS2)
-                  && isFinite(rec.fromW1)   && isFinite(rec.fromW2)) {
-                rec.fromEPS = (rec.fromEPS1 * rec.fromW1 + rec.fromEPS2 * rec.fromW2) / 100;
-                tpaChanged = true;
-              }
-              /* fromTP fallback: company.valuation.tpFixed is what
-                 EarningsEntry's getTpFixed reads. Only set if currently null. */
-              if (rec.fromTP == null && isFinite(parseFloat(cv.tpFixed))) {
-                rec.fromTP = parseFloat(cv.tpFixed);
-                tpaChanged = true;
-              }
-              /* FY label backfill too — older records may not have these. */
-              if (!rec.fy1 && cv.fy1) { rec.fy1 = cv.fy1; tpaChanged = true; }
-              if (!rec.fy2 && cv.fy2) { rec.fy2 = cv.fy2; tpaChanged = true; }
+              if (rec.status !== "pending") return;
+              ["fromPE","fromEPS1","fromEPS2","fromW1","fromW2","fromEPS"].forEach(function(f){
+                if (rec[f] != null) { rec[f] = null; tpaUndoChanged = true; }
+              });
             });
-            if (tpaChanged) {
+            if (tpaUndoChanged) {
               supaUpsert("meta", { key: "tpApprovals", value: JSON.stringify(tpa) });
             }
-            supaUpsert("meta", { key: "backfill_tpapproval_from_2026_05_26", value: "1" });
+            supaUpsert("meta", { key: "undo_tpapproval_backfill_2026_05_26", value: "1" });
           }
         } catch(_e) {}
         setTpApprovals(tpa);
