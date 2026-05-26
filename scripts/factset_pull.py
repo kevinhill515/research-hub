@@ -786,6 +786,41 @@ class ExcelSession:
         # diagnostic when the named macros stop working after a vendor
         # update (May 2026 install lost FDSREFRESHWORKBOOK entirely).
         self._log_factset_addin_surface()
+        # Staleness baseline: snapshot a spread of cells BEFORE we fire
+        # the refresh, so the post-refresh poll can verify that values
+        # actually MOVED rather than just being "populated." The previous
+        # poll only checked for non-empty / non-error cells, which passes
+        # immediately when yesterday's run left numbers sitting in the
+        # cells — silent "uploaded stale data" bug. We sample a mix of
+        # ord prices, US prices, and perf cells so at least some of them
+        # will move on any market day (US prices tick intraday, foreign
+        # prices change at session boundaries, Date-1 cells change once
+        # per day after the prior close lands).
+        STALENESS_SAMPLE = [
+            ("Prices", 2,  3),   # Ord Date-1 (col C) — flips once per day
+            ("Prices", 2,  5),   # Ord Price (col E)
+            ("Prices", 2,  6),   # Ord TODAY perf (col F)
+            ("Prices", 5,  5),   # Ord Price, row 5
+            ("Prices", 10, 5),   # Ord Price, row 10
+            ("Prices", 2, 18),   # US Date-1 (col R)
+            ("Prices", 2, 20),   # US Price (col T)
+            ("Prices", 2, 21),   # US TODAY perf (col U)
+            ("Prices", 5, 20),   # US Price, row 5
+            ("Prices", 10, 20),  # US Price, row 10
+        ]
+        def _snap_cell(sh, r, c):
+            try:
+                v = self.wb.Sheets(sh).Cells(r, c).Value
+                # Normalize datetime to ISO string so equality checks work
+                if hasattr(v, "strftime"):
+                    return v.strftime("%Y-%m-%d")
+                return v
+            except Exception:
+                return None
+        self._staleness_baseline = [(sh, r, c, _snap_cell(sh, r, c)) for sh, r, c in STALENESS_SAMPLE]
+        log(f"  Staleness baseline: {len(self._staleness_baseline)} cells snapshotted pre-refresh")
+        for sh, r, c, v in self._staleness_baseline:
+            log(f"    {sh}!R{r}C{c} = {v!r}")
         # Expanded set of refresh entry points to try, since the original
         # three (FDS.Refresh / FdsRefreshWorkbook / FactSet.Refresh) all
         # com_error on the May 2026 FactSet version. The current API
@@ -1068,6 +1103,61 @@ class ExcelSession:
             self.xl.Calculate()
         except Exception:
             pass
+        # Staleness verification: compare post-refresh cell values to the
+        # baseline captured before the refresh fired. If NOTHING changed,
+        # the refresh almost certainly didn't actually execute (e.g.
+        # SendKeys ate the Alt+5, Excel wasn't focused, FactSet add-in
+        # silently failed). Without this check the script would happily
+        # re-upload yesterday's prices.
+        baseline = getattr(self, "_staleness_baseline", None) or []
+        if baseline:
+            changed = 0
+            unchanged_samples = []
+            changed_samples = []
+            for sh, r, c, before in baseline:
+                after = _snap_cell(sh, r, c) if False else None
+                # Re-read here (can't reuse the outer _snap_cell closure
+                # since it's defined in a different scope) — inline the
+                # same logic.
+                try:
+                    v = self.wb.Sheets(sh).Cells(r, c).Value
+                    if hasattr(v, "strftime"):
+                        after = v.strftime("%Y-%m-%d")
+                    else:
+                        after = v
+                except Exception:
+                    after = None
+                if before != after:
+                    changed += 1
+                    if len(changed_samples) < 3:
+                        changed_samples.append((sh, r, c, before, after))
+                else:
+                    if len(unchanged_samples) < 3:
+                        unchanged_samples.append((sh, r, c, before))
+            log(f"  Staleness check: {changed}/{len(baseline)} sample cells changed value vs pre-refresh baseline")
+            for sh, r, c, b, a in changed_samples:
+                log(f"    CHANGED {sh}!R{r}C{c}: {b!r} → {a!r}")
+            for sh, r, c, b in unchanged_samples:
+                log(f"    unchanged {sh}!R{r}C{c}: still {b!r}")
+            # Hard fail when ZERO cells changed. On any normal market day
+            # at least US prices should tick intraday, and Date-1 cells
+            # roll forward across daily runs. Zero movement = refresh
+            # didn't fire. We abort instead of uploading stale data,
+            # which is silently worse than no upload.
+            if changed == 0:
+                msg = ("FactSet refresh did not move any sampled cells. "
+                       "Refresh almost certainly did NOT execute — refusing "
+                       "to upload stale data. Common causes: Alt+"
+                       f"{FACTSET_REFRESH_QAT_POS} QAT button missing or in "
+                       "a different slot, Excel window not focused during "
+                       "SendKeys, FactSet add-in not signed in. Fix and re-run.")
+                log(f"  ABORT: {msg}")
+                raise RuntimeError(msg)
+            # Soft warn when very few changed — still proceed but flag it.
+            elif changed < max(2, len(baseline) // 3):
+                log(f"  WARNING: only {changed} cell(s) moved. Refresh may have "
+                    f"partially fired, or markets may be closed. Proceeding "
+                    f"but spot-check the uploaded prices.")
 
     def cell(self, sheet_name: str, row: int, col: int):
         """Read a cell's value, retrying on RPC_E_CALL_REJECTED which Excel
