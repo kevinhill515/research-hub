@@ -97,6 +97,35 @@ function ChangeTable({ rec, pfx, fy1, fy2, currentPrice }){
       changed: !(w1Same && w2Same),
       noPctChange: true,
     });
+    /* Normalized EPS = (EPS1 × W1 + EPS2 × W2) / 100. The submitter
+       computed this at submit time and stored it on rec.fromEPS /
+       rec.toEPS, so we prefer those. Falls back to re-deriving from
+       the individual components when the stored blend is missing
+       (legacy or partial records). */
+    function _blend(e1, e2, w1, w2){
+      var e1n = parseFloat(e1), e2n = parseFloat(e2);
+      var w1n = parseFloat(w1), w2n = parseFloat(w2);
+      if(isFinite(e1n) && isFinite(e2n) && isFinite(w1n) && isFinite(w2n)){
+        return (e1n*w1n + e2n*w2n) / 100;
+      }
+      if(isFinite(e1n) && !isFinite(e2n)) return e1n;
+      if(isFinite(e2n) && !isFinite(e1n)) return e2n;
+      return null;
+    }
+    var fromNormEPS = (rec.fromEPS != null && isFinite(parseFloat(rec.fromEPS)))
+      ? parseFloat(rec.fromEPS)
+      : _blend(rec.fromEPS1, rec.fromEPS2, rec.fromW1, rec.fromW2);
+    var toNormEPS = (rec.toEPS != null && isFinite(parseFloat(rec.toEPS)))
+      ? parseFloat(rec.toEPS)
+      : _blend(rec.toEPS1, rec.toEPS2, rec.toW1, rec.toW2);
+    rows.push({
+      label: "Normalized EPS",
+      from: fromNormEPS != null ? fmtNum(fromNormEPS, 2) : "—",
+      to:   toNormEPS   != null ? fmtNum(toNormEPS,   2) : "—",
+      fromRaw: fromNormEPS,
+      toRaw:   toNormEPS,
+      changed: changed(fromNormEPS, toNormEPS, 0.005),
+    });
   }
   /* TP Fixed row. Keep the cell clean — just pfx + amount. The
      computed-vs-proposed sanity gap (used to inline as
@@ -131,7 +160,11 @@ function ChangeTable({ rec, pfx, fy1, fy2, currentPrice }){
       return sign + v.toFixed(1) + "%";
     }
     rows.push({
-      label: "MOS @ " + pfx + fmtNum(currentPrice, 2),
+      label: "MOS @ Current " + pfx + fmtNum(currentPrice, 2),
+      /* "Current" italicized in render so it's obvious the @-price is
+         today's tick, not a TP. labelJSX takes precedence over label
+         when both exist. */
+      labelJSX: (<span>MOS @ <em className="italic">Current</em> {pfx}{fmtNum(currentPrice, 2)}</span>),
       from:  fmtMOS(prevMOS),
       to:    fmtMOS(newMOS),
       fromRaw: prevMOS,
@@ -218,7 +251,7 @@ function ChangeTable({ rec, pfx, fy1, fy2, currentPrice }){
             }
             return (
               <tr key={i} className={"border-t border-slate-100 dark:border-slate-700 " + (i % 2 === 1 ? "bg-slate-50/40 dark:bg-slate-800/30" : "")}>
-                <td className={"px-2 py-1 " + rowText}>{r.label}{!r.changed && <span className="text-[9px] italic ml-1">unchanged</span>}</td>
+                <td className={"px-2 py-1 " + rowText}>{r.labelJSX || r.label}{!r.changed && <span className="text-[9px] italic ml-1">unchanged</span>}</td>
                 <td className={"px-2 py-1 text-right tabular-nums font-mono " + rowText}>{r.from}</td>
                 <td className={"px-2 py-1 text-right tabular-nums font-mono " + toEmphasis}>{r.to}</td>
                 <td className="px-2 py-1 text-right tabular-nums font-mono">{pctCell}</td>
