@@ -38,7 +38,7 @@ function fmtNum(v, dp){
    Decimal places per row: PE → 1dp, EPS → 2dp, Weights → 0dp, TP → 2dp.
    Legacy records (pre-breakdown) collapse EPS1/EPS2/Weights into a
    single blended EPS row. */
-function ChangeTable({ rec, pfx, fy1, fy2 }){
+function ChangeTable({ rec, pfx, fy1, fy2, currentPrice }){
   var isLegacy = rec.fromEPS1 == null && rec.toEPS1 == null && rec.fromEPS2 == null && rec.toEPS2 == null;
   /* Build the row list with formatted strings + a "changed" flag for
      dimming unchanged rows. Tolerance: same as the form's submission
@@ -108,6 +108,34 @@ function ChangeTable({ rec, pfx, fy1, fy2 }){
     changed: changed(rec.fromTP, rec.toTP, 0.005),
     isTP: true,
   });
+  /* MOS row — Prev MOS and New MOS both measured against today's
+     stock price, so the reader can see whether the proposed TP change
+     actually moves the room-to-run number meaningfully. Skips the row
+     entirely when we don't have a current price (e.g. deleted company,
+     legacy record with no ticker). */
+  if(isFinite(currentPrice) && currentPrice > 0){
+    var prevMOS = (rec.fromTP != null && isFinite(rec.fromTP) && rec.fromTP > 0)
+      ? calcMOS(rec.fromTP, currentPrice) : null;
+    var newMOS  = (rec.toTP   != null && isFinite(rec.toTP)   && rec.toTP   > 0)
+      ? calcMOS(rec.toTP,   currentPrice) : null;
+    function fmtMOS(v){
+      if(v == null || !isFinite(v)) return "—";
+      var sign = v >= 0 ? "+" : "";
+      return sign + v.toFixed(1) + "%";
+    }
+    rows.push({
+      label: "MOS @ " + pfx + fmtNum(currentPrice, 2),
+      from:  fmtMOS(prevMOS),
+      to:    fmtMOS(newMOS),
+      /* MOS is derived from TP, so it changes iff TP changed (within
+         rounding). Reuse the same "changed" check rather than comparing
+         the percent values, which can drift due to current-price moves
+         between proposal and view. */
+      changed: changed(rec.fromTP, rec.toTP, 0.005),
+      isMOS: true,
+      newMOSValue: newMOS, /* used below for green/red text color */
+    });
+  }
   return (
     <div className="mb-2 rounded-md border border-slate-200 dark:border-slate-700 overflow-hidden">
       <table className="w-full text-xs">
@@ -123,9 +151,21 @@ function ChangeTable({ rec, pfx, fy1, fy2 }){
             var rowText = r.changed
               ? "text-gray-900 dark:text-slate-100"
               : "text-gray-400 dark:text-slate-500";
-            var toEmphasis = r.changed
-              ? "font-semibold " + (r.isTP ? "text-blue-700 dark:text-blue-300" : "text-gray-900 dark:text-slate-100")
-              : "";
+            /* Proposed-cell emphasis. MOS gets green/red based on
+               whether the NEW MOS is positive or negative — green =
+               room to run from today's price, red = trading above the
+               new TP already. TP gets a blue tint when it changed.
+               Everything else just bolds when changed. */
+            var toEmphasis;
+            if(r.isMOS && r.newMOSValue != null && isFinite(r.newMOSValue)){
+              toEmphasis = "font-semibold " + (r.newMOSValue >= 0
+                ? "text-emerald-700 dark:text-emerald-300"
+                : "text-rose-700 dark:text-rose-300");
+            } else if(r.changed){
+              toEmphasis = "font-semibold " + (r.isTP ? "text-blue-700 dark:text-blue-300" : "text-gray-900 dark:text-slate-100");
+            } else {
+              toEmphasis = "";
+            }
             return (
               <tr key={i} className={"border-t border-slate-100 dark:border-slate-700 " + (i % 2 === 1 ? "bg-slate-50/40 dark:bg-slate-800/30" : "")}>
                 <td className={"px-2 py-1 " + rowText}>{r.label}{!r.changed && <span className="text-[9px] italic ml-1">unchanged</span>}</td>
@@ -218,22 +258,6 @@ function ApprovalCard({ rec, company, companyName, onApprove, onReject, onWithdr
         )}
       </div>
       <ChangeTable rec={rec} pfx={pfx} fy1={rec.fy1} fy2={rec.fy2} currentPrice={currentPrice} />
-      {/* MOS line below the table — keeps the "what does this mean for
-          MOS at today's price" answer in eyeline of the table values. */}
-      {(function(){
-        if(!isFinite(currentPrice) || currentPrice <= 0) return null;
-        if(rec.toTP == null || !isFinite(rec.toTP) || rec.toTP <= 0) return null;
-        var newMOS = calcMOS(rec.toTP, currentPrice);
-        if(newMOS === null) return null;
-        var sign = newMOS >= 0 ? "+" : "";
-        var color = newMOS >= 0 ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300";
-        return (
-          <div className={"text-[11px] mb-1.5 " + color}>
-            <span className="font-semibold">New MOS {sign}{newMOS.toFixed(1)}%</span>
-            <span className="text-gray-500 dark:text-slate-400"> at current price {pfx}{fmtNum(currentPrice,2)}</span>
-          </div>
-        );
-      })()}
       {rec.rationale && (
         <div className="text-xs text-gray-600 dark:text-slate-400 mb-2 whitespace-pre-wrap leading-relaxed">{rec.rationale}</div>
       )}
