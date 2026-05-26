@@ -682,7 +682,35 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
             var enteredTP = parseFloat(e.newTP);
             var weightsTotal = (isFinite(w1)?w1:0) + (isFinite(w2)?w2:0);
             var weightsOK = !isFinite(w1) && !isFinite(w2) ? true : Math.abs(weightsTotal - 100) < 0.01;
-            var canSubmit = isFinite(pe) && pe>0 && normEPS!==null && computedTP!==null && weightsOK;
+            /* Previous-side sanity. Compute Prev PE × Prev normEPS and
+               compare against Prev TP, same 2% tolerance as the new-side
+               check. Catches typos in the "Previous (last approved)"
+               row before they get baked into the approval record. */
+            var prevPE   = parseFloat(tpFrom.pe);
+            var prevE1   = parseFloat(tpFrom.eps1);
+            var prevE2   = parseFloat(tpFrom.eps2);
+            var prevW1   = parseFloat(tpFrom.w1);
+            var prevW2   = parseFloat(tpFrom.w2);
+            var prevTP   = parseFloat(tpFrom.tp);
+            var prevNormEPS = null;
+            if(isFinite(prevE1) && isFinite(prevE2) && isFinite(prevW1) && isFinite(prevW2)){
+              prevNormEPS = (prevE1*prevW1 + prevE2*prevW2) / 100;
+            } else if(isFinite(prevE1) && !isFinite(prevE2)){
+              prevNormEPS = prevE1;
+            } else if(isFinite(prevE2) && !isFinite(prevE1)){
+              prevNormEPS = prevE2;
+            }
+            var prevComputedTP = (isFinite(prevPE) && prevPE>0 && prevNormEPS!==null) ? prevPE*prevNormEPS : null;
+            var prevTPOK = !isFinite(prevTP) || prevComputedTP === null
+                            || Math.abs(prevComputedTP - prevTP) / prevTP <= 0.02;
+            /* FY labels — show next to each EPS input so the suggester
+               can see whether FY1 is still the same fiscal year it was
+               at last approval (sometimes EPS2 becomes EPS1 when the
+               valuation rolls forward across fiscal-year boundaries). */
+            var vForFy = company && company.valuation || {};
+            var fy1Label = vForFy.fy1 || "";
+            var fy2Label = vForFy.fy2 || "";
+            var canSubmit = isFinite(pe) && pe>0 && normEPS!==null && computedTP!==null && weightsOK && prevTPOK;
             var INP="text-xs px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 focus:ring-2 focus:ring-amber-500 focus:outline-none w-20";
             var LBL="text-[10px] text-gray-500 dark:text-slate-400 block mb-0.5 uppercase tracking-wide";
             return (
@@ -703,7 +731,7 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
                   </div>
                   <span className="text-gray-500 dark:text-slate-400 pb-1">×</span>
                   <div>
-                    <label className={LBL}>EPS FY1</label>
+                    <label className={LBL}>EPS {fy1Label || "FY1"}</label>
                     <input type="number" step="0.01" value={tpFrom.eps1} onChange={function(ev){setTpFrom(Object.assign({},tpFrom,{eps1:ev.target.value}));}} className={INP} placeholder="enter"/>
                   </div>
                   <div>
@@ -712,7 +740,7 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
                   </div>
                   <span className="text-gray-500 dark:text-slate-400 pb-1">+</span>
                   <div>
-                    <label className={LBL}>EPS FY2</label>
+                    <label className={LBL}>EPS {fy2Label || "FY2"}</label>
                     <input type="number" step="0.01" value={tpFrom.eps2} onChange={function(ev){setTpFrom(Object.assign({},tpFrom,{eps2:ev.target.value}));}} className={INP} placeholder="enter"/>
                   </div>
                   <div>
@@ -725,6 +753,16 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
                     <input type="number" step="0.01" value={tpFrom.tp} onChange={function(ev){setTpFrom(Object.assign({},tpFrom,{tp:ev.target.value}));}} className={INP}/>
                   </div>
                 </div>
+                {/* Prev-side sanity: warn (and block submit via prevTPOK
+                    feeding canSubmit) when PE × normEPS for the Previous
+                    row diverges more than 2% from Prev TP. Catches typos
+                    or mismatched-vintage data before it lands in the
+                    approval record. */}
+                {prevComputedTP !== null && isFinite(prevTP) && !prevTPOK && (
+                  <div className="text-[11px] text-rose-600 dark:text-rose-400 mb-2 font-mono">
+                    Previous: PE × EPS = {currency} {prevComputedTP.toFixed(2)} but Prev TP = {currency} {prevTP.toFixed(2)} ({((prevComputedTP - prevTP) / prevTP * 100).toFixed(1)}% off) — fix before submitting
+                  </div>
+                )}
                 {/* PROPOSED (new) row */}
                 <div className="text-[10px] font-semibold text-amber-700 dark:text-amber-300 uppercase tracking-wide mb-1">Proposed (new)</div>
                 <div className="flex gap-3 flex-wrap items-end mb-2">
@@ -734,7 +772,7 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
                   </div>
                   <span className="text-gray-500 dark:text-slate-400 pb-1">×</span>
                   <div>
-                    <label className={LBL}>EPS FY1</label>
+                    <label className={LBL}>EPS {fy1Label || "FY1"}</label>
                     <input type="number" step="0.01" value={tpForm.eps1} onChange={function(ev){setTpForm(Object.assign({},tpForm,{eps1:ev.target.value}));}} className={INP}/>
                   </div>
                   <div>
@@ -743,7 +781,7 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
                   </div>
                   <span className="text-gray-500 dark:text-slate-400 pb-1">+</span>
                   <div>
-                    <label className={LBL}>EPS FY2</label>
+                    <label className={LBL}>EPS {fy2Label || "FY2"}</label>
                     <input type="number" step="0.01" value={tpForm.eps2} onChange={function(ev){setTpForm(Object.assign({},tpForm,{eps2:ev.target.value}));}} className={INP}/>
                   </div>
                   <div>

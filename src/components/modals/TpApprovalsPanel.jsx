@@ -32,6 +32,114 @@ function fmtNum(v, dp){
   return n.toFixed(dp===undefined?2:dp);
 }
 
+/* Two-column Previous / Proposed comparison table. Replaces the old
+   "PE 21.0 (unchanged) · EPS1 64.41 → 98.83 · ..." single-line text
+   so the change is scannable in one glance. Unchanged rows are dimmed.
+   Decimal places per row: PE → 1dp, EPS → 2dp, Weights → 0dp, TP → 2dp.
+   Legacy records (pre-breakdown) collapse EPS1/EPS2/Weights into a
+   single blended EPS row. */
+function ChangeTable({ rec, pfx, fy1, fy2 }){
+  var isLegacy = rec.fromEPS1 == null && rec.toEPS1 == null && rec.fromEPS2 == null && rec.toEPS2 == null;
+  /* Build the row list with formatted strings + a "changed" flag for
+     dimming unchanged rows. Tolerance: same as the form's submission
+     check (2% for TP, half a unit for weights, half a tick at the
+     row's decimal-place precision for the rest). */
+  function changed(a, b, eps){
+    if(a == null && b == null) return false;
+    if(a == null || b == null) return true;
+    return Math.abs(parseFloat(a) - parseFloat(b)) > (eps == null ? 0.005 : eps);
+  }
+  var rows = [];
+  rows.push({
+    label: "PE",
+    from: fmtNum(rec.fromPE, 1),
+    to:   fmtNum(rec.toPE,   1),
+    changed: changed(rec.fromPE, rec.toPE, 0.05),
+  });
+  if(isLegacy){
+    rows.push({
+      label: "EPS (blended)",
+      from: fmtNum(rec.fromEPS, 2),
+      to:   fmtNum(rec.toEPS,   2),
+      changed: changed(rec.fromEPS, rec.toEPS, 0.005),
+    });
+  } else {
+    rows.push({
+      label: "EPS " + (fy1 || "FY1"),
+      from: fmtNum(rec.fromEPS1, 2),
+      to:   fmtNum(rec.toEPS1,   2),
+      changed: changed(rec.fromEPS1, rec.toEPS1, 0.005),
+    });
+    rows.push({
+      label: "EPS " + (fy2 || "FY2"),
+      from: fmtNum(rec.fromEPS2, 2),
+      to:   fmtNum(rec.toEPS2,   2),
+      changed: changed(rec.fromEPS2, rec.toEPS2, 0.005),
+    });
+    /* Weights collapsed into one row — they always move together and
+       reading "W1 100 → 50 · W2 0 → 50" is harder than "100/0 → 50/50". */
+    var w1Same = !changed(rec.fromW1, rec.toW1, 0.5);
+    var w2Same = !changed(rec.fromW2, rec.toW2, 0.5);
+    rows.push({
+      label: "Weights " + (fy1 || "FY1") + "/" + (fy2 || "FY2"),
+      from: (rec.fromW1 == null && rec.fromW2 == null) ? "—" : (fmtNum(rec.fromW1, 0) + "/" + fmtNum(rec.fromW2, 0)),
+      to:   (rec.toW1   == null && rec.toW2   == null) ? "—" : (fmtNum(rec.toW1,   0) + "/" + fmtNum(rec.toW2,   0)),
+      changed: !(w1Same && w2Same),
+    });
+  }
+  /* TP Fixed row. Append the computed sanity-check inline when the
+     suggester rounded the proposed TP away from the literal PE × EPS
+     result (>1¢ apart). */
+  var tpFrom = (rec.fromTP != null && isFinite(rec.fromTP)) ? (pfx + fmtNum(rec.fromTP, 2)) : "—";
+  var tpTo   = (rec.toTP   != null && isFinite(rec.toTP))   ? (pfx + fmtNum(rec.toTP,   2)) : "—";
+  if(rec.computedTP != null && isFinite(rec.computedTP) && rec.toTP != null
+      && Math.abs(rec.computedTP - rec.toTP) > 0.01){
+    tpTo += " (PE × EPS = " + pfx + fmtNum(rec.computedTP, 2) + ")";
+  } else if(rec.proposedTP != null && isFinite(rec.proposedTP) && rec.toTP != null
+      && Math.abs(rec.proposedTP - rec.toTP) > 0.01){
+    /* Legacy: toTP = computed, proposedTP = typed. Surface the typed
+       value so the reader can still see what the suggester intended. */
+    tpTo += " (proposed " + pfx + fmtNum(rec.proposedTP, 2) + ")";
+  }
+  rows.push({
+    label: "TP Fixed",
+    from: tpFrom,
+    to:   tpTo,
+    changed: changed(rec.fromTP, rec.toTP, 0.005),
+    isTP: true,
+  });
+  return (
+    <div className="mb-2 rounded-md border border-slate-200 dark:border-slate-700 overflow-hidden">
+      <table className="w-full text-xs">
+        <thead className="bg-slate-50 dark:bg-slate-800/60">
+          <tr>
+            <th className="text-left px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium">Field</th>
+            <th className="text-right px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium">Previous</th>
+            <th className="text-right px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium">Proposed</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(function(r, i){
+            var rowText = r.changed
+              ? "text-gray-900 dark:text-slate-100"
+              : "text-gray-400 dark:text-slate-500";
+            var toEmphasis = r.changed
+              ? "font-semibold " + (r.isTP ? "text-blue-700 dark:text-blue-300" : "text-gray-900 dark:text-slate-100")
+              : "";
+            return (
+              <tr key={i} className={"border-t border-slate-100 dark:border-slate-700 " + (i % 2 === 1 ? "bg-slate-50/40 dark:bg-slate-800/30" : "")}>
+                <td className={"px-2 py-1 " + rowText}>{r.label}{!r.changed && <span className="text-[9px] italic ml-1">unchanged</span>}</td>
+                <td className={"px-2 py-1 text-right tabular-nums font-mono " + rowText}>{r.from}</td>
+                <td className={"px-2 py-1 text-right tabular-nums font-mono " + toEmphasis}>{r.to}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function ApprovalCard({ rec, company, companyName, onApprove, onReject, onWithdraw, onNavigate }){
   var { currentUser, markTpApprovalRead } = useCompanyContext();
   var [showReject, setShowReject] = useState(false);
@@ -46,97 +154,14 @@ function ApprovalCard({ rec, company, companyName, onApprove, onReject, onWithdr
 
   var authorColor = TEAM_COLORS[rec.suggestedBy] || "#6b7280";
 
-  /* Build the change-summary line. Show ALL four breakdown fields
-     consistently across every card (PE, EPS1, EPS2, Weights) — even when
-     a field is unchanged — so the reviewer always sees the full picture
-     and never has to wonder "why does this card have a PE line but the
-     other doesn't?" Unchanged values render with an equals sign instead
-     of an arrow so the change is still visually distinct. FY labels are
-     attached to BOTH EPS lines and the Weights line so it's obvious
-     which fiscal year each number maps to. */
-  var fy1Tag = rec.fy1 ? " " + rec.fy1 : "";
-  var fy2Tag = rec.fy2 ? " " + rec.fy2 : "";
-  function changeLine(label, from, to, dp){
-    var fromStr = fmtNum(from, dp);
-    var toStr   = fmtNum(to,   dp);
-    /* Treat null↔value as a change; null↔null as not-applicable. */
-    if(from == null && to == null) return null;
-    var same = (from != null && to != null
-                && Math.abs(parseFloat(from) - parseFloat(to)) < (dp >= 2 ? 0.005 : 0.05));
-    if(same) return label + " " + fromStr + " (unchanged)";
-    return label + " " + fromStr + " → " + toStr;
-  }
-  var changes = [];
-  /* Legacy records (pre-breakdown) only have blended `eps` and PE. */
-  var isLegacy = rec.fromEPS1 == null && rec.toEPS1 == null && rec.fromEPS2 == null && rec.toEPS2 == null;
-  if(isLegacy){
-    var peLine = changeLine("PE", rec.fromPE, rec.toPE, 1);
-    if(peLine) changes.push(peLine);
-    var epsLine = changeLine("EPS", rec.fromEPS, rec.toEPS, 2);
-    if(epsLine) changes.push(epsLine);
-  } else {
-    var peLine = changeLine("PE", rec.fromPE, rec.toPE, 1);
-    if(peLine) changes.push(peLine);
-    var eps1Line = changeLine("EPS1" + fy1Tag, rec.fromEPS1, rec.toEPS1, 2);
-    if(eps1Line) changes.push(eps1Line);
-    var eps2Line = changeLine("EPS2" + fy2Tag, rec.fromEPS2, rec.toEPS2, 2);
-    if(eps2Line) changes.push(eps2Line);
-    /* Weights stays as a paired display since W1/W2 always move together. */
-    var fyTag = (rec.fy1 || rec.fy2) ? " (" + (rec.fy1 || "FY1") + "/" + (rec.fy2 || "FY2") + ")" : "";
-    var w1Same = rec.fromW1 != null && rec.toW1 != null && Math.abs(parseFloat(rec.fromW1) - parseFloat(rec.toW1)) < 0.5;
-    var w2Same = rec.fromW2 != null && rec.toW2 != null && Math.abs(parseFloat(rec.fromW2) - parseFloat(rec.toW2)) < 0.5;
-    var wAllNull = rec.fromW1 == null && rec.fromW2 == null && rec.toW1 == null && rec.toW2 == null;
-    if(!wAllNull){
-      if(w1Same && w2Same){
-        changes.push("Weights" + fyTag + " " + fmtNum(rec.fromW1,0) + "/" + fmtNum(rec.fromW2,0) + " (unchanged)");
-      } else {
-        changes.push("Weights" + fyTag + " " + fmtNum(rec.fromW1,0) + "/" + fmtNum(rec.fromW2,0) + " → " + fmtNum(rec.toW1,0) + "/" + fmtNum(rec.toW2,0));
-      }
-    }
-  }
-  /* Pull currency + most-recent ord-ticker price from the live company.
-     Lets us prefix TPs with the currency symbol and show what the
-     proposed TP implies for MOS at today's price. Falls back gracefully
-     when company isn't found (legacy records, deleted companies). */
+  /* Currency prefix + current ord-ticker price are still used by the
+     table (for TP formatting) and by the MOS line beneath it. Change
+     rendering moved into <ChangeTable/> below. */
   var v = (company && company.valuation) || {};
   var ord = ((company && company.tickers) || []).find(function(t){return t.isOrdinary;}) || ((company && company.tickers) || [])[0] || null;
   var currentPrice = ord && ord.price !== undefined && ord.price !== "" ? parseFloat(ord.price) : parseFloat(v.price);
   var ccy = (ord && ord.currency) || v.currency || "USD";
   var pfx = ccyPrefix(ccy);
-  /* TP Fixed row. rec.toTP is what gets written to
-     company.valuation.tpFixed on approve — for new records that's the
-     suggester's PROPOSED value (clean round number), and PE × normEPS
-     is saved separately as rec.computedTP for sanity. Old records
-     stored the computed value as rec.toTP and the proposed value as
-     rec.proposedTP — we handle both shapes here so the card reads
-     correctly regardless of when the record was submitted. */
-  var tpLabel = "TP Fixed " + pfx + fmtNum(rec.fromTP,2) + " → " + pfx + fmtNum(rec.toTP,2);
-  if(rec.computedTP != null && isFinite(rec.computedTP) && rec.toTP != null
-      && Math.abs(rec.computedTP - rec.toTP) > 0.01){
-    /* New format: toTP is the proposed/official value; computedTP is the
-       PE × normEPS math, surfaced when it diverges from the proposed. */
-    tpLabel += " (PE × EPS = " + pfx + fmtNum(rec.computedTP,2) + ")";
-  } else if(rec.proposedTP != null && isFinite(rec.proposedTP) && rec.toTP != null
-      && Math.abs(rec.proposedTP - rec.toTP) > 0.01){
-    /* Old format: toTP is the computed value; proposedTP is the suggester's
-       typed New TP. Kept so existing pending records still render meaningfully. */
-    tpLabel += " (computed; proposed " + pfx + fmtNum(rec.proposedTP,2) + ")";
-  }
-  /* New MOS at today's price using the proposed TP — answers the
-     approver's natural question "if I approve, what's the new MOS?"
-     We use calcMOS the same way the Valuation card does. Only show
-     when we have both a price and a toTP. */
-  if(isFinite(currentPrice) && currentPrice > 0 && rec.toTP != null && isFinite(rec.toTP) && rec.toTP > 0){
-    var newMOS = calcMOS(rec.toTP, currentPrice);
-    if(newMOS !== null){
-      var sign = newMOS >= 0 ? "+" : "";
-      /* Explicitly label "price" so this isn't mistaken for an old TP
-         value — the @-clause is the current stock price used to compute
-         the new MOS, not a TP reference. */
-      tpLabel += "  ·  New MOS " + sign + newMOS.toFixed(1) + "% at current price " + pfx + fmtNum(currentPrice,2);
-    }
-  }
-  changes.push(tpLabel);
 
   var statusBadge;
   if(rec.status === "approved"){
@@ -192,7 +217,23 @@ function ApprovalCard({ rec, company, companyName, onApprove, onReject, onWithdr
           >✕</button>
         )}
       </div>
-      <div className="text-xs font-mono text-gray-700 dark:text-slate-300 mb-1.5">{changes.join("  ·  ")}</div>
+      <ChangeTable rec={rec} pfx={pfx} fy1={rec.fy1} fy2={rec.fy2} currentPrice={currentPrice} />
+      {/* MOS line below the table — keeps the "what does this mean for
+          MOS at today's price" answer in eyeline of the table values. */}
+      {(function(){
+        if(!isFinite(currentPrice) || currentPrice <= 0) return null;
+        if(rec.toTP == null || !isFinite(rec.toTP) || rec.toTP <= 0) return null;
+        var newMOS = calcMOS(rec.toTP, currentPrice);
+        if(newMOS === null) return null;
+        var sign = newMOS >= 0 ? "+" : "";
+        var color = newMOS >= 0 ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300";
+        return (
+          <div className={"text-[11px] mb-1.5 " + color}>
+            <span className="font-semibold">New MOS {sign}{newMOS.toFixed(1)}%</span>
+            <span className="text-gray-500 dark:text-slate-400"> at current price {pfx}{fmtNum(currentPrice,2)}</span>
+          </div>
+        );
+      })()}
       {rec.rationale && (
         <div className="text-xs text-gray-600 dark:text-slate-400 mb-2 whitespace-pre-wrap leading-relaxed">{rec.rationale}</div>
       )}
