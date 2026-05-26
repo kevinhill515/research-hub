@@ -54,6 +54,8 @@ function ChangeTable({ rec, pfx, fy1, fy2, currentPrice }){
     label: "PE",
     from: fmtNum(rec.fromPE, 1),
     to:   fmtNum(rec.toPE,   1),
+    fromRaw: rec.fromPE,
+    toRaw:   rec.toPE,
     changed: changed(rec.fromPE, rec.toPE, 0.05),
   });
   if(isLegacy){
@@ -61,6 +63,8 @@ function ChangeTable({ rec, pfx, fy1, fy2, currentPrice }){
       label: "EPS (blended)",
       from: fmtNum(rec.fromEPS, 2),
       to:   fmtNum(rec.toEPS,   2),
+      fromRaw: rec.fromEPS,
+      toRaw:   rec.toEPS,
       changed: changed(rec.fromEPS, rec.toEPS, 0.005),
     });
   } else {
@@ -68,16 +72,22 @@ function ChangeTable({ rec, pfx, fy1, fy2, currentPrice }){
       label: "EPS " + (fy1 || "FY1"),
       from: fmtNum(rec.fromEPS1, 2),
       to:   fmtNum(rec.toEPS1,   2),
+      fromRaw: rec.fromEPS1,
+      toRaw:   rec.toEPS1,
       changed: changed(rec.fromEPS1, rec.toEPS1, 0.005),
     });
     rows.push({
       label: "EPS " + (fy2 || "FY2"),
       from: fmtNum(rec.fromEPS2, 2),
       to:   fmtNum(rec.toEPS2,   2),
+      fromRaw: rec.fromEPS2,
+      toRaw:   rec.toEPS2,
       changed: changed(rec.fromEPS2, rec.toEPS2, 0.005),
     });
     /* Weights collapsed into one row — they always move together and
-       reading "W1 100 → 50 · W2 0 → 50" is harder than "100/0 → 50/50". */
+       reading "W1 100 → 50 · W2 0 → 50" is harder than "100/0 → 50/50".
+       noPctChange flag suppresses the % column for this row (weights
+       are reallocation, not magnitude change — % delta is meaningless). */
     var w1Same = !changed(rec.fromW1, rec.toW1, 0.5);
     var w2Same = !changed(rec.fromW2, rec.toW2, 0.5);
     rows.push({
@@ -85,26 +95,23 @@ function ChangeTable({ rec, pfx, fy1, fy2, currentPrice }){
       from: (rec.fromW1 == null && rec.fromW2 == null) ? "—" : (fmtNum(rec.fromW1, 0) + "/" + fmtNum(rec.fromW2, 0)),
       to:   (rec.toW1   == null && rec.toW2   == null) ? "—" : (fmtNum(rec.toW1,   0) + "/" + fmtNum(rec.toW2,   0)),
       changed: !(w1Same && w2Same),
+      noPctChange: true,
     });
   }
-  /* TP Fixed row. Append the computed sanity-check inline when the
-     suggester rounded the proposed TP away from the literal PE × EPS
-     result (>1¢ apart). */
+  /* TP Fixed row. Keep the cell clean — just pfx + amount. The
+     computed-vs-proposed sanity gap (used to inline as
+     "(PE × EPS = NT$2340.92)") was removed per user request because
+     the small delta is rounding noise that clutters the table. The
+     submission form's prev-side / new-side 2% checks already protect
+     against meaningful divergence. */
   var tpFrom = (rec.fromTP != null && isFinite(rec.fromTP)) ? (pfx + fmtNum(rec.fromTP, 2)) : "—";
   var tpTo   = (rec.toTP   != null && isFinite(rec.toTP))   ? (pfx + fmtNum(rec.toTP,   2)) : "—";
-  if(rec.computedTP != null && isFinite(rec.computedTP) && rec.toTP != null
-      && Math.abs(rec.computedTP - rec.toTP) > 0.01){
-    tpTo += " (PE × EPS = " + pfx + fmtNum(rec.computedTP, 2) + ")";
-  } else if(rec.proposedTP != null && isFinite(rec.proposedTP) && rec.toTP != null
-      && Math.abs(rec.proposedTP - rec.toTP) > 0.01){
-    /* Legacy: toTP = computed, proposedTP = typed. Surface the typed
-       value so the reader can still see what the suggester intended. */
-    tpTo += " (proposed " + pfx + fmtNum(rec.proposedTP, 2) + ")";
-  }
   rows.push({
     label: "TP Fixed",
     from: tpFrom,
     to:   tpTo,
+    fromRaw: rec.fromTP,
+    toRaw:   rec.toTP,
     changed: changed(rec.fromTP, rec.toTP, 0.005),
     isTP: true,
   });
@@ -127,12 +134,17 @@ function ChangeTable({ rec, pfx, fy1, fy2, currentPrice }){
       label: "MOS @ " + pfx + fmtNum(currentPrice, 2),
       from:  fmtMOS(prevMOS),
       to:    fmtMOS(newMOS),
+      fromRaw: prevMOS,
+      toRaw:   newMOS,
       /* MOS is derived from TP, so it changes iff TP changed (within
          rounding). Reuse the same "changed" check rather than comparing
          the percent values, which can drift due to current-price moves
          between proposal and view. */
       changed: changed(rec.fromTP, rec.toTP, 0.005),
       isMOS: true,
+      /* % change of an MOS percentage is misleading; show the absolute
+         ppt change instead in the % column. */
+      isPptChange: true,
       newMOSValue: newMOS, /* used below for green/red text color */
     });
   }
@@ -144,6 +156,7 @@ function ChangeTable({ rec, pfx, fy1, fy2, currentPrice }){
             <th className="text-left px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium">Field</th>
             <th className="text-right px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium">Previous</th>
             <th className="text-right px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium">Proposed</th>
+            <th className="text-right px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium">% Change</th>
           </tr>
         </thead>
         <tbody>
@@ -166,11 +179,49 @@ function ChangeTable({ rec, pfx, fy1, fy2, currentPrice }){
             } else {
               toEmphasis = "";
             }
+            /* Build the % Change cell. Weights and any row flagged
+               noPctChange show N/A. MOS uses absolute ppt change (a
+               %-of-% is misleading). Everything else uses standard
+               % change (to - from) / |from| × 100. Color matches sign:
+               green for positive, red for negative. Skips when either
+               side is null or fromRaw is zero. */
+            var pctCell;
+            if(r.noPctChange){
+              pctCell = <span className="text-gray-400 dark:text-slate-500">N/A</span>;
+            } else {
+              var fromNum = (r.fromRaw == null || r.fromRaw === "") ? null : parseFloat(r.fromRaw);
+              var toNum   = (r.toRaw   == null || r.toRaw   === "") ? null : parseFloat(r.toRaw);
+              if(fromNum == null || toNum == null || !isFinite(fromNum) || !isFinite(toNum)){
+                pctCell = <span className="text-gray-400 dark:text-slate-500">—</span>;
+              } else if(r.isPptChange){
+                /* MOS: absolute percentage-point change (-25.1% → +3.1%
+                   = +28.2 ppt). Already-percentage values so we don't
+                   divide by from. */
+                var ppt = toNum - fromNum;
+                var pptSign = ppt >= 0 ? "+" : "";
+                var pptColor = Math.abs(ppt) < 0.05 ? "text-gray-400 dark:text-slate-500"
+                              : ppt > 0 ? "text-emerald-700 dark:text-emerald-300"
+                                        : "text-rose-700 dark:text-rose-300";
+                pctCell = <span className={"font-semibold " + pctColor}>{pptSign}{ppt.toFixed(1)} ppt</span>;
+              } else if(Math.abs(fromNum) < 1e-9){
+                /* Avoid div-by-zero. If from is 0 and to is non-zero
+                   the change is technically infinite; show a clear "—". */
+                pctCell = <span className="text-gray-400 dark:text-slate-500">—</span>;
+              } else {
+                var pct = (toNum - fromNum) / Math.abs(fromNum) * 100;
+                var pctSign = pct >= 0 ? "+" : "";
+                var pctColor = Math.abs(pct) < 0.05 ? "text-gray-400 dark:text-slate-500"
+                              : pct > 0 ? "text-emerald-700 dark:text-emerald-300"
+                                        : "text-rose-700 dark:text-rose-300";
+                pctCell = <span className={"font-semibold " + pctColor}>{pctSign}{pct.toFixed(1)}%</span>;
+              }
+            }
             return (
               <tr key={i} className={"border-t border-slate-100 dark:border-slate-700 " + (i % 2 === 1 ? "bg-slate-50/40 dark:bg-slate-800/30" : "")}>
                 <td className={"px-2 py-1 " + rowText}>{r.label}{!r.changed && <span className="text-[9px] italic ml-1">unchanged</span>}</td>
                 <td className={"px-2 py-1 text-right tabular-nums font-mono " + rowText}>{r.from}</td>
                 <td className={"px-2 py-1 text-right tabular-nums font-mono " + toEmphasis}>{r.to}</td>
+                <td className="px-2 py-1 text-right tabular-nums font-mono">{pctCell}</td>
               </tr>
             );
           })}
