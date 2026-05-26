@@ -67,7 +67,20 @@ export function useImport(){
       var delim=line.indexOf("\t")>=0?"\t":",";
       var parts=line.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});
       if(parts.length>=6){
-        var date=parts[0];
+        /* Normalize date → ISO YYYY-MM-DD. Manual pastes often arrive as
+           mm/dd/yyyy (Excel default) which sort lexicographically wrong
+           and break the dedup key. parseDateMDY handles m/d/yy(yy) with
+           "/" or "-"; pre-formatted ISO strings fall through unchanged. */
+        var rawDate=parts[0];
+        var mdy=rawDate.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+        var date=rawDate;
+        if(mdy){
+          var mm=parseInt(mdy[1],10),dd=parseInt(mdy[2],10),yy=parseInt(mdy[3],10);
+          if(yy<100)yy+=2000;
+          if(mm>=1&&mm<=12&&dd>=1&&dd<=31){
+            date=yy+"-"+(mm<10?"0":"")+mm+"-"+(dd<10?"0":"")+dd;
+          }
+        }
         var name=parts[1];
         var portRaw=parts[2].toUpperCase();
         /* Map LW account code → portfolio short code (e.g. LWFOCGL1 → FGL).

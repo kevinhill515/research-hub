@@ -96,7 +96,7 @@ function PortfolioRow(props) {
   return (
     <div
       onClick={function () { onOpenCompany(c); }}
-      className="hover:brightness-110 transition-all"
+      className="group hover:brightness-110 transition-all"
       /* contentVisibility skips off-screen row painting. "auto 44px" =
          remember actual size; 44px placeholder height for first paint.
          Two-value syntax avoids accidentally setting width to 44px too. */
@@ -123,7 +123,17 @@ function PortfolioRow(props) {
               entries. Highlighted when one's already stamped for this
               row. */}
           {markTradeAgenda && (
-            <span className="inline-flex gap-0.5 ml-0.5 shrink-0" onClick={function (e) { e.stopPropagation(); }}>
+            /* Compact mode: when no button is active, the whole strip
+               stays hidden until the row is hovered so the Company
+               column doesn't gain ~104px of permanent width (which
+               was forcing the Last Tx date to wrap to two lines).
+               When a button IS active, the active one stays visible
+               (so you can still see what's stamped on each row at a
+               glance) and the inactive siblings reveal on hover. */
+            <span
+              className={"inline-flex gap-0.5 ml-0.5 shrink-0 " + (rowAgendaAction ? "" : "hidden group-hover:inline-flex")}
+              onClick={function (e) { e.stopPropagation(); }}
+            >
               {TRADE_BTNS.map(function (b) {
                 const active = rowAgendaAction === b[1];
                 return (
@@ -132,7 +142,7 @@ function PortfolioRow(props) {
                     type="button"
                     onClick={function (e) { e.stopPropagation(); markTradeAgenda(c.id, portTab, b[1]); }}
                     title={"Stamp " + b[1] + " on the trading agenda for " + portTab}
-                    className={"text-[10px] font-bold w-5 h-5 rounded-sm leading-none border transition-colors " + (active ? "text-white shadow" : "text-gray-500 dark:text-slate-400 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 hover:border-slate-400")}
+                    className={"text-[10px] font-bold w-5 h-5 rounded-sm leading-none border transition-colors " + (active ? "text-white shadow" : "text-gray-500 dark:text-slate-400 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 hover:border-slate-400 hidden group-hover:inline-block")}
                     style={active ? { background: b[2], borderColor: b[2] } : undefined}
                   >{b[0]}</button>
                 );
