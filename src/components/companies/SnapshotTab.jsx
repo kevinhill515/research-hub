@@ -450,13 +450,17 @@ function PerfBarChart({ row, benchRow, windows, fmt, color }) {
 
   return (
     <svg className="block w-full mb-2" height={H} viewBox={"0 0 " + W + " " + H} preserveAspectRatio="none" role="img" aria-label="Trailing returns bar chart">
-      {/* Legend strip — only when benchmark is present */}
+      {/* Legend strip — only when benchmark is present. The legend uses
+          the row's kind-tag (ADR / ORD-USD / ORD-LOC) so users can tell
+          which of the three possible stock rows is being charted. */}
       {benchRow && (
         <g>
           <rect x={PAD_L} y={6} width={10} height={8} fill="#16a34a" opacity="0.85" rx="1"/>
-          <text x={PAD_L + 14} y={13} fontSize="9" fill="#475569">{(row.label || "Stock").slice(0, 40)}</text>
-          <rect x={PAD_L + 200} y={6} width={10} height={8} fill={BENCH_COLOR} opacity="0.85" rx="1"/>
-          <text x={PAD_L + 214} y={13} fontSize="9" fill="#475569">{(benchRow.label || "Benchmark").slice(0, 40)}</text>
+          <text x={PAD_L + 14} y={13} fontSize="9" fill="#475569">
+            {row.kind ? row.kind + " · " : ""}{(row.label || "Stock").slice(0, 50)}
+          </text>
+          <rect x={PAD_L + 240} y={6} width={10} height={8} fill={BENCH_COLOR} opacity="0.85" rx="1"/>
+          <text x={PAD_L + 254} y={13} fontSize="9" fill="#475569">{(benchRow.label || "Benchmark").slice(0, 40)}</text>
         </g>
       )}
       {/* Zero baseline */}
@@ -532,15 +536,24 @@ function TrailingPerformance({ companyName, benchmarkRows, usTicker, usPerf, ord
        2. Ord ticker — USD (as uploaded; FactSet pulls USD-adjusted)
        3. Ord ticker — Local (computed via FX, only when FX series present
                               and ord currency isn't already USD) */
+  /* Each stock row gets a colored kind-tag (ADR / ORD-USD / ORD-LOC)
+     rendered as a pill in front of the name. The label otherwise truncates
+     for long company names and you can't tell which row is which. */
   const stockRows = [];
   if (usPerf) {
     stockRows.push({
+      kind: "ADR",
+      kindColor: "#0e7490", /* cyan-700 */
       label: (companyName || "Stock") + " · " + (usTicker || "US") + " (USD)",
       isStock: true, isPriorClose: false, values: usPerf, currencyTag: "USD",
     });
   }
   if (ordPerf && ordTicker && ordTicker !== usTicker) {
+    /* When the ord ticker IS the only listing (no separate US ticker),
+       label it ORD instead of ORD-USD since there's no ambiguity. */
     stockRows.push({
+      kind: usPerf ? "ORD-USD" : "ORD",
+      kindColor: "#7c3aed", /* violet-600 */
       label: (companyName || "Stock") + " · " + ordTicker + " (USD)",
       isStock: true, isPriorClose: false, values: ordPerf, currencyTag: "USD",
     });
@@ -548,6 +561,8 @@ function TrailingPerformance({ companyName, benchmarkRows, usTicker, usPerf, ord
       const localValues = {};
       Object.keys(ordPerf).forEach(function (k) { localValues[k] = usdToLocal(ordPerf[k], k); });
       stockRows.push({
+        kind: "ORD-" + ordCurrency,
+        kindColor: "#b45309", /* amber-700 */
         label: (companyName || "Stock") + " · " + ordTicker + " (" + ordCurrency + ")",
         isStock: true, isPriorClose: false, values: localValues, currencyTag: ordCurrency,
         isLocalRow: true,
@@ -556,6 +571,8 @@ function TrailingPerformance({ companyName, benchmarkRows, usTicker, usPerf, ord
   }
   if (stockRows.length === 0 && legacyPerf) {
     stockRows.push({
+      kind: "LEGACY",
+      kindColor: "#64748b",
       label: (companyName || "Stock") + " (legacy)",
       isStock: true, isPriorClose: false, values: legacyPerf, currencyTag: "?",
     });
@@ -672,6 +689,17 @@ function TrailingPerformance({ companyName, benchmarkRows, usTicker, usPerf, ord
             return (
               <div key={"row-" + ri} style={{ display: "contents" }}>
                 <div className={"py-1 px-1 text-[11px] font-medium text-gray-900 dark:text-slate-100 truncate " + rowBg}>
+                  {r.kind && (
+                    <span
+                      className="inline-block text-[9px] font-bold text-white rounded px-1 py-px mr-1.5 align-middle tabular-nums"
+                      style={{ background: r.kindColor }}
+                      title={r.kind === "ADR" ? "US ADR / USD listing"
+                           : r.kind === "ORD-USD" ? "Ordinary (home) listing, USD-converted return"
+                           : r.kind === "ORD" ? "Ordinary (home) listing"
+                           : r.kind === "LEGACY" ? "Legacy perf data (no ticker attribution)"
+                           : "Ordinary (home) listing, local-currency return"}
+                    >{r.kind}</span>
+                  )}
                   {r.label}
                   {r.isLocalRow && (
                     <span className="text-[9px] text-gray-400 dark:text-slate-500 italic ml-1" title={"Converted from USD using the " + fxLabel + " FX series"}>(via FX)</span>
