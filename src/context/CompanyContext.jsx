@@ -407,7 +407,69 @@ export function CompanyProvider({children}){
     try{if(r7&&r7.value)setFxRates(JSON.parse(r7.value));}catch(e){}
     try{if(r8&&r8.value){var swRaw=JSON.parse(r8.value);var swMig=migrateSpecialWeights(swRaw);setSpecialWeights(swMig.data);if(swMig.changed)supaUpsert("meta",{key:"specialWeights",value:JSON.stringify(swMig.data)});}}catch(e){}
     try{if(r9&&r9.value){var ann=JSON.parse(r9.value);if(Array.isArray(ann))setAnnotations(ann);}}catch(e){}
-    try{if(r16&&r16.value){var tpa=JSON.parse(r16.value);if(Array.isArray(tpa))setTpApprovals(tpa);}}catch(e){}
+    try{if(r16&&r16.value){
+      var tpa=JSON.parse(r16.value);
+      if(Array.isArray(tpa)){
+        /* One-shot backfill: PENDING approval records submitted before
+           the May-26-2026 EarningsEntry fix carry null fromPE / fromEPS1
+           / fromEPS2 / fromW1 / fromW2 / fromTP because the original
+           submission code only sourced "from" values from tpHistory and
+           bailed when history was empty. Fill the missing slots from the
+           company's CURRENT valuation — that IS the pre-change state for
+           companies whose valuation has only been edited directly on the
+           Valuation card. Conservative: only fills SLOTS THAT ARE NULL,
+           never overwrites a non-null from-value. Idempotent — gated by
+           a meta flag so it runs exactly once across the team, and the
+           per-record check means re-running it would be a no-op anyway. */
+        try {
+          var rTpaBackfillFlag = await supaGet("meta","key","backfill_tpapproval_from_2026_05_26");
+          if (!(rTpaBackfillFlag && rTpaBackfillFlag.value)) {
+            var tpaChanged = false;
+            var companiesById = {};
+            (coMig.data || []).forEach(function(c){ companiesById[c.id] = c; });
+            tpa.forEach(function(rec){
+              if (rec.status !== "pending") return; /* don't rewrite decided history */
+              var c = companiesById[rec.companyId];
+              if (!c) return;
+              var cv = c.valuation || {};
+              function _fillIfBlank(field, val){
+                if (rec[field] == null && val !== "" && val != null && isFinite(parseFloat(val))) {
+                  rec[field] = parseFloat(val);
+                  tpaChanged = true;
+                }
+              }
+              _fillIfBlank("fromPE",   cv.pe);
+              _fillIfBlank("fromEPS1", cv.eps1);
+              _fillIfBlank("fromEPS2", cv.eps2);
+              _fillIfBlank("fromW1",   cv.w1);
+              _fillIfBlank("fromW2",   cv.w2);
+              /* Recompute fromEPS (blended) when we now have all four
+                 building blocks but the blended value is still null. */
+              if (rec.fromEPS == null
+                  && isFinite(rec.fromEPS1) && isFinite(rec.fromEPS2)
+                  && isFinite(rec.fromW1)   && isFinite(rec.fromW2)) {
+                rec.fromEPS = (rec.fromEPS1 * rec.fromW1 + rec.fromEPS2 * rec.fromW2) / 100;
+                tpaChanged = true;
+              }
+              /* fromTP fallback: company.valuation.tpFixed is what
+                 EarningsEntry's getTpFixed reads. Only set if currently null. */
+              if (rec.fromTP == null && isFinite(parseFloat(cv.tpFixed))) {
+                rec.fromTP = parseFloat(cv.tpFixed);
+                tpaChanged = true;
+              }
+              /* FY label backfill too — older records may not have these. */
+              if (!rec.fy1 && cv.fy1) { rec.fy1 = cv.fy1; tpaChanged = true; }
+              if (!rec.fy2 && cv.fy2) { rec.fy2 = cv.fy2; tpaChanged = true; }
+            });
+            if (tpaChanged) {
+              supaUpsert("meta", { key: "tpApprovals", value: JSON.stringify(tpa) });
+            }
+            supaUpsert("meta", { key: "backfill_tpapproval_from_2026_05_26", value: "1" });
+          }
+        } catch(_e) {}
+        setTpApprovals(tpa);
+      }
+    }}catch(e){}
     try{if(r17&&r17.value){var ml=JSON.parse(r17.value);if(Array.isArray(ml))setMemoLog(ml);}}catch(e){}
     try{if(r10&&r10.value){var ra=JSON.parse(r10.value);if(ra&&typeof ra==="object"){if(!ra.byMember)ra.byMember={};if(!Array.isArray(ra.reorgs))ra.reorgs=[];/* Migrate legacy category keys: gbl→gl, intl→in, intSmall→sc */var RA_RENAMES={gbl:"gl",intl:"in",intSmall:"sc"};var raChanged=false;Object.keys(ra.byMember).forEach(function(m){var mb=ra.byMember[m]||{};Object.keys(RA_RENAMES).forEach(function(oldK){if(mb[oldK]!==undefined){mb[RA_RENAMES[oldK]]=mb[oldK];delete mb[oldK];raChanged=true;}});ra.byMember[m]=mb;});setResearchAssignments(ra);if(raChanged)supaUpsert("meta",{key:"researchAssignments",value:JSON.stringify(ra)});}}}catch(e){}
     try{if(r11&&r11.value){var pd=JSON.parse(r11.value);if(pd&&typeof pd==="object")setPerfData(pd);}}catch(e){}
