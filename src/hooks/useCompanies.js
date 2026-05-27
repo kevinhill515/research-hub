@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useCompanyContext } from '../context/CompanyContext.jsx';
 import { PORTFOLIOS, TIER_ORDER, SECTOR_ORDER, COUNTRY_ORDER, ALL_COLS, COMPACT_COLS, TEMPLATE_SECTIONS, UPLOAD_TYPES, REP_ACCOUNTS } from '../constants/index.js';
-import { getCurrency, calcNormEPS, calcTP, calcMOS, fmtPrice, fmtTP, fmtMOS, impliedFYLabel, todayStr, parseDate, sortCos, OVERLAP_PORT_ORDER, blankEarnings, toHTML, downloadMD, getTiers } from '../utils/index.js';
+import { getCurrency, calcNormEPS, calcTP, calcMOS, fmtPrice, fmtTP, fmtMOS, impliedFYLabel, todayStr, parseDate, sortCos, OVERLAP_PORT_ORDER, blankEarnings, toHTML, downloadMD, getTiers, inferQuarter } from '../utils/index.js';
 import { ANTHROPIC_KEY, apiCall, supaUpsert, supaGet } from '../api/index.js';
 import { mergePriceSeries } from '../utils/priceHistoryParser.js';
 import { invalidatePriceHistory } from './usePriceHistory.js';
@@ -251,6 +251,69 @@ export function useCompanies(){
       if(!isNaN(tp)){
         var tpEntry={date:entry.reportDate||todayStr(),tp:tp,pe:(co.valuation&&co.valuation.pe)||"",eps:(co.valuation&&co.valuation.eps1)||"",forwardYear:entry.quarter||"",currency,source:"earnings"};
         updates.tpHistory=[tpEntry].concat(co.tpHistory||[]);
+      }
+    }
+    /* Baseline TP backfill. When this is the FIRST earnings entry being
+       saved AND tpHistory is still empty, snapshot the company's current
+       valuation as a starting-point row so the Fixed TP History table
+       isn't blank for companies that came online before any TP approval
+       cycle ran. Triggers regardless of tpChange (the user explicitly
+       wants this even on "Unchanged" first entries). Built from:
+         - tpFixed if set; else PE x blended EPS as the implied TP
+         - pe / eps1 / eps2 / w1 / w2 / fy1 / fy2 from valuation
+         - quarter inferred from entry.reportDate + valuation.fyMonth
+       Only runs when the existing tpHistory is empty, so re-saving a
+       first entry doesn't keep adding baselines. */
+    var existingHist = (updates.tpHistory || co.tpHistory || []);
+    var hasExistingHistory = existingHist.length > 0;
+    /* Skip if the "If TP changed" branch above already wrote a row
+       (existingHist.length > 0 in that case); else this would push a
+       duplicate baseline alongside the just-created earnings entry. */
+    if(!hasExistingHistory){
+      var v = co.valuation || {};
+      var baselinePE = parseFloat(v.pe);
+      var baselineE1 = parseFloat(v.eps1);
+      var baselineE2 = parseFloat(v.eps2);
+      var baselineW1 = parseFloat(v.w1);
+      var baselineW2 = parseFloat(v.w2);
+      var baselineBlend = null;
+      if(isFinite(baselineE1) && isFinite(baselineE2) && isFinite(baselineW1) && isFinite(baselineW2)){
+        baselineBlend = (baselineE1*baselineW1 + baselineE2*baselineW2) / 100;
+      } else if(isFinite(baselineE1)){
+        baselineBlend = baselineE1;
+      } else if(isFinite(baselineE2)){
+        baselineBlend = baselineE2;
+      }
+      var baselineTP = parseFloat(v.tpFixed);
+      if(!isFinite(baselineTP) && isFinite(baselinePE) && baselinePE > 0 && baselineBlend !== null){
+        baselineTP = baselinePE * baselineBlend;
+      }
+      if(isFinite(baselineTP) && baselineTP > 0){
+        var baseCurrency = v.currency || getCurrency(co.country);
+        /* Quarter label inferred from the earnings entry that triggered
+           this backfill — that's the snapshot's "as-of" earnings cycle. */
+        var qLabel = entry.quarter || "";
+        if(!qLabel && entry.reportDate){
+          var inf = inferQuarter(entry.reportDate, v.fyMonth || "Dec");
+          if(inf && inf.label) qLabel = inf.label;
+        }
+        var baselineEntry = {
+          date: entry.reportDate || todayStr(),
+          tp: baselineTP,
+          pe: v.pe || "",
+          eps: baselineBlend != null ? String(baselineBlend) : "",
+          eps1: isFinite(baselineE1) ? baselineE1 : "",
+          eps2: isFinite(baselineE2) ? baselineE2 : "",
+          w1: isFinite(baselineW1) ? baselineW1 : "",
+          w2: isFinite(baselineW2) ? baselineW2 : "",
+          fy1: v.fy1 || "",
+          fy2: v.fy2 || "",
+          earningsEntryId: entry.id,
+          quarter: qLabel,
+          currency: baseCurrency,
+          source: "baseline",
+        };
+        updates.tpHistory = [baselineEntry].concat(co.tpHistory || []);
       }
     }
     var u=Object.assign({},co,updates);
