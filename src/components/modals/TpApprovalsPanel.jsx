@@ -38,7 +38,20 @@ function fmtNum(v, dp){
    Decimal places per row: PE → 1dp, EPS → 2dp, Weights → 0dp, TP → 2dp.
    Legacy records (pre-breakdown) collapse EPS1/EPS2/Weights into a
    single blended EPS row. */
-function ChangeTable({ rec, pfx, fy1, fy2, currentPrice }){
+/* Fiscal-year-end month abbreviation for display alongside non-December
+   FY labels. Returns "" for December (the default / no-op) so most US
+   companies don't get a noisy "(Dec)" tag they didn't ask for. Returns
+   "" when the month isn't a valid 1..12 either, so unset companies fall
+   back to a clean label. */
+function fyMonthSuffix(fyEndMonth){
+  var n = parseInt(fyEndMonth, 10);
+  if(!isFinite(n) || n < 1 || n > 12 || n === 12) return "";
+  var NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return " (" + NAMES[n - 1] + ")";
+}
+
+function ChangeTable({ rec, pfx, fy1, fy2, currentPrice, fyEndMonth }){
+  var fyMonthTag = fyMonthSuffix(fyEndMonth);
   var isLegacy = rec.fromEPS1 == null && rec.toEPS1 == null && rec.fromEPS2 == null && rec.toEPS2 == null;
   /* Build the row list with formatted strings + a "changed" flag for
      dimming unchanged rows. Tolerance: same as the form's submission
@@ -69,7 +82,7 @@ function ChangeTable({ rec, pfx, fy1, fy2, currentPrice }){
     });
   } else {
     rows.push({
-      label: "EPS " + (fy1 || "FY1"),
+      label: "EPS " + (fy1 || "FY1") + fyMonthTag,
       from: fmtNum(rec.fromEPS1, 2),
       to:   fmtNum(rec.toEPS1,   2),
       fromRaw: rec.fromEPS1,
@@ -77,7 +90,7 @@ function ChangeTable({ rec, pfx, fy1, fy2, currentPrice }){
       changed: changed(rec.fromEPS1, rec.toEPS1, 0.005),
     });
     rows.push({
-      label: "EPS " + (fy2 || "FY2"),
+      label: "EPS " + (fy2 || "FY2") + fyMonthTag,
       from: fmtNum(rec.fromEPS2, 2),
       to:   fmtNum(rec.toEPS2,   2),
       fromRaw: rec.fromEPS2,
@@ -341,7 +354,14 @@ function ApprovalCard({ rec, company, companyName, onApprove, onReject, onWithdr
           >✕</button>
         )}
       </div>
-      <ChangeTable rec={rec} pfx={pfx} fy1={rec.fy1} fy2={rec.fy2} currentPrice={currentPrice} />
+      <ChangeTable
+        rec={rec}
+        pfx={pfx}
+        fy1={rec.fy1}
+        fy2={rec.fy2}
+        currentPrice={currentPrice}
+        fyEndMonth={(company && company.segments && company.segments.fiscalYearEndMonth) || null}
+      />
       {rec.rationale && (
         <div className="text-xs text-gray-600 dark:text-slate-400 mb-2 whitespace-pre-wrap leading-relaxed">{rec.rationale}</div>
       )}
