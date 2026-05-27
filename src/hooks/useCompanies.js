@@ -72,7 +72,18 @@ export function useCompanies(){
   const [showTmplSearch,setShowTmplSearch]=useState(false);
   const searchRef=useRef();
 
-  useEffect(function(){if(selCo){setPendingVal(Object.assign({},selCo.valuation||{}));}else{setPendingVal(null);}},[selCo&&selCo.id]);
+  /* Re-seed pendingVal whenever the selected company changes OR its
+     underlying valuation changes (e.g. a TP approval just wrote
+     *Fixed fields, or a Data Hub valuation paste merged in new
+     values). Pulls in any out-of-band edits to fields the form
+     doesn't expose so the next Save doesn't wipe them. The merge in
+     commitValuation already provides defense-in-depth, but keeping
+     pendingVal fresh means the user also SEES the latest state.
+
+     Tracks identity of the valuation object specifically so unrelated
+     edits to the company (sections, earnings entries, etc.) don't
+     stomp on in-progress form edits. */
+  useEffect(function(){if(selCo){setPendingVal(Object.assign({},selCo.valuation||{}));}else{setPendingVal(null);}},[selCo&&selCo.id, selCo&&selCo.valuation]);
 
   function addCompany(){
     if(!newName.trim())return;
@@ -176,7 +187,23 @@ export function useCompanies(){
     var currency=getCurrency(co.country);var activeCurrency=newVal.currency||currency;
     var oldVal=co.valuation||{};var oldNE=calcNormEPS(oldVal)||parseFloat(oldVal.eps);var oldTp=calcTP(oldVal.pe,oldNE);
     var newNE=calcNormEPS(newVal)||parseFloat(newVal.eps);var newTp=calcTP(newVal.pe,newNE);
-    var updates={valuation:newVal};
+    /* Merge the form's newVal onto the company's current valuation
+       instead of REPLACING it wholesale. Fixes a class of "save wipes
+       fields you didn't touch" bugs: if anything added a key to
+       company.valuation AFTER pendingVal was cloned from it (e.g. a TP
+       approval just landed and wrote eps1Fixed / w1Fixed / peFixed,
+       or a paste through Data Hub merged in new fields), those new
+       keys would be missing from newVal and a wholesale replace would
+       drop them. Merging means the save only touches the fields the
+       form actually managed; everything else (including *Fixed
+       snapshot fields, tpHistory-related fields, asyncly-written
+       fields) survives.
+
+       The user can still EXPLICITLY clear a *Fixed value by typing
+       "" in the form — empty string is a valid value the merge
+       writes through. Only undefined-on-newVal preserves. */
+    var mergedVal = Object.assign({}, co.valuation || {}, newVal);
+    var updates={valuation:mergedVal};
     if(newTp!==null&&newTp!==oldTp){
       var fyLabel=impliedFYLabel(newVal);
       /* Capture the FULL breakdown (eps1/eps2/w1/w2) alongside the
@@ -201,7 +228,12 @@ export function useCompanies(){
     }
     var u=Object.assign({},co,updates);
     setSelCo(u);setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});});
-    setPendingVal(Object.assign({},newVal));return u;
+    /* Re-seed pendingVal from the merged valuation so the form
+       reflects the actual saved state (including any preserved fields
+       the user didn't touch). Otherwise the next edit cycle would
+       start from the partial newVal and could re-trigger the same
+       wipe on a subsequent save. */
+    setPendingVal(Object.assign({},mergedVal));return u;
   }
   function saveEarningsEntry(co,entry){
     var entries=(co.earningsEntries||[]).slice();var idx=entries.findIndex(function(e){return e.id===entry.id;});
