@@ -69,7 +69,7 @@ export function CompanyDetail(props){
     addComment, deleteComment, entryComments, newCommentText, setNewCommentText,
     addTransaction, deleteTransaction, setTxInitOverride, setTxCashFlow,
     updateTargetWeight, addTargetHistoryEntry, deleteTargetHistoryEntry, updateInitiatedDate,
-    updateCo, cp, copied, setCopied,
+    updateCo, cp, copied, setCopied, tpApprovals,
   } = useCompanyContext();
   const [showDiag,setShowDiag]=useState(false);
   const confirm = useConfirm();
@@ -97,6 +97,19 @@ export function CompanyDetail(props){
         var impliedNormEPSFixed=(tpFixed!==null&&!isNaN(peNum)&&peNum>0)?tpFixed/peNum:null;
         var mosFixed=calcMOS(tpFixed,pv.price);
         var mosFixedStyle=mosBg(mosFixed);
+        /* Pending TP approval (if any) for THIS company. Surfaces an
+           hourglass + the suggested-new TP on the TP Fixed card and the
+           suggested-new MOS on the MOS Fixed card, so the user knows
+           the current TP Fixed is about to move and what it'll move to
+           without clicking into the Approvals modal. Just the first
+           pending record — if multiple exist, the Approvals panel is
+           the right surface for picking which one wins. */
+        var pendingApproval = (tpApprovals||[]).find(function(a){
+          return a.companyId === selCo.id && a.status === "pending";
+        }) || null;
+        var pendingTP = pendingApproval && pendingApproval.toTP != null && isFinite(pendingApproval.toTP)
+          ? parseFloat(pendingApproval.toTP) : null;
+        var pendingMOSFixed = (pendingTP !== null && pv.price) ? calcMOS(pendingTP, pv.price) : null;
         var hist=selCo.tpHistory||[];var portfolios=selCo.portfolios||[];var portWeights=selCo.portWeights||{};
         var earningsEntries=selCo.earningsEntries||[];
         return(<div>
@@ -609,15 +622,29 @@ export function CompanyDetail(props){
                     <div className="text-[22px] font-bold" style={{color:mosStyle?mosStyle.color:undefined}}>{mos!==null?fmtMOS(mos):"--"}</div>
                     {mos!==null&&pv.price&&<div className="text-[11px] mt-0.5" style={{color:mosStyle?mosStyle.color:undefined}}>Price: {activeCurrency} {fmtPrice(pv.price)}</div>}
                   </div>
+                  {/* TP Fixed card. When a TP approval is pending we
+                      surface ⏳ + the suggested-new TP under the current
+                      TP Fixed value, so the reader sees both at a glance
+                      without opening the Approvals modal. */}
                   <div className="px-4 py-3.5 rounded-lg" style={{background:tpFixed!==null?"#ecfdf5":undefined,border:"1px solid "+(tpFixed!==null?"#a7f3d0":"#e2e8f0")}}>
                     <div className="text-[11px] text-gray-500 dark:text-slate-400 mb-0.5">TP Fixed {pv.tpFixedDate?"("+pv.tpFixedDate+")":(pv.normEPSFixedDate?"("+pv.normEPSFixedDate+")":"")}</div>
                     <div className="text-[22px] font-bold" style={{color:tpFixed!==null?"#047857":undefined}}>{tpFixed!==null?fmtTP(tpFixed,activeCurrency):"--"}</div>
                     {tpFixed!==null&&impliedNormEPSFixed!==null&&<div className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">implied EPS: {activeCurrency} {impliedNormEPSFixed.toFixed(2)}</div>}
+                    {pendingTP !== null && (
+                      <div className="text-[11px] mt-1 font-medium" style={{color:"#b45309"}} title={"Pending TP change submitted by " + (pendingApproval.suggestedBy || "teammate") + " on " + (pendingApproval.suggestedAt || "?")}>
+                        ⏳ Pending: <span className="font-bold">{fmtTP(pendingTP, activeCurrency)}</span>
+                      </div>
+                    )}
                   </div>
                   <div className="px-4 py-3.5 rounded-lg" style={{background:mosFixedStyle?mosFixedStyle.bg:undefined,border:"1px solid "+(mosFixedStyle?"transparent":"#e2e8f0")}}>
                     <div className="text-[11px] mb-0.5" style={{color:mosFixedStyle?mosFixedStyle.color:undefined}}>MOS Fixed</div>
                     <div className="text-[22px] font-bold" style={{color:mosFixedStyle?mosFixedStyle.color:undefined}}>{mosFixed!==null?fmtMOS(mosFixed):"--"}</div>
                     {mosFixed!==null&&pv.price&&<div className="text-[11px] mt-0.5" style={{color:mosFixedStyle?mosFixedStyle.color:undefined}}>Price: {activeCurrency} {fmtPrice(pv.price)}</div>}
+                    {pendingMOSFixed !== null && (
+                      <div className="text-[11px] mt-1 font-medium" style={{color:"#b45309"}} title="MOS implied by the pending TP at today's price">
+                        ⏳ Pending: <span className="font-bold">{fmtMOS(pendingMOSFixed)}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
                 {/* Snapshot controls for the fixed TP. User enters TP Fixed
@@ -833,19 +860,43 @@ export function CompanyDetail(props){
                   <button onClick={function(){setPendingVal(Object.assign({},selCo.valuation||{}));}} className={BTN}>Discard changes</button>
                 </div>
 
-                {/* 4. TP History */}
+                {/* 4. Fixed TP History.
+                    Sorted by date descending so the most recent
+                    approval sits at the top. The original-index map
+                    (idxMap) is preserved so the per-row delete button
+                    can splice the correct entry out of selCo.tpHistory
+                    regardless of the displayed order. */}
                 {selCo.tpHistory&&selCo.tpHistory.length>0&&(<div className="mb-5">
-                  <div className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-2.5">TP History</div>
+                  <div className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-2.5">Fixed TP History</div>
                   <div style={{display:"table",width:"100%"}} className="text-xs">
-                    <div style={{display:"table-row"}}>{["Date","Target Price","P/E","EPS","Years",""].map(function(h){return <div key={h} className="text-[10px] uppercase text-gray-500 dark:text-slate-400 font-semibold" style={{display:"table-cell",padding:"4px 10px 8px 0"}}>{h}</div>;})}</div>
-                    {selCo.tpHistory.map(function(h,i){var isLatest=i===0;return(<div key={i} style={{display:"table-row"}}>
-                      <div className="text-gray-500 dark:text-slate-400 border-t border-slate-200 dark:border-slate-700" style={{display:"table-cell",padding:"7px 10px 7px 0"}}>{h.date}</div>
-                      <div className="border-t border-slate-200 dark:border-slate-700 font-semibold" style={{display:"table-cell",padding:"7px 10px 7px 0",color:isLatest?"#166534":undefined}}>{fmtTP(h.tp,h.currency||activeCurrency)}</div>
-                      <div className="text-gray-900 dark:text-slate-100 border-t border-slate-200 dark:border-slate-700" style={{display:"table-cell",padding:"7px 10px 7px 0"}}>{h.pe?h.pe+"x":"--"}</div>
-                      <div className="text-gray-900 dark:text-slate-100 border-t border-slate-200 dark:border-slate-700" style={{display:"table-cell",padding:"7px 10px 7px 0"}}>{h.eps?(h.currency||activeCurrency)+" "+h.eps:"--"}</div>
-                      <div className="text-gray-500 dark:text-slate-400 border-t border-slate-200 dark:border-slate-700" style={{display:"table-cell",padding:"7px 10px 7px 0"}}>{h.fyLabel||h.forwardYear||"--"}</div>
-                      <div className="border-t border-slate-200 dark:border-slate-700" style={{display:"table-cell",padding:"7px 0 7px 0"}}><span onClick={function(){var u=Object.assign({},selCo,{tpHistory:selCo.tpHistory.filter(function(_,j){return j!==i;})});setSelCo(u);setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});});}} className="text-[11px] text-red-600 dark:text-red-400 cursor-pointer">{"\u00D7"}</span></div>
-                    </div>);})}
+                    <div style={{display:"table-row"}}>{["Date","Target Price","P/E","EPS","Fiscal Quarter",""].map(function(h){return <div key={h} className="text-[10px] uppercase text-gray-500 dark:text-slate-400 font-semibold" style={{display:"table-cell",padding:"4px 10px 8px 0"}}>{h}</div>;})}</div>
+                    {(function(){
+                      var arr = (selCo.tpHistory||[]).map(function(h, originalIdx){ return { h: h, originalIdx: originalIdx }; });
+                      arr.sort(function(a, b){ return (b.h.date || "").localeCompare(a.h.date || ""); });
+                      return arr;
+                    })().map(function(pair, displayIdx){
+                      var h = pair.h;
+                      var originalIdx = pair.originalIdx;
+                      var isLatest = displayIdx === 0;
+                      /* Fiscal Quarter cell: prefer the snapshotted fy1/fy2
+                         (newer approvals); fall back to legacy fyLabel /
+                         forwardYear when those weren't stored. */
+                      var fqLabel = "";
+                      if(h.fy1 && h.fy2) fqLabel = h.fy1 + " / " + h.fy2;
+                      else if(h.fy1) fqLabel = h.fy1;
+                      else if(h.fy2) fqLabel = h.fy2;
+                      else if(h.fyLabel) fqLabel = h.fyLabel;
+                      else if(h.forwardYear) fqLabel = h.forwardYear;
+                      else fqLabel = "--";
+                      return (<div key={originalIdx} style={{display:"table-row"}}>
+                        <div className="text-gray-500 dark:text-slate-400 border-t border-slate-200 dark:border-slate-700" style={{display:"table-cell",padding:"7px 10px 7px 0"}}>{h.date}</div>
+                        <div className="border-t border-slate-200 dark:border-slate-700 font-semibold" style={{display:"table-cell",padding:"7px 10px 7px 0",color:isLatest?"#166534":undefined}}>{fmtTP(h.tp,h.currency||activeCurrency)}</div>
+                        <div className="text-gray-900 dark:text-slate-100 border-t border-slate-200 dark:border-slate-700" style={{display:"table-cell",padding:"7px 10px 7px 0"}}>{h.pe?h.pe+"x":"--"}</div>
+                        <div className="text-gray-900 dark:text-slate-100 border-t border-slate-200 dark:border-slate-700" style={{display:"table-cell",padding:"7px 10px 7px 0"}}>{h.eps?(h.currency||activeCurrency)+" "+h.eps:"--"}</div>
+                        <div className="text-gray-500 dark:text-slate-400 border-t border-slate-200 dark:border-slate-700" style={{display:"table-cell",padding:"7px 10px 7px 0"}}>{fqLabel}</div>
+                        <div className="border-t border-slate-200 dark:border-slate-700" style={{display:"table-cell",padding:"7px 0 7px 0"}}><span onClick={function(){var u=Object.assign({},selCo,{tpHistory:selCo.tpHistory.filter(function(_,j){return j!==originalIdx;})});setSelCo(u);setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});});}} className="text-[11px] text-red-600 dark:text-red-400 cursor-pointer">{"\u00D7"}</span></div>
+                      </div>);
+                    })}
                   </div>
                 </div>)}
               </div>)}

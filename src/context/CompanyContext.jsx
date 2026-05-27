@@ -988,6 +988,14 @@ export function CompanyProvider({children}){
           eps2:rec.toEPS2,
           w1:rec.toW1,
           w2:rec.toW2,
+          /* Snapshot the FY labels at the time of approval so the
+             Fixed TP History table can render a meaningful "Fiscal
+             Quarter" column. Pulled from the suggestion record (where
+             they were captured at submission time from valuation.fy1
+             / fy2). Falls back to the company's current valuation
+             labels when the suggestion didn't carry them. */
+          fy1:rec.fy1||"",
+          fy2:rec.fy2||"",
           currency:ccy,
           source:"approval",
           by:rec.suggestedBy,
