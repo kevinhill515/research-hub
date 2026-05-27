@@ -736,9 +736,14 @@ export function CompanyDetail(props){
                   <div className="grid grid-cols-2 gap-4 mb-3">
                     {[{fy:"fy1",eps:"eps1",w:"w1",fyF:"fy1Fixed",epsF:"eps1Fixed",wF:"w1Fixed",label:"Year 1"},{fy:"fy2",eps:"eps2",w:"w2",fyF:"fy2Fixed",epsF:"eps2Fixed",wF:"w2Fixed",label:"Year 2"}].map(function(item){
                       var fixedDateLabel = pv.tpFixedDate ? " · as of " + pv.tpFixedDate : "";
+                      /* FY-end-month suffix on the Year 1 / Year 2 header.
+                         Only shown when fyMonth is set and not "Dec" — most
+                         US names default to December so adding "(Dec)"
+                         would be visual noise everywhere. */
+                      var fyMonthSuffix = (pv.fyMonth && pv.fyMonth !== "Dec") ? " (" + pv.fyMonth + ")" : "";
                       return (
                         <div key={item.fy} className="px-2.5 py-2.5 bg-slate-100 dark:bg-slate-800/50 rounded-md">
-                          <div className="text-[11px] font-medium text-gray-900 dark:text-slate-100 mb-2">{item.label}</div>
+                          <div className="text-[11px] font-medium text-gray-900 dark:text-slate-100 mb-2">{item.label}{fyMonthSuffix}</div>
                           {/* Fiscal Year — single field, applies to both Live + Fixed */}
                           <div className="mb-1.5"><label className="text-[10px] text-gray-500 dark:text-slate-400 block mb-0.5">Fiscal Year</label><input value={pv[item.fy]||""} onChange={function(e){var p={};p[item.fy]=e.target.value;setPendingVal(function(prev){return Object.assign({},prev,p);});}} placeholder="e.g. FY2026E" className={INP + " w-full box-border !text-xs"}/></div>
                           {/* Live + Fixed pair, side by side. */}
