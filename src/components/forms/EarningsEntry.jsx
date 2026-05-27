@@ -26,7 +26,7 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
   /* fxRates is needed to convert local-currency sales/EPS into USD for
      the secondary line on the stats strip. fxRates[ccy] is stored as
      local-per-USD (so amountUSD = amountLocal / fxRates[ccy]). */
-  var { fxRates, submitTpApproval, tpApprovals } = useCompanyContext();
+  var { fxRates, submitTpApproval, editTpApproval, tpApprovals, currentUser } = useCompanyContext();
   /* Local UI feedback after submitting a TP change for approval. Set
      to a short status string for ~3s, then cleared. Avoids needing a
      toast system. */
@@ -51,11 +51,22 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
      instead of computing it at submit time means the approval card
      always renders a meaningful From -> To. */
   var [tpFrom, setTpFrom] = useState({pe:"", eps1:"", eps2:"", w1:"", w2:"", tp:""});
-  /* True when this entry has already spawned a pending approval — used
-     to disable the submit button and avoid duplicate requests. */
-  var hasPending = (tpApprovals||[]).some(function(r){
+  /* The pending approval record (if any) tied to THIS earnings entry. We
+     used to just check for existence and lock the user out; now we keep
+     the full record so the user can re-open the form pre-filled with
+     their pending values and edit-in-place (editTpApproval) rather than
+     having to withdraw and resubmit. Only the user's OWN pending
+     records are editable — peers can't edit each other's suggestions. */
+  var pendingForEntry = (tpApprovals||[]).find(function(r){
     return r.earningsEntryId === entry.id && r.status === "pending";
-  });
+  }) || null;
+  var hasPending = !!pendingForEntry;
+  var pendingIsMine = pendingForEntry && pendingForEntry.suggestedBy === currentUser;
+  /* When set, the submit form is in EDIT mode targeting this approval id
+     (instead of CREATE mode that adds a new record). On submit we call
+     editTpApproval(id, patch) and clear this. Reset whenever the form
+     closes so a stale id can't leak into a future submit. */
+  var [editingPendingId, setEditingPendingId] = useState(null);
   var [e, setE] = useState(entry);
   var [open, setOpen] = useState(entry.open || false);
   /* Auto-expand for print so all entries are visible in the printout.
@@ -564,79 +575,105 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
               /* Submit-for-approval is for actual increases/decreases.
                  Empty tpChange (a new entry not yet reviewed) and
                  'Unchanged' (reaffirm, no TP movement) both skip the
-                 approval flow. */
-              var canOpen = (e.tpChange === "Increased" || e.tpChange === "Decreased") && !hasPending && !!company;
+                 approval flow. When a pending record from THIS user
+                 already exists for this entry, the button switches to
+                 "Edit pending submission" — clicking opens the form
+                 pre-filled with the pending record's values. Peers see
+                 the locked-out button as before. */
+              var canCreate = (e.tpChange === "Increased" || e.tpChange === "Decreased") && !hasPending && !!company;
+              var canEdit = hasPending && pendingIsMine && !!company;
+              var canOpen = canCreate || canEdit;
+              function _openForm(){
+                if(!canOpen) return;
+                var v = company.valuation || {};
+                if(canEdit && pendingForEntry){
+                  /* EDIT mode: prefill from the pending record itself —
+                     both sides as they were originally submitted. */
+                  setTpForm({
+                    pe:   pendingForEntry.toPE   != null ? String(pendingForEntry.toPE)   : "",
+                    eps1: pendingForEntry.toEPS1 != null ? String(pendingForEntry.toEPS1) : "",
+                    eps2: pendingForEntry.toEPS2 != null ? String(pendingForEntry.toEPS2) : "",
+                    w1:   pendingForEntry.toW1   != null ? String(pendingForEntry.toW1)   : "",
+                    w2:   pendingForEntry.toW2   != null ? String(pendingForEntry.toW2)   : "",
+                  });
+                  setTpFrom({
+                    pe:   pendingForEntry.fromPE   != null ? String(pendingForEntry.fromPE)   : "",
+                    eps1: pendingForEntry.fromEPS1 != null ? String(pendingForEntry.fromEPS1) : "",
+                    eps2: pendingForEntry.fromEPS2 != null ? String(pendingForEntry.fromEPS2) : "",
+                    w1:   pendingForEntry.fromW1   != null ? String(pendingForEntry.fromW1)   : "",
+                    w2:   pendingForEntry.fromW2   != null ? String(pendingForEntry.fromW2)   : "",
+                    tp:   pendingForEntry.fromTP   != null ? String(pendingForEntry.fromTP)   : "",
+                  });
+                  setEditingPendingId(pendingForEntry.id);
+                } else {
+                  /* CREATE mode: prefill TO row from valuation, FROM
+                     row from tpHistory (or valuation for PE/W) + blanks
+                     for EPS the user types in. */
+                  setTpForm({
+                    pe:   v.pe   != null && v.pe   !== "" ? String(v.pe)   : "",
+                    eps1: v.eps1 != null && v.eps1 !== "" ? String(v.eps1) : "",
+                    eps2: v.eps2 != null && v.eps2 !== "" ? String(v.eps2) : "",
+                    w1:   v.w1   != null && v.w1   !== "" ? String(v.w1)   : "",
+                    w2:   v.w2   != null && v.w2   !== "" ? String(v.w2)   : "",
+                  });
+                  var hist = company.tpHistory || [];
+                  var priorApproval = null;
+                  for(var hi=0; hi<hist.length; hi++){
+                    var h = hist[hi];
+                    if(h && h.source === "approval"
+                        && isFinite(parseFloat(h.pe))
+                        && isFinite(parseFloat(h.eps1))
+                        && isFinite(parseFloat(h.eps2))
+                        && isFinite(parseFloat(h.w1))
+                        && isFinite(parseFloat(h.w2))){
+                      priorApproval = h;
+                      break;
+                    }
+                  }
+                  function _pickFromHistOrValuation(field){
+                    if(priorApproval && priorApproval[field] != null && priorApproval[field] !== ""){
+                      return String(priorApproval[field]);
+                    }
+                    return v[field] != null && v[field] !== "" ? String(v[field]) : "";
+                  }
+                  setTpFrom({
+                    pe:   _pickFromHistOrValuation("pe"),
+                    w1:   _pickFromHistOrValuation("w1"),
+                    w2:   _pickFromHistOrValuation("w2"),
+                    eps1: priorApproval && priorApproval.eps1 != null && priorApproval.eps1 !== "" ? String(priorApproval.eps1) : "",
+                    eps2: priorApproval && priorApproval.eps2 != null && priorApproval.eps2 !== "" ? String(priorApproval.eps2) : "",
+                    tp: (function(){
+                      var t = getTpFixed(v);
+                      return t != null && isFinite(t) ? String(t) : "";
+                    })(),
+                  });
+                  setEditingPendingId(null);
+                }
+                setShowSubmitForm(true);
+              }
+              var buttonLabel, buttonTitle;
+              if(canEdit){
+                buttonLabel = "Edit pending submission";
+                buttonTitle = "Re-open the pending TP change to revise its values";
+              } else if(hasPending){
+                buttonLabel = "TP change pending (by " + (pendingForEntry.suggestedBy || "teammate") + ")";
+                buttonTitle = "Another teammate's TP change for this entry is awaiting review";
+              } else {
+                buttonLabel = "Submit TP change for approval";
+                buttonTitle = "Submit the proposed TP for approval by another teammate";
+              }
               return (
                 <button
                   type="button"
-                  onClick={function(){
-                    if(!canOpen) return;
-                    var v = company.valuation || {};
-                    setTpForm({
-                      pe:   v.pe   != null && v.pe   !== "" ? String(v.pe)   : "",
-                      eps1: v.eps1 != null && v.eps1 !== "" ? String(v.eps1) : "",
-                      eps2: v.eps2 != null && v.eps2 !== "" ? String(v.eps2) : "",
-                      w1:   v.w1   != null && v.w1   !== "" ? String(v.w1)   : "",
-                      w2:   v.w2   != null && v.w2   !== "" ? String(v.w2)   : "",
-                    });
-                    /* Capture the last-approved baseline. Look up the most
-                       recent tpHistory row from an approval that has the
-                       full PE/EPS1/EPS2/W1/W2 breakdown — those are
-                       authoritative since they got blessed at approval
-                       time. If none exist, fall back to v.pe / v.w1 / v.w2
-                       (the stable target-PE and weight assumptions) and
-                       leave EPS slots blank for the user to fill in. */
-                    var hist = company.tpHistory || [];
-                    var priorApproval = null;
-                    for(var hi=0; hi<hist.length; hi++){
-                      var h = hist[hi];
-                      if(h && h.source === "approval"
-                          && isFinite(parseFloat(h.pe))
-                          && isFinite(parseFloat(h.eps1))
-                          && isFinite(parseFloat(h.eps2))
-                          && isFinite(parseFloat(h.w1))
-                          && isFinite(parseFloat(h.w2))){
-                        priorApproval = h;
-                        break;
-                      }
-                    }
-                    function _pickFromHistOrValuation(field){
-                      if(priorApproval && priorApproval[field] != null && priorApproval[field] !== ""){
-                        return String(priorApproval[field]);
-                      }
-                      return v[field] != null && v[field] !== "" ? String(v[field]) : "";
-                    }
-                    setTpFrom({
-                      /* PE / W1 / W2 are stable in valuation regardless of
-                         approval history — these are the "Target PE" and
-                         "Weights" the team locks in. Default from history
-                         if present so the approval card matches the
-                         immediately-prior approved state exactly. */
-                      pe:   _pickFromHistOrValuation("pe"),
-                      w1:   _pickFromHistOrValuation("w1"),
-                      w2:   _pickFromHistOrValuation("w2"),
-                      /* EPS1 / EPS2: only history is authoritative — the
-                         valuation values are DAILY updated and don't
-                         reflect what was locked at last approval. Leave
-                         blank when no history; user types the
-                         last-approved EPS values manually. */
-                      eps1: priorApproval && priorApproval.eps1 != null && priorApproval.eps1 !== "" ? String(priorApproval.eps1) : "",
-                      eps2: priorApproval && priorApproval.eps2 != null && priorApproval.eps2 !== "" ? String(priorApproval.eps2) : "",
-                      /* TP: use the company's current TP Fixed — that IS the
-                         last-approved TP regardless of whether the breakdown
-                         survives. getTpFixed handles legacy normEPSFixed × PE. */
-                      tp: (function(){
-                        var t = getTpFixed(v);
-                        return t != null && isFinite(t) ? String(t) : "";
-                      })(),
-                    });
-                    setShowSubmitForm(true);
-                  }}
+                  onClick={_openForm}
                   disabled={!canOpen}
-                  className={"text-xs px-3 py-1.5 font-semibold rounded-md transition-colors " + (canOpen ? "bg-amber-600 text-white border-none cursor-pointer hover:bg-amber-700" : "bg-slate-200 dark:bg-slate-700 text-gray-400 dark:text-slate-500 border-none cursor-not-allowed")}
-                  title={hasPending ? "A TP change for this entry is already pending review" : "Submit the proposed TP for approval by another teammate"}
+                  className={"text-xs px-3 py-1.5 font-semibold rounded-md transition-colors " + (canOpen
+                    ? (canEdit ? "bg-blue-600 text-white border-none cursor-pointer hover:bg-blue-700"
+                               : "bg-amber-600 text-white border-none cursor-pointer hover:bg-amber-700")
+                    : "bg-slate-200 dark:bg-slate-700 text-gray-400 dark:text-slate-500 border-none cursor-not-allowed")}
+                  title={buttonTitle}
                 >
-                  {hasPending ? "TP change pending" : "Submit TP change for approval"}
+                  {buttonLabel}
                 </button>
               );
             })()}
@@ -715,7 +752,7 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
             var LBL="text-[10px] text-gray-500 dark:text-slate-400 block mb-0.5 uppercase tracking-wide";
             return (
               <div className="mt-2 p-3 rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/30">
-                <div className="text-[11px] font-semibold text-amber-800 dark:text-amber-200 mb-2">Submit TP change for approval — full breakdown</div>
+                <div className="text-[11px] font-semibold text-amber-800 dark:text-amber-200 mb-2">{editingPendingId ? "Edit pending TP change — full breakdown" : "Submit TP change for approval — full breakdown"}</div>
                 {/* PREVIOUS (last-approved) row.
                     PE / W1 / W2 / TP autofill from valuation + tpHistory
                     when the form opens. EPS1 / EPS2 autofill ONLY from
@@ -844,7 +881,7 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
                          on approve, so TP Live keeps recomputing from them
                          each day. */
                       var finalToTP = isFinite(enteredTP) && enteredTP > 0 ? enteredTP : computedTP;
-                      submitTpApproval({
+                      var payload = {
                         companyId: company.id,
                         fromPE: isFinite(fromPE) ? fromPE : null,
                         fromEPS1: isFinite(fromEPS1) ? fromEPS1 : null,
@@ -860,32 +897,32 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
                         toW2: isFinite(w2) ? w2 : null,
                         toEPS: normEPS,
                         toTP: finalToTP,
-                        /* What the PE × normEPS math actually produces, even
-                           when the suggester rounded to a cleaner number for
-                           the proposed TP. Approval card displays this as a
-                           sanity check next to toTP if they differ. */
                         computedTP: computedTP,
-                        /* Legacy field, kept for compat with older approval
-                           records and the approval-card display logic that
-                           reads it. For new records this equals finalToTP. */
                         proposedTP: isFinite(enteredTP) ? enteredTP : null,
-                        /* Snapshot FY labels at submission time so the
-                           Weights display can read "FY26/FY27 50/50 →
-                           0/100" rather than the ambiguous "W1/W2". */
                         fy1: v.fy1 || "",
                         fy2: v.fy2 || "",
                         rationale: e.tpRationale || e.extendedTakeaway || "",
                         earningsEntryId: entry.id,
-                      });
-                      setTpSubmitMsg("✓ Submitted for approval");
+                      };
+                      if(editingPendingId){
+                        /* EDIT mode: rewrite the existing pending
+                           record in place. editTpApproval guards on
+                           ownership + status server-side. */
+                        editTpApproval(editingPendingId, payload);
+                        setTpSubmitMsg("✓ Updated pending submission");
+                      } else {
+                        submitTpApproval(payload);
+                        setTpSubmitMsg("✓ Submitted for approval");
+                      }
                       setTimeout(function(){setTpSubmitMsg("");}, 3000);
                       setShowSubmitForm(false);
+                      setEditingPendingId(null);
                     }}
-                    className={"text-xs px-3 py-1 font-semibold rounded-md transition-colors " + (canSubmit ? "bg-amber-600 text-white border-none cursor-pointer hover:bg-amber-700" : "bg-slate-200 dark:bg-slate-700 text-gray-400 dark:text-slate-500 border-none cursor-not-allowed")}
+                    className={"text-xs px-3 py-1 font-semibold rounded-md transition-colors " + (canSubmit ? (editingPendingId ? "bg-blue-600 text-white border-none cursor-pointer hover:bg-blue-700" : "bg-amber-600 text-white border-none cursor-pointer hover:bg-amber-700") : "bg-slate-200 dark:bg-slate-700 text-gray-400 dark:text-slate-500 border-none cursor-not-allowed")}
                   >
-                    Submit for approval
+                    {editingPendingId ? "Save changes" : "Submit for approval"}
                   </button>
-                  <button type="button" onClick={function(){setShowSubmitForm(false);}} className="text-xs px-3 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">Cancel</button>
+                  <button type="button" onClick={function(){setShowSubmitForm(false); setEditingPendingId(null);}} className="text-xs px-3 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">Cancel</button>
                 </div>
               </div>
             );

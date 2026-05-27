@@ -1008,6 +1008,32 @@ export function CompanyProvider({children}){
       });
     });
   }
+  /* In-place edit of a PENDING approval the current user owns. Lets the
+     suggester fix typos or revise the breakdown without going through
+     withdraw+resubmit (which is annoying and loses readBy / discussion
+     thread continuity). Only the editable proposal fields are spread
+     in — id, suggestedBy, status, readBy, earningsEntryId are
+     preserved. Updates suggestedAt to today's date and resets readBy
+     to just the current user so other teammates see it as new again. */
+  function editTpApproval(id, patch){
+    if(!currentUser)return;
+    setTpApprovals(function(prev){
+      return prev.map(function(a){
+        if(a.id!==id)return a;
+        if(a.status!=="pending"||a.suggestedBy!==currentUser)return a;
+        var EDITABLE = ["fromPE","fromEPS1","fromEPS2","fromW1","fromW2","fromEPS","fromTP",
+                        "toPE","toEPS1","toEPS2","toW1","toW2","toEPS","toTP",
+                        "computedTP","proposedTP","fy1","fy2","rationale"];
+        var next = Object.assign({}, a);
+        EDITABLE.forEach(function(k){
+          if(Object.prototype.hasOwnProperty.call(patch, k)) next[k] = patch[k];
+        });
+        next.suggestedAt = todayStr();
+        next.readBy = [currentUser]; /* re-flag as unread for everyone else */
+        return next;
+      });
+    });
+  }
   function markTpApprovalRead(id){
     if(!currentUser)return;
     setTpApprovals(function(prev){return prev.map(function(a){if(a.id!==id)return a;var rb=a.readBy||[];if(rb.indexOf(currentUser)>=0)return a;return Object.assign({},a,{readBy:rb.concat([currentUser])});});});
@@ -1481,7 +1507,7 @@ export function CompanyProvider({children}){
     updateCo,
     cp,
     annotations,setAnnotations,
-    tpApprovals,setTpApprovals,submitTpApproval,approveTpApproval,rejectTpApproval,withdrawTpApproval,markTpApprovalRead,
+    tpApprovals,setTpApprovals,submitTpApproval,approveTpApproval,rejectTpApproval,withdrawTpApproval,editTpApproval,markTpApprovalRead,
     saveStatus,
     addAnnotation,updateAnnotation,deleteAnnotation,resolveAnnotation,unresolveAnnotation,addReply,markAnnotationRead,parseMentions,
     updateTargetWeight,markTradeAgenda,addTargetHistoryEntry,deleteTargetHistoryEntry,
