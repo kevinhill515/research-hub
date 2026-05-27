@@ -364,6 +364,86 @@ export function CompanyProvider({children}){
           });
           if (dupChanged) coMig.changed = true;
         } catch(_e){}
+        /* Baseline tpHistory backfill. For every company with at least
+           one earnings entry but NO tpHistory rows yet, snapshot the
+           company's current valuation as a "baseline" tpHistory entry.
+           Mirrors the live behavior in saveEarningsEntry but reaches
+           back to companies whose first earnings entry was saved
+           before the live-write feature shipped. Gated by a meta flag
+           so it runs once per browser-data set. Per-company guard
+           (only writes when tpHistory is genuinely empty) keeps the
+           migration idempotent even if the flag check fails. */
+        try {
+          var rBaselineFlag = await supaGet("meta","key","backfill_tphistory_baseline_2026_05_27");
+          if (!(rBaselineFlag && rBaselineFlag.value)) {
+            var baselineChanged = false;
+            coMig.data.forEach(function(c){
+              if (!c) return;
+              if ((c.tpHistory || []).length > 0) return;
+              var es = c.earningsEntries || [];
+              if (es.length === 0) return;
+              var v = c.valuation || {};
+              if (!v) return;
+              var bPE = parseFloat(v.pe);
+              var bE1 = parseFloat(v.eps1);
+              var bE2 = parseFloat(v.eps2);
+              var bW1 = parseFloat(v.w1);
+              var bW2 = parseFloat(v.w2);
+              var bBlend = null;
+              if (isFinite(bE1) && isFinite(bE2) && isFinite(bW1) && isFinite(bW2)) {
+                bBlend = (bE1*bW1 + bE2*bW2) / 100;
+              } else if (isFinite(bE1)) {
+                bBlend = bE1;
+              } else if (isFinite(bE2)) {
+                bBlend = bE2;
+              }
+              var bTP = parseFloat(v.tpFixed);
+              if (!isFinite(bTP) && isFinite(bPE) && bPE > 0 && bBlend !== null) {
+                bTP = bPE * bBlend;
+              }
+              if (!(isFinite(bTP) && bTP > 0)) return;
+              /* Anchor on the OLDEST earnings entry (the first one
+                 the user filled out). saveEarningsEntry uses the
+                 entry currently being saved, but for a retroactive
+                 migration the oldest entry is the closest analog —
+                 it's effectively the "first earnings tile" that
+                 should have triggered the baseline. */
+              var oldest = null;
+              for (var i = 0; i < es.length; i++) {
+                var e = es[i];
+                if (!e || !e.reportDate) continue;
+                if (!oldest || (e.reportDate || "") < (oldest.reportDate || "")) oldest = e;
+              }
+              if (!oldest) oldest = es[es.length - 1] || es[0];
+              if (!oldest) return;
+              var qLabel = oldest.quarter || "";
+              if (!qLabel && oldest.reportDate) {
+                var inf = inferQuarter(oldest.reportDate, v.fyMonth || "Dec");
+                if (inf && inf.label) qLabel = inf.label;
+              }
+              var baseline = {
+                date: oldest.reportDate || todayStr(),
+                tp: bTP,
+                pe: v.pe || "",
+                eps: bBlend != null ? String(bBlend) : "",
+                eps1: isFinite(bE1) ? bE1 : "",
+                eps2: isFinite(bE2) ? bE2 : "",
+                w1:   isFinite(bW1) ? bW1 : "",
+                w2:   isFinite(bW2) ? bW2 : "",
+                fy1: v.fy1 || "",
+                fy2: v.fy2 || "",
+                earningsEntryId: oldest.id || "",
+                quarter: qLabel,
+                currency: v.currency || "",
+                source: "baseline",
+              };
+              c.tpHistory = [baseline];
+              baselineChanged = true;
+            });
+            if (baselineChanged) coMig.changed = true;
+            supaUpsert("meta", { key: "backfill_tphistory_baseline_2026_05_27", value: "1" });
+          }
+        } catch(_e){}
         setCompanies(coMig.data);
         coOk=coMig.data.length;
         /* If we read from the legacy "shared" row, write each company
