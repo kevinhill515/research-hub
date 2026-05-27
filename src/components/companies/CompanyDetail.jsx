@@ -895,17 +895,26 @@ export function CompanyDetail(props){
                       if(isFinite(thisTPNum) && priorTPNum !== null && priorTPNum > 0){
                         tpPct = (thisTPNum - priorTPNum) / priorTPNum * 100;
                       }
-                      /* Recompute the EPS shown in the table from the
-                         row's breakdown (eps1/eps2/w1/w2) so it always
-                         matches the math: PE × normEPS = TP. The stored
-                         h.eps can be wrong for older records where it
-                         held a single year's EPS rather than the blend.
-                         Fall back to the stored value when the breakdown
-                         isn't on the row. */
+                      /* EPS shown in the table = the normalized EPS that
+                         reconciles with PE × this = TP. Resolution order,
+                         most authoritative first:
+                           1. Blended from row's eps1/eps2/w1/w2 (the
+                              actual values the suggester used).
+                           2. eps1 or eps2 when only one side is present
+                              with weights summing to 100.
+                           3. Implied from tp / pe — works for ANY legacy
+                              row that has a TP and PE, even when no
+                              breakdown or h.eps survives. This is what
+                              fixes the "TWD 98.83 doesn't equal 2340/21"
+                              display on old entries.
+                           4. h.eps (stored value) as a last resort. */
                       var e1 = parseFloat(h.eps1), e2 = parseFloat(h.eps2);
                       var w1 = parseFloat(h.w1),   w2 = parseFloat(h.w2);
+                      var rowPE = parseFloat(h.pe);
+                      var rowTP = parseFloat(h.tp);
                       var blendedEps = null;
                       var epsFormula = "";
+                      var epsIsImplied = false;
                       if(isFinite(e1) && isFinite(e2) && isFinite(w1) && isFinite(w2)){
                         blendedEps = (e1*w1 + e2*w2) / 100;
                         epsFormula = "(" + e1 + "×" + w1 + "% + " + e2 + "×" + w2 + "%)";
@@ -913,6 +922,9 @@ export function CompanyDetail(props){
                         blendedEps = e1;
                       } else if(isFinite(e2) && (w2 === 100 || !isFinite(w1))){
                         blendedEps = e2;
+                      } else if(isFinite(rowTP) && isFinite(rowPE) && rowPE > 0){
+                        blendedEps = rowTP / rowPE;
+                        epsIsImplied = true;
                       } else if(h.eps != null && isFinite(parseFloat(h.eps))){
                         blendedEps = parseFloat(h.eps);
                       }
@@ -976,6 +988,9 @@ export function CompanyDetail(props){
                           {blendedEps !== null ? (h.currency||activeCurrency) + " " + blendedEps.toFixed(2) : "--"}
                           {epsFormula && (
                             <span className="ml-1 text-[10px] text-gray-400 dark:text-slate-500 font-mono">{epsFormula}</span>
+                          )}
+                          {epsIsImplied && (
+                            <span className="ml-1 text-[10px] text-gray-400 dark:text-slate-500 italic" title="Implied from TP / PE — breakdown not stored on this row">implied</span>
                           )}
                         </div>
                         <div className="text-gray-500 dark:text-slate-400 border-t border-slate-200 dark:border-slate-700" style={{display:"table-cell",padding:"7px 10px 7px 0"}}>{fqLabel}</div>
