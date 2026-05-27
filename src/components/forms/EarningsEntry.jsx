@@ -699,18 +699,47 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
                       break;
                     }
                   }
-                  function _pickFromHistOrValuation(field){
-                    if(priorApproval && priorApproval[field] != null && priorApproval[field] !== ""){
-                      return String(priorApproval[field]);
+                  /* Source priority for each "Previous (last approved)"
+                     field, most authoritative first:
+                       1. valuation.*Fixed (set by the last approval, or
+                          a manual edit on the Valuation card) — this is
+                          the snapshot of what the team officially blessed
+                          and is the source of truth for "what we're
+                          changing from."
+                       2. tpHistory's most recent approval row — covers
+                          companies whose *Fixed values were never written
+                          (older approvals, before the Fixed columns
+                          existed).
+                       3. valuation (Live values) — last-resort fallback
+                          so PE/W get reasonable defaults even when neither
+                          Fixed nor history has anything. EPS slots stay
+                          blank if both Fixed and history are empty (Live
+                          EPS is daily-updated consensus, not a meaningful
+                          "from" baseline). */
+                  function _pickFrom(fixedKey, liveKey){
+                    if(v[fixedKey] != null && v[fixedKey] !== "") return String(v[fixedKey]);
+                    if(priorApproval && priorApproval[liveKey] != null && priorApproval[liveKey] !== ""){
+                      return String(priorApproval[liveKey]);
                     }
-                    return v[field] != null && v[field] !== "" ? String(v[field]) : "";
+                    if(v[liveKey] != null && v[liveKey] !== "") return String(v[liveKey]);
+                    return "";
+                  }
+                  function _pickEPSFrom(fixedKey, liveKey){
+                    /* Same as _pickFrom but doesn't fall back to Live —
+                       Live EPS is daily-updated and not a valid "Previous"
+                       value. */
+                    if(v[fixedKey] != null && v[fixedKey] !== "") return String(v[fixedKey]);
+                    if(priorApproval && priorApproval[liveKey] != null && priorApproval[liveKey] !== ""){
+                      return String(priorApproval[liveKey]);
+                    }
+                    return "";
                   }
                   setTpFrom({
-                    pe:   _pickFromHistOrValuation("pe"),
-                    w1:   _pickFromHistOrValuation("w1"),
-                    w2:   _pickFromHistOrValuation("w2"),
-                    eps1: priorApproval && priorApproval.eps1 != null && priorApproval.eps1 !== "" ? String(priorApproval.eps1) : "",
-                    eps2: priorApproval && priorApproval.eps2 != null && priorApproval.eps2 !== "" ? String(priorApproval.eps2) : "",
+                    pe:   _pickFrom("peFixed", "pe"),
+                    w1:   _pickFrom("w1Fixed", "w1"),
+                    w2:   _pickFrom("w2Fixed", "w2"),
+                    eps1: _pickEPSFrom("eps1Fixed", "eps1"),
+                    eps2: _pickEPSFrom("eps2Fixed", "eps2"),
                     tp: (function(){
                       var t = getTpFixed(v);
                       return t != null && isFinite(t) ? String(t) : "";

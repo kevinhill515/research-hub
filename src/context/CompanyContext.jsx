@@ -954,6 +954,22 @@ export function CompanyProvider({children}){
         if(rec.toEPS2!==null&&rec.toEPS2!==undefined&&rec.toEPS2!=="")v.eps2=rec.toEPS2;
         if(rec.toW1!==null&&rec.toW1!==undefined&&rec.toW1!=="")v.w1=rec.toW1;
         if(rec.toW2!==null&&rec.toW2!==undefined&&rec.toW2!=="")v.w2=rec.toW2;
+        /* Also snapshot the approved values into *Fixed slots. These are
+           the locked-at-approval values that the Valuation tab surfaces
+           alongside the daily-updated Live values, and they're what the
+           next TP proposal pulls into its "Previous (last approved)"
+           row. Without these the only way to find the locked EPS was
+           to dig through tpHistory. PE/W are usually stable across
+           approvals; we still snapshot them for consistency so any
+           direct edit on the Live side leaves a clear breadcrumb of
+           what was last blessed. */
+        if(rec.toPE   !== null && rec.toPE   !== undefined && rec.toPE   !== "") v.peFixed   = rec.toPE;
+        if(rec.toEPS1 !== null && rec.toEPS1 !== undefined && rec.toEPS1 !== "") v.eps1Fixed = rec.toEPS1;
+        if(rec.toEPS2 !== null && rec.toEPS2 !== undefined && rec.toEPS2 !== "") v.eps2Fixed = rec.toEPS2;
+        if(rec.toW1   !== null && rec.toW1   !== undefined && rec.toW1   !== "") v.w1Fixed   = rec.toW1;
+        if(rec.toW2   !== null && rec.toW2   !== undefined && rec.toW2   !== "") v.w2Fixed   = rec.toW2;
+        if(rec.fy1) v.fy1Fixed = rec.fy1;
+        if(rec.fy2) v.fy2Fixed = rec.fy2;
         /* TP Fixed snapshot at the approval moment. Uses the computed
            toTP (PE × normEPS) — the moment-in-time target the team is
            agreeing to. TP Live diverges from this going forward as EPS

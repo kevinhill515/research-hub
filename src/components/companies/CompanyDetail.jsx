@@ -718,22 +718,72 @@ export function CompanyDetail(props){
                   <div><label className={LABEL}>Reporting Currency</label><select value={pv.currency||currency} onChange={function(e){setPendingVal(function(p){return Object.assign({},p,{currency:e.target.value});});}} className={INP + " w-full"}>{ALL_CURRENCIES.map(function(c){return <option key={c}>{c}</option>;})}</select></div>
                 </div>
 
-                {/* 3. EPS Inputs */}
+                {/* 3. EPS Inputs.
+                    Two columns of values per fiscal year now:
+                    - LIVE: editable, refreshed daily by the Estimates
+                      Import. These drive TP Live (recomputed every day).
+                    - FIXED: snapshot of what was approved with the last
+                      TP change. Read-only (only written by approval) so
+                      the team always knows what the "official" EPS
+                      assumption is and the next TP proposal's "Previous"
+                      row can pre-fill from it. */}
                 <div className={CARD + " mb-3"}>
                   <div className={SECTION_LABEL}>EPS Inputs</div>
-                  <div className="grid grid-cols-2 gap-4 mb-3">
-                    {[{fy:"fy1",eps:"eps1",w:"w1",label:"Year 1"},{fy:"fy2",eps:"eps2",w:"w2",label:"Year 2"}].map(function(item){return(
-                      <div key={item.fy} className="px-2.5 py-2.5 bg-slate-100 dark:bg-slate-800/50 rounded-md">
-                        <div className="text-[11px] font-medium text-gray-900 dark:text-slate-100 mb-2">{item.label}</div>
-                        <div className="flex flex-col gap-1.5">
-                          <div><label className="text-[10px] text-gray-500 dark:text-slate-400 block mb-0.5">Fiscal Year</label><input value={pv[item.fy]||""} onChange={function(e){var p={};p[item.fy]=e.target.value;setPendingVal(function(prev){return Object.assign({},prev,p);});}} placeholder="e.g. FY2026E" className={INP + " w-full box-border !text-xs"}/></div>
-                          <div><label className="text-[10px] text-gray-500 dark:text-slate-400 block mb-0.5">EPS ({activeCurrency})</label><input type="number" step="0.01" value={pv[item.eps]||""} onChange={function(e){var p={};p[item.eps]=e.target.value;setPendingVal(function(prev){return Object.assign({},prev,p);});}} placeholder="e.g. 4.20" className={INP + " w-full box-border !text-xs"}/></div>
-                          <div><label className="text-[10px] text-gray-500 dark:text-slate-400 block mb-0.5">Weight %</label><input type="number" step="1" min="0" max="100" value={pv[item.w]||""} onChange={function(e){var p={};p[item.w]=e.target.value;setPendingVal(function(prev){return Object.assign({},prev,p);});}} placeholder="50" className={INP + " w-full box-border !text-xs"}/></div>
-                        </div>
-                      </div>
-                    );})}
+                  <div className="text-[10px] text-gray-500 dark:text-slate-400 mb-2 italic">
+                    <span className="font-semibold text-gray-700 dark:text-slate-300">Live</span> values update daily from the Estimates import and drive TP Live.&nbsp;
+                    <span className="font-semibold text-gray-700 dark:text-slate-300">Fixed</span> values are snapshotted at the moment of TP approval — they're what TP Fixed (and the next "Previous" approval row) are based on.
                   </div>
-                  {normEPS!==null&&<div className="px-3 py-2 rounded-md text-xs" style={{background:"#dbeafe",color:"#1e40af"}}><span className="font-semibold">Normalized EPS: {activeCurrency} {normEPS.toFixed(4)}</span><span className="ml-2 opacity-70">= ({pv.eps1||"?"}x{pv.w1||"?"}% + {pv.eps2||"?"}x{pv.w2||"?"}%) / 100</span></div>}
+                  <div className="grid grid-cols-2 gap-4 mb-3">
+                    {[{fy:"fy1",eps:"eps1",w:"w1",fyF:"fy1Fixed",epsF:"eps1Fixed",wF:"w1Fixed",label:"Year 1"},{fy:"fy2",eps:"eps2",w:"w2",fyF:"fy2Fixed",epsF:"eps2Fixed",wF:"w2Fixed",label:"Year 2"}].map(function(item){
+                      var fixedDateLabel = pv.tpFixedDate ? " · as of " + pv.tpFixedDate : "";
+                      return (
+                        <div key={item.fy} className="px-2.5 py-2.5 bg-slate-100 dark:bg-slate-800/50 rounded-md">
+                          <div className="text-[11px] font-medium text-gray-900 dark:text-slate-100 mb-2">{item.label}</div>
+                          {/* Fiscal Year — single field, applies to both Live + Fixed */}
+                          <div className="mb-1.5"><label className="text-[10px] text-gray-500 dark:text-slate-400 block mb-0.5">Fiscal Year</label><input value={pv[item.fy]||""} onChange={function(e){var p={};p[item.fy]=e.target.value;setPendingVal(function(prev){return Object.assign({},prev,p);});}} placeholder="e.g. FY2026E" className={INP + " w-full box-border !text-xs"}/></div>
+                          {/* Live + Fixed pair, side by side. */}
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="text-[10px] font-semibold text-blue-700 dark:text-blue-300 block mb-0.5">EPS Live ({activeCurrency})</label>
+                              <input type="number" step="0.01" value={pv[item.eps]||""} onChange={function(e){var p={};p[item.eps]=e.target.value;setPendingVal(function(prev){return Object.assign({},prev,p);});}} placeholder="e.g. 4.20" className={INP + " w-full box-border !text-xs"}/>
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 block mb-0.5" title={"Locked at last TP approval" + fixedDateLabel}>EPS Fixed ({activeCurrency})</label>
+                              <input type="number" step="0.01" value={pv[item.epsF]||""} onChange={function(e){var p={};p[item.epsF]=e.target.value;setPendingVal(function(prev){return Object.assign({},prev,p);});}} placeholder="—" className={INP + " w-full box-border !text-xs bg-emerald-50 dark:bg-emerald-950/30"}/>
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-semibold text-blue-700 dark:text-blue-300 block mb-0.5">Weight Live %</label>
+                              <input type="number" step="1" min="0" max="100" value={pv[item.w]||""} onChange={function(e){var p={};p[item.w]=e.target.value;setPendingVal(function(prev){return Object.assign({},prev,p);});}} placeholder="50" className={INP + " w-full box-border !text-xs"}/>
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 block mb-0.5" title={"Locked at last TP approval" + fixedDateLabel}>Weight Fixed %</label>
+                              <input type="number" step="1" min="0" max="100" value={pv[item.wF]||""} onChange={function(e){var p={};p[item.wF]=e.target.value;setPendingVal(function(prev){return Object.assign({},prev,p);});}} placeholder="—" className={INP + " w-full box-border !text-xs bg-emerald-50 dark:bg-emerald-950/30"}/>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* Normalized EPS lines — Live and Fixed both shown so
+                      the reader can see how much the underlying assumption
+                      has drifted since the last approval. */}
+                  {normEPS!==null&&<div className="px-3 py-2 rounded-md text-xs mb-1.5" style={{background:"#dbeafe",color:"#1e40af"}}><span className="font-semibold">Normalized EPS Live: {activeCurrency} {normEPS.toFixed(4)}</span><span className="ml-2 opacity-70">= ({pv.eps1||"?"}x{pv.w1||"?"}% + {pv.eps2||"?"}x{pv.w2||"?"}%) / 100</span></div>}
+                  {(function(){
+                    var e1 = parseFloat(pv.eps1Fixed), e2 = parseFloat(pv.eps2Fixed);
+                    var w1 = parseFloat(pv.w1Fixed),   w2 = parseFloat(pv.w2Fixed);
+                    var fixed = null;
+                    if(isFinite(e1) && isFinite(e2) && isFinite(w1) && isFinite(w2)){
+                      fixed = (e1*w1 + e2*w2) / 100;
+                    } else if(isFinite(e1) && !isFinite(e2)){ fixed = e1; }
+                    else if(isFinite(e2) && !isFinite(e1)){ fixed = e2; }
+                    if(fixed === null) return null;
+                    return (
+                      <div className="px-3 py-2 rounded-md text-xs" style={{background:"#d1fae5",color:"#065f46"}}>
+                        <span className="font-semibold">Normalized EPS Fixed: {activeCurrency} {fixed.toFixed(4)}</span>
+                        <span className="ml-2 opacity-70">snapshot from last approval{pv.tpFixedDate?" ("+pv.tpFixedDate+")":""}</span>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Save */}
