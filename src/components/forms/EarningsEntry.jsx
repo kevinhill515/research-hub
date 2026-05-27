@@ -3,6 +3,61 @@ import { TP_CHANGES, THESIS_STATUSES } from '../../constants/index.js';
 import { apiCall } from '../../api/index.js';
 import { useAlert } from '../ui/DialogProvider.jsx';
 import { inferQuarter, calcNormEPS, calcTP, getTpFixed, parseDate } from '../../utils/index.js';
+
+/* Parse a fiscal-year label like "FY2027E", "FY27", "FY9/27E", "FY9/2027E"
+   into a 4-digit year. Returns null when no year can be confidently
+   extracted. Used by resolveEpsForFY below to map valuation FY labels
+   onto the horizon series in company.epsRevisions. */
+function parseFyYear(label){
+  if(!label) return null;
+  var s = String(label);
+  /* Prefer an explicit 4-digit year (FY2027, FY9/2027, 2027E). */
+  var m = s.match(/(?:^|[^0-9])(20\d{2})(?:[^0-9]|$)/);
+  if(m) return parseInt(m[1], 10);
+  /* Fall back to a 2-digit year (FY27, FY9/27, 27E). Take the LAST
+     2-digit token so "FY9/27" picks 27 (year), not 9 (month). */
+  var twoDigitMatches = s.match(/\b(\d{2})\b/g);
+  if(twoDigitMatches && twoDigitMatches.length > 0){
+    var yy = parseInt(twoDigitMatches[twoDigitMatches.length - 1], 10);
+    if(yy >= 0 && yy <= 99) return 2000 + yy;
+  }
+  return null;
+}
+
+/* Resolve an EPS estimate from company.epsRevisions for a given target
+   fiscal year. Mirrors the horizon→year math used in EpsRevisionsTab's
+   fyLabel function so the value we pull lines up with what the chart
+   shows. Returns the latest finite monthly estimate from the matching
+   horizon, or null when the year is out of range / no data. */
+function resolveEpsForFY(company, fyLabel){
+  if(!company || !company.epsRevisions) return null;
+  var er = company.epsRevisions;
+  if(!er.dates || !er.dates.length || !er.series || !er.series.length) return null;
+  var targetYear = parseFyYear(fyLabel);
+  if(targetYear == null) return null;
+  var lastIso = er.dates[er.dates.length - 1];
+  var m = String(lastIso || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(!m) return null;
+  var y = parseInt(m[1], 10);
+  var mo = parseInt(m[2], 10);
+  var day = parseInt(m[3], 10);
+  var fyEndMonth = (company.segments && company.segments.fiscalYearEndMonth) || 12;
+  /* fy0Year = most recently completed fiscal year at lastIso. */
+  var fy0Year;
+  if(mo > fyEndMonth) fy0Year = y;
+  else if(mo === fyEndMonth) fy0Year = day >= 28 ? y : y - 1;
+  else fy0Year = y - 1;
+  var horizon = targetYear - fy0Year;
+  if(horizon < 0 || horizon > 3) return null;
+  var series = er.series.find(function(s){ return s.horizon === horizon; });
+  if(!series || !series.monthly || !series.monthly.length) return null;
+  /* Latest finite value in the monthly array. */
+  for(var i = series.monthly.length - 1; i >= 0; i--){
+    var v = parseFloat(series.monthly[i]);
+    if(isFinite(v)) return v;
+  }
+  return null;
+}
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import GuidanceVsActual from '../companies/GuidanceVsActual.jsx';
 
@@ -608,11 +663,25 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
                 } else {
                   /* CREATE mode: prefill TO row from valuation, FROM
                      row from tpHistory (or valuation for PE/W) + blanks
-                     for EPS the user types in. */
+                     for EPS the user types in.
+
+                     EPS prefill priority for the PROPOSED row:
+                       1. epsRevisions.series for the horizon that matches
+                          v.fy1 / v.fy2 label (e.g. "FY2027E" → 9/27 line).
+                          Catches the "valuation.eps1 is the 9/26 column
+                          but I labeled FY1 as FY2027E" mismatch — by
+                          pulling from the chart's matching horizon we
+                          surface the value the user expects.
+                       2. v.eps1 / v.eps2 (the daily-updated Estimates
+                          Import value) when no horizon resolves. */
+                  var epsFromHorizon1 = resolveEpsForFY(company, v.fy1);
+                  var epsFromHorizon2 = resolveEpsForFY(company, v.fy2);
                   setTpForm({
                     pe:   v.pe   != null && v.pe   !== "" ? String(v.pe)   : "",
-                    eps1: v.eps1 != null && v.eps1 !== "" ? String(v.eps1) : "",
-                    eps2: v.eps2 != null && v.eps2 !== "" ? String(v.eps2) : "",
+                    eps1: epsFromHorizon1 != null ? String(epsFromHorizon1)
+                          : (v.eps1 != null && v.eps1 !== "" ? String(v.eps1) : ""),
+                    eps2: epsFromHorizon2 != null ? String(epsFromHorizon2)
+                          : (v.eps2 != null && v.eps2 !== "" ? String(v.eps2) : ""),
                     w1:   v.w1   != null && v.w1   !== "" ? String(v.w1)   : "",
                     w2:   v.w2   != null && v.w2   !== "" ? String(v.w2)   : "",
                   });
