@@ -874,10 +874,48 @@ export function CompanyDetail(props){
                       var arr = (selCo.tpHistory||[]).map(function(h, originalIdx){ return { h: h, originalIdx: originalIdx }; });
                       arr.sort(function(a, b){ return (b.h.date || "").localeCompare(a.h.date || ""); });
                       return arr;
-                    })().map(function(pair, displayIdx){
+                    })().map(function(pair, displayIdx, displayArr){
                       var h = pair.h;
                       var originalIdx = pair.originalIdx;
                       var isLatest = displayIdx === 0;
+                      /* % change vs the chronologically prior approval — that's
+                         the NEXT row in the display array (since sorted desc).
+                         Shown next to the current row's Target Price so each
+                         row reads "this TP, this much higher/lower than the
+                         previous." The oldest row (no prior to compare against)
+                         shows nothing. */
+                      var priorTPNum = null;
+                      if(displayIdx + 1 < displayArr.length){
+                        var priorH = displayArr[displayIdx + 1].h;
+                        var pn = parseFloat(priorH && priorH.tp);
+                        if(isFinite(pn) && pn > 0) priorTPNum = pn;
+                      }
+                      var thisTPNum = parseFloat(h.tp);
+                      var tpPct = null;
+                      if(isFinite(thisTPNum) && priorTPNum !== null && priorTPNum > 0){
+                        tpPct = (thisTPNum - priorTPNum) / priorTPNum * 100;
+                      }
+                      /* Recompute the EPS shown in the table from the
+                         row's breakdown (eps1/eps2/w1/w2) so it always
+                         matches the math: PE × normEPS = TP. The stored
+                         h.eps can be wrong for older records where it
+                         held a single year's EPS rather than the blend.
+                         Fall back to the stored value when the breakdown
+                         isn't on the row. */
+                      var e1 = parseFloat(h.eps1), e2 = parseFloat(h.eps2);
+                      var w1 = parseFloat(h.w1),   w2 = parseFloat(h.w2);
+                      var blendedEps = null;
+                      var epsFormula = "";
+                      if(isFinite(e1) && isFinite(e2) && isFinite(w1) && isFinite(w2)){
+                        blendedEps = (e1*w1 + e2*w2) / 100;
+                        epsFormula = "(" + e1 + "×" + w1 + "% + " + e2 + "×" + w2 + "%)";
+                      } else if(isFinite(e1) && (w1 === 100 || !isFinite(w2))){
+                        blendedEps = e1;
+                      } else if(isFinite(e2) && (w2 === 100 || !isFinite(w1))){
+                        blendedEps = e2;
+                      } else if(h.eps != null && isFinite(parseFloat(h.eps))){
+                        blendedEps = parseFloat(h.eps);
+                      }
                       /* Fiscal Quarter cell — the QUARTER of the earnings
                          entry that triggered the TP change (e.g. "Q1 FY26"),
                          not the EPS fiscal-year labels.
@@ -915,9 +953,31 @@ export function CompanyDetail(props){
                       }
                       return (<div key={originalIdx} style={{display:"table-row"}}>
                         <div className="text-gray-500 dark:text-slate-400 border-t border-slate-200 dark:border-slate-700" style={{display:"table-cell",padding:"7px 10px 7px 0"}}>{h.date}</div>
-                        <div className="border-t border-slate-200 dark:border-slate-700 font-semibold" style={{display:"table-cell",padding:"7px 10px 7px 0",color:isLatest?"#166534":undefined}}>{fmtTP(h.tp,h.currency||activeCurrency)}</div>
+                        <div className="border-t border-slate-200 dark:border-slate-700 font-semibold" style={{display:"table-cell",padding:"7px 10px 7px 0",color:isLatest?"#166534":undefined}}>
+                          {fmtTP(h.tp,h.currency||activeCurrency)}
+                          {tpPct !== null && (
+                            <span
+                              className="ml-2 text-[10px] font-medium"
+                              style={{color: tpPct >= 0 ? "#16a34a" : "#dc2626"}}
+                              title={"vs prior TP " + fmtTP(priorTPNum, h.currency||activeCurrency)}
+                            >
+                              ({tpPct >= 0 ? "+" : ""}{tpPct.toFixed(1)}%)
+                            </span>
+                          )}
+                        </div>
                         <div className="text-gray-900 dark:text-slate-100 border-t border-slate-200 dark:border-slate-700" style={{display:"table-cell",padding:"7px 10px 7px 0"}}>{h.pe?h.pe+"x":"--"}</div>
-                        <div className="text-gray-900 dark:text-slate-100 border-t border-slate-200 dark:border-slate-700" style={{display:"table-cell",padding:"7px 10px 7px 0"}}>{h.eps?(h.currency||activeCurrency)+" "+h.eps:"--"}</div>
+                        {/* EPS cell \u2014 shows the BLENDED normEPS recomputed
+                            from the row's eps1/eps2/w1/w2 so it always
+                            reconciles with PE \u00D7 this = TP. When a full
+                            breakdown is present, the (eps1\u00D7w1% + eps2\u00D7w2%)
+                            formula is appended in a muted tag so the
+                            reader sees where the blend came from. */}
+                        <div className="text-gray-900 dark:text-slate-100 border-t border-slate-200 dark:border-slate-700" style={{display:"table-cell",padding:"7px 10px 7px 0"}}>
+                          {blendedEps !== null ? (h.currency||activeCurrency) + " " + blendedEps.toFixed(2) : "--"}
+                          {epsFormula && (
+                            <span className="ml-1 text-[10px] text-gray-400 dark:text-slate-500 font-mono">{epsFormula}</span>
+                          )}
+                        </div>
                         <div className="text-gray-500 dark:text-slate-400 border-t border-slate-200 dark:border-slate-700" style={{display:"table-cell",padding:"7px 10px 7px 0"}}>{fqLabel}</div>
                         <div className="border-t border-slate-200 dark:border-slate-700" style={{display:"table-cell",padding:"7px 0 7px 0"}}><span onClick={function(){var u=Object.assign({},selCo,{tpHistory:selCo.tpHistory.filter(function(_,j){return j!==originalIdx;})});setSelCo(u);setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});});}} className="text-[11px] text-red-600 dark:text-red-400 cursor-pointer">{"\u00D7"}</span></div>
                       </div>);
