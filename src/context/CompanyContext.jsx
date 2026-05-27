@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useRef } from "react";
 import { supaGet, supaGetAll, supaUpsert, supaDelete } from '../api/index.js';
-import { todayStr } from '../utils/index.js';
+import { todayStr, inferQuarter } from '../utils/index.js';
 import { DEFAULT_PERF_SERIES, findDefaultSeries } from '../constants/perfDefaults.js';
 
 const CompanyContext=createContext(null);
@@ -979,6 +979,22 @@ export function CompanyProvider({children}){
           v.tpFixed=String(rec.toTP);
           v.tpFixedDate=today;
         }
+        /* Find the earnings entry the suggestion was attached to and
+           derive its fiscal-quarter label (e.g. "Q1 FY26"). The Fixed
+           TP History table displays this so the reader can see WHICH
+           quarter's earnings drove the TP change. */
+        var qLabel = "";
+        var srcEntry = (c.earningsEntries||[]).find(function(eEnt){
+          return eEnt.id === rec.earningsEntryId;
+        });
+        if(srcEntry){
+          if(srcEntry.quarter){
+            qLabel = String(srcEntry.quarter);
+          } else if(srcEntry.reportDate){
+            var inferred = inferQuarter(srcEntry.reportDate, (c.valuation||{}).fyMonth || "Dec");
+            if(inferred && inferred.label) qLabel = inferred.label;
+          }
+        }
         var tpEntry={
           date:today,
           tp:rec.toTP,
@@ -988,14 +1004,14 @@ export function CompanyProvider({children}){
           eps2:rec.toEPS2,
           w1:rec.toW1,
           w2:rec.toW2,
-          /* Snapshot the FY labels at the time of approval so the
-             Fixed TP History table can render a meaningful "Fiscal
-             Quarter" column. Pulled from the suggestion record (where
-             they were captured at submission time from valuation.fy1
-             / fy2). Falls back to the company's current valuation
-             labels when the suggestion didn't carry them. */
           fy1:rec.fy1||"",
           fy2:rec.fy2||"",
+          /* Earnings-entry linkage so the Fixed TP History row can
+             always resolve its Fiscal Quarter even if the snapshotted
+             label gets stale (e.g. user edits the source entry's
+             quarter/reportDate after the approval). */
+          earningsEntryId:rec.earningsEntryId||"",
+          quarter:qLabel,
           currency:ccy,
           source:"approval",
           by:rec.suggestedBy,

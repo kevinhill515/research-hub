@@ -13,7 +13,7 @@ import {
   getTiers, tierToStatus, tierBg, tierPillStyle,
   isInitiationTx, getInitiatedDate, monthsSince, blankEarnings,
   escHTML, getCore, getConf, toHTML, toMD,
-  repShares, repAvgCost, printPage, getLastReportedEntry,
+  repShares, repAvgCost, printPage, getLastReportedEntry, inferQuarter,
 } from '../../utils/index.js';
 import { StatusPill, PortPicker, SectionBlock, DiffView, BarRow, PillEl, PriceAgeIndicator } from '../ui/index.js';
 import { ErrorBoundary } from '../ErrorBoundary.jsx';
@@ -878,16 +878,41 @@ export function CompanyDetail(props){
                       var h = pair.h;
                       var originalIdx = pair.originalIdx;
                       var isLatest = displayIdx === 0;
-                      /* Fiscal Quarter cell: prefer the snapshotted fy1/fy2
-                         (newer approvals); fall back to legacy fyLabel /
-                         forwardYear when those weren't stored. */
-                      var fqLabel = "";
-                      if(h.fy1 && h.fy2) fqLabel = h.fy1 + " / " + h.fy2;
-                      else if(h.fy1) fqLabel = h.fy1;
-                      else if(h.fy2) fqLabel = h.fy2;
-                      else if(h.fyLabel) fqLabel = h.fyLabel;
-                      else if(h.forwardYear) fqLabel = h.forwardYear;
-                      else fqLabel = "--";
+                      /* Fiscal Quarter cell — the QUARTER of the earnings
+                         entry that triggered the TP change (e.g. "Q1 FY26"),
+                         not the EPS fiscal-year labels.
+                         Resolution order:
+                           1. h.quarter — snapshotted at approval time on
+                              new entries.
+                           2. earnings entry looked up by h.earningsEntryId,
+                              then inferQuarter(reportDate, fyMonth).
+                              Handles new entries where the snapshot label
+                              was blank.
+                           3. inferQuarter(h.date, fyMonth) — derives from
+                              the approval's OWN date as a soft fallback
+                              for legacy entries that have neither quarter
+                              nor earningsEntryId stored. Less precise
+                              (the approval date may sit a few weeks past
+                              the actual earnings release) but usually
+                              lands in the right quarter. */
+                      var fqLabel = "--";
+                      if(h.quarter){
+                        fqLabel = h.quarter;
+                      } else if(h.earningsEntryId){
+                        var srcEntry = (selCo.earningsEntries||[]).find(function(eEnt){ return eEnt.id === h.earningsEntryId; });
+                        if(srcEntry){
+                          if(srcEntry.quarter){
+                            fqLabel = srcEntry.quarter;
+                          } else if(srcEntry.reportDate){
+                            var inf = inferQuarter(srcEntry.reportDate, (selCo.valuation||{}).fyMonth || "Dec");
+                            if(inf && inf.label) fqLabel = inf.label;
+                          }
+                        }
+                      }
+                      if(fqLabel === "--" && h.date){
+                        var infFromDate = inferQuarter(h.date, (selCo.valuation||{}).fyMonth || "Dec");
+                        if(infFromDate && infFromDate.label) fqLabel = infFromDate.label;
+                      }
                       return (<div key={originalIdx} style={{display:"table-row"}}>
                         <div className="text-gray-500 dark:text-slate-400 border-t border-slate-200 dark:border-slate-700" style={{display:"table-cell",padding:"7px 10px 7px 0"}}>{h.date}</div>
                         <div className="border-t border-slate-200 dark:border-slate-700 font-semibold" style={{display:"table-cell",padding:"7px 10px 7px 0",color:isLatest?"#166534":undefined}}>{fmtTP(h.tp,h.currency||activeCurrency)}</div>
