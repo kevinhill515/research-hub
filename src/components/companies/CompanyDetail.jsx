@@ -766,8 +766,30 @@ export function CompanyDetail(props){
                   </div>
                   {/* Normalized EPS lines — Live and Fixed both shown so
                       the reader can see how much the underlying assumption
-                      has drifted since the last approval. */}
-                  {normEPS!==null&&<div className="px-3 py-2 rounded-md text-xs mb-1.5" style={{background:"#dbeafe",color:"#1e40af"}}><span className="font-semibold">Normalized EPS Live: {activeCurrency} {normEPS.toFixed(4)}</span><span className="ml-2 opacity-70">= ({pv.eps1||"?"}x{pv.w1||"?"}% + {pv.eps2||"?"}x{pv.w2||"?"}%) / 100</span></div>}
+                      has drifted since the last approval. Each row extends
+                      the math out to: normEPS × target PE = implied TP, so
+                      the reader can see both sides of the equation and the
+                      resulting target price in one place. Live uses Live
+                      PE (pv.pe). Fixed uses Fixed PE (pv.peFixed) if set,
+                      falls back to Live PE — the assumption being that PE
+                      typically doesn't move between approvals, so a
+                      missing peFixed shouldn't blank out the implied TP. */}
+                  {normEPS!==null&&(function(){
+                    var pe = parseFloat(pv.pe);
+                    var impliedTP = isFinite(pe) && pe > 0 ? pe * normEPS : null;
+                    return (
+                      <div className="px-3 py-2 rounded-md text-xs mb-1.5" style={{background:"#dbeafe",color:"#1e40af"}}>
+                        <span className="font-semibold">Normalized EPS Live: {activeCurrency} {normEPS.toFixed(4)}</span>
+                        <span className="ml-2 opacity-70">= ({pv.eps1||"?"}x{pv.w1||"?"}% + {pv.eps2||"?"}x{pv.w2||"?"}%) / 100</span>
+                        {impliedTP !== null && (
+                          <span className="ml-2">
+                            <span className="opacity-70">× {pe.toFixed(1)}× PE = </span>
+                            <span className="font-semibold">Implied TP Live: {activeCurrency} {impliedTP.toFixed(2)}</span>
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
                   {(function(){
                     var e1 = parseFloat(pv.eps1Fixed), e2 = parseFloat(pv.eps2Fixed);
                     var w1 = parseFloat(pv.w1Fixed),   w2 = parseFloat(pv.w2Fixed);
@@ -777,10 +799,24 @@ export function CompanyDetail(props){
                     } else if(isFinite(e1) && !isFinite(e2)){ fixed = e1; }
                     else if(isFinite(e2) && !isFinite(e1)){ fixed = e2; }
                     if(fixed === null) return null;
+                    /* Fixed PE preferred when set; falls back to Live PE
+                       since multiples rarely move with each approval. */
+                    var peFixedNum = parseFloat(pv.peFixed);
+                    var peNum = parseFloat(pv.pe);
+                    var peUsed = isFinite(peFixedNum) && peFixedNum > 0 ? peFixedNum
+                                 : (isFinite(peNum) && peNum > 0 ? peNum : null);
+                    var peSource = isFinite(peFixedNum) && peFixedNum > 0 ? "Fixed" : "Live";
+                    var impliedTPFixed = peUsed !== null ? peUsed * fixed : null;
                     return (
                       <div className="px-3 py-2 rounded-md text-xs" style={{background:"#d1fae5",color:"#065f46"}}>
                         <span className="font-semibold">Normalized EPS Fixed: {activeCurrency} {fixed.toFixed(4)}</span>
                         <span className="ml-2 opacity-70">snapshot from last approval{pv.tpFixedDate?" ("+pv.tpFixedDate+")":""}</span>
+                        {impliedTPFixed !== null && (
+                          <span className="ml-2">
+                            <span className="opacity-70">× {peUsed.toFixed(1)}× PE ({peSource}) = </span>
+                            <span className="font-semibold">Implied TP Fixed: {activeCurrency} {impliedTPFixed.toFixed(2)}</span>
+                          </span>
+                        )}
                       </div>
                     );
                   })()}
