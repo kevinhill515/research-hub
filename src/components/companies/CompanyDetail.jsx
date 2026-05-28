@@ -745,6 +745,38 @@ export function CompanyDetail(props){
                   <div><label className={LABEL}>Reporting Currency</label><select value={pv.currency||currency} onChange={function(e){setPendingVal(function(p){return Object.assign({},p,{currency:e.target.value});});}} className={INP + " w-full"}>{ALL_CURRENCIES.map(function(c){return <option key={c}>{c}</option>;})}</select></div>
                 </div>
 
+                {/* TP Live ↔ TP Fixed drift indicator. Surfaces when the
+                    Live valuation (PE × blended Live EPS) has moved more
+                    than 10% from the last-approved Fixed TP. That gap
+                    means the team's blessed target is materially stale
+                    relative to today's consensus — time to revisit.
+                    Matches the spirit of the existing MOS-divergence
+                    flag on the Companies and Portfolios tables; this
+                    surface gives the same signal at the source where the
+                    user actually edits assumptions. */}
+                {(function(){
+                  if(tp === null || tpFixed === null || !isFinite(tp) || !isFinite(tpFixed) || tpFixed <= 0) return null;
+                  var driftPct = (tp - tpFixed) / tpFixed * 100;
+                  if(Math.abs(driftPct) < 10) return null;
+                  var driftUp = driftPct > 0;
+                  return (
+                    <div
+                      className="mb-3 px-3 py-2 rounded-md text-xs border flex items-center gap-2"
+                      style={{
+                        background: driftUp ? "#fef3c7" : "#fee2e2",
+                        borderColor: driftUp ? "#fcd34d" : "#fca5a5",
+                        color: driftUp ? "#854d0e" : "#991b1b",
+                      }}
+                      title="Live valuation has drifted >10% from the last-approved Fixed TP. Consider submitting a TP change."
+                    >
+                      <span>⚠</span>
+                      <span>
+                        <span className="font-semibold">TP drift {driftUp ? "+" : ""}{driftPct.toFixed(1)}%</span>
+                        <span className="ml-2 opacity-80">— TP Live ({activeCurrency} {fmtPrice(tp)}) has moved from TP Fixed ({activeCurrency} {fmtPrice(tpFixed)}). Consider a TP review.</span>
+                      </span>
+                    </div>
+                  );
+                })()}
                 {/* 3. EPS Inputs.
                     Two columns of values per fiscal year now:
                     - LIVE: editable, refreshed daily by the Estimates
