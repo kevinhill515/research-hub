@@ -928,56 +928,87 @@ export function CompanyDetail(props){
                         tpPct = (thisTPNum - priorTPNum) / priorTPNum * 100;
                       }
                       /* EPS shown in the table = the normalized EPS that
-                         reconciles with PE × this = TP. Resolution order,
-                         most authoritative first:
-                           1. Blended from row's eps1/eps2/w1/w2 (the
-                              actual values the suggester used).
-                           2. For the LATEST row only: fall back to the
-                              company's current valuation.*Fixed values.
-                              Those get written by approveTpApproval at
-                              the same moment the tpHistory entry is
-                              created, so for the row that represents
-                              the most recent approval they ARE the
-                              authoritative breakdown — even if the
-                              entry itself somehow didn't capture
-                              eps1/eps2/w1/w2.
-                           3. eps1 or eps2 when only one side is present
-                              with weights summing to 100.
-                           4. Implied from tp / pe — works for ANY legacy
-                              row that has a TP and PE, even when no
-                              breakdown survives.
-                           5. h.eps (stored value) as a last resort. */
-                      var e1 = parseFloat(h.eps1), e2 = parseFloat(h.eps2);
-                      var w1 = parseFloat(h.w1),   w2 = parseFloat(h.w2);
-                      /* Latest-row Fixed-fallback: only kicks in if the
-                         row's own breakdown is partial/missing AND this
-                         is the topmost (most recent) approval. */
-                      if(isLatest && !(isFinite(e1) && isFinite(e2) && isFinite(w1) && isFinite(w2))){
+                         ACTUALLY reconciles with PE × this = TP for this
+                         row. We have three potential sources for the
+                         breakdown, and we have to be smart about which
+                         one to trust because they can disagree:
+                           - row's own h.eps1/eps2/w1/w2 (the snapshot at
+                             approval / save time)
+                           - latest-row only: valuation.*Fixed (current
+                             official Fixed snapshot, post any recent
+                             manual edits)
+                           - implied = h.tp / h.pe (the math that has to
+                             hold by definition)
+                         A breakdown is only "trustworthy" if it
+                         reconciles with the row's TP (within ~2%). If
+                         a stored breakdown produces a normEPS that's
+                         materially off from h.tp / h.pe, it means the
+                         stored values were captured at a different
+                         vintage than the TP (e.g. FactSet had already
+                         daily-updated v.eps1 by the time commitValuation
+                         ran). In that case the implied calc wins. */
+                      var rowPE = parseFloat(h.pe);
+                      var rowTP = parseFloat(h.tp);
+                      var impliedEps = (isFinite(rowTP) && isFinite(rowPE) && rowPE > 0) ? rowTP / rowPE : null;
+                      function _reconciles(blend){
+                        if(blend === null || impliedEps === null) return false;
+                        return Math.abs(blend - impliedEps) / impliedEps < 0.02; /* 2% tolerance */
+                      }
+                      /* Try latest-row *Fixed first when applicable — it's
+                         the most authoritative snapshot of the active
+                         approval and gets updated when the user edits
+                         the Fixed inputs on the Valuation card. */
+                      var blendedEps = null;
+                      var epsFormula = "";
+                      var epsIsImplied = false;
+                      if(isLatest){
                         var fv = selCo.valuation || {};
                         var fe1 = parseFloat(fv.eps1Fixed);
                         var fe2 = parseFloat(fv.eps2Fixed);
                         var fw1 = parseFloat(fv.w1Fixed);
                         var fw2 = parseFloat(fv.w2Fixed);
                         if(isFinite(fe1) && isFinite(fe2) && isFinite(fw1) && isFinite(fw2)){
-                          e1 = fe1; e2 = fe2; w1 = fw1; w2 = fw2;
+                          var fixedBlend = (fe1*fw1 + fe2*fw2) / 100;
+                          if(_reconciles(fixedBlend) || impliedEps === null){
+                            blendedEps = fixedBlend;
+                            epsFormula = "(" + fe1 + "×" + fw1 + "% + " + fe2 + "×" + fw2 + "%)";
+                          }
                         }
                       }
-                      var rowPE = parseFloat(h.pe);
-                      var rowTP = parseFloat(h.tp);
-                      var blendedEps = null;
-                      var epsFormula = "";
-                      var epsIsImplied = false;
-                      if(isFinite(e1) && isFinite(e2) && isFinite(w1) && isFinite(w2)){
-                        blendedEps = (e1*w1 + e2*w2) / 100;
-                        epsFormula = "(" + e1 + "×" + w1 + "% + " + e2 + "×" + w2 + "%)";
-                      } else if(isFinite(e1) && (w1 === 100 || !isFinite(w2))){
-                        blendedEps = e1;
-                      } else if(isFinite(e2) && (w2 === 100 || !isFinite(w1))){
-                        blendedEps = e2;
-                      } else if(isFinite(rowTP) && isFinite(rowPE) && rowPE > 0){
-                        blendedEps = rowTP / rowPE;
+                      /* Row's own breakdown — only used when it
+                         RECONCILES with the row's TP and PE. A stored
+                         breakdown that produces 3.69 when TP/PE implies
+                         3.18 is stale data; prefer implied in that case
+                         (see Row 2 in the screenshot — the stored
+                         eps1=3.7415 / eps2=3.6417 came from
+                         daily-updated Live values at the time the row
+                         was created, not from the actual approved
+                         breakdown). */
+                      if(blendedEps === null){
+                        var e1 = parseFloat(h.eps1), e2 = parseFloat(h.eps2);
+                        var w1 = parseFloat(h.w1),   w2 = parseFloat(h.w2);
+                        if(isFinite(e1) && isFinite(e2) && isFinite(w1) && isFinite(w2)){
+                          var rowBlend = (e1*w1 + e2*w2) / 100;
+                          if(_reconciles(rowBlend) || impliedEps === null){
+                            blendedEps = rowBlend;
+                            epsFormula = "(" + e1 + "×" + w1 + "% + " + e2 + "×" + w2 + "%)";
+                          }
+                        } else if(isFinite(e1) && (w1 === 100 || !isFinite(w2))){
+                          if(_reconciles(e1) || impliedEps === null) blendedEps = e1;
+                        } else if(isFinite(e2) && (w2 === 100 || !isFinite(w1))){
+                          if(_reconciles(e2) || impliedEps === null) blendedEps = e2;
+                        }
+                      }
+                      /* Implied fallback — by definition this always
+                         reconciles. Used when no breakdown is present
+                         OR when every available breakdown is stale. */
+                      if(blendedEps === null && impliedEps !== null){
+                        blendedEps = impliedEps;
                         epsIsImplied = true;
-                      } else if(h.eps != null && isFinite(parseFloat(h.eps))){
+                      }
+                      /* Final fallback: stored h.eps if everything else
+                         is missing (should be rare). */
+                      if(blendedEps === null && h.eps != null && isFinite(parseFloat(h.eps))){
                         blendedEps = parseFloat(h.eps);
                       }
                       /* Fiscal Quarter cell — the QUARTER of the earnings
