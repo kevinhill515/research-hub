@@ -900,16 +900,36 @@ export function CompanyDetail(props){
                          most authoritative first:
                            1. Blended from row's eps1/eps2/w1/w2 (the
                               actual values the suggester used).
-                           2. eps1 or eps2 when only one side is present
+                           2. For the LATEST row only: fall back to the
+                              company's current valuation.*Fixed values.
+                              Those get written by approveTpApproval at
+                              the same moment the tpHistory entry is
+                              created, so for the row that represents
+                              the most recent approval they ARE the
+                              authoritative breakdown — even if the
+                              entry itself somehow didn't capture
+                              eps1/eps2/w1/w2.
+                           3. eps1 or eps2 when only one side is present
                               with weights summing to 100.
-                           3. Implied from tp / pe — works for ANY legacy
+                           4. Implied from tp / pe — works for ANY legacy
                               row that has a TP and PE, even when no
-                              breakdown or h.eps survives. This is what
-                              fixes the "TWD 98.83 doesn't equal 2340/21"
-                              display on old entries.
-                           4. h.eps (stored value) as a last resort. */
+                              breakdown survives.
+                           5. h.eps (stored value) as a last resort. */
                       var e1 = parseFloat(h.eps1), e2 = parseFloat(h.eps2);
                       var w1 = parseFloat(h.w1),   w2 = parseFloat(h.w2);
+                      /* Latest-row Fixed-fallback: only kicks in if the
+                         row's own breakdown is partial/missing AND this
+                         is the topmost (most recent) approval. */
+                      if(isLatest && !(isFinite(e1) && isFinite(e2) && isFinite(w1) && isFinite(w2))){
+                        var fv = selCo.valuation || {};
+                        var fe1 = parseFloat(fv.eps1Fixed);
+                        var fe2 = parseFloat(fv.eps2Fixed);
+                        var fw1 = parseFloat(fv.w1Fixed);
+                        var fw2 = parseFloat(fv.w2Fixed);
+                        if(isFinite(fe1) && isFinite(fe2) && isFinite(fw1) && isFinite(fw2)){
+                          e1 = fe1; e2 = fe2; w1 = fw1; w2 = fw2;
+                        }
+                      }
                       var rowPE = parseFloat(h.pe);
                       var rowTP = parseFloat(h.tp);
                       var blendedEps = null;
