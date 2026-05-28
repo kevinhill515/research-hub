@@ -244,15 +244,16 @@ export function useCompanies(){
     var updates={earningsEntries:entries,lastUpdated:todayStr()};
     // Overwrite notes with most recent entry's takeaways
     if(entries.length>0){var latest=entries[0];if(latest.shortTakeaway)updates.takeaway=latest.shortTakeaway;if(latest.extendedTakeaway)updates.takeawayLong=latest.extendedTakeaway;}
-    // If TP changed, log to tpHistory
-    if(entry.newTP&&entry.tpChange!=="Unchanged"){
-      var currency=(co.valuation&&co.valuation.currency)||getCurrency(co.country);
-      var tp=parseFloat(entry.newTP);
-      if(!isNaN(tp)){
-        var tpEntry={date:entry.reportDate||todayStr(),tp:tp,pe:(co.valuation&&co.valuation.pe)||"",eps:(co.valuation&&co.valuation.eps1)||"",forwardYear:entry.quarter||"",currency,source:"earnings"};
-        updates.tpHistory=[tpEntry].concat(co.tpHistory||[]);
-      }
-    }
+    /* Legacy TP-change-on-save tpHistory write REMOVED. Used to fire
+       whenever an earnings entry had tpChange != "Unchanged" + newTP,
+       which created a premature tpHistory row using the company's
+       LIVE valuation.pe (not the proposed new PE from the approval
+       form). For Textron this produced a row tagged 14x even though
+       the suggester proposed 16x. The approval flow
+       (submit -> approve -> approveTpApproval) is now the single
+       source of truth for tpHistory rows tied to TP changes; the
+       baseline backfill below still seeds the initial row for
+       companies that never had a TP approval cycle. */
     /* Baseline TP backfill. When this is the FIRST earnings entry being
        saved AND tpHistory is still empty, snapshot the company's current
        valuation as a starting-point row so the Fixed TP History table
