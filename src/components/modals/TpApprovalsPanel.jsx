@@ -62,59 +62,70 @@ function ChangeTable({ rec, pfx, fy1, fy2, currentPrice, fyEndMonth }){
     if(a == null || b == null) return true;
     return Math.abs(parseFloat(a) - parseFloat(b)) > (eps == null ? 0.005 : eps);
   }
-  var rows = [];
-  rows.push({
+  /* Build each named row into a local first, then assemble the
+     final `rows` array in display order at the bottom. Display order
+     (per user spec):
+       1. TP Fixed   — the headline number the team is voting on.
+       2. MOS @ Current — what that TP implies for room-to-run today.
+       3. PE         — the multiple used.
+       4. EPS FY1
+       5. EPS FY2
+       6. Normalized EPS
+       7. Weights
+     Legacy records collapse EPS1/EPS2/Weights/NormEPS into a single
+     "EPS (blended)" row that sits in the same slot as Normalized EPS. */
+  var peRow = {
     label: "PE",
     from: fmtNum(rec.fromPE, 1),
     to:   fmtNum(rec.toPE,   1),
     fromRaw: rec.fromPE,
     toRaw:   rec.toPE,
     changed: changed(rec.fromPE, rec.toPE, 0.05),
-  });
+  };
+  var legacyEpsRow = null, eps1Row = null, eps2Row = null, weightsRow = null, normEpsRow = null;
   if(isLegacy){
-    rows.push({
+    legacyEpsRow = {
       label: "EPS (blended)",
       from: fmtNum(rec.fromEPS, 2),
       to:   fmtNum(rec.toEPS,   2),
       fromRaw: rec.fromEPS,
       toRaw:   rec.toEPS,
       changed: changed(rec.fromEPS, rec.toEPS, 0.005),
-    });
+    };
   } else {
-    rows.push({
+    eps1Row = {
       label: "EPS " + (fy1 || "FY1") + fyMonthTag,
       from: fmtNum(rec.fromEPS1, 2),
       to:   fmtNum(rec.toEPS1,   2),
       fromRaw: rec.fromEPS1,
       toRaw:   rec.toEPS1,
       changed: changed(rec.fromEPS1, rec.toEPS1, 0.005),
-    });
-    rows.push({
+    };
+    eps2Row = {
       label: "EPS " + (fy2 || "FY2") + fyMonthTag,
       from: fmtNum(rec.fromEPS2, 2),
       to:   fmtNum(rec.toEPS2,   2),
       fromRaw: rec.fromEPS2,
       toRaw:   rec.toEPS2,
       changed: changed(rec.fromEPS2, rec.toEPS2, 0.005),
-    });
-    /* Weights collapsed into one row — they always move together and
-       reading "W1 100 → 50 · W2 0 → 50" is harder than "100/0 → 50/50".
-       noPctChange flag suppresses the % column for this row (weights
-       are reallocation, not magnitude change — % delta is meaningless). */
+    };
+    /* Weights collapsed into one row — W1/W2 always move together,
+       "100/0 → 50/50" reads better than two rows. noPctChange flag
+       suppresses the % column since weights are reallocation, not
+       a magnitude change. */
     var w1Same = !changed(rec.fromW1, rec.toW1, 0.5);
     var w2Same = !changed(rec.fromW2, rec.toW2, 0.5);
-    rows.push({
+    weightsRow = {
       label: "Weights " + (fy1 || "FY1") + "/" + (fy2 || "FY2"),
       from: (rec.fromW1 == null && rec.fromW2 == null) ? "—" : (fmtNum(rec.fromW1, 0) + "/" + fmtNum(rec.fromW2, 0)),
       to:   (rec.toW1   == null && rec.toW2   == null) ? "—" : (fmtNum(rec.toW1,   0) + "/" + fmtNum(rec.toW2,   0)),
       changed: !(w1Same && w2Same),
       noPctChange: true,
-    });
-    /* Normalized EPS = (EPS1 × W1 + EPS2 × W2) / 100. The submitter
-       computed this at submit time and stored it on rec.fromEPS /
-       rec.toEPS, so we prefer those. Falls back to re-deriving from
-       the individual components when the stored blend is missing
-       (legacy or partial records). */
+    };
+    /* Normalized EPS = (EPS1 × W1 + EPS2 × W2) / 100. Prefer the
+       stored blend on rec.fromEPS / rec.toEPS (computed at submit
+       time); fall back to re-deriving from the components when the
+       stored blend is missing (legacy or partial records). */
     function _blend(e1, e2, w1, w2){
       var e1n = parseFloat(e1), e2n = parseFloat(e2);
       var w1n = parseFloat(w1), w2n = parseFloat(w2);
@@ -131,24 +142,22 @@ function ChangeTable({ rec, pfx, fy1, fy2, currentPrice, fyEndMonth }){
     var toNormEPS = (rec.toEPS != null && isFinite(parseFloat(rec.toEPS)))
       ? parseFloat(rec.toEPS)
       : _blend(rec.toEPS1, rec.toEPS2, rec.toW1, rec.toW2);
-    rows.push({
+    normEpsRow = {
       label: "Normalized EPS",
       from: fromNormEPS != null ? fmtNum(fromNormEPS, 2) : "—",
       to:   toNormEPS   != null ? fmtNum(toNormEPS,   2) : "—",
       fromRaw: fromNormEPS,
       toRaw:   toNormEPS,
       changed: changed(fromNormEPS, toNormEPS, 0.005),
-    });
+    };
   }
-  /* TP Fixed row. Keep the cell clean — just pfx + amount. The
-     computed-vs-proposed sanity gap (used to inline as
-     "(PE × EPS = NT$2340.92)") was removed per user request because
-     the small delta is rounding noise that clutters the table. The
-     submission form's prev-side / new-side 2% checks already protect
-     against meaningful divergence. */
+  /* TP Fixed cell renders the clean amount; the computed-vs-proposed
+     sanity gap was removed per earlier user request as rounding noise.
+     The form's prev-side / new-side 2% checks already protect against
+     meaningful divergence. */
   var tpFrom = (rec.fromTP != null && isFinite(rec.fromTP)) ? (pfx + fmtNum(rec.fromTP, 2)) : "—";
   var tpTo   = (rec.toTP   != null && isFinite(rec.toTP))   ? (pfx + fmtNum(rec.toTP,   2)) : "—";
-  rows.push({
+  var tpRow = {
     label: "TP Fixed",
     from: tpFrom,
     to:   tpTo,
@@ -156,12 +165,12 @@ function ChangeTable({ rec, pfx, fy1, fy2, currentPrice, fyEndMonth }){
     toRaw:   rec.toTP,
     changed: changed(rec.fromTP, rec.toTP, 0.005),
     isTP: true,
-  });
+  };
   /* MOS row — Prev MOS and New MOS both measured against today's
-     stock price, so the reader can see whether the proposed TP change
-     actually moves the room-to-run number meaningfully. Skips the row
-     entirely when we don't have a current price (e.g. deleted company,
-     legacy record with no ticker). */
+     stock price, so the reader sees whether the proposed TP change
+     moves room-to-run meaningfully. Null when no current price
+     (deleted company, legacy record without ticker). */
+  var mosRow = null;
   if(isFinite(currentPrice) && currentPrice > 0){
     var prevMOS = (rec.fromTP != null && isFinite(rec.fromTP) && rec.fromTP > 0)
       ? calcMOS(rec.fromTP, currentPrice) : null;
@@ -172,27 +181,31 @@ function ChangeTable({ rec, pfx, fy1, fy2, currentPrice, fyEndMonth }){
       var sign = v >= 0 ? "+" : "";
       return sign + v.toFixed(1) + "%";
     }
-    rows.push({
+    mosRow = {
       label: "MOS @ Current " + pfx + fmtNum(currentPrice, 2),
-      /* "Current" italicized in render so it's obvious the @-price is
-         today's tick, not a TP. labelJSX takes precedence over label
-         when both exist. */
       labelJSX: (<span>MOS @ <em className="italic">Current</em> {pfx}{fmtNum(currentPrice, 2)}</span>),
       from:  fmtMOS(prevMOS),
       to:    fmtMOS(newMOS),
       fromRaw: prevMOS,
       toRaw:   newMOS,
-      /* MOS is derived from TP, so it changes iff TP changed (within
-         rounding). Reuse the same "changed" check rather than comparing
-         the percent values, which can drift due to current-price moves
-         between proposal and view. */
+      /* MOS changes iff TP changed (within rounding). Reuse the same
+         "changed" check rather than comparing percent values, which can
+         drift due to current-price moves between proposal and view. */
       changed: changed(rec.fromTP, rec.toTP, 0.005),
       isMOS: true,
-      /* % change of an MOS percentage is misleading; show the absolute
-         ppt change instead in the % column. */
+      /* % change of a percentage is misleading; show ppt instead. */
       isPptChange: true,
-      newMOSValue: newMOS, /* used below for green/red text color */
-    });
+      newMOSValue: newMOS,
+    };
+  }
+  /* Assemble in display order: TP, MOS, PE, EPS1, EPS2, NormEPS, Weights. */
+  var rows = [tpRow];
+  if(mosRow) rows.push(mosRow);
+  rows.push(peRow);
+  if(isLegacy){
+    rows.push(legacyEpsRow);
+  } else {
+    rows.push(eps1Row, eps2Row, normEpsRow, weightsRow);
   }
   return (
     <div className="mb-2 rounded-md border border-slate-200 dark:border-slate-700 overflow-hidden">
