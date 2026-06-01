@@ -1602,46 +1602,182 @@ export function CompanyProvider({children}){
       return Object.assign({},c,{portWeights:nw,portWeightHistory:[entry].concat(cleaned)});
     });});
   }
-  function updateTargetWeight(companyId,portfolio,rawNewValue){
-    /* Compute the delta first (in state-update-safe way), so we can
-       shift CASH by the opposite amount to preserve target sum = 100%. */
-    var deltaForCash=0;
-    setCompanies(function(cs){return cs.map(function(c){
-      if(c.id!==companyId)return c;
-      var oldRaw=(c.portWeights||{})[portfolio];
-      var oldNum=parseFloat(oldRaw);if(isNaN(oldNum))oldNum=0;
-      var newNum=parseFloat(rawNewValue);if(isNaN(newNum))newNum=0;
-      deltaForCash=newNum-oldNum;
-      var nw=Object.assign({},c.portWeights||{});
-      nw[portfolio]=rawNewValue===""||rawNewValue===null||rawNewValue===undefined?"":rawNewValue;
-      /* Only log if the numeric value actually changed */
-      if(Math.abs(oldNum-newNum)<0.01)return Object.assign({},c,{portWeights:nw});
-      /* New weight changes default to isAgenda: true — they represent
-         a decision made at the most recent IC meeting that hasn't been
-         executed yet. The PM Meeting Memo generator lists these in the
-         'Trading Agenda' section. After the trade lands (next-day
-         transactions upload) the user can run 'Clear executed agenda'
-         to flip isAgenda → false; those entries then surface in the
-         'Target Changes' section instead. */
-      var entry={id:newId(),date:todayStr(),portfolio:portfolio,oldWeight:oldNum,newWeight:newNum,author:currentUser||"Unknown",isAgenda:true};
-      var hist=[entry].concat(c.portWeightHistory||[]);
-      return Object.assign({},c,{portWeights:nw,portWeightHistory:hist});
-    });});
-    /* If the target actually changed, shift CASH target by the opposite
-       delta so the portfolio's total target stays at 100%. Rounded to 1
-       decimal to match the display. Clamped at 0 so CASH never goes
-       negative (user can still edit it directly if needed). */
-    if(Math.abs(deltaForCash)>=0.01){
-      setSpecialWeights(function(prev){
-        var next=Object.assign({},prev);
-        var cashRow=Object.assign({},next.CASH||{});
-        var oldCash=parseFloat(cashRow[portfolio]);if(isNaN(oldCash))oldCash=0;
-        var newCash=Math.max(0,Math.round((oldCash-deltaForCash)*10)/10);
-        cashRow[portfolio]=newCash;
-        next.CASH=cashRow;
-        return next;
-      });
+  /* ---- Proposed-vs-committed target-weight lifecycle ----
+   *
+   * Today's contract used to be: edit a target % → portWeights mutates
+   * immediately + a portWeightHistory entry lands with isAgenda:true.
+   * Two writes in one motion. There was no "tentative" window — the
+   * portfolio's committed target was already the new value.
+   *
+   * New contract:
+   *   proposeTargetWeight(co, port, newW)
+   *     - Adds (or REPLACES the existing pending) portWeightHistory entry
+   *       with isAgenda:true, recording the proposed newWeight + author.
+   *     - Does NOT mutate co.portWeights[port]. Committed target stays put.
+   *     - DOES mutate specialWeights.CASH[port] by -delta so the target
+   *       column visibly sums to 100% even while proposals are open
+   *       (user explicitly chose "CASH moves with each proposal").
+   *
+   *   clearProposedWeight(co, port)
+   *     - Removes the pending entry. Restores CASH by +delta.
+   *
+   *   commitProposedWeights(port)
+   *     - For every company with a pending (isAgenda:true) target entry
+   *       on this port: writes the entry's newWeight into portWeights,
+   *       flips isAgenda:false. CASH was already moved at propose time
+   *       so no CASH adjustment here.
+   *     - Also flips any B/A/P/S agenda entries (isAgenda:true with an
+   *       action) on this port to isAgenda:false — same role
+   *       clearAgendaFlags(util) used to play, now scoped per-port and
+   *       in-context so the data flow is one-way.
+   *
+   * updateTargetWeight kept as a thin one-shot wrapper:
+   *   propose → commitProposedWeights(port)
+   * so existing callers (OverlapTable, anything else) behave identically
+   * until they migrate to the explicit propose/commit cycle.
+   */
+  function _findPendingTargetEntry(c, portfolio){
+    var hist = c.portWeightHistory || [];
+    for(var i=0;i<hist.length;i++){
+      var h = hist[i];
+      /* Pending target = isAgenda:true with a newWeight and NO action
+         (B/A/P/S stamps also use isAgenda:true but have an action). */
+      if(h && h.isAgenda && h.portfolio === portfolio && !h.action
+          && h.newWeight !== undefined && h.newWeight !== null){
+        return { entry: h, index: i };
+      }
     }
+    return null;
+  }
+  function _shiftCash(portfolio, delta){
+    if(!(Math.abs(delta) >= 0.01)) return;
+    setSpecialWeights(function(prev){
+      var next = Object.assign({}, prev);
+      var cashRow = Object.assign({}, next.CASH || {});
+      var oldCash = parseFloat(cashRow[portfolio]);
+      if(isNaN(oldCash)) oldCash = 0;
+      /* CASH absorbs the opposite of the target change so the column
+         sums stay at 100%. Clamp at 0; rounded to 0.1 to match display. */
+      var newCash = Math.max(0, Math.round((oldCash - delta) * 10) / 10);
+      cashRow[portfolio] = newCash;
+      next.CASH = cashRow;
+      return next;
+    });
+  }
+  function proposeTargetWeight(companyId, portfolio, rawNewValue){
+    /* baseline for delta-vs-CASH = currently-proposed value if one
+       exists; else committed portWeights value. Lets the same edit
+       cell handle "first proposal" and "amend an existing proposal"
+       without double-counting CASH. */
+    var deltaForCash = 0;
+    setCompanies(function(cs){
+      return cs.map(function(c){
+        if(c.id !== companyId) return c;
+        var committedRaw = (c.portWeights || {})[portfolio];
+        var committedNum = parseFloat(committedRaw); if(isNaN(committedNum)) committedNum = 0;
+        var newNum = parseFloat(rawNewValue); if(isNaN(newNum)) newNum = 0;
+        var pending = _findPendingTargetEntry(c, portfolio);
+        var prevProposed = pending ? parseFloat(pending.entry.newWeight) : committedNum;
+        if(isNaN(prevProposed)) prevProposed = committedNum;
+        deltaForCash = newNum - prevProposed;
+        /* If proposed === committed, there's nothing pending — clear
+           any existing proposal entry on this port. */
+        var nowMatchesCommitted = Math.abs(newNum - committedNum) < 0.01;
+        var newHist;
+        if(nowMatchesCommitted){
+          newHist = (c.portWeightHistory || []).filter(function(h, i){
+            return !(pending && i === pending.index);
+          });
+        } else {
+          var entry = {
+            id: pending ? pending.entry.id : newId(),
+            date: todayStr(),
+            portfolio: portfolio,
+            oldWeight: committedNum,
+            newWeight: newNum,
+            author: currentUser || "Unknown",
+            isAgenda: true,
+          };
+          /* Replace existing pending entry in place if present; else
+             prepend. Keeps history clean — multiple keystrokes don't
+             accumulate noise. */
+          if(pending){
+            newHist = (c.portWeightHistory || []).map(function(h, i){
+              return i === pending.index ? entry : h;
+            });
+          } else {
+            newHist = [entry].concat(c.portWeightHistory || []);
+          }
+        }
+        return Object.assign({}, c, { portWeightHistory: newHist });
+      });
+    });
+    _shiftCash(portfolio, deltaForCash);
+  }
+  function clearProposedWeight(companyId, portfolio){
+    var deltaForCash = 0;
+    setCompanies(function(cs){
+      return cs.map(function(c){
+        if(c.id !== companyId) return c;
+        var pending = _findPendingTargetEntry(c, portfolio);
+        if(!pending) return c;
+        var committedRaw = (c.portWeights || {})[portfolio];
+        var committedNum = parseFloat(committedRaw); if(isNaN(committedNum)) committedNum = 0;
+        var proposedNum = parseFloat(pending.entry.newWeight); if(isNaN(proposedNum)) proposedNum = committedNum;
+        /* Removing the proposal restores CASH by the opposite of the
+           proposal's net delta (delta = proposedNum - committedNum). */
+        deltaForCash = -(proposedNum - committedNum);
+        var newHist = (c.portWeightHistory || []).filter(function(h, i){
+          return i !== pending.index;
+        });
+        return Object.assign({}, c, { portWeightHistory: newHist });
+      });
+    });
+    _shiftCash(portfolio, deltaForCash);
+  }
+  function commitProposedWeights(portfolio){
+    /* Walk every company; for those with a pending target proposal on
+       this port, copy newWeight → portWeights and flip the entry's
+       isAgenda:false. Also flip B/A/P/S agenda entries (isAgenda:true
+       with action set) on this port — that role used to belong to
+       clearAgendaFlags(util) but now lives in-context for clean
+       one-way data flow. CASH was already moved at propose time. */
+    setCompanies(function(cs){
+      return cs.map(function(c){
+        var hist = c.portWeightHistory || [];
+        var changed = false;
+        var newPortWeights = Object.assign({}, c.portWeights || {});
+        var newHist = hist.map(function(h){
+          if(!h || !h.isAgenda || h.portfolio !== portfolio) return h;
+          /* Target proposal — write committed weight. */
+          if(!h.action && h.newWeight !== undefined && h.newWeight !== null){
+            var nw = parseFloat(h.newWeight);
+            if(isFinite(nw)){
+              newPortWeights[portfolio] = String(nw);
+            }
+            changed = true;
+            return Object.assign({}, h, { isAgenda: false });
+          }
+          /* B/A/P/S stamp — flip to executed. */
+          if(h.action){
+            changed = true;
+            return Object.assign({}, h, { isAgenda: false });
+          }
+          return h;
+        });
+        if(!changed) return c;
+        return Object.assign({}, c, { portWeights: newPortWeights, portWeightHistory: newHist });
+      });
+    });
+  }
+  /* Back-compat one-shot wrapper. Existing callers (OverlapTable,
+     ad-hoc edits) keep working unchanged: a write here looks like
+     propose-then-immediately-commit, which net-out matches the old
+     contract (portWeights moves now, CASH rebalances now, history
+     entry lands with isAgenda:false). */
+  function updateTargetWeight(companyId,portfolio,rawNewValue){
+    proposeTargetWeight(companyId, portfolio, rawNewValue);
+    commitProposedWeights(portfolio);
   }
   /* Manual backfill: add a historical entry without changing current portWeights. */
   function addTargetHistoryEntry(companyId,entry){
@@ -1744,6 +1880,7 @@ export function CompanyProvider({children}){
     saveStatus,
     addAnnotation,updateAnnotation,deleteAnnotation,resolveAnnotation,unresolveAnnotation,addReply,markAnnotationRead,parseMentions,
     updateTargetWeight,markTradeAgenda,addTargetHistoryEntry,deleteTargetHistoryEntry,
+    proposeTargetWeight,clearProposedWeight,commitProposedWeights,
     addTransaction,deleteTransaction,setTxInitOverride,setTxCashFlow,updateInitiatedDate,
     researchAssignments,setResearchAssignments,setResearchSlot,setReorgSlot,
     perfData,setPerfData,setPerfSeries,addPerfSeries,removePerfSeries,movePerfSeries,setPerfSeriesOrder,setPerfReturn,setPerfLastMonthEMV,applyPerfBulk,
