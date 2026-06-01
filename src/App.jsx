@@ -419,30 +419,24 @@ export default function App(){
           );
         })()}
         {(function(){
-          /* IC Meeting button \u2014 chip count matches what the user sees
-             when they open the modal. Dedupes per (company, port,
-             entry-class) the same way the Agenda tab does:
-               - At most one B/A/P/S stamp per (company, port)
-               - At most one target-% proposal per (company, port)
-             so a company with both a Buy stamp AND a target change in
-             FGL counts as 2 (one trade + one alloc change), but two
-             stale stamps for the same Buy in FGL count as 1. */
-          var seenStamps = {}; var seenTargets = {};
+          /* IC Meeting button \u2014 chip count matches the Agenda tab's
+             per-port "X companies pending" rollups exactly. Dedupes
+             per (company, port): a row in the Agenda tab represents
+             ONE (company, port) regardless of whether it carries a
+             B/A/P/S stamp, a target % proposal, or both. So a Buy +
+             target-bump on TSM in FOC = 1 row, not 2. */
+          var seenRows = {};
           var pendingAgendaCount = 0;
           (companies || []).forEach(function(c){
             (c.portWeightHistory || []).forEach(function(h){
-              if (!h || !h.isAgenda) return;
-              if (h.action) {
-                var k = c.id + "|" + h.portfolio + "|stamp";
-                if (seenStamps[k]) return;
-                seenStamps[k] = true;
-                pendingAgendaCount++;
-              } else if (h.newWeight !== undefined && h.newWeight !== null) {
-                var kt = c.id + "|" + h.portfolio + "|target";
-                if (seenTargets[kt]) return;
-                seenTargets[kt] = true;
-                pendingAgendaCount++;
-              }
+              if (!h || !h.isAgenda || !h.portfolio) return;
+              var hasAction = !!h.action;
+              var hasTarget = !hasAction && h.newWeight !== undefined && h.newWeight !== null;
+              if (!hasAction && !hasTarget) return;
+              var key = c.id + "|" + h.portfolio;
+              if (seenRows[key]) return;
+              seenRows[key] = true;
+              pendingAgendaCount++;
             });
           });
           return (
