@@ -1010,23 +1010,31 @@ class ExcelSession:
                     log("  CommandBars: no refresh-shaped controls found")
             except Exception as e:
                 log(f"  CommandBars probe failed: {type(e).__name__}: {e}")
-        # SendKeys via Quick Access Toolbar — the LAST automation path
-        # FactSet's locked-down ribbon still leaves open. Pressing
-        # Alt+<N> in Excel fires the Nth QAT button. If the user has
-        # added 'Refresh Workbook' to QAT and set FACTSET_REFRESH_QAT_POS
-        # to its position, this triggers the same code path as a manual
-        # click. Uses WScript.Shell.SendKeys (more reliable than
+        # SendKeys path — last automation route into FactSet's
+        # locked-down ribbon. We try TWO key sequences in order:
+        #
+        #   1. Alt + S, R, W — ribbon navigation. FactSet's tab is "S"
+        #      (FactSet), then "R" (Refresh group), then "W" (Workbook).
+        #      This is the canonical keyboard route that matches a
+        #      manual click and works regardless of QAT customization.
+        #      Each step is a separate SendKeys with a brief sleep so
+        #      the ribbon has time to expand between keystrokes.
+        #
+        #   2. Alt + <N> — fires the Nth QAT button. Fallback used when
+        #      step 1 fails (FactSet tab not present, ribbon collapsed,
+        #      different version). Requires the user to have added
+        #      "Refresh Workbook" to QAT and set FACTSET_REFRESH_QAT_POS
+        #      to its position.
+        #
+        # Both use WScript.Shell.SendKeys (more reliable than
         # Application.SendKeys, which queues and can lose keystrokes
         # when Excel is busy).
-        if not macro_ok and FACTSET_REFRESH_QAT_POS:
+        if not macro_ok:
             try:
                 import win32com.client
                 self.xl.Visible = True       # SendKeys needs the window visible
                 self.wb.Activate()
                 shell = win32com.client.Dispatch("WScript.Shell")
-                # AppActivate raises COMError if no window matches.
-                # The Excel caption usually ends with " - Excel"; try
-                # the workbook name first, then a bare "Excel" fallback.
                 activated = False
                 for title in (self.wb.Name, "Excel"):
                     try:
@@ -1036,16 +1044,32 @@ class ExcelSession:
                     except Exception:
                         continue
                 time.sleep(0.5)
-                shell.SendKeys("%" + str(FACTSET_REFRESH_QAT_POS))
-                log(f"  SendKeys Alt+{FACTSET_REFRESH_QAT_POS} (QAT position) "
-                    f"{'activated=' + str(activated)}")
-                # Click registers async — small delay before subsequent
-                # CalculateFullRebuild lets FactSet's button handler kick
-                # off the workbook refresh.
-                time.sleep(2)
-                macro_ok = True
+                # Attempt 1: Alt+S, R, W (ribbon navigation).
+                try:
+                    shell.SendKeys("%s")     # Alt+S → opens FactSet ribbon
+                    time.sleep(0.6)
+                    shell.SendKeys("r")      # → Refresh menu/group
+                    time.sleep(0.4)
+                    shell.SendKeys("w")      # → Workbook
+                    log(f"  SendKeys Alt+S, R, W (ribbon path) "
+                        f"{'activated=' + str(activated)}")
+                    time.sleep(2)
+                    macro_ok = True
+                except Exception as e:
+                    log(f"  SendKeys Alt+S,R,W failed: {type(e).__name__}: {e}")
+                # Attempt 2: Alt+<N> QAT fallback. Only fires when the
+                # ribbon path didn't claim success.
+                if not macro_ok and FACTSET_REFRESH_QAT_POS:
+                    try:
+                        shell.SendKeys("%" + str(FACTSET_REFRESH_QAT_POS))
+                        log(f"  SendKeys Alt+{FACTSET_REFRESH_QAT_POS} (QAT fallback) "
+                            f"{'activated=' + str(activated)}")
+                        time.sleep(2)
+                        macro_ok = True
+                    except Exception as e:
+                        log(f"  SendKeys Alt+{FACTSET_REFRESH_QAT_POS} fallback failed: {type(e).__name__}: {e}")
             except Exception as e:
-                log(f"  SendKeys QAT fallback failed: {type(e).__name__}: {e}")
+                log(f"  SendKeys outer setup failed: {type(e).__name__}: {e}")
         if not macro_ok:
             log("  WARNING: no FactSet refresh path worked — _xll.FDS UDFs")
             log("  will only recompute against whatever data the workbook")
