@@ -661,17 +661,22 @@ function ProposalRow({ company, port, heldTicker, actionEntry, targetEntry, acti
                   </span>
                 )}
                 {isEditing ? (
-                  <div className="ml-3 mt-1 flex gap-1">
-                    <input
-                      type="text"
+                  <div className="ml-3 mt-1 flex gap-1 items-start">
+                    <textarea
                       value={editingText}
                       onChange={function (e) { setEditingText(e.target.value); }}
-                      onKeyDown={function (e) { if (e.key === "Enter") saveEdit(); if (e.key === "Escape") { setEditingCommentId(null); setEditingText(""); } }}
+                      onKeyDown={function (e) {
+                        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveEdit(); }
+                        if (e.key === "Escape") { setEditingCommentId(null); setEditingText(""); }
+                      }}
                       autoFocus
-                      className="flex-1 text-[11px] px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      rows={2}
+                      className="flex-1 text-[11px] px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none resize-y leading-snug"
                     />
-                    <button onClick={saveEdit} className="text-[10px] px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white rounded cursor-pointer">Save</button>
-                    <button onClick={function () { setEditingCommentId(null); setEditingText(""); }} className="text-[10px] px-2 py-0.5 border border-slate-200 dark:border-slate-700 rounded cursor-pointer">Cancel</button>
+                    <div className="flex flex-col gap-1">
+                      <button onClick={saveEdit} className="text-[10px] px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white rounded cursor-pointer">Save</button>
+                      <button onClick={function () { setEditingCommentId(null); setEditingText(""); }} className="text-[10px] px-2 py-0.5 border border-slate-200 dark:border-slate-700 rounded cursor-pointer">Cancel</button>
+                    </div>
                   </div>
                 ) : (
                   <div className="ml-3 text-gray-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">{cm.text}</div>
@@ -684,18 +689,27 @@ function ProposalRow({ company, port, heldTicker, actionEntry, targetEntry, acti
       {/* Comment composer — toggled by the 💬 button. Posts to the
           targetEntry's id if present, else the actionEntry's id. */}
       {showComment && commentTargetId && (
-        <div className="ml-6 mt-1 flex gap-1">
-          <input
-            type="text"
+        <div className="ml-6 mt-1 flex gap-1 items-start">
+          {/* textarea so long comments wrap to multiple lines rather
+              than scrolling sideways in a one-line input. Cmd/Ctrl+Enter
+              posts; bare Enter inserts a newline (standard textarea
+              behavior). Esc cancels. */}
+          <textarea
             value={commentText}
             onChange={function (e) { setCommentText(e.target.value); }}
-            onKeyDown={function (e) { if (e.key === "Enter") postComment(); if (e.key === "Escape") { setShowComment(false); setCommentText(""); } }}
-            placeholder={"Your comment (visible to all teammates)…"}
+            onKeyDown={function (e) {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); postComment(); }
+              if (e.key === "Escape") { setShowComment(false); setCommentText(""); }
+            }}
+            placeholder="Your comment (visible to all teammates)… Cmd/Ctrl+Enter to post."
             autoFocus
-            className="flex-1 text-[11px] px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            rows={2}
+            className="flex-1 text-[11px] px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none resize-y leading-snug"
           />
-          <button onClick={postComment} className="text-[11px] px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white rounded cursor-pointer">Post</button>
-          <button onClick={function () { setShowComment(false); setCommentText(""); }} className="text-[11px] px-2 py-0.5 border border-slate-200 dark:border-slate-700 rounded cursor-pointer">Cancel</button>
+          <div className="flex flex-col gap-1">
+            <button onClick={postComment} className="text-[11px] px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white rounded cursor-pointer">Post</button>
+            <button onClick={function () { setShowComment(false); setCommentText(""); }} className="text-[11px] px-2 py-0.5 border border-slate-200 dark:border-slate-700 rounded cursor-pointer">Cancel</button>
+          </div>
         </div>
       )}
     </div>

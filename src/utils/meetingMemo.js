@@ -244,20 +244,44 @@ function partitionWeightChanges(companies, ports) {
         });
       } else if (!hasAction && (h.isAgenda || isRecent(h.date))) {
         /* Target-% change — proposed or recently committed.
-           oldW fallback (PROPOSED only): when a pending entry has no
-           oldWeight (legacy entries, partial writes), use the
-           company's current committed portWeights[port] as a sane
-           proxy for "what was the target before this change?". For
-           pending proposals portWeights is still the pre-proposal
-           value, so it's correct. We DON'T apply this fallback to
-           committed (!isAgenda) entries because portWeights for those
-           has already moved to the new value — using it as oldW
-           would render "X% -> X%" which lies. */
+           oldW fallback ladder (when h.oldWeight is missing):
+             1. For PROPOSED entries (isAgenda:true): use the company's
+                current portWeights[port]. That IS the pre-proposal
+                value while the entry hasn't locked in yet.
+             2. For COMMITTED entries (!isAgenda): walk this company's
+                older portWeightHistory entries on the same port for
+                ANY entry (proposed or committed) with a numeric
+                newWeight, and use ITS newWeight as the prior value.
+                We can't use portWeights here because it has already
+                moved to this entry's newWeight, which would lie.
+             3. If even that fails, fall back to 0 — interpret as a
+                "from-nothing" position rather than an unknowable gap. */
         var oldW = h.oldWeight;
-        if (h.isAgenda && (oldW === undefined || oldW === null || oldW === "")) {
-          var committed = (c.portWeights || {})[h.portfolio];
-          var committedNum = parseFloat(committed);
-          oldW = isFinite(committedNum) ? committedNum : 0;
+        var missing = (oldW === undefined || oldW === null || oldW === "");
+        if (missing) {
+          if (h.isAgenda) {
+            var committed = (c.portWeights || {})[h.portfolio];
+            var committedNum = parseFloat(committed);
+            oldW = isFinite(committedNum) ? committedNum : 0;
+          } else {
+            /* Find an older history entry on the same port for a prior
+               weight reference. Order isn't guaranteed in
+               portWeightHistory; sort by date desc and pick the first
+               one BEFORE this entry's date that has a usable
+               newWeight. */
+            var hist = (c.portWeightHistory || []).slice();
+            hist.sort(function (a, b) { return (b.date || "").localeCompare(a.date || ""); });
+            var prior = null;
+            for (var hi = 0; hi < hist.length; hi++) {
+              var hh = hist[hi];
+              if (!hh || hh.portfolio !== h.portfolio) continue;
+              if (hh === h) continue;
+              if ((hh.date || "") >= (h.date || "")) continue; /* must be older */
+              var hhW = parseFloat(hh.newWeight);
+              if (isFinite(hhW)) { prior = hhW; break; }
+            }
+            oldW = prior != null ? prior : 0;
+          }
         }
         allocByPort[h.portfolio].push({
           company: c,
@@ -326,11 +350,12 @@ export function buildMeetingMemo(companies, profileName, repData) {
     });
   });
   const allocLines = formatPortfolioSection(allocByPort, profile.ports, repData, function (it) {
-    /* Show "X% → Y%" with old + new so the reader sees the move,
-       not just the destination. Marks proposed entries with a (proposed)
-       suffix so compliance can distinguish committed history from
-       still-pending team decisions. */
-    var from = it.oldW != null && isFinite(parseFloat(it.oldW)) ? fmtWeight(it.oldW) + "%" : "—";
+    /* "X% → Y%" with old + new. partitionWeightChanges' fallback ladder
+       already makes sure it.oldW is a number (0 worst case), so this
+       formatter should never need to render "—". Belt + suspenders:
+       still guard against undefined/non-finite. */
+    var oldN = parseFloat(it.oldW);
+    var from = isFinite(oldN) ? fmtWeight(oldN) + "%" : "0.0%";
     var to = fmtWeight(it.newW) + "%";
     return from + " → " + to + (it.isProposed ? " (proposed)" : "");
   });
