@@ -2452,23 +2452,39 @@ def clean_legacy_errors(companies: list[dict], fx_rates: dict) -> tuple[int, int
 # Main
 # ----------------------------------------------------------------------
 def main() -> int:
-    # Flags: --no-refresh-rep skips the LoadPositions macro (useful for
-    # testing when Master List isn't running, or as a safety override).
+    # Flags:
+    #   --no-refresh-rep   skips the LoadPositions macro (useful for
+    #                      testing when Master List isn't running).
+    #   --skip-refresh     skips the FactSet refresh AND its staleness
+    #                      check. Use when you've MANUALLY clicked
+    #                      "Refresh Workbook" on the FactSet ribbon and
+    #                      verified the perf cells updated; the script
+    #                      then just reads + uploads what's already in
+    #                      the workbook. Escape hatch for days when the
+    #                      Alt+<N> QAT path is broken (sign-in lapsed,
+    #                      focus stolen, slot moved, etc.).
     try_macro = "--no-refresh-rep" not in sys.argv[1:]
+    skip_refresh = "--skip-refresh" in sys.argv[1:]
 
     log("=" * 60)
     log("Run start")
     log(f"Workbook: {WORKBOOK_PATH}")
     log(f"Master List: {MASTER_LIST_PATH}")
     log(f"Rep-holdings macro refresh: {'yes (default)' if try_macro else 'NO (--no-refresh-rep)'}")
+    log(f"FactSet refresh: {'SKIPPED (--skip-refresh) — reading workbook as-is' if skip_refresh else 'yes (default)'}")
     if not WORKBOOK_PATH.exists():
         log(f"ERROR: workbook not found"); return 1
 
     try:
         with ExcelSession(WORKBOOK_PATH, MASTER_LIST_PATH) as xl:
             xl.refresh_rep_holdings(try_macro=try_macro)
-            # 2. FactSet — slow (~120s)
-            xl.refresh_factset()
+            # 2. FactSet — slow (~120s). Skipped when the user has
+            # refreshed manually; in that case we trust whatever is in
+            # the workbook right now.
+            if skip_refresh:
+                log("Skipping FactSet refresh per --skip-refresh.")
+            else:
+                xl.refresh_factset()
             # 3. Read everything
             log("Reading sheets...")
             prices, price_history = read_prices(xl)
