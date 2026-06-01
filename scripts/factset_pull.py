@@ -796,18 +796,40 @@ class ExcelSession:
         # will move on any market day (US prices tick intraday, foreign
         # prices change at session boundaries, Date-1 cells change once
         # per day after the prior close lands).
-        STALENESS_SAMPLE = [
-            ("Prices", 2,  3),   # Ord Date-1 (col C) — flips once per day
+        # Split into two classes:
+        #  - PERF cells (TODAY %, 5D %, etc.) MUST change — they feed
+        #    the 1D top/bottom movers and other ranking views. If FactSet's
+        #    perf UDFs didn't recompute, these stay stuck on yesterday's
+        #    values even when the streaming price cells tick (because
+        #    prices are RTD and perf is UDF-derived, and they don't share
+        #    a refresh trigger reliably).
+        #  - PRICE cells tick intraday from FactSet RTD and shouldn't be
+        #    trusted alone as a refresh signal — they can change even
+        #    when the UDF layer never recomputed.
+        # The check below requires at least one PERF cell to have changed
+        # before allowing the script to upload; price-only ticks are
+        # treated as not-refreshed.
+        STALENESS_PERF_SAMPLE = [
+            ("Prices", 2,  6),   # Ord TODAY perf (col F) — row 2
+            ("Prices", 2,  7),   # Ord 5D perf (col G)
+            ("Prices", 5,  6),   # Ord TODAY perf — row 5
+            ("Prices", 10, 6),   # Ord TODAY perf — row 10
+            ("Prices", 2, 21),   # US TODAY perf (col U) — row 2
+            ("Prices", 2, 22),   # US 5D perf (col V)
+            ("Prices", 5, 21),   # US TODAY perf — row 5
+            ("Prices", 10, 21),  # US TODAY perf — row 10
+        ]
+        STALENESS_PRICE_SAMPLE = [
+            ("Prices", 2,  3),   # Ord Date-1 (col C)
             ("Prices", 2,  5),   # Ord Price (col E)
-            ("Prices", 2,  6),   # Ord TODAY perf (col F)
-            ("Prices", 5,  5),   # Ord Price, row 5
-            ("Prices", 10, 5),   # Ord Price, row 10
+            ("Prices", 5,  5),   # Ord Price row 5
+            ("Prices", 10, 5),   # Ord Price row 10
             ("Prices", 2, 18),   # US Date-1 (col R)
             ("Prices", 2, 20),   # US Price (col T)
-            ("Prices", 2, 21),   # US TODAY perf (col U)
-            ("Prices", 5, 20),   # US Price, row 5
-            ("Prices", 10, 20),  # US Price, row 10
+            ("Prices", 5, 20),   # US Price row 5
+            ("Prices", 10, 20),  # US Price row 10
         ]
+        STALENESS_SAMPLE = STALENESS_PERF_SAMPLE + STALENESS_PRICE_SAMPLE
         def _snap_cell(sh, r, c):
             try:
                 v = self.wb.Sheets(sh).Cells(r, c).Value
@@ -1104,21 +1126,34 @@ class ExcelSession:
         except Exception:
             pass
         # Staleness verification: compare post-refresh cell values to the
-        # baseline captured before the refresh fired. If NOTHING changed,
-        # the refresh almost certainly didn't actually execute (e.g.
-        # SendKeys ate the Alt+5, Excel wasn't focused, FactSet add-in
-        # silently failed). Without this check the script would happily
-        # re-upload yesterday's prices.
+        # baseline captured before the refresh fired.
+        #
+        # We classify movements into two buckets:
+        #   - PERF cells (TODAY %, 5D %) — driven by FactSet's FDS UDFs.
+        #     These are the values that feed downstream rankings like
+        #     the 1D top/bottom movers. If these don't change, the UDF
+        #     layer never recomputed and uploaded data will be stale
+        #     even when prices look ticky.
+        #   - PRICE cells — driven by FactSet's RTD stream. They tick
+        #     intraday from the price feed independently of the UDF
+        #     layer, so a price-only movement does NOT prove the
+        #     refresh actually fired the way we need it to.
+        #
+        # We treat PERF cells as the authoritative signal: if 0 perf
+        # cells moved we abort, even if prices ticked. This catches the
+        # 2026-06-01 failure mode where prices tweaked but TODAY %
+        # cells stayed on yesterday's numbers, producing wrong 1D
+        # movers in the app.
         baseline = getattr(self, "_staleness_baseline", None) or []
+        perf_keys = set((sh, r, c) for sh, r, c in STALENESS_PERF_SAMPLE)
         if baseline:
-            changed = 0
+            perf_changed = 0
+            price_changed = 0
             unchanged_samples = []
             changed_samples = []
+            unchanged_perf_count = 0
             for sh, r, c, before in baseline:
-                after = _snap_cell(sh, r, c) if False else None
-                # Re-read here (can't reuse the outer _snap_cell closure
-                # since it's defined in a different scope) — inline the
-                # same logic.
+                # Re-read post-refresh, normalize datetime same as snapshot.
                 try:
                     v = self.wb.Sheets(sh).Cells(r, c).Value
                     if hasattr(v, "strftime"):
@@ -1127,37 +1162,48 @@ class ExcelSession:
                         after = v
                 except Exception:
                     after = None
+                is_perf = (sh, r, c) in perf_keys
                 if before != after:
-                    changed += 1
-                    if len(changed_samples) < 3:
-                        changed_samples.append((sh, r, c, before, after))
+                    if is_perf: perf_changed += 1
+                    else:       price_changed += 1
+                    if len(changed_samples) < 4:
+                        changed_samples.append((sh, r, c, before, after, "PERF" if is_perf else "PRICE"))
                 else:
-                    if len(unchanged_samples) < 3:
-                        unchanged_samples.append((sh, r, c, before))
-            log(f"  Staleness check: {changed}/{len(baseline)} sample cells changed value vs pre-refresh baseline")
-            for sh, r, c, b, a in changed_samples:
-                log(f"    CHANGED {sh}!R{r}C{c}: {b!r} → {a!r}")
-            for sh, r, c, b in unchanged_samples:
-                log(f"    unchanged {sh}!R{r}C{c}: still {b!r}")
-            # Hard fail when ZERO cells changed. On any normal market day
-            # at least US prices should tick intraday, and Date-1 cells
-            # roll forward across daily runs. Zero movement = refresh
-            # didn't fire. We abort instead of uploading stale data,
-            # which is silently worse than no upload.
-            if changed == 0:
-                msg = ("FactSet refresh did not move any sampled cells. "
-                       "Refresh almost certainly did NOT execute — refusing "
-                       "to upload stale data. Common causes: Alt+"
-                       f"{FACTSET_REFRESH_QAT_POS} QAT button missing or in "
-                       "a different slot, Excel window not focused during "
-                       "SendKeys, FactSet add-in not signed in. Fix and re-run.")
+                    if is_perf: unchanged_perf_count += 1
+                    if len(unchanged_samples) < 4:
+                        unchanged_samples.append((sh, r, c, before, "PERF" if is_perf else "PRICE"))
+            total_perf = len(STALENESS_PERF_SAMPLE)
+            total_price = len(STALENESS_PRICE_SAMPLE)
+            log(f"  Staleness check: {perf_changed}/{total_perf} PERF cells changed, "
+                f"{price_changed}/{total_price} PRICE cells changed")
+            for sh, r, c, b, a, kind in changed_samples:
+                log(f"    CHANGED [{kind}] {sh}!R{r}C{c}: {b!r} → {a!r}")
+            for sh, r, c, b, kind in unchanged_samples:
+                log(f"    unchanged [{kind}] {sh}!R{r}C{c}: still {b!r}")
+            # Hard fail when ZERO perf cells changed. FactSet's FDS UDFs
+            # (TODAY %, 5D %) drive every ranking and ratio in the app;
+            # if they're stuck on yesterday's values, uploading is worse
+            # than skipping the day.
+            if perf_changed == 0:
+                msg = ("FactSet perf cells (TODAY %, 5D %) did NOT change "
+                       "vs pre-refresh baseline. The FDS UDF layer did not "
+                       "recompute even though RTD prices may have ticked. "
+                       "Refusing to upload stale 1D / 5D rankings. "
+                       "Common causes: SendKeys Alt+"
+                       f"{FACTSET_REFRESH_QAT_POS} didn't focus the FactSet "
+                       "ribbon (Excel had a dialog or wasn't foreground), "
+                       "FactSet add-in not signed in, or the QAT slot moved. "
+                       "Try: (1) bring Excel to focus and click Refresh "
+                       "Workbook manually, (2) confirm Alt+5 is still the "
+                       "QAT slot for Refresh Workbook, (3) re-run.")
                 log(f"  ABORT: {msg}")
                 raise RuntimeError(msg)
-            # Soft warn when very few changed — still proceed but flag it.
-            elif changed < max(2, len(baseline) // 3):
-                log(f"  WARNING: only {changed} cell(s) moved. Refresh may have "
-                    f"partially fired, or markets may be closed. Proceeding "
-                    f"but spot-check the uploaded prices.")
+            # Soft warn when perf moved but most cells didn't — maybe a
+            # partial refresh, or markets just closed. Still proceeds.
+            elif perf_changed < max(2, total_perf // 3):
+                log(f"  WARNING: only {perf_changed}/{total_perf} perf cells moved. "
+                    f"Refresh may have partially fired. Proceeding but spot-check "
+                    f"the uploaded 1D / 5D values.")
 
     def cell(self, sheet_name: str, row: int, col: int):
         """Read a cell's value, retrying on RPC_E_CALL_REJECTED which Excel
