@@ -96,7 +96,7 @@ function dateHeader() {
 /* Pick the ticker actually held in a given portfolio. Walks the
  * company's tickers, returns the first one with rep shares > 0 in
  * repData[port]. Falls back to ordinary, then first ticker, then "?". */
-function pickHeldTicker(company, port, repData) {
+export function pickHeldTicker(company, port, repData) {
   const ts = (company && company.tickers) || [];
   const portRep = (repData || {})[port] || {};
   for (let i = 0; i < ts.length; i++) {

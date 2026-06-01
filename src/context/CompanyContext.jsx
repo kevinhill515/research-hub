@@ -198,6 +198,28 @@ export function CompanyProvider({children}){
     return{data:migrated,changed:changed};
   }
 
+  /* Refresh JUST the companies table from Supabase — used by the
+     "Refresh Portfolios" button so the team can pull live agenda updates
+     during a meeting without paying for a full app reload (which would
+     re-fetch the library + 15 meta blobs, blowing up egress AND wiping
+     any in-progress modal state). Returns the count refreshed so the
+     caller can flash a quick confirmation. */
+  async function refreshCompaniesFromSupabase(){
+    try {
+      var rows = await supaGetAll("companies");
+      if (!Array.isArray(rows)) return 0;
+      var perCo = rows.filter(function(row){ return row && row.id !== "shared"; });
+      var loaded = [];
+      perCo.forEach(function(row){
+        try { var c = JSON.parse(row.data); if (c) loaded.push(c); } catch(_e){}
+      });
+      if (loaded.length === 0) return 0;
+      setCompanies(loaded);
+      return loaded.length;
+    } catch(_e){
+      return -1; /* signal error to caller */
+    }
+  }
   async function loadFromStorage(){
     setLoadStatus({companies:null,library:null});
     var coOk=false,libOk=false;
@@ -1632,6 +1654,45 @@ export function CompanyProvider({children}){
     proposeTargetWeight(companyId, portfolio, rawNewValue);
     commitProposedWeights(portfolio);
   }
+  /* Discard all pending agenda entries on the given portfolios without
+     committing — used by the "Clear Agenda" button on the Generate tab
+     when the team wants to throw out proposals (e.g. meeting decided
+     against everything). For target-% entries, restores CASH by the
+     reverse delta so the column stays at 100%. For B/A/P/S stamps, no
+     CASH side-effect — just deletes the entry. */
+  function discardAgendaEntries(ports){
+    var portsArr = Array.isArray(ports) ? ports : [ports];
+    var cashAdjustByPort = {}; /* { port: total delta to add back to CASH } */
+    setCompanies(function(cs){
+      return cs.map(function(c){
+        var hist = c.portWeightHistory || [];
+        var kept = [];
+        var changed = false;
+        hist.forEach(function(h){
+          if (!h || !h.isAgenda || portsArr.indexOf(h.portfolio) < 0) {
+            kept.push(h);
+            return;
+          }
+          changed = true;
+          /* Target proposal — accumulate CASH restoration for this port. */
+          if (!h.action && h.newWeight !== undefined && h.newWeight !== null) {
+            var committedNum = parseFloat((c.portWeights || {})[h.portfolio]);
+            if (isNaN(committedNum)) committedNum = 0;
+            var proposedNum = parseFloat(h.newWeight);
+            if (isNaN(proposedNum)) proposedNum = committedNum;
+            var restore = -(proposedNum - committedNum);
+            cashAdjustByPort[h.portfolio] = (cashAdjustByPort[h.portfolio] || 0) + restore;
+          }
+          /* B/A/P/S stamp — no CASH impact (committed weights didn't move). */
+        });
+        if (!changed) return c;
+        return Object.assign({}, c, { portWeightHistory: kept });
+      });
+    });
+    Object.keys(cashAdjustByPort).forEach(function(port){
+      _shiftCash(port, cashAdjustByPort[port]);
+    });
+  }
   /* Manual backfill: add a historical entry without changing current portWeights. */
   function addTargetHistoryEntry(companyId,entry){
     setCompanies(function(cs){return cs.map(function(c){
@@ -1733,7 +1794,8 @@ export function CompanyProvider({children}){
     saveStatus,
     addAnnotation,updateAnnotation,deleteAnnotation,resolveAnnotation,unresolveAnnotation,addReply,markAnnotationRead,parseMentions,
     updateTargetWeight,markTradeAgenda,addTargetHistoryEntry,deleteTargetHistoryEntry,
-    proposeTargetWeight,clearProposedWeight,commitProposedWeights,
+    proposeTargetWeight,clearProposedWeight,commitProposedWeights,discardAgendaEntries,
+    refreshCompaniesFromSupabase,
     addTransaction,deleteTransaction,setTxInitOverride,setTxCashFlow,updateInitiatedDate,
     researchAssignments,setResearchAssignments,setResearchSlot,setReorgSlot,
     perfData,setPerfData,setPerfSeries,addPerfSeries,removePerfSeries,movePerfSeries,setPerfSeriesOrder,setPerfReturn,setPerfLastMonthEMV,applyPerfBulk,

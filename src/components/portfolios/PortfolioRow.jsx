@@ -456,11 +456,15 @@ function PortfolioRow(props) {
         const proposalDotColor = proposalAuthor ? (TEAM_COLORS[proposalAuthor] || null) : null;
         /* Composite style: keep the row's diff tint as the base, layer
            a subtle amber wash on top when proposed. */
+        /* Use box-shadow inset for the amber stripe instead of
+           border-left: a real border adds 2px to the cell's width,
+           which shifts every cell to its right and makes the whole
+           row jiggle on hover. Inset box-shadow lives entirely inside
+           the cell's box and never affects layout. */
         const proposedCellStyle = showProposed
           ? Object.assign({}, cellStyle, {
               backgroundImage: "linear-gradient(rgba(251,191,36,0.18), rgba(251,191,36,0.18))",
-              borderLeft: "2px dashed #f59e0b",
-              position: "relative",
+              boxShadow: "inset 3px 0 0 #f59e0b",
             })
           : cellStyle;
         return (
@@ -501,8 +505,17 @@ function PortfolioRow(props) {
                        " · click to edit, or Lock in at top of page to commit")
                     : undefined}
                 >
-                  {showProposed ? proposedNum.toFixed(1) + "%"
-                    : (target > 0 ? parseFloat(target).toFixed(1) + "%" : "--")}
+                  {showProposed ? (
+                    /* "Y → X" pattern — shows the committed (was) value
+                       struck-through next to the proposed new value, so
+                       the reader sees at a glance what the change IS. */
+                    <>
+                      <span className="text-gray-400 dark:text-slate-500 line-through text-[11px] mr-0.5 not-italic font-normal">
+                        {target > 0 ? parseFloat(target).toFixed(1) : "0"}
+                      </span>
+                      {proposedNum.toFixed(1) + "%"}
+                    </>
+                  ) : (target > 0 ? parseFloat(target).toFixed(1) + "%" : "--")}
                 </span>
                 {showProposed && proposalDotColor && (
                   <span

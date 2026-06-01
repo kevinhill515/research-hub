@@ -23,7 +23,7 @@
  */
 import { useState, useMemo } from "react";
 import { useCompanyContext } from "../../context/CompanyContext.jsx";
-import { buildMeetingMemo, clearAgendaFlags, MEETING_PROFILES } from "../../utils/meetingMemo.js";
+import { buildMeetingMemo, clearAgendaFlags, MEETING_PROFILES, pickHeldTicker } from "../../utils/meetingMemo.js";
 import { TEAM_COLORS } from "../../constants/index.js";
 
 const BTN_PRIMARY = "text-xs px-3 py-1.5 font-medium bg-blue-600 text-white rounded-md cursor-pointer hover:bg-blue-700 transition-colors";
@@ -67,7 +67,10 @@ export function MeetingMemoModal({ open, onClose }) {
     companies, setCompanies, repData, currentUser,
     memoLog, addMemoLog, deleteMemoLog,
     targetChangeReads, markTargetChangeRead, commitProposedWeights,
+    discardAgendaEntries, refreshCompaniesFromSupabase,
   } = useCompanyContext();
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshMsg, setRefreshMsg] = useState("");
 
   /* All hooks above the early-return so the hook count stays stable
      across open/closed renders (avoids React error #310). */
@@ -113,10 +116,14 @@ export function MeetingMemoModal({ open, onClose }) {
         if (profilePorts.indexOf(h.portfolio) < 0) return;
         if (daysAgo(h.date) > RECENT_CHANGE_DAYS) return;
         var key = h.id || (c.id + "|" + h.portfolio + "|" + h.date + "|" + (h.newWeight != null ? h.newWeight : h.weight));
+        /* Use the portfolio-correct held ticker rather than the
+           primary/ord ticker so the Recent Target Changes feed reads
+           the same way as the rest of the meeting memo / agenda. */
+        var heldTicker = pickHeldTicker(c, h.portfolio, repData) || c.ticker || "";
         out.push({
           key: key,
           companyName: c.name || c.ticker || "?",
-          ticker: c.ticker || "",
+          ticker: heldTicker,
           portfolio: h.portfolio,
           date: h.date,
           oldWeight: h.oldWeight != null ? h.oldWeight : (h.prevWeight != null ? h.prevWeight : null),
@@ -127,7 +134,7 @@ export function MeetingMemoModal({ open, onClose }) {
     });
     out.sort(function (a, b) { return (b.date || "").localeCompare(a.date || ""); });
     return out;
-  }, [companies, profilePortsKey]);
+  }, [companies, profilePortsKey, repData]);
 
   const unseenChangeCount = recentChanges.filter(function (rc) {
     return !((targetChangeReads || {})[rc.key] || []).includes(currentUser);
@@ -163,6 +170,32 @@ export function MeetingMemoModal({ open, onClose }) {
     if (typeof window !== "undefined" && window.confirm && !window.confirm("Lock in all pending changes for " + port + "?")) return;
     commitProposedWeights(port);
   }
+  function lockInAllProfilePorts() {
+    var n = profilePorts.reduce(function (acc, p) { return acc + (pendingByPort[p] || []).length; }, 0);
+    if (n === 0) return;
+    if (typeof window !== "undefined" && window.confirm &&
+        !window.confirm("Lock in ALL " + n + " pending changes across " + profilePorts.join(" / ") + "?")) return;
+    profilePorts.forEach(function (p) { commitProposedWeights(p); });
+  }
+  function discardProfileAgenda() {
+    var n = profilePorts.reduce(function (acc, p) { return acc + (pendingByPort[p] || []).length; }, 0);
+    if (n === 0) return;
+    if (typeof window !== "undefined" && window.confirm &&
+        !window.confirm("DISCARD all " + n + " pending agenda items in " + profilePorts.join(" / ") +
+                       "?\n\nThis deletes the proposals without committing them. CASH will be restored for target-% proposals. " +
+                       "Cannot be undone.")) return;
+    discardAgendaEntries(profilePorts);
+  }
+  async function doRefresh() {
+    if (refreshing) return;
+    setRefreshing(true);
+    setRefreshMsg("");
+    var n = await refreshCompaniesFromSupabase();
+    setRefreshing(false);
+    if (n === -1) setRefreshMsg("Refresh failed");
+    else setRefreshMsg("✓ Refreshed " + n + " companies");
+    setTimeout(function () { setRefreshMsg(""); }, 3000);
+  }
 
   return (
     <div className="fixed inset-0 bg-black/50 z-[1500] flex items-start justify-center p-4 overflow-y-auto" onClick={close}>
@@ -190,7 +223,21 @@ export function MeetingMemoModal({ open, onClose }) {
               title="EM ADR + International Small Cap — EM / SC"
             >Thu (EM+SC)</button>
           </div>
-          <button onClick={close} className="ml-auto text-xs text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300 cursor-pointer">Close ✕</button>
+          {/* Refresh Portfolios — pulls just the companies table from
+              Supabase so meeting attendees see proposals other teammates
+              just submitted, without paying the full reload cost. */}
+          <button
+            onClick={doRefresh}
+            disabled={refreshing}
+            className={"ml-auto text-xs px-2.5 py-1 rounded-md cursor-pointer transition-colors " + (refreshing ? "bg-slate-200 dark:bg-slate-700 text-gray-400 dark:text-slate-500" : "border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800")}
+            title="Re-fetch portfolio data only from Supabase. Use this during meetings to see teammates' just-submitted proposals without a full app reload."
+          >
+            {refreshing ? "Refreshing…" : "↻ Refresh Portfolios"}
+          </button>
+          {refreshMsg && (
+            <span className="text-[11px] text-emerald-700 dark:text-emerald-300">{refreshMsg}</span>
+          )}
+          <button onClick={close} className="text-xs text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300 cursor-pointer">Close ✕</button>
         </div>
         <div className="p-4 flex-1 overflow-y-auto">
           {tab === "agenda" ? (
@@ -200,7 +247,9 @@ export function MeetingMemoModal({ open, onClose }) {
               recentChanges={recentChanges}
               targetChangeReads={targetChangeReads || {}}
               currentUser={currentUser}
+              repData={repData}
               onLockIn={lockInPortfolio}
+              onLockInAll={lockInAllProfilePorts}
               onMarkTargetRead={markTargetChangeRead}
             />
           ) : tab === "log" ? (
@@ -220,6 +269,8 @@ export function MeetingMemoModal({ open, onClose }) {
               copied={copied}
               onCopy={copyMemo}
               onClear={clearAgenda}
+              onDiscard={discardProfileAgenda}
+              hasPending={totalPendingCount > 0}
             />
           )}
         </div>
@@ -230,16 +281,29 @@ export function MeetingMemoModal({ open, onClose }) {
 
 /* ===== AGENDA TAB (read-only summary) ===== */
 
-function AgendaSummary({ profilePorts, pendingByPort, recentChanges, targetChangeReads, currentUser, onLockIn, onMarkTargetRead }) {
+function AgendaSummary({ profilePorts, pendingByPort, recentChanges, targetChangeReads, currentUser, repData, onLockIn, onLockInAll, onMarkTargetRead }) {
+  var totalPending = profilePorts.reduce(function (acc, p) { return acc + (pendingByPort[p] || []).length; }, 0);
   return (
     <div className="space-y-5">
       {/* Section A: pending agenda per portfolio */}
       <div>
-        <div className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-1">Current Proposals</div>
-        <div className="text-[11px] text-gray-500 dark:text-slate-400 mb-2">
-          Everything sitting in the proposed (uncommitted) state. To add or amend a proposal,
-          go to the Portfolios page — click B/A/P/S or edit the Target % directly on the row.
-          Lock in here or from the sticky bar on each portfolio.
+        <div className="flex items-center justify-between mb-1">
+          <div>
+            <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">Current Proposals</div>
+            <div className="text-[11px] text-gray-500 dark:text-slate-400">
+              Everything sitting in the proposed (uncommitted) state. To add or amend a proposal,
+              go to the Portfolios page — click B/A/P/S or edit the Target % directly on the row.
+            </div>
+          </div>
+          {totalPending > 0 && (
+            <button
+              onClick={onLockInAll}
+              className="text-xs px-3 py-1.5 rounded-md font-semibold bg-amber-600 hover:bg-amber-700 text-white cursor-pointer shrink-0 ml-2"
+              title={"Lock in all " + totalPending + " pending changes across " + profilePorts.join(" / ") + " in one shot."}
+            >
+              Lock in ALL ({totalPending})
+            </button>
+          )}
         </div>
         {profilePorts.map(function (port) {
           var items = pendingByPort[port] || [];
@@ -264,12 +328,18 @@ function AgendaSummary({ profilePorts, pendingByPort, recentChanges, targetChang
                     var isTarget = !h.action;
                     var actionColor = h.action ? ACTION_COLORS[h.action] : null;
                     var authorColor = h.author ? (TEAM_COLORS[h.author] || "#94a3b8") : null;
+                    /* Show the ticker that's actually held in THIS portfolio
+                       rather than the company's primary/ord ticker — useful
+                       for ADR-held names where the ord and US tickers
+                       differ. Uses the same pickHeldTicker logic the memo
+                       generator already uses for the Trading Agenda lines. */
+                    var heldTicker = pickHeldTicker(c, port, repData) || c.ticker || c.name || "?";
                     return (
                       <div key={(h.id || i) + "-" + port} className="flex items-center gap-2 text-xs">
                         {authorColor && (
                           <span className="w-1.5 h-1.5 rounded-full" style={{ background: authorColor }} title={h.author || ""} />
                         )}
-                        <span className="font-medium text-gray-900 dark:text-slate-100 min-w-[120px]">{c.ticker || c.name || "?"}</span>
+                        <span className="font-medium text-gray-900 dark:text-slate-100 min-w-[120px]">{heldTicker}</span>
                         {isTarget ? (
                           <span className="font-mono text-amber-800 dark:text-amber-300">
                             target {fmtPct(h.oldWeight)} → <span className="font-semibold">{fmtPct(h.newWeight)}</span>
@@ -351,14 +421,26 @@ function AgendaSummary({ profilePorts, pendingByPort, recentChanges, targetChang
 
 /* ===== GENERATE TAB ===== */
 
-function GenerateView({ memo, copied, onCopy, onClear }) {
+function GenerateView({ memo, copied, onCopy, onClear, onDiscard, hasPending }) {
   return (
     <div>
       <div className="flex items-center gap-2 mb-2 flex-wrap">
         <button onClick={onCopy} className={BTN_PRIMARY}>{copied ? "✓ Copied" : "Copy to clipboard"}</button>
-        <button onClick={onClear} className={BTN_GHOST} title="Save this memo to the Log tab and mark every Trading Agenda entry for this meeting's portfolios as executed. After this, those entries surface in the 'Allocation Changes' section on future memos instead of 'Trading Agenda'.">
-          Clear agenda (mark executed)
+        <button onClick={onClear} className={BTN_GHOST} title="Mark every Trading Agenda entry as executed AND save this memo to the Log tab. After this, those entries surface in 'Allocation Changes' on future memos instead of 'Trading Agenda'.">
+          Mark executed + log
         </button>
+        {/* Discard-only path — removes pending agenda items without
+            committing them OR saving a memo. For when the team threw
+            out everything proposed and you want a clean slate. */}
+        {hasPending && onDiscard && (
+          <button
+            onClick={onDiscard}
+            className="text-xs px-3 py-1.5 font-medium rounded-md border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 cursor-pointer hover:bg-rose-100 dark:hover:bg-rose-900/40 transition-colors"
+            title="DELETE all pending agenda entries (target % proposals + B/A/P/S stamps) for this meeting's portfolios. Does NOT save a memo, does NOT commit any change. CASH is restored. Use when the team threw out the proposals."
+          >
+            Clear agenda (discard)
+          </button>
+        )}
       </div>
       <textarea
         value={memo}
@@ -368,7 +450,7 @@ function GenerateView({ memo, copied, onCopy, onClear }) {
         className="w-full text-xs font-mono px-3 py-2 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 leading-relaxed resize-y"
       />
       <div className="text-[11px] text-gray-400 dark:text-slate-500 italic mt-2">
-        Edit the memo above before pasting into the compliance email if any line needs tweaking. After distributing, click "Clear agenda" so this session's decisions move to Allocation Changes on the next memo. A snapshot is saved to the Log tab.
+        Trading Agenda lists items currently in the <b>proposed</b> state (isAgenda:true). Allocation Changes lists <b>committed</b> moves from the last 6 days. To move an item from Trading Agenda → Allocation Changes, hit <b>Lock in</b> on its portfolio (on the Portfolios page or the Agenda tab) — or click <b>Mark executed + log</b> here to commit everything in this meeting's ports AND save a memo snapshot.
       </div>
     </div>
   );
