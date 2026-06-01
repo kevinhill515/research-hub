@@ -243,10 +243,25 @@ function partitionWeightChanges(companies, ports) {
           action: h.action,
         });
       } else if (!hasAction && (h.isAgenda || isRecent(h.date))) {
-        /* Target-% change — proposed or recently committed. */
+        /* Target-% change — proposed or recently committed.
+           oldW fallback (PROPOSED only): when a pending entry has no
+           oldWeight (legacy entries, partial writes), use the
+           company's current committed portWeights[port] as a sane
+           proxy for "what was the target before this change?". For
+           pending proposals portWeights is still the pre-proposal
+           value, so it's correct. We DON'T apply this fallback to
+           committed (!isAgenda) entries because portWeights for those
+           has already moved to the new value — using it as oldW
+           would render "X% -> X%" which lies. */
+        var oldW = h.oldWeight;
+        if (h.isAgenda && (oldW === undefined || oldW === null || oldW === "")) {
+          var committed = (c.portWeights || {})[h.portfolio];
+          var committedNum = parseFloat(committed);
+          oldW = isFinite(committedNum) ? committedNum : 0;
+        }
         allocByPort[h.portfolio].push({
           company: c,
-          oldW: h.oldWeight,
+          oldW: oldW,
           newW: h.newWeight,
           date: h.date,
           isProposed: !!h.isAgenda,

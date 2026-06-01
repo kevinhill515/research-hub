@@ -69,6 +69,7 @@ export function MeetingMemoModal({ open, onClose }) {
     memoLog, addMemoLog, deleteMemoLog,
     targetChangeReads, markTargetChangeRead, commitProposedWeights,
     discardAgendaEntries, refreshCompaniesFromSupabase, commentOnAgendaEntry,
+    editAgendaComment, deleteAgendaComment,
   } = useCompanyContext();
   const [refreshing, setRefreshing] = useState(false);
   const [refreshMsg, setRefreshMsg] = useState("");
@@ -271,6 +272,8 @@ export function MeetingMemoModal({ open, onClose }) {
               onLockInAll={lockInAllProfilePorts}
               onMarkTargetRead={markTargetChangeRead}
               onComment={commentOnAgendaEntry}
+              onEditComment={editAgendaComment}
+              onDeleteComment={deleteAgendaComment}
             />
           ) : tab === "log" ? (
             <LogTab
@@ -301,7 +304,7 @@ export function MeetingMemoModal({ open, onClose }) {
 
 /* ===== AGENDA TAB (read-only summary) ===== */
 
-function AgendaSummary({ profilePorts, pendingByPort, recentChanges, targetChangeReads, currentUser, repData, fxRates, repWeightCtx, onLockInAll, onMarkTargetRead, onComment }) {
+function AgendaSummary({ profilePorts, pendingByPort, recentChanges, targetChangeReads, currentUser, repData, fxRates, repWeightCtx, onLockInAll, onMarkTargetRead, onComment, onEditComment, onDeleteComment }) {
   /* Compute current rep weight (actual holding as % of port AUM) for a
      given (company, port). Uses the precomputed per-port context so
      totalMV isn't recomputed per row. Returns null when port has zero
@@ -357,6 +360,22 @@ function AgendaSummary({ profilePorts, pendingByPort, recentChanges, targetChang
             }
           });
           var rows = Object.keys(merged).map(function (k) { return merged[k]; });
+          /* Sort: trades (rows with a B/A/P/S action) first, then
+             target-only allocation changes at the bottom. Within each
+             group, action ordering matches the memo generator
+             (Buy < Add < Pare < Sell) and target-only by date desc. */
+          var actionRank = { Buy: 0, Add: 1, Pare: 2, Sell: 3 };
+          rows.sort(function (a, b) {
+            var aHasAct = !!a.action;
+            var bHasAct = !!b.action;
+            if (aHasAct !== bHasAct) return aHasAct ? -1 : 1;
+            if (aHasAct) {
+              var ra = actionRank[a.action.action] != null ? actionRank[a.action.action] : 99;
+              var rb = actionRank[b.action.action] != null ? actionRank[b.action.action] : 99;
+              if (ra !== rb) return ra - rb;
+            }
+            return (b.date || "").localeCompare(a.date || "");
+          });
           return (
             <div key={port} className="mb-3">
               <div className="flex items-center gap-2 mb-1">
@@ -365,68 +384,103 @@ function AgendaSummary({ profilePorts, pendingByPort, recentChanges, targetChang
                   {rows.length === 0 ? "no pending changes" : rows.length + (rows.length === 1 ? " company pending" : " companies pending")}
                 </span>
               </div>
-              {rows.length > 0 && (
-                <div className="space-y-1 border border-amber-200 dark:border-amber-800 rounded-md bg-amber-50/30 dark:bg-amber-950/20 p-2">
-                  {rows.map(function (row, ri) {
-                    var c = row.co;
-                    var heldTicker = pickHeldTicker(c, port, repData) || c.ticker || c.name || "?";
-                    var actionEntry = row.action;
-                    var targetEntry = row.target;
-                    var actionColor = actionEntry ? ACTION_COLORS[actionEntry.action] : null;
-                    var primaryAuthor = row.authors[0] || "";
-                    var authorColor = primaryAuthor ? (TEAM_COLORS[primaryAuthor] || "#94a3b8") : null;
-                    /* Compute current rep % (actual holding weight as % of
-                       port AUM). When there's a B/A/P/S action, the row's
-                       "before" anchor is the rep %, not the committed
-                       target — that's what the user actually owns today. */
-                    var repPct = repWeightFor(c, port);
-                    var repStr = repPct == null ? null : repPct.toFixed(2) + "%";
-                    /* Build the "X → Y" weight string with action-aware semantics:
-                       - Sell  -> "<rep%> → 0%"           (full exit)
-                       - Buy   -> "0% → <target%>"        (new position, or <rep%> → target if non-zero)
-                       - Add/Pare -> "<rep%> → <target%>" (resize)
-                       - Pure target change (no action) -> "<oldTarget%> → <newTarget%>"
-                       Falls back to "currently X%" when we can't reconstruct both ends. */
-                    var weightStr = null;
-                    if (actionEntry && actionEntry.action === "Sell") {
-                      weightStr = (repStr || "?") + " → 0.00%";
-                    } else if (actionEntry && (actionEntry.action === "Add" || actionEntry.action === "Pare" || actionEntry.action === "Buy") && targetEntry) {
-                      weightStr = (repStr || "?") + " → " + fmtPct(targetEntry.newWeight);
-                    } else if (actionEntry && actionEntry.action === "Buy" && !targetEntry) {
-                      /* Buy without an explicit target — show rep (likely 0) → committed target */
-                      var committed = parseFloat((c.portWeights || {})[port]);
-                      weightStr = (repStr || "0.00%") + (isFinite(committed) && committed > 0 ? " → " + fmtPct(committed) : "");
-                    } else if (actionEntry && (actionEntry.action === "Add" || actionEntry.action === "Pare") && !targetEntry) {
-                      /* Resize action with no explicit new target — show rep → committed */
-                      var committedAP = parseFloat((c.portWeights || {})[port]);
-                      weightStr = (repStr || "?") + (isFinite(committedAP) && committedAP > 0 ? " → " + fmtPct(committedAP) : "");
-                    } else if (targetEntry) {
-                      /* Pure target change, no action stamp */
-                      weightStr = fmtPct(targetEntry.oldWeight) + " → " + fmtPct(targetEntry.newWeight);
+              {rows.length > 0 && (() => {
+                var trades = rows.filter(function (r) { return !!r.action; });
+                var allocChanges = rows.filter(function (r) { return !r.action; });
+                /* Build a single render function for either group so the
+                   trades block and the allocation-changes block share all
+                   the badge / weight / comment logic. */
+                function renderRow(row, ri, isAlloc) {
+                  var c = row.co;
+                  var heldTicker = pickHeldTicker(c, port, repData) || c.ticker || c.name || "?";
+                  var actionEntry = row.action;
+                  var targetEntry = row.target;
+                  var actionColor = actionEntry ? ACTION_COLORS[actionEntry.action] : null;
+                  var primaryAuthor = row.authors[0] || "";
+                  var authorColor = primaryAuthor ? (TEAM_COLORS[primaryAuthor] || "#94a3b8") : null;
+                  var repPct = repWeightFor(c, port);
+                  var repStr = repPct == null ? null : repPct.toFixed(2) + "%";
+                  /* For target-change entries, apply the same oldWeight
+                     fallback the memo generator uses — committed portWeights
+                     when isAgenda:true and the stored oldWeight is missing. */
+                  var targetOldW = null, targetNewW = null;
+                  if (targetEntry) {
+                    targetOldW = targetEntry.oldWeight;
+                    if (targetEntry.isAgenda && (targetOldW == null || targetOldW === "")) {
+                      var committed = (c.portWeights || {})[port];
+                      var committedNum = parseFloat(committed);
+                      targetOldW = isFinite(committedNum) ? committedNum : 0;
                     }
-                    var comments = ((actionEntry && actionEntry.comments) || [])
-                      .concat((targetEntry && targetEntry.comments) || []);
-                    return (
-                      <ProposalRow
-                        key={(c.id || ri) + "-" + port}
-                        company={c}
-                        port={port}
-                        heldTicker={heldTicker}
-                        actionEntry={actionEntry}
-                        targetEntry={targetEntry}
-                        actionColor={actionColor}
-                        authorColor={authorColor}
-                        authors={row.authors}
-                        date={row.date}
-                        weightStr={weightStr}
-                        comments={comments}
-                        currentUser={currentUser}
-                        onComment={onComment}
-                      />
-                    );
-                  })}
-                </div>
-              )}
+                    targetNewW = targetEntry.newWeight;
+                  }
+                  /* weightStr — action-aware. */
+                  var weightStr = null;
+                  if (actionEntry && actionEntry.action === "Sell") {
+                    weightStr = (repStr || "?") + " → 0.00%";
+                  } else if (actionEntry && targetEntry) {
+                    weightStr = (repStr || "?") + " → " + fmtPct(targetNewW);
+                  } else if (actionEntry && actionEntry.action === "Buy") {
+                    var committedB = parseFloat((c.portWeights || {})[port]);
+                    weightStr = (repStr || "0.00%") + (isFinite(committedB) && committedB > 0 ? " → " + fmtPct(committedB) : "");
+                  } else if (actionEntry && (actionEntry.action === "Add" || actionEntry.action === "Pare")) {
+                    var committedAP = parseFloat((c.portWeights || {})[port]);
+                    weightStr = (repStr || "?") + (isFinite(committedAP) && committedAP > 0 ? " → " + fmtPct(committedAP) : "");
+                  } else if (targetEntry) {
+                    /* Pure target change — no B/A/P/S stamp. */
+                    weightStr = fmtPct(targetOldW) + " → " + fmtPct(targetNewW);
+                  }
+                  /* Target-only badge: up arrow green for increase, down
+                     arrow red for decrease. Neutral gray when equal or
+                     undeterminable. Mirrors the B/A/P/S badge geometry so
+                     the row layout is consistent. */
+                  var tgtBadge = null;
+                  if (isAlloc && targetEntry) {
+                    var oldN = parseFloat(targetOldW);
+                    var newN = parseFloat(targetNewW);
+                    var goingUp = isFinite(oldN) && isFinite(newN) && newN > oldN + 0.005;
+                    var goingDn = isFinite(oldN) && isFinite(newN) && newN < oldN - 0.005;
+                    tgtBadge = {
+                      glyph: goingUp ? "▲" : goingDn ? "▼" : "▬",
+                      color: goingUp ? "#16a34a" : goingDn ? "#dc2626" : "#64748b",
+                      title: goingUp ? "Target weight increase" : goingDn ? "Target weight decrease" : "Target weight unchanged",
+                    };
+                  }
+                  var comments = ((actionEntry && actionEntry.comments) || [])
+                    .concat((targetEntry && targetEntry.comments) || []);
+                  return (
+                    <ProposalRow
+                      key={(c.id || ri) + "-" + port + (isAlloc ? "-alloc" : "-trade")}
+                      company={c}
+                      port={port}
+                      heldTicker={heldTicker}
+                      actionEntry={actionEntry}
+                      targetEntry={targetEntry}
+                      actionColor={actionColor}
+                      authorColor={authorColor}
+                      authors={row.authors}
+                      date={row.date}
+                      weightStr={weightStr}
+                      tgtBadge={tgtBadge}
+                      comments={comments}
+                      currentUser={currentUser}
+                      onComment={onComment}
+                      onEditComment={onEditComment}
+                      onDeleteComment={onDeleteComment}
+                    />
+                  );
+                }
+                return (
+                  <div className="space-y-1 border border-amber-200 dark:border-amber-800 rounded-md bg-amber-50/30 dark:bg-amber-950/20 p-2">
+                    {trades.map(function (row, ri) { return renderRow(row, ri, false); })}
+                    {allocChanges.length > 0 && trades.length > 0 && (
+                      <div className="text-[10px] uppercase tracking-wide text-amber-700 dark:text-amber-400 font-semibold pt-1.5 mt-1 border-t border-amber-200 dark:border-amber-800">
+                        Allocation Changes
+                      </div>
+                    )}
+                    {allocChanges.map(function (row, ri) { return renderRow(row, ri, true); })}
+                  </div>
+                );
+              })()}
             </div>
           );
         })}
@@ -489,18 +543,44 @@ function AgendaSummary({ profilePorts, pendingByPort, recentChanges, targetChang
 
 /* ===== PROPOSAL ROW (with comments) ===== */
 
-function ProposalRow({ company, port, heldTicker, actionEntry, targetEntry, actionColor, authorColor, authors, date, weightStr, comments, currentUser, onComment }) {
+function ProposalRow({ company, port, heldTicker, actionEntry, targetEntry, actionColor, authorColor, authors, date, weightStr, tgtBadge, comments, currentUser, onComment, onEditComment, onDeleteComment }) {
   const [showComment, setShowComment] = useState(false);
   const [commentText, setCommentText] = useState("");
-  /* Which entry to attach comments to — prefer the target entry if
-     present (it's usually the "newer" decision), else the action stamp.
-     Either way, both entries' comments are surfaced in the merged list. */
+  const [editingCommentId, setEditingCommentId] = useState(null);
+  const [editingText, setEditingText] = useState("");
+  /* Which entry to attach NEW comments to — prefer the target entry
+     if present, else the action stamp. Existing comments may live on
+     either; we look them up below by walking both entries. */
   const commentTargetId = (targetEntry && targetEntry.id) || (actionEntry && actionEntry.id);
   function postComment() {
     if (!commentText.trim() || !commentTargetId) return;
     onComment(company.id, commentTargetId, commentText);
     setCommentText("");
     setShowComment(false);
+  }
+  function findEntryIdForComment(commentId) {
+    /* Comments can live on either the action entry or the target entry.
+       Find which one owns this comment so edit/delete target the right
+       portWeightHistory row. */
+    if (actionEntry && (actionEntry.comments || []).some(function (cm) { return cm.id === commentId; })) return actionEntry.id;
+    if (targetEntry && (targetEntry.comments || []).some(function (cm) { return cm.id === commentId; })) return targetEntry.id;
+    return null;
+  }
+  function startEdit(cm) {
+    setEditingCommentId(cm.id);
+    setEditingText(cm.text);
+  }
+  function saveEdit() {
+    if (!editingCommentId || !editingText.trim()) return;
+    var eid = findEntryIdForComment(editingCommentId);
+    if (eid) onEditComment(company.id, eid, editingCommentId, editingText);
+    setEditingCommentId(null);
+    setEditingText("");
+  }
+  function deleteComment(cm) {
+    if (typeof window !== "undefined" && window.confirm && !window.confirm("Delete this comment? This cannot be undone.")) return;
+    var eid = findEntryIdForComment(cm.id);
+    if (eid) onDeleteComment(company.id, eid, cm.id);
   }
   return (
     <div className="py-1 border-b border-amber-100 dark:border-amber-900/40 last:border-b-0">
@@ -514,6 +594,17 @@ function ProposalRow({ company, port, heldTicker, actionEntry, targetEntry, acti
             style={{ background: actionColor || "#64748b" }}
             title={"Proposed " + actionEntry.action}
           >{actionEntry.action}</span>
+        )}
+        {!actionEntry && tgtBadge && (
+          /* Allocation-change badge: ▲ green for increase, ▼ red for
+             decrease, ▬ gray for unchanged. Same geometry as the
+             B/A/P/S pill so the row layout stays uniform across the
+             two groups. */
+          <span
+            className="text-[10px] px-1.5 py-0.5 rounded font-bold text-white shrink-0 mt-0.5"
+            style={{ background: tgtBadge.color }}
+            title={tgtBadge.title}
+          >{tgtBadge.glyph} TGT</span>
         )}
         <div className="flex flex-col min-w-0 flex-1">
           <span className="font-medium text-gray-900 dark:text-slate-100">
@@ -538,18 +629,53 @@ function ProposalRow({ company, port, heldTicker, actionEntry, targetEntry, acti
           </button>
         </div>
       </div>
-      {/* Existing comments — always visible when present so the
-          thread reads naturally without needing to expand each row. */}
+      {/* Existing comments — always visible when present. Each
+          comment shows author + date + body. The comment's own author
+          gets inline Edit / Delete controls; others see read-only. */}
       {comments.length > 0 && (
         <div className="ml-6 mt-1 space-y-0.5 pl-2 border-l-2 border-amber-200 dark:border-amber-800">
           {comments.map(function (cm) {
             var cmColor = TEAM_COLORS[cm.author] || "#94a3b8";
+            var isMine = cm.author === currentUser;
+            var isEditing = editingCommentId === cm.id;
             return (
-              <div key={cm.id} className="text-[11px]">
+              <div key={cm.id} className="text-[11px] group/cm">
                 <span className="inline-block w-1.5 h-1.5 rounded-full mr-1.5 align-middle" style={{ background: cmColor }} />
                 <span className="font-semibold text-gray-700 dark:text-slate-300">{cm.author}</span>
                 <span className="text-gray-400 dark:text-slate-500 text-[9px] ml-1.5">{cm.date}</span>
-                <div className="ml-3 text-gray-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">{cm.text}</div>
+                {cm.editedAt && (
+                  <span className="text-gray-400 dark:text-slate-500 text-[9px] ml-1 italic" title={"Edited " + cm.editedAt}>(edited)</span>
+                )}
+                {isMine && !isEditing && (
+                  <span className="ml-2 text-[9px] opacity-0 group-hover/cm:opacity-100 transition-opacity">
+                    <button
+                      onClick={function () { startEdit(cm); }}
+                      className="text-blue-600 dark:text-blue-400 hover:underline cursor-pointer mr-1.5"
+                      title="Edit this comment"
+                    >Edit</button>
+                    <button
+                      onClick={function () { deleteComment(cm); }}
+                      className="text-rose-600 dark:text-rose-400 hover:underline cursor-pointer"
+                      title="Delete this comment"
+                    >Delete</button>
+                  </span>
+                )}
+                {isEditing ? (
+                  <div className="ml-3 mt-1 flex gap-1">
+                    <input
+                      type="text"
+                      value={editingText}
+                      onChange={function (e) { setEditingText(e.target.value); }}
+                      onKeyDown={function (e) { if (e.key === "Enter") saveEdit(); if (e.key === "Escape") { setEditingCommentId(null); setEditingText(""); } }}
+                      autoFocus
+                      className="flex-1 text-[11px] px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    />
+                    <button onClick={saveEdit} className="text-[10px] px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white rounded cursor-pointer">Save</button>
+                    <button onClick={function () { setEditingCommentId(null); setEditingText(""); }} className="text-[10px] px-2 py-0.5 border border-slate-200 dark:border-slate-700 rounded cursor-pointer">Cancel</button>
+                  </div>
+                ) : (
+                  <div className="ml-3 text-gray-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">{cm.text}</div>
+                )}
               </div>
             );
           })}

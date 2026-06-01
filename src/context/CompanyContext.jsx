@@ -1682,6 +1682,49 @@ export function CompanyProvider({children}){
       });
     });
   }
+  /* Edit an existing comment on an agenda entry. Only the comment's
+     own author can edit — guarded both here and (defense-in-depth)
+     in the UI. */
+  function editAgendaComment(companyId, entryId, commentId, newText){
+    if(!currentUser || !newText || !newText.trim()) return;
+    setCompanies(function(cs){
+      return cs.map(function(c){
+        if(c.id !== companyId) return c;
+        var hist = c.portWeightHistory || [];
+        var newHist = hist.map(function(h){
+          if(!h || h.id !== entryId) return h;
+          var updatedComments = (h.comments || []).map(function(cm){
+            if(cm.id !== commentId) return cm;
+            if(cm.author !== currentUser) return cm; /* own-comment guard */
+            return Object.assign({}, cm, {
+              text: newText.trim(),
+              editedAt: todayStr(),
+            });
+          });
+          return Object.assign({}, h, { comments: updatedComments });
+        });
+        return Object.assign({}, c, { portWeightHistory: newHist });
+      });
+    });
+  }
+  /* Delete a comment. Same own-comment guard. */
+  function deleteAgendaComment(companyId, entryId, commentId){
+    if(!currentUser) return;
+    setCompanies(function(cs){
+      return cs.map(function(c){
+        if(c.id !== companyId) return c;
+        var hist = c.portWeightHistory || [];
+        var newHist = hist.map(function(h){
+          if(!h || h.id !== entryId) return h;
+          var filtered = (h.comments || []).filter(function(cm){
+            return !(cm.id === commentId && cm.author === currentUser);
+          });
+          return Object.assign({}, h, { comments: filtered });
+        });
+        return Object.assign({}, c, { portWeightHistory: newHist });
+      });
+    });
+  }
   /* Discard all pending agenda entries on the given portfolios without
      committing — used by the "Clear Agenda" button on the Generate tab
      when the team wants to throw out proposals (e.g. meeting decided
@@ -1823,7 +1866,7 @@ export function CompanyProvider({children}){
     addAnnotation,updateAnnotation,deleteAnnotation,resolveAnnotation,unresolveAnnotation,addReply,markAnnotationRead,parseMentions,
     updateTargetWeight,markTradeAgenda,addTargetHistoryEntry,deleteTargetHistoryEntry,
     proposeTargetWeight,clearProposedWeight,commitProposedWeights,discardAgendaEntries,
-    refreshCompaniesFromSupabase,commentOnAgendaEntry,
+    refreshCompaniesFromSupabase,commentOnAgendaEntry,editAgendaComment,deleteAgendaComment,
     addTransaction,deleteTransaction,setTxInitOverride,setTxCashFlow,updateInitiatedDate,
     researchAssignments,setResearchAssignments,setResearchSlot,setReorgSlot,
     perfData,setPerfData,setPerfSeries,addPerfSeries,removePerfSeries,movePerfSeries,setPerfSeriesOrder,setPerfReturn,setPerfLastMonthEMV,applyPerfBulk,
