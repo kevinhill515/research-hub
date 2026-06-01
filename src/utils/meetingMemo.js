@@ -244,31 +244,30 @@ function partitionWeightChanges(companies, ports) {
         });
       } else if (!hasAction && (h.isAgenda || isRecent(h.date))) {
         /* Target-% change — proposed or recently committed.
-           oldW fallback ladder (when h.oldWeight is missing):
-             1. For PROPOSED entries (isAgenda:true): use the company's
-                current portWeights[port]. That IS the pre-proposal
-                value while the entry hasn't locked in yet.
-             2. For COMMITTED entries (!isAgenda): walk this company's
-                older portWeightHistory entries on the same port for
-                ANY entry (proposed or committed) with a numeric
-                newWeight, and use ITS newWeight as the prior value.
-                We can't use portWeights here because it has already
-                moved to this entry's newWeight, which would lie.
-             3. If even that fails, fall back to 0 — interpret as a
-                "from-nothing" position rather than an unknowable gap. */
-        var oldW = h.oldWeight;
-        var missing = (oldW === undefined || oldW === null || oldW === "");
-        if (missing) {
-          if (h.isAgenda) {
-            var committed = (c.portWeights || {})[h.portfolio];
-            var committedNum = parseFloat(committed);
-            oldW = isFinite(committedNum) ? committedNum : 0;
-          } else {
-            /* Find an older history entry on the same port for a prior
-               weight reference. Order isn't guaranteed in
-               portWeightHistory; sort by date desc and pick the first
-               one BEFORE this entry's date that has a usable
-               newWeight. */
+           oldW resolution:
+             - PROPOSED (isAgenda:true): ALWAYS use the company's
+               current portWeights[port]. That IS the live pre-proposal
+               value. The entry's stored h.oldWeight is a snapshot
+               from proposal time and can go stale if portWeights was
+               edited directly between then and now (which is exactly
+               the user's TSM-in-FOC case: entry stored oldWeight=0
+               from when FOC had no target, but portWeights.FOC was
+               later set to 5.0 directly).
+             - COMMITTED (!isAgenda): prefer h.oldWeight when present
+               (it's the snapshot at the commit moment). If missing,
+               walk this company's older portWeightHistory entries on
+               the same port for any entry with a numeric newWeight
+               and use that as the prior value. portWeights can't help
+               here because it's already moved to this entry's value.
+             - Last resort: 0 (treat as from-nothing). */
+        var oldW;
+        if (h.isAgenda) {
+          var committed = (c.portWeights || {})[h.portfolio];
+          var committedNum = parseFloat(committed);
+          oldW = isFinite(committedNum) ? committedNum : 0;
+        } else {
+          oldW = h.oldWeight;
+          if (oldW === undefined || oldW === null || oldW === "") {
             var hist = (c.portWeightHistory || []).slice();
             hist.sort(function (a, b) { return (b.date || "").localeCompare(a.date || ""); });
             var prior = null;
