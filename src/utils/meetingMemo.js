@@ -341,12 +341,15 @@ export function buildMeetingMemo(companies, profileName, repData) {
   });
   agendaLines.sort();
 
-  /* Allocation Changes — already-executed weight moves in the last 6 days. */
+  /* Allocation Changes — target-% changes (proposed + recently
+     committed). partitionWeightChanges already populated the entries
+     with company / oldW / newW / date / isProposed; just pass them
+     through. The previous map() reconstructed the entries and dropped
+     oldW / isProposed, which is exactly why "0.0% → 5.5%" was
+     surviving despite the fallback logic upstream. */
   const allocByPort = {};
   profile.ports.forEach(function (p) {
-    allocByPort[p] = (executedByPort[p] || []).map(function (e) {
-      return { company: e.company, newW: e.newW };
-    });
+    allocByPort[p] = (executedByPort[p] || []).slice();
   });
   const allocLines = formatPortfolioSection(allocByPort, profile.ports, repData, function (it) {
     /* "X% → Y%" with old + new. partitionWeightChanges' fallback ladder

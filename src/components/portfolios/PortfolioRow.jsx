@@ -189,7 +189,11 @@ function PortfolioRow(props) {
           backgroundImage: zebraBg ? "linear-gradient(" + zebraBg + ", " + zebraBg + ")" : undefined,
         }}
       >
-        <span className="inline-flex items-center gap-1.5" title={c.name}>
+        {/* position:relative anchors the absolute-positioned B/A/P/S
+            strip below to this container, so the strip overlays to the
+            right of the truncated company name on hover without
+            widening the layout. */}
+        <span className="relative inline-flex items-center gap-1.5" title={c.name}>
           {truncName(c.name, 15)}
           {/* B/A/P/S trade-agenda buttons — per (company, portfolio).
               Click during the IC meeting to stamp the planned trade;
@@ -205,15 +209,25 @@ function PortfolioRow(props) {
                (so you can still see what's stamped on each row at a
                glance) and the inactive siblings reveal on hover. */
             <span
-              /* When no agenda action is stamped, keep the strip in
-                 the layout (opacity:0) instead of removing it via
-                 display:hidden. Toggling display caused the company
-                 column to jump ~100px wider on row-hover, which
-                 squeezed every other column and made some of them
-                 wrap to 2 lines — the very layout shift the user
-                 complained about. opacity-0 reserves the space so
-                 the row width doesn't change between hover states. */
-              className={"inline-flex gap-0.5 ml-0.5 shrink-0 transition-opacity " + (rowAgendaAction ? "" : "opacity-0 group-hover:opacity-100")}
+              /* B/A/P/S strip behavior, take 3:
+                 - When NO action is stamped (steady state): render
+                   absolute-positioned to the right of the company
+                   name, opacity-0 by default and opacity-100 on row
+                   hover. Position:absolute keeps it OUT of layout
+                   flow so the company cell width never changes — the
+                   column doesn't grow on hover, neighboring columns
+                   don't squeeze, and rows stay one line.
+                 - When an action IS stamped: render inline so the
+                   active button is visible at rest (always-on
+                   indicator the team can scan without hovering). The
+                   row width naturally absorbs it without flexing
+                   because the active button has a fixed size.
+                 This fixes both the hover-jump from earlier AND the
+                 always-two-rows side-effect from the opacity-only
+                 fix that reserved space. */
+              className={"inline-flex gap-0.5 ml-0.5 shrink-0 transition-opacity " + (rowAgendaAction
+                ? ""
+                : "absolute left-full top-1/2 -translate-y-1/2 ml-1 opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto z-10 bg-white dark:bg-slate-900 px-1 rounded shadow-sm")}
               onClick={function (e) { e.stopPropagation(); }}
             >
               {TRADE_BTNS.map(function (b) {
@@ -230,12 +244,21 @@ function PortfolioRow(props) {
                     type="button"
                     onClick={function (e) { e.stopPropagation(); markTradeAgenda(c.id, portTab, b[1]); }}
                     title={active && rowAgendaAuthor ? "Proposed " + b[1] + " by " + rowAgendaAuthor + " — click to clear" : ("Propose " + b[1] + " for " + portTab)}
-                    /* Same hidden→opacity swap as the outer wrapper:
-                       inactive buttons stay in the layout (w-5/h-5) with
-                       opacity-0 so the strip's width is constant across
-                       hover states. Without this, the row shifts left
-                       when an inactive button becomes visible on hover. */
-                    className={"relative text-[10px] font-bold w-5 h-5 rounded-sm leading-none border transition-opacity transition-colors " + (active ? "text-white shadow" : "text-gray-500 dark:text-slate-400 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 hover:border-slate-400 opacity-0 group-hover:opacity-100")}
+                    /* Inactive-button visibility:
+                       - When rowAgendaAction IS set (strip is inline,
+                         visible at rest): inactive siblings hide via
+                         opacity-0 so only the active button reads at
+                         rest; full strip reveals on hover.
+                       - When rowAgendaAction is NOT set (strip is
+                         absolute-positioned, opacity-0 by default):
+                         buttons should NOT carry their own opacity-0
+                         (opacity stacks → buttons stay invisible even
+                         on hover). The outer strip's opacity controls
+                         visibility. */
+                    className={"relative text-[10px] font-bold w-5 h-5 rounded-sm leading-none border transition-opacity transition-colors " + (active
+                      ? "text-white shadow"
+                      : ("text-gray-500 dark:text-slate-400 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 hover:border-slate-400 " +
+                         (rowAgendaAction ? "opacity-0 group-hover:opacity-100" : "")))}
                     /* Dashed amber outline on the active button signals
                        PROPOSED (not yet locked in). After lock-in,
                        isAgenda flips false → the button is no longer
