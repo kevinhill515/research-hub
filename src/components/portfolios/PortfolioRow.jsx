@@ -469,7 +469,12 @@ function PortfolioRow(props) {
           : cellStyle;
         return (
           <Cell
-            className="text-sm text-gray-900 dark:text-slate-100"
+            /* whitespace-nowrap on the cell so the "was → proposed" +
+               author pip + ✕ + ⏳ siblings never wrap to a second line,
+               which is what was causing the row to jump to ~2x height on
+               hover. The row stays at one row regardless of cell
+               content width. */
+            className="text-sm text-gray-900 dark:text-slate-100 whitespace-nowrap"
             style={proposedCellStyle}
             onClick={function (e) { e.stopPropagation(); setEditingTarget(c.id + "-" + portTab); }}
           >
@@ -495,9 +500,9 @@ function PortfolioRow(props) {
                 className="w-14 px-1 py-0 text-sm rounded border border-amber-400 dark:border-amber-500 bg-white dark:bg-slate-900 focus:outline-none"
               />
             ) : (
-              <span className="inline-flex items-center gap-1">
+              <span className="inline-flex items-center gap-1 whitespace-nowrap">
                 <span
-                  className={"cursor-text hover:bg-slate-100 dark:hover:bg-slate-800 px-1 rounded " +
+                  className={"cursor-text hover:bg-slate-100 dark:hover:bg-slate-800 px-1 rounded inline-block whitespace-nowrap leading-[1.2] " +
                     (showProposed ? "italic font-semibold text-amber-800 dark:text-amber-300" : "")}
                   title={showProposed
                     ? ("Proposed " + proposedNum.toFixed(1) + "% by " + (proposalAuthor || "?") +
@@ -506,15 +511,16 @@ function PortfolioRow(props) {
                     : undefined}
                 >
                   {showProposed ? (
-                    /* "Y → X" pattern — shows the committed (was) value
-                       struck-through next to the proposed new value, so
-                       the reader sees at a glance what the change IS. */
-                    <>
+                    /* "was → proposed" rendered as two inline-block spans
+                       so the line height matches the steady-state single
+                       value and the row can't grow to 2 lines. nowrap +
+                       leading-[1.2] match the surrounding cell metrics. */
+                    <span className="inline-block whitespace-nowrap leading-[1.2]">
                       <span className="text-gray-400 dark:text-slate-500 line-through text-[11px] mr-0.5 not-italic font-normal">
                         {target > 0 ? parseFloat(target).toFixed(1) : "0"}
                       </span>
                       {proposedNum.toFixed(1) + "%"}
-                    </>
+                    </span>
                   ) : (target > 0 ? parseFloat(target).toFixed(1) + "%" : "--")}
                 </span>
                 {showProposed && proposalDotColor && (

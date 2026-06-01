@@ -248,7 +248,6 @@ export function MeetingMemoModal({ open, onClose }) {
               targetChangeReads={targetChangeReads || {}}
               currentUser={currentUser}
               repData={repData}
-              onLockIn={lockInPortfolio}
               onLockInAll={lockInAllProfilePorts}
               onMarkTargetRead={markTargetChangeRead}
             />
@@ -281,7 +280,7 @@ export function MeetingMemoModal({ open, onClose }) {
 
 /* ===== AGENDA TAB (read-only summary) ===== */
 
-function AgendaSummary({ profilePorts, pendingByPort, recentChanges, targetChangeReads, currentUser, repData, onLockIn, onLockInAll, onMarkTargetRead }) {
+function AgendaSummary({ profilePorts, pendingByPort, recentChanges, targetChangeReads, currentUser, repData, onLockInAll, onMarkTargetRead }) {
   var totalPending = profilePorts.reduce(function (acc, p) { return acc + (pendingByPort[p] || []).length; }, 0);
   return (
     <div className="space-y-5">
@@ -307,52 +306,80 @@ function AgendaSummary({ profilePorts, pendingByPort, recentChanges, targetChang
         </div>
         {profilePorts.map(function (port) {
           var items = pendingByPort[port] || [];
+          /* Merge per (company, port) — a row can have BOTH a B/A/P/S
+             stamp AND a target-% proposal. Display them as one combined
+             line: "<Action> · TICKER (Name) · oldW → newW". */
+          var merged = {};
+          items.forEach(function (it) {
+            var key = it.co.id;
+            if (!merged[key]) merged[key] = { co: it.co, action: null, target: null, authors: [], date: "" };
+            var h = it.entry;
+            if (h.action) {
+              merged[key].action = h;
+              if (h.author && merged[key].authors.indexOf(h.author) < 0) merged[key].authors.push(h.author);
+              if (!merged[key].date || (h.date || "") > merged[key].date) merged[key].date = h.date;
+            } else if (h.newWeight !== undefined && h.newWeight !== null) {
+              merged[key].target = h;
+              if (h.author && merged[key].authors.indexOf(h.author) < 0) merged[key].authors.push(h.author);
+              if (!merged[key].date || (h.date || "") > merged[key].date) merged[key].date = h.date;
+            }
+          });
+          var rows = Object.keys(merged).map(function (k) { return merged[k]; });
           return (
             <div key={port} className="mb-3">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-xs font-semibold text-gray-700 dark:text-slate-200">{port}</span>
                 <span className="text-[11px] text-gray-500 dark:text-slate-400">
-                  {items.length === 0 ? "no pending changes" : items.length + " pending"}
+                  {rows.length === 0 ? "no pending changes" : rows.length + (rows.length === 1 ? " company pending" : " companies pending")}
                 </span>
-                {items.length > 0 && (
-                  <button onClick={function () { onLockIn(port); }} className={BTN_AMBER + " ml-auto"}>
-                    Lock in {port}
-                  </button>
-                )}
               </div>
-              {items.length > 0 && (
+              {rows.length > 0 && (
                 <div className="space-y-1 border border-amber-200 dark:border-amber-800 rounded-md bg-amber-50/30 dark:bg-amber-950/20 p-2">
-                  {items.map(function (it, i) {
-                    var h = it.entry;
-                    var c = it.co;
-                    var isTarget = !h.action;
-                    var actionColor = h.action ? ACTION_COLORS[h.action] : null;
-                    var authorColor = h.author ? (TEAM_COLORS[h.author] || "#94a3b8") : null;
-                    /* Show the ticker that's actually held in THIS portfolio
-                       rather than the company's primary/ord ticker — useful
-                       for ADR-held names where the ord and US tickers
-                       differ. Uses the same pickHeldTicker logic the memo
-                       generator already uses for the Trading Agenda lines. */
+                  {rows.map(function (row, ri) {
+                    var c = row.co;
                     var heldTicker = pickHeldTicker(c, port, repData) || c.ticker || c.name || "?";
+                    var actionEntry = row.action;
+                    var targetEntry = row.target;
+                    var actionColor = actionEntry ? ACTION_COLORS[actionEntry.action] : null;
+                    var primaryAuthor = row.authors[0] || "";
+                    var authorColor = primaryAuthor ? (TEAM_COLORS[primaryAuthor] || "#94a3b8") : null;
+                    /* Weights shown for target-change proposals. When ONLY a
+                       B/A/P/S stamp exists (no target change), we still
+                       want to show the *committed* weight for context. */
+                    var weightStr = null;
+                    if (targetEntry) {
+                      weightStr = fmtPct(targetEntry.oldWeight) + " → " + fmtPct(targetEntry.newWeight);
+                    } else if (actionEntry) {
+                      var committed = (c.portWeights || {})[port];
+                      var cw = parseFloat(committed);
+                      weightStr = isFinite(cw) && cw > 0 ? "currently " + fmtPct(cw) : null;
+                    }
                     return (
-                      <div key={(h.id || i) + "-" + port} className="flex items-center gap-2 text-xs">
+                      <div key={(c.id || ri) + "-" + port} className="flex items-start gap-2 text-xs py-0.5">
                         {authorColor && (
-                          <span className="w-1.5 h-1.5 rounded-full" style={{ background: authorColor }} title={h.author || ""} />
+                          <span className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background: authorColor }} title={row.authors.join(", ")} />
                         )}
-                        <span className="font-medium text-gray-900 dark:text-slate-100 min-w-[120px]">{heldTicker}</span>
-                        {isTarget ? (
-                          <span className="font-mono text-amber-800 dark:text-amber-300">
-                            target {fmtPct(h.oldWeight)} → <span className="font-semibold">{fmtPct(h.newWeight)}</span>
-                          </span>
-                        ) : (
+                        {actionEntry && (
                           <span
-                            className="text-[10px] px-1.5 py-0.5 rounded font-bold text-white"
+                            className="text-[10px] px-1.5 py-0.5 rounded font-bold text-white shrink-0 mt-0.5"
                             style={{ background: actionColor || "#64748b" }}
-                          >{h.action}</span>
+                            title={"Proposed " + actionEntry.action}
+                          >{actionEntry.action}</span>
                         )}
-                        <span className="ml-auto text-[10px] text-gray-400 dark:text-slate-500">
-                          {h.author && <span className="mr-2">{h.author}</span>}
-                          {h.date}
+                        <div className="flex flex-col min-w-0 flex-1">
+                          <span className="font-medium text-gray-900 dark:text-slate-100">
+                            {heldTicker}
+                            <span className="text-gray-500 dark:text-slate-400 font-normal ml-1.5">{c.name || ""}</span>
+                          </span>
+                          {weightStr && (
+                            <span className="font-mono text-amber-800 dark:text-amber-300 text-[11px]">
+                              {targetEntry ? <>target {weightStr}</> : weightStr}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-gray-400 dark:text-slate-500 shrink-0 mt-0.5">
+                          {row.authors.length > 0 && <span className="mr-2">{row.authors.join(", ")}</span>}
+                          {row.date}
                         </span>
                       </div>
                     );

@@ -215,26 +215,44 @@ function buildFvUpdates(companies, ports, repData) {
  *   { agendaByCo: Map<company.id, [entries]>, executedByPort: { port: [entries] } }
  */
 function partitionWeightChanges(companies, ports) {
+  /* Two routing decisions per portWeightHistory entry:
+       - If entry has an action (B/A/P/S) AND isAgenda:true → Trading
+         Agenda. These are actual trade proposals that need execution.
+       - Else (no action, just a weight change) → Allocation Changes.
+         Includes both isAgenda:true (proposed) and !isAgenda (committed
+         within the recent window). Target-% changes are routed here
+         regardless of commit state because they don't represent a trade
+         action — they're a target reallocation, which the compliance
+         section calls "Allocation Changes."
+     This routing fixes the user's reported bug where proposing a target
+     change on TSM showed up in Trading Agenda (no trade!) and was
+     missing from Allocation Changes until lock-in. */
   const agendaByCo = {};
-  const executedByPort = {};
-  ports.forEach(function (p) { executedByPort[p] = []; });
+  const allocByPort = {};
+  ports.forEach(function (p) { allocByPort[p] = []; });
   (companies || []).forEach(function (c) {
     (c.portWeightHistory || []).forEach(function (h) {
       if (ports.indexOf(h.portfolio) < 0) return;
-      if (h.isAgenda) {
+      const hasAction = !!h.action;
+      if (hasAction && h.isAgenda) {
         (agendaByCo[c.id] = agendaByCo[c.id] || []).push({
           company: c, port: h.portfolio,
           oldW: h.oldWeight, newW: h.newWeight,
-          action: h.action || null,
+          action: h.action,
         });
-      } else if (isRecent(h.date)) {
-        executedByPort[h.portfolio].push({
-          company: c, newW: h.newWeight, date: h.date,
+      } else if (!hasAction && (h.isAgenda || isRecent(h.date))) {
+        /* Target-% change — proposed or recently committed. */
+        allocByPort[h.portfolio].push({
+          company: c,
+          oldW: h.oldWeight,
+          newW: h.newWeight,
+          date: h.date,
+          isProposed: !!h.isAgenda,
         });
       }
     });
   });
-  /* For agenda: collapse duplicates per (company, port) keeping the latest. */
+  /* Trading Agenda: collapse duplicates per (company, port) keeping latest. */
   Object.keys(agendaByCo).forEach(function (cid) {
     const seen = {};
     const kept = [];
@@ -245,19 +263,19 @@ function partitionWeightChanges(companies, ports) {
     });
     agendaByCo[cid] = kept;
   });
-  /* For executed: dedupe per (company, port) — keep latest. */
-  Object.keys(executedByPort).forEach(function (p) {
+  /* Allocation Changes: dedupe per (company, port) — keep latest. */
+  Object.keys(allocByPort).forEach(function (p) {
     const seen = {};
     const kept = [];
-    executedByPort[p].forEach(function (e) {
+    allocByPort[p].forEach(function (e) {
       const k = e.company.id;
       if (seen[k]) return;
       seen[k] = true;
       kept.push(e);
     });
-    executedByPort[p] = kept;
+    allocByPort[p] = kept;
   });
-  return { agendaByCo: agendaByCo, executedByPort: executedByPort };
+  return { agendaByCo: agendaByCo, executedByPort: allocByPort };
 }
 
 /* Top-level: build the memo string for a given profile.
@@ -291,7 +309,13 @@ export function buildMeetingMemo(companies, profileName, repData) {
     });
   });
   const allocLines = formatPortfolioSection(allocByPort, profile.ports, repData, function (it) {
-    return fmtWeight(it.newW) + "%";
+    /* Show "X% → Y%" with old + new so the reader sees the move,
+       not just the destination. Marks proposed entries with a (proposed)
+       suffix so compliance can distinguish committed history from
+       still-pending team decisions. */
+    var from = it.oldW != null && isFinite(parseFloat(it.oldW)) ? fmtWeight(it.oldW) + "%" : "—";
+    var to = fmtWeight(it.newW) + "%";
+    return from + " → " + to + (it.isProposed ? " (proposed)" : "");
   });
 
   /* FV Target Changes — TP approvals in the last 6 days. */
