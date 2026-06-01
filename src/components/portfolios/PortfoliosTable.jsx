@@ -124,6 +124,31 @@ export function PortfoliosTable(props) {
     proposeTargetWeight, clearProposedWeight, commitProposedWeights,
   } = useCompanyContext();
 
+  /* ---- Pending proposals on the active portfolio. Counts both target-%
+     proposals (isAgenda:true with newWeight, no action) and B/A/P/S
+     stamps (isAgenda:true with an action). Drives the sticky "Lock in"
+     bar that appears above the table when anything is pending. Memoized
+     so it doesn't re-walk every company on every row hover. */
+  const pendingSummary = useMemo(function () {
+    var targetCount = 0, stampCount = 0;
+    var byCompany = []; /* [{ co, target, stamps: [action,...] }] */
+    (companies || []).forEach(function (c) {
+      var hist = c.portWeightHistory || [];
+      var target = null;
+      var stamps = [];
+      hist.forEach(function (h) {
+        if (!h || !h.isAgenda || h.portfolio !== portTab) return;
+        if (h.action) { stamps.push(h); stampCount++; }
+        else if (h.newWeight !== undefined && h.newWeight !== null && !target) {
+          target = h;
+          targetCount++;
+        }
+      });
+      if (target || stamps.length) byCompany.push({ co: c, target: target, stamps: stamps });
+    });
+    return { targetCount: targetCount, stampCount: stampCount, byCompany: byCompany };
+  }, [companies, portTab]);
+
   /* ---- Per-company alerts, memoized so evaluateAlertsForCompany doesn't
      run twice per row on every parent re-render (mobile + desktop both
      consume it). Keyed by company id; only the warn-severity ones are
@@ -463,6 +488,38 @@ export function PortfoliosTable(props) {
           🖨 Print
         </button>
       </div>
+
+      {/* Sticky proposals bar — visible only when pending changes exist
+          on the active portfolio. "Lock in all" commits every pending
+          target-% proposal + B/A/P/S stamp on this portfolio in one
+          shot via commitProposedWeights. No per-row lock-in button —
+          meetings commit in batches, the bar is one click away. */}
+      {(pendingSummary.targetCount + pendingSummary.stampCount) > 0 && (
+        <div className="mb-2 px-3 py-2 rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 flex items-center gap-3 flex-wrap no-print sticky top-0 z-10">
+          <span className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+            ⏳ Proposed changes in {portTab}
+          </span>
+          <span className="text-xs text-amber-800 dark:text-amber-300">
+            {pendingSummary.byCompany.length} {pendingSummary.byCompany.length === 1 ? "company" : "companies"}
+            {pendingSummary.targetCount > 0 && " · " + pendingSummary.targetCount + " target " + (pendingSummary.targetCount === 1 ? "change" : "changes")}
+            {pendingSummary.stampCount > 0 && " · " + pendingSummary.stampCount + " " + (pendingSummary.stampCount === 1 ? "stamp" : "stamps") + " (B/A/P/S)"}
+          </span>
+          <button
+            onClick={function () {
+              if (typeof window !== "undefined" && window.confirm) {
+                var msg = "Lock in " + (pendingSummary.targetCount + pendingSummary.stampCount) + " proposed change(s) in " + portTab + "?\n\n" +
+                  "Target % proposals will be written to committed portWeights. B/A/P/S stamps will flip to executed. This is the equivalent of \"Clear agenda (mark executed)\" but scoped to just this portfolio.";
+                if (!window.confirm(msg)) return;
+              }
+              commitProposedWeights(portTab);
+            }}
+            className="text-xs px-3 py-1 rounded-md font-semibold bg-amber-600 hover:bg-amber-700 text-white cursor-pointer ml-auto"
+            title={"Commit every pending change for " + portTab + " — target % proposals become committed, B/A/P/S stamps flip to executed."}
+          >
+            Lock in {portTab}
+          </button>
+        </div>
+      )}
 
       {/* FX diagnostic banner — surfaces positions that will be miscounted
           because of missing currency or missing fx rate. Yellow for
