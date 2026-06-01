@@ -347,9 +347,15 @@ function PortfolioRow(props) {
           : <Dash />}
       </Cell>
 
-      {/* Portfolios */}
+      {/* Portfolios — pills stay on one line (removed flex-wrap that
+          let them wrap to a second row when a company was in 4+ ports,
+          e.g. TSM in FIN/IN/FGL/GL/EM/SC was rendering 6 pills which
+          overflowed the cell width and broke to a 2-line row). Cell's
+          whitespace-nowrap from CELL_BASE keeps the inner flex on one
+          line; if pills don't fit, they overflow horizontally rather
+          than wrap. */}
       <Cell style={cellStyle}>
-        <div className="flex gap-1 flex-wrap">
+        <div className="flex gap-1">
           {(c.portfolios || []).map(function (p) {
             const isCurrent = p === portTab;
             return (

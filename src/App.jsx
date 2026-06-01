@@ -419,21 +419,35 @@ export default function App(){
           );
         })()}
         {(function(){
-          /* PM Meeting Memo button \u2014 chip pattern matches Discussions
-             (blue count of all active) + TP Approvals (amber count of
-             pending). Here the count is total pending agenda entries
-             across all companies: portWeightHistory rows where
-             isAgenda:true. Includes both B/A/P/S stamps and pending
-             target-% proposals. */
+          /* IC Meeting button \u2014 chip count matches what the user sees
+             when they open the modal. Dedupes per (company, port,
+             entry-class) the same way the Agenda tab does:
+               - At most one B/A/P/S stamp per (company, port)
+               - At most one target-% proposal per (company, port)
+             so a company with both a Buy stamp AND a target change in
+             FGL counts as 2 (one trade + one alloc change), but two
+             stale stamps for the same Buy in FGL count as 1. */
+          var seenStamps = {}; var seenTargets = {};
           var pendingAgendaCount = 0;
           (companies || []).forEach(function(c){
             (c.portWeightHistory || []).forEach(function(h){
-              if (h && h.isAgenda) pendingAgendaCount++;
+              if (!h || !h.isAgenda) return;
+              if (h.action) {
+                var k = c.id + "|" + h.portfolio + "|stamp";
+                if (seenStamps[k]) return;
+                seenStamps[k] = true;
+                pendingAgendaCount++;
+              } else if (h.newWeight !== undefined && h.newWeight !== null) {
+                var kt = c.id + "|" + h.portfolio + "|target";
+                if (seenTargets[kt]) return;
+                seenTargets[kt] = true;
+                pendingAgendaCount++;
+              }
             });
           });
           return (
-            <button onClick={function(){setShowMeetingMemo(true);}} className={BTN+" relative"} title="Generate the post-IC compliance memo (Tuesday MultiCap or Thursday EM/SC)">
-              {"\uD83D\uDCDD"} PM Meeting Memo
+            <button onClick={function(){setShowMeetingMemo(true);}} className={BTN+" relative"} title="Open the IC Meeting agenda + compliance memo">
+              {"\uD83D\uDCDD"} IC Meeting
               {pendingAgendaCount>0 && <span className="ml-1 text-[10px] px-1.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 font-semibold">{pendingAgendaCount}</span>}
             </button>
           );

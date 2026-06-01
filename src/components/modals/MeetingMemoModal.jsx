@@ -220,12 +220,12 @@ export function MeetingMemoModal({ open, onClose }) {
     <div className="fixed inset-0 bg-black/50 z-[1500] flex items-start justify-center p-4 overflow-y-auto" onClick={close}>
       <div onClick={function (e) { e.stopPropagation(); }} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl w-full max-w-3xl my-8 max-h-[90vh] flex flex-col">
         <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center gap-3 flex-wrap">
-          <div className="text-base font-semibold text-gray-900 dark:text-slate-100">PM Meeting Memo</div>
+          <div className="text-base font-semibold text-gray-900 dark:text-slate-100">IC Meeting</div>
           <div className="flex items-center gap-1">
             <button onClick={function () { setTab("agenda"); }} className={tabClass(tab === "agenda")}>
               Agenda{(totalPendingCount + unseenChangeCount) > 0 ? " (" + (totalPendingCount + unseenChangeCount) + ")" : ""}
             </button>
-            <button onClick={function () { setTab("generate"); }} className={tabClass(tab === "generate")}>Generate</button>
+            <button onClick={function () { setTab("generate"); }} className={tabClass(tab === "generate")}>Memo</button>
             <button onClick={function () { setTab("log"); }} className={tabClass(tab === "log")}>
               Log{logEntries.length ? " (" + logEntries.length + ")" : ""}
             </button>
