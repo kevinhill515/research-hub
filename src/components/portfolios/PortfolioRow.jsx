@@ -54,6 +54,7 @@ function PortfolioRow(props) {
   const {
     company, portTab, rowIdx, rowData, annotations, alertsForCompany, dark,
     editingTarget, setEditingTarget, updateTargetWeight, markTradeAgenda,
+    proposeTargetWeight, clearProposedWeight,
     openDiscussions, onOpenCompany, onOpenTransactions, onAddTransaction,
   } = props;
 
@@ -113,6 +114,25 @@ function PortfolioRow(props) {
     for (let i = 0; i < hist.length; i++) {
       const h = hist[i];
       if (h.isAgenda && h.portfolio === portTab && h.action) return h.author || h.user || null;
+    }
+    return null;
+  })();
+  /* Pending target-weight PROPOSAL on this row's portfolio. Distinct
+     from the unread-change pill below: this one says "the target sitting
+     here isn't committed yet — someone proposed it, waiting for lock-in."
+     A pending entry is portWeightHistory[i] with isAgenda:true and a
+     newWeight and NO action (B/A/P/S stamps also use isAgenda:true but
+     carry an action). When this exists, the Target % cell renders the
+     proposed value with the amber-dashed treatment instead of the
+     committed portWeights value. */
+  const pendingTargetProposal = (function () {
+    const hist = company.portWeightHistory || [];
+    for (let i = 0; i < hist.length; i++) {
+      const h = hist[i];
+      if (h && h.isAgenda && h.portfolio === portTab && !h.action
+          && h.newWeight !== undefined && h.newWeight !== null) {
+        return h;
+      }
     }
     return null;
   })();
@@ -201,9 +221,15 @@ function PortfolioRow(props) {
                     key={b[0]}
                     type="button"
                     onClick={function (e) { e.stopPropagation(); markTradeAgenda(c.id, portTab, b[1]); }}
-                    title={active && rowAgendaAuthor ? "Stamped by " + rowAgendaAuthor + " — click to clear" : ("Stamp " + b[1] + " on the trading agenda for " + portTab)}
+                    title={active && rowAgendaAuthor ? "Proposed " + b[1] + " by " + rowAgendaAuthor + " — click to clear" : ("Propose " + b[1] + " for " + portTab)}
                     className={"relative text-[10px] font-bold w-5 h-5 rounded-sm leading-none border transition-colors " + (active ? "text-white shadow" : "text-gray-500 dark:text-slate-400 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 hover:border-slate-400 hidden group-hover:inline-block")}
-                    style={active ? { background: b[2], borderColor: b[2] } : undefined}
+                    /* Dashed amber outline on the active button signals
+                       PROPOSED (not yet locked in). After lock-in,
+                       isAgenda flips false → the button is no longer
+                       "active" → no outline. Matches the dashed amber
+                       treatment on the Target % cell so both signals
+                       read as one visual language. */
+                    style={active ? { background: b[2], borderColor: b[2], outline: "2px dashed #f59e0b", outlineOffset: "1px" } : undefined}
                   >
                     {b[0]}
                     {dotColor && (
@@ -416,43 +442,96 @@ function PortfolioRow(props) {
         })()}
       </Cell>
 
-      {/* Target % */}
-      <Cell
-        className="text-sm text-gray-900 dark:text-slate-100"
-        style={cellStyle}
-        onClick={function (e) { e.stopPropagation(); setEditingTarget(c.id + "-" + portTab); }}
-      >
-        {editingThis ? (
-          <input
-            type="number" step="0.1" min="0" max="100"
-            defaultValue={target > 0 ? target : ""}
-            autoFocus
-            aria-label={"Target weight for " + c.name}
-            onBlur={function (e) { updateTargetWeight(c.id, portTab, e.target.value); setEditingTarget(null); }}
-            onKeyDown={function (e) {
-              if (e.key === "Enter") e.target.blur();
-              if (e.key === "Escape") setEditingTarget(null);
-            }}
-            placeholder="0.0"
-            className="w-14 px-1 py-0 text-sm rounded border border-blue-400 dark:border-blue-500 bg-white dark:bg-slate-900 focus:outline-none"
-          />
-        ) : (
-          <span className="inline-flex items-center gap-1">
-            <span className="cursor-text hover:bg-slate-100 dark:hover:bg-slate-800 px-1 rounded">
-              {target > 0 ? parseFloat(target).toFixed(1) + "%" : "--"}
-            </span>
-            {unreadTargetChange && (
-              <span
-                onClick={function (e) { e.stopPropagation(); markTargetChangeRead(unreadTargetChange.key); }}
-                title={"Target changed " + unreadTargetChange.h.date +
-                  (unreadTargetChange.h.author ? " by " + unreadTargetChange.h.author : "") +
-                  " — click to mark seen"}
-                className="text-amber-600 dark:text-amber-400 hover:text-amber-800 cursor-pointer text-[11px] leading-none"
-              >⏳</span>
+      {/* Target % — proposal-aware. When pendingTargetProposal exists,
+          the cell displays the PROPOSED value with an amber wash + left
+          border (signaling "uncommitted") and an author pip in the
+          corner. Editing the cell calls proposeTargetWeight (not the
+          legacy updateTargetWeight) — so the value sits in the
+          proposed state until "Lock in" fires at the top of the page.
+          When no proposal exists, behavior is identical to before. */}
+      {(function () {
+        const proposedNum = pendingTargetProposal ? parseFloat(pendingTargetProposal.newWeight) : null;
+        const showProposed = pendingTargetProposal && isFinite(proposedNum);
+        const proposalAuthor = showProposed ? (pendingTargetProposal.author || pendingTargetProposal.user || "") : "";
+        const proposalDotColor = proposalAuthor ? (TEAM_COLORS[proposalAuthor] || null) : null;
+        /* Composite style: keep the row's diff tint as the base, layer
+           a subtle amber wash on top when proposed. */
+        const proposedCellStyle = showProposed
+          ? Object.assign({}, cellStyle, {
+              backgroundImage: "linear-gradient(rgba(251,191,36,0.18), rgba(251,191,36,0.18))",
+              borderLeft: "2px dashed #f59e0b",
+              position: "relative",
+            })
+          : cellStyle;
+        return (
+          <Cell
+            className="text-sm text-gray-900 dark:text-slate-100"
+            style={proposedCellStyle}
+            onClick={function (e) { e.stopPropagation(); setEditingTarget(c.id + "-" + portTab); }}
+          >
+            {editingThis ? (
+              <input
+                type="number" step="0.1" min="0" max="100"
+                /* Edit defaults to the CURRENTLY-displayed value
+                   (proposed if pending, else committed) so typing
+                   amends instead of starting from scratch. */
+                defaultValue={showProposed ? proposedNum : (target > 0 ? target : "")}
+                autoFocus
+                aria-label={"Target weight for " + c.name}
+                onBlur={function (e) {
+                  if (proposeTargetWeight) proposeTargetWeight(c.id, portTab, e.target.value);
+                  else updateTargetWeight(c.id, portTab, e.target.value);
+                  setEditingTarget(null);
+                }}
+                onKeyDown={function (e) {
+                  if (e.key === "Enter") e.target.blur();
+                  if (e.key === "Escape") setEditingTarget(null);
+                }}
+                placeholder="0.0"
+                className="w-14 px-1 py-0 text-sm rounded border border-amber-400 dark:border-amber-500 bg-white dark:bg-slate-900 focus:outline-none"
+              />
+            ) : (
+              <span className="inline-flex items-center gap-1">
+                <span
+                  className={"cursor-text hover:bg-slate-100 dark:hover:bg-slate-800 px-1 rounded " +
+                    (showProposed ? "italic font-semibold text-amber-800 dark:text-amber-300" : "")}
+                  title={showProposed
+                    ? ("Proposed " + proposedNum.toFixed(1) + "% by " + (proposalAuthor || "?") +
+                       " · committed " + (target > 0 ? parseFloat(target).toFixed(1) + "%" : "—") +
+                       " · click to edit, or Lock in at top of page to commit")
+                    : undefined}
+                >
+                  {showProposed ? proposedNum.toFixed(1) + "%"
+                    : (target > 0 ? parseFloat(target).toFixed(1) + "%" : "--")}
+                </span>
+                {showProposed && proposalDotColor && (
+                  <span
+                    className="w-1.5 h-1.5 rounded-full"
+                    style={{ background: proposalDotColor }}
+                    title={"Proposed by " + (proposalAuthor || "?")}
+                  />
+                )}
+                {showProposed && clearProposedWeight && (
+                  <span
+                    onClick={function (e) { e.stopPropagation(); clearProposedWeight(c.id, portTab); }}
+                    title="Clear this proposal — restores CASH and the committed target"
+                    className="text-amber-700 dark:text-amber-400 hover:text-amber-900 cursor-pointer text-[11px] leading-none font-bold"
+                  >✕</span>
+                )}
+                {unreadTargetChange && !showProposed && (
+                  <span
+                    onClick={function (e) { e.stopPropagation(); markTargetChangeRead(unreadTargetChange.key); }}
+                    title={"Target changed " + unreadTargetChange.h.date +
+                      (unreadTargetChange.h.author ? " by " + unreadTargetChange.h.author : "") +
+                      " — click to mark seen"}
+                    className="text-amber-600 dark:text-amber-400 hover:text-amber-800 cursor-pointer text-[11px] leading-none"
+                  >⏳</span>
+                )}
+              </span>
             )}
-          </span>
-        )}
-      </Cell>
+          </Cell>
+        );
+      })()}
 
       {/* Rep % */}
       <Cell className="text-sm text-gray-900 dark:text-slate-100" style={cellStyle}>
