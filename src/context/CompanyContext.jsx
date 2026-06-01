@@ -86,19 +86,6 @@ export function CompanyProvider({children}){
      Shape: [{ id, date, profile:"tuesday"|"thursday", author, memo }]
      Order: newest first (matches feedback/annotations convention). */
   const [memoLog,setMemoLog]=useState([]);
-  /* meetingProposals — pre-meeting collaboration surface.
-     Each record: { id, companyId, ticker, portfolio, action: Buy|Add|Pare|Sell,
-       proposedWeight: number|null, rationale, mentions: string[],
-       suggestedBy, suggestedAt, status: pending|promoted|withdrawn,
-       promotedBy, promotedAt, withdrawnAt,
-       replies: [{id, author, date, text, mentions}],
-       reactions: { [user]: emoji },
-       readBy: string[] }
-     Status lifecycle: pending → promoted (calls markTradeAgenda +
-     updateTargetWeight under the hood, so PortfolioRow's B/A/P/S
-     highlight and the memo generator pick up the change without any
-     special-cased glue) or pending → withdrawn (suggester only). */
-  const [meetingProposals,setMeetingProposals]=useState([]);
   /* targetChangeReads — sparse acknowledgment map for portWeightHistory
      entries. Shape: { [historyEntryId]: [user, ...] }. Lets the Recent
      Target Changes section on the Agenda tab (and the amber-⏳ pill on
@@ -229,7 +216,7 @@ export function CompanyProvider({children}){
       "lastPriceUpdate","entryComments","calLastUpdated","repData","fxRates",
       "specialWeights","annotations","researchAssignments","perfData","feedback",
       "benchmarkWeights","alertRules","breakdownHistory","tpApprovals","memoLog",
-      "meetingProposals","targetChangeReads",
+      "targetChangeReads",
     ];
     var [r, r2, metaMap] = await Promise.all([
       safe(supaGet("library","id","shared")),
@@ -258,7 +245,6 @@ export function CompanyProvider({children}){
     var r15 = _m.get("breakdownHistory")    || null;
     var r16 = _m.get("tpApprovals")         || null;
     var r17 = _m.get("memoLog")             || null;
-    var rMP = _m.get("meetingProposals")    || null;
     var rTCR = _m.get("targetChangeReads")  || null;
     try{if(r){var d=JSON.parse(r.data);if(Array.isArray(d)&&d.length){var libMig=migrateTags(d);setSaved(libMig.data);libOk=libMig.data.length;if(libMig.changed)supaUpsert("library",{id:"shared",data:JSON.stringify(libMig.data)});}}}catch(e){}
     try{if(r2&&Array.isArray(r2)){
@@ -559,7 +545,6 @@ export function CompanyProvider({children}){
       }
     }}catch(e){}
     try{if(r17&&r17.value){var ml=JSON.parse(r17.value);if(Array.isArray(ml))setMemoLog(ml);}}catch(e){}
-    try{if(rMP&&rMP.value){var mp=JSON.parse(rMP.value);if(Array.isArray(mp))setMeetingProposals(mp);}}catch(e){}
     try{if(rTCR&&rTCR.value){var tcr=JSON.parse(rTCR.value);if(tcr&&typeof tcr==="object")setTargetChangeReads(tcr);}}catch(e){}
     try{if(r10&&r10.value){var ra=JSON.parse(r10.value);if(ra&&typeof ra==="object"){if(!ra.byMember)ra.byMember={};if(!Array.isArray(ra.reorgs))ra.reorgs=[];/* Migrate legacy category keys: gbl→gl, intl→in, intSmall→sc */var RA_RENAMES={gbl:"gl",intl:"in",intSmall:"sc"};var raChanged=false;Object.keys(ra.byMember).forEach(function(m){var mb=ra.byMember[m]||{};Object.keys(RA_RENAMES).forEach(function(oldK){if(mb[oldK]!==undefined){mb[RA_RENAMES[oldK]]=mb[oldK];delete mb[oldK];raChanged=true;}});ra.byMember[m]=mb;});setResearchAssignments(ra);if(raChanged)supaUpsert("meta",{key:"researchAssignments",value:JSON.stringify(ra)});}}}catch(e){}
     try{if(r11&&r11.value){var pd=JSON.parse(r11.value);if(pd&&typeof pd==="object")setPerfData(pd);}}catch(e){}
@@ -923,7 +908,6 @@ export function CompanyProvider({children}){
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(perfData);autoSendBlob("perfData",j,"meta",{key:"perfData",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[perfData,ready]);
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(feedback);autoSendBlob("feedback",j,"meta",{key:"feedback",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[feedback,ready]);
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(memoLog);autoSendBlob("memoLog",j,"meta",{key:"memoLog",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[memoLog,ready]);
-  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(meetingProposals);autoSendBlob("meetingProposals",j,"meta",{key:"meetingProposals",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[meetingProposals,ready]);
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(targetChangeReads);autoSendBlob("targetChangeReads",j,"meta",{key:"targetChangeReads",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[targetChangeReads,ready]);
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(benchmarkWeights);autoSendBlob("benchmarkWeights",j,"meta",{key:"benchmarkWeights",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[benchmarkWeights,ready]);
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(breakdownHistory);autoSendBlob("breakdownHistory",j,"meta",{key:"breakdownHistory",value:j});},DEBOUNCE_HEAVY_MS);return function(){clearTimeout(t);};},[breakdownHistory,ready]);
@@ -1188,137 +1172,6 @@ export function CompanyProvider({children}){
   }
   function deleteMemoLog(id){
     setMemoLog(function(prev){return(prev||[]).filter(function(e){return e.id!==id;});});
-  }
-  /* ---- Meeting proposals (pre-meeting collaboration) ----
-     Pattern mirrors tpApprovals (submit / withdraw / readBy) and
-     annotations (replies array). Self-promote is allowed — the team
-     can socially enforce "wait for someone to weigh in" via the
-     replies-count surface in the UI. */
-  function addMeetingProposal(payload){
-    if(!currentUser) return;
-    var rec = Object.assign({
-      id: newId(),
-      companyId: "",
-      ticker: "",
-      portfolio: "",
-      action: "Buy",
-      proposedWeight: null,
-      rationale: "",
-      mentions: [],
-      suggestedBy: currentUser,
-      suggestedAt: todayStr(),
-      status: "pending",
-      promotedBy: null,
-      promotedAt: null,
-      withdrawnAt: null,
-      replies: [],
-      reactions: {},
-      readBy: [currentUser],
-    }, payload || {});
-    setMeetingProposals(function(prev){return [rec].concat(prev || []);});
-    return rec;
-  }
-  function replyToMeetingProposal(id, text, mentions){
-    if(!currentUser || !text || !text.trim()) return;
-    setMeetingProposals(function(prev){
-      return (prev || []).map(function(p){
-        if(p.id !== id) return p;
-        var reply = {
-          id: newId(),
-          author: currentUser,
-          date: todayStr(),
-          text: text,
-          mentions: Array.isArray(mentions) ? mentions : [],
-        };
-        /* Posting resets readBy to just the author so other teammates
-           re-flag the proposal as new. Same convention tpApprovals uses
-           when an edit lands. */
-        return Object.assign({}, p, {
-          replies: (p.replies || []).concat([reply]),
-          readBy: [currentUser],
-        });
-      });
-    });
-  }
-  function reactToMeetingProposal(id, emoji){
-    if(!currentUser) return;
-    setMeetingProposals(function(prev){
-      return (prev || []).map(function(p){
-        if(p.id !== id) return p;
-        var reactions = Object.assign({}, p.reactions || {});
-        /* Click your own emoji a second time to clear it. Different
-           emoji replaces. One reaction per user — keeps the data shape
-           tiny (single Map per proposal) and matches the "vote with
-           your face" UX users expect. */
-        if(reactions[currentUser] === emoji) delete reactions[currentUser];
-        else reactions[currentUser] = emoji;
-        return Object.assign({}, p, { reactions: reactions });
-      });
-    });
-  }
-  function withdrawMeetingProposal(id){
-    if(!currentUser) return;
-    setMeetingProposals(function(prev){
-      return (prev || []).map(function(p){
-        if(p.id !== id) return p;
-        if(p.suggestedBy !== currentUser) return p; /* suggester only */
-        if(p.status !== "pending") return p;
-        return Object.assign({}, p, {
-          status: "withdrawn",
-          withdrawnAt: todayStr(),
-        });
-      });
-    });
-  }
-  function promoteMeetingProposal(id){
-    if(!currentUser) return;
-    var snap = null;
-    setMeetingProposals(function(prev){
-      return (prev || []).map(function(p){
-        if(p.id !== id) return p;
-        if(p.status !== "pending") return p;
-        snap = p;
-        return Object.assign({}, p, {
-          status: "promoted",
-          promotedBy: currentUser,
-          promotedAt: todayStr(),
-        });
-      });
-    });
-    /* Side-effects fire AFTER the status flip so a re-render can't
-       race with the markTradeAgenda / updateTargetWeight setCompanies
-       calls. snap captures the proposal we matched. */
-    if(snap){
-      if(snap.companyId && snap.portfolio && snap.action){
-        try { markTradeAgenda(snap.companyId, snap.portfolio, snap.action); } catch(_e){}
-      }
-      if(snap.proposedWeight !== null && snap.proposedWeight !== undefined
-          && snap.companyId && snap.portfolio){
-        try { updateTargetWeight(snap.companyId, snap.portfolio, snap.proposedWeight); } catch(_e){}
-      }
-    }
-  }
-  function deleteMeetingProposal(id){
-    /* Outright delete — only for cleanup of withdrawn / promoted records
-       the team agrees aren't needed in the agenda anymore. The Agenda
-       tab only auto-shows pending ones anyway. */
-    if(!currentUser) return;
-    setMeetingProposals(function(prev){
-      return (prev || []).filter(function(p){
-        return !(p.id === id && (p.suggestedBy === currentUser || p.status !== "pending"));
-      });
-    });
-  }
-  function markMeetingProposalRead(id){
-    if(!currentUser) return;
-    setMeetingProposals(function(prev){
-      return (prev || []).map(function(p){
-        if(p.id !== id) return p;
-        var rb = p.readBy || [];
-        if(rb.indexOf(currentUser) >= 0) return p;
-        return Object.assign({}, p, { readBy: rb.concat([currentUser]) });
-      });
-    });
   }
   /* Target-change acknowledgment. historyEntryId can be any string —
      for portWeightHistory entries we use entry.id (auto-assigned at
@@ -1886,10 +1739,6 @@ export function CompanyProvider({children}){
     perfData,setPerfData,setPerfSeries,addPerfSeries,removePerfSeries,movePerfSeries,setPerfSeriesOrder,setPerfReturn,setPerfLastMonthEMV,applyPerfBulk,
     feedback,setFeedback,addFeedback,updateFeedback,removeFeedback,moveFeedback,
     memoLog,setMemoLog,addMemoLog,deleteMemoLog,
-    meetingProposals,setMeetingProposals,
-    addMeetingProposal,replyToMeetingProposal,reactToMeetingProposal,
-    withdrawMeetingProposal,promoteMeetingProposal,deleteMeetingProposal,
-    markMeetingProposalRead,
     targetChangeReads,setTargetChangeReads,markTargetChangeRead,
     marketsSnapshot,setMarketsSnapshot,marketsStatus,ensureMarketsSnapshot,
     alertRules,setAlertRules,
