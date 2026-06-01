@@ -242,52 +242,23 @@ function partitionWeightChanges(companies, ports) {
           oldW: h.oldWeight, newW: h.newWeight,
           action: h.action,
         });
-      } else if (!hasAction && (h.isAgenda || isRecent(h.date))) {
-        /* Target-% change — proposed or recently committed.
-           oldW resolution:
-             - PROPOSED (isAgenda:true): ALWAYS use the company's
-               current portWeights[port]. That IS the live pre-proposal
-               value. The entry's stored h.oldWeight is a snapshot
-               from proposal time and can go stale if portWeights was
-               edited directly between then and now (which is exactly
-               the user's TSM-in-FOC case: entry stored oldWeight=0
-               from when FOC had no target, but portWeights.FOC was
-               later set to 5.0 directly).
-             - COMMITTED (!isAgenda): prefer h.oldWeight when present
-               (it's the snapshot at the commit moment). If missing,
-               walk this company's older portWeightHistory entries on
-               the same port for any entry with a numeric newWeight
-               and use that as the prior value. portWeights can't help
-               here because it's already moved to this entry's value.
-             - Last resort: 0 (treat as from-nothing). */
-        var oldW;
-        if (h.isAgenda) {
-          var committed = (c.portWeights || {})[h.portfolio];
-          var committedNum = parseFloat(committed);
-          oldW = isFinite(committedNum) ? committedNum : 0;
-        } else {
-          oldW = h.oldWeight;
-          if (oldW === undefined || oldW === null || oldW === "") {
-            var hist = (c.portWeightHistory || []).slice();
-            hist.sort(function (a, b) { return (b.date || "").localeCompare(a.date || ""); });
-            var prior = null;
-            for (var hi = 0; hi < hist.length; hi++) {
-              var hh = hist[hi];
-              if (!hh || hh.portfolio !== h.portfolio) continue;
-              if (hh === h) continue;
-              if ((hh.date || "") >= (h.date || "")) continue; /* must be older */
-              var hhW = parseFloat(hh.newWeight);
-              if (isFinite(hhW)) { prior = hhW; break; }
-            }
-            oldW = prior != null ? prior : 0;
-          }
-        }
+      } else if (!hasAction && h.isAgenda) {
+        /* Target-% change — PENDING (isAgenda:true) only. The 6-day
+           recent-committed window was dropped per user request: once
+           an entry is locked in or marked executed (both flip
+           isAgenda:false), it vanishes from the memo immediately, so
+           it doesn't linger into next week's meeting.
+           oldW source: live portWeights[port]. The entry's stored
+           h.oldWeight can be stale if portWeights was edited directly
+           after the proposal landed. */
+        var committed = (c.portWeights || {})[h.portfolio];
+        var committedNum = parseFloat(committed);
+        var oldW = isFinite(committedNum) ? committedNum : 0;
         allocByPort[h.portfolio].push({
           company: c,
           oldW: oldW,
           newW: h.newWeight,
           date: h.date,
-          isProposed: !!h.isAgenda,
         });
       }
     });
@@ -352,14 +323,13 @@ export function buildMeetingMemo(companies, profileName, repData) {
     allocByPort[p] = (executedByPort[p] || []).slice();
   });
   const allocLines = formatPortfolioSection(allocByPort, profile.ports, repData, function (it) {
-    /* "X% → Y%" with old + new. partitionWeightChanges' fallback ladder
-       already makes sure it.oldW is a number (0 worst case), so this
-       formatter should never need to render "—". Belt + suspenders:
-       still guard against undefined/non-finite. */
+    /* "X% → Y%" with old + new. Every row here is implicitly a
+       pending proposal (the 6-day committed window was dropped) so
+       we no longer tag with "(proposed)" — keeps lines clean. */
     var oldN = parseFloat(it.oldW);
     var from = isFinite(oldN) ? fmtWeight(oldN) + "%" : "0.0%";
     var to = fmtWeight(it.newW) + "%";
-    return from + " → " + to + (it.isProposed ? " (proposed)" : "");
+    return from + " → " + to;
   });
 
   /* FV Target Changes — TP approvals in the last 6 days. */
