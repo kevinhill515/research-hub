@@ -418,7 +418,26 @@ export default function App(){
             </button>
           );
         })()}
-        <button onClick={function(){setShowMeetingMemo(true);}} className={BTN} title="Generate the post-IC compliance memo (Tuesday MultiCap or Thursday EM/SC)">{"\uD83D\uDCDD"} PM Meeting Memo</button>
+        {(function(){
+          /* PM Meeting Memo button \u2014 chip pattern matches Discussions
+             (blue count of all active) + TP Approvals (amber count of
+             pending). Here the count is total pending agenda entries
+             across all companies: portWeightHistory rows where
+             isAgenda:true. Includes both B/A/P/S stamps and pending
+             target-% proposals. */
+          var pendingAgendaCount = 0;
+          (companies || []).forEach(function(c){
+            (c.portWeightHistory || []).forEach(function(h){
+              if (h && h.isAgenda) pendingAgendaCount++;
+            });
+          });
+          return (
+            <button onClick={function(){setShowMeetingMemo(true);}} className={BTN+" relative"} title="Generate the post-IC compliance memo (Tuesday MultiCap or Thursday EM/SC)">
+              {"\uD83D\uDCDD"} PM Meeting Memo
+              {pendingAgendaCount>0 && <span className="ml-1 text-[10px] px-1.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 font-semibold">{pendingAgendaCount}</span>}
+            </button>
+          );
+        })()}
         <button onClick={function(){setDark(function(d){return !d;});}} className={BTN}>{dark?"\u2600 Light":"\uD83C\uDF19 Dark"}</button>
         <button onClick={function(){setCompact(function(c){var next=!c;setVisibleCols(next?COMPACT_COLS:new Set(ALL_COLS));return next;});}} className={BTN}>{compact?"\u229E Default":"\u229F Compact"}</button>
         <button onClick={function(){

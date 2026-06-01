@@ -32,7 +32,14 @@ function _daysAgo(iso) {
   return Math.floor((Date.now() - d.getTime()) / 86400000);
 }
 
-const CELL_BASE = "align-middle pr-3 py-1.5";
+/* whitespace-nowrap at the Cell level — applies to every cell rendered
+   via <Cell/>. Without this, cells with longer content (foreign ord
+   tickers like 005490-KR, multi-portfolio pill rows, ticker-heavy
+   companies in GL / EM) can wrap to a second line and drag the whole
+   row to 2 visual rows. With it, content stays on one line; if it
+   doesn't fit, it overflows or gets clipped — the row height stays
+   constant regardless of port content density. */
+const CELL_BASE = "align-middle pr-3 py-1.5 whitespace-nowrap";
 
 function Cell({ children, className, style, onClick }) {
   return (
