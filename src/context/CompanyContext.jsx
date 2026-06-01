@@ -1654,6 +1654,34 @@ export function CompanyProvider({children}){
     proposeTargetWeight(companyId, portfolio, rawNewValue);
     commitProposedWeights(portfolio);
   }
+  /* Append a comment to a pending portWeightHistory entry. Lightweight
+     team-collab around a single proposed change — replies / discussion
+     without bringing back the deleted meetingProposals system. Each
+     comment: { id, author, date, text }. Lives on the entry itself
+     (entry.comments[]) so it stays attached even after lock-in (the
+     entry persists with isAgenda:false). */
+  function commentOnAgendaEntry(companyId, entryId, text){
+    if(!currentUser || !text || !text.trim()) return;
+    setCompanies(function(cs){
+      return cs.map(function(c){
+        if(c.id !== companyId) return c;
+        var hist = c.portWeightHistory || [];
+        var newHist = hist.map(function(h){
+          if(!h || h.id !== entryId) return h;
+          var comment = {
+            id: newId(),
+            author: currentUser,
+            date: todayStr(),
+            text: text.trim(),
+          };
+          return Object.assign({}, h, {
+            comments: (h.comments || []).concat([comment]),
+          });
+        });
+        return Object.assign({}, c, { portWeightHistory: newHist });
+      });
+    });
+  }
   /* Discard all pending agenda entries on the given portfolios without
      committing — used by the "Clear Agenda" button on the Generate tab
      when the team wants to throw out proposals (e.g. meeting decided
@@ -1795,7 +1823,7 @@ export function CompanyProvider({children}){
     addAnnotation,updateAnnotation,deleteAnnotation,resolveAnnotation,unresolveAnnotation,addReply,markAnnotationRead,parseMentions,
     updateTargetWeight,markTradeAgenda,addTargetHistoryEntry,deleteTargetHistoryEntry,
     proposeTargetWeight,clearProposedWeight,commitProposedWeights,discardAgendaEntries,
-    refreshCompaniesFromSupabase,
+    refreshCompaniesFromSupabase,commentOnAgendaEntry,
     addTransaction,deleteTransaction,setTxInitOverride,setTxCashFlow,updateInitiatedDate,
     researchAssignments,setResearchAssignments,setResearchSlot,setReorgSlot,
     perfData,setPerfData,setPerfSeries,addPerfSeries,removePerfSeries,movePerfSeries,setPerfSeriesOrder,setPerfReturn,setPerfLastMonthEMV,applyPerfBulk,

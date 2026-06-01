@@ -25,6 +25,7 @@ import { useState, useMemo } from "react";
 import { useCompanyContext } from "../../context/CompanyContext.jsx";
 import { buildMeetingMemo, clearAgendaFlags, MEETING_PROFILES, pickHeldTicker } from "../../utils/meetingMemo.js";
 import { TEAM_COLORS } from "../../constants/index.js";
+import { buildTickerOwners, calcCompanyRepMV, calcTotalMV } from "../../utils/portfolioMath.js";
 
 const BTN_PRIMARY = "text-xs px-3 py-1.5 font-medium bg-blue-600 text-white rounded-md cursor-pointer hover:bg-blue-700 transition-colors";
 const BTN_GHOST = "text-xs px-3 py-1.5 font-medium rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors";
@@ -64,10 +65,10 @@ function daysAgo(iso) {
 
 export function MeetingMemoModal({ open, onClose }) {
   const {
-    companies, setCompanies, repData, currentUser,
+    companies, setCompanies, repData, fxRates, currentUser,
     memoLog, addMemoLog, deleteMemoLog,
     targetChangeReads, markTargetChangeRead, commitProposedWeights,
-    discardAgendaEntries, refreshCompaniesFromSupabase,
+    discardAgendaEntries, refreshCompaniesFromSupabase, commentOnAgendaEntry,
   } = useCompanyContext();
   const [refreshing, setRefreshing] = useState(false);
   const [refreshMsg, setRefreshMsg] = useState("");
@@ -139,6 +140,23 @@ export function MeetingMemoModal({ open, onClose }) {
   const unseenChangeCount = recentChanges.filter(function (rc) {
     return !((targetChangeReads || {})[rc.key] || []).includes(currentUser);
   }).length;
+
+  /* Per-port rep-weight context. Lets the Agenda summary show
+     "current rep %" alongside the proposed target. Built ONCE per
+     profile per render — calcTotalMV walks all companies-in-port and
+     would be expensive to repeat per row. */
+  const repWeightCtx = useMemo(function () {
+    var byPort = {};
+    profilePorts.forEach(function (port) {
+      var pRep = (repData || {})[port] || {};
+      var inPort = (companies || []).filter(function (c) { return (c.portfolios || []).indexOf(port) >= 0; });
+      var others = (companies || []).filter(function (c) { return (c.portfolios || []).indexOf(port) < 0; });
+      var owners = buildTickerOwners(inPort, others);
+      var total = calcTotalMV(inPort, pRep, fxRates, owners);
+      byPort[port] = { pRep: pRep, owners: owners, total: total };
+    });
+    return byPort;
+  }, [companies, repData, fxRates, profilePortsKey]);
 
   if (!open) return null;
 
@@ -248,8 +266,11 @@ export function MeetingMemoModal({ open, onClose }) {
               targetChangeReads={targetChangeReads || {}}
               currentUser={currentUser}
               repData={repData}
+              fxRates={fxRates}
+              repWeightCtx={repWeightCtx}
               onLockInAll={lockInAllProfilePorts}
               onMarkTargetRead={markTargetChangeRead}
+              onComment={commentOnAgendaEntry}
             />
           ) : tab === "log" ? (
             <LogTab
@@ -280,7 +301,18 @@ export function MeetingMemoModal({ open, onClose }) {
 
 /* ===== AGENDA TAB (read-only summary) ===== */
 
-function AgendaSummary({ profilePorts, pendingByPort, recentChanges, targetChangeReads, currentUser, repData, onLockInAll, onMarkTargetRead }) {
+function AgendaSummary({ profilePorts, pendingByPort, recentChanges, targetChangeReads, currentUser, repData, fxRates, repWeightCtx, onLockInAll, onMarkTargetRead, onComment }) {
+  /* Compute current rep weight (actual holding as % of port AUM) for a
+     given (company, port). Uses the precomputed per-port context so
+     totalMV isn't recomputed per row. Returns null when port has zero
+     AUM or no holding. */
+  function repWeightFor(company, port) {
+    var ctx = repWeightCtx && repWeightCtx[port];
+    if (!ctx || !ctx.total) return null;
+    var mv = calcCompanyRepMV(company, ctx.pRep, fxRates, ctx.owners);
+    if (!isFinite(mv) || mv <= 0) return 0;
+    return (mv / ctx.total) * 100;
+  }
   var totalPending = profilePorts.reduce(function (acc, p) { return acc + (pendingByPort[p] || []).length; }, 0);
   return (
     <div className="space-y-5">
@@ -343,45 +375,54 @@ function AgendaSummary({ profilePorts, pendingByPort, recentChanges, targetChang
                     var actionColor = actionEntry ? ACTION_COLORS[actionEntry.action] : null;
                     var primaryAuthor = row.authors[0] || "";
                     var authorColor = primaryAuthor ? (TEAM_COLORS[primaryAuthor] || "#94a3b8") : null;
-                    /* Weights shown for target-change proposals. When ONLY a
-                       B/A/P/S stamp exists (no target change), we still
-                       want to show the *committed* weight for context. */
+                    /* Compute current rep % (actual holding weight as % of
+                       port AUM). When there's a B/A/P/S action, the row's
+                       "before" anchor is the rep %, not the committed
+                       target — that's what the user actually owns today. */
+                    var repPct = repWeightFor(c, port);
+                    var repStr = repPct == null ? null : repPct.toFixed(2) + "%";
+                    /* Build the "X → Y" weight string with action-aware semantics:
+                       - Sell  -> "<rep%> → 0%"           (full exit)
+                       - Buy   -> "0% → <target%>"        (new position, or <rep%> → target if non-zero)
+                       - Add/Pare -> "<rep%> → <target%>" (resize)
+                       - Pure target change (no action) -> "<oldTarget%> → <newTarget%>"
+                       Falls back to "currently X%" when we can't reconstruct both ends. */
                     var weightStr = null;
-                    if (targetEntry) {
+                    if (actionEntry && actionEntry.action === "Sell") {
+                      weightStr = (repStr || "?") + " → 0.00%";
+                    } else if (actionEntry && (actionEntry.action === "Add" || actionEntry.action === "Pare" || actionEntry.action === "Buy") && targetEntry) {
+                      weightStr = (repStr || "?") + " → " + fmtPct(targetEntry.newWeight);
+                    } else if (actionEntry && actionEntry.action === "Buy" && !targetEntry) {
+                      /* Buy without an explicit target — show rep (likely 0) → committed target */
+                      var committed = parseFloat((c.portWeights || {})[port]);
+                      weightStr = (repStr || "0.00%") + (isFinite(committed) && committed > 0 ? " → " + fmtPct(committed) : "");
+                    } else if (actionEntry && (actionEntry.action === "Add" || actionEntry.action === "Pare") && !targetEntry) {
+                      /* Resize action with no explicit new target — show rep → committed */
+                      var committedAP = parseFloat((c.portWeights || {})[port]);
+                      weightStr = (repStr || "?") + (isFinite(committedAP) && committedAP > 0 ? " → " + fmtPct(committedAP) : "");
+                    } else if (targetEntry) {
+                      /* Pure target change, no action stamp */
                       weightStr = fmtPct(targetEntry.oldWeight) + " → " + fmtPct(targetEntry.newWeight);
-                    } else if (actionEntry) {
-                      var committed = (c.portWeights || {})[port];
-                      var cw = parseFloat(committed);
-                      weightStr = isFinite(cw) && cw > 0 ? "currently " + fmtPct(cw) : null;
                     }
+                    var comments = ((actionEntry && actionEntry.comments) || [])
+                      .concat((targetEntry && targetEntry.comments) || []);
                     return (
-                      <div key={(c.id || ri) + "-" + port} className="flex items-start gap-2 text-xs py-0.5">
-                        {authorColor && (
-                          <span className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background: authorColor }} title={row.authors.join(", ")} />
-                        )}
-                        {actionEntry && (
-                          <span
-                            className="text-[10px] px-1.5 py-0.5 rounded font-bold text-white shrink-0 mt-0.5"
-                            style={{ background: actionColor || "#64748b" }}
-                            title={"Proposed " + actionEntry.action}
-                          >{actionEntry.action}</span>
-                        )}
-                        <div className="flex flex-col min-w-0 flex-1">
-                          <span className="font-medium text-gray-900 dark:text-slate-100">
-                            {heldTicker}
-                            <span className="text-gray-500 dark:text-slate-400 font-normal ml-1.5">{c.name || ""}</span>
-                          </span>
-                          {weightStr && (
-                            <span className="font-mono text-amber-800 dark:text-amber-300 text-[11px]">
-                              {targetEntry ? <>target {weightStr}</> : weightStr}
-                            </span>
-                          )}
-                        </div>
-                        <span className="text-[10px] text-gray-400 dark:text-slate-500 shrink-0 mt-0.5">
-                          {row.authors.length > 0 && <span className="mr-2">{row.authors.join(", ")}</span>}
-                          {row.date}
-                        </span>
-                      </div>
+                      <ProposalRow
+                        key={(c.id || ri) + "-" + port}
+                        company={c}
+                        port={port}
+                        heldTicker={heldTicker}
+                        actionEntry={actionEntry}
+                        targetEntry={targetEntry}
+                        actionColor={actionColor}
+                        authorColor={authorColor}
+                        authors={row.authors}
+                        date={row.date}
+                        weightStr={weightStr}
+                        comments={comments}
+                        currentUser={currentUser}
+                        onComment={onComment}
+                      />
                     );
                   })}
                 </div>
@@ -442,6 +483,95 @@ function AgendaSummary({ profilePorts, pendingByPort, recentChanges, targetChang
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/* ===== PROPOSAL ROW (with comments) ===== */
+
+function ProposalRow({ company, port, heldTicker, actionEntry, targetEntry, actionColor, authorColor, authors, date, weightStr, comments, currentUser, onComment }) {
+  const [showComment, setShowComment] = useState(false);
+  const [commentText, setCommentText] = useState("");
+  /* Which entry to attach comments to — prefer the target entry if
+     present (it's usually the "newer" decision), else the action stamp.
+     Either way, both entries' comments are surfaced in the merged list. */
+  const commentTargetId = (targetEntry && targetEntry.id) || (actionEntry && actionEntry.id);
+  function postComment() {
+    if (!commentText.trim() || !commentTargetId) return;
+    onComment(company.id, commentTargetId, commentText);
+    setCommentText("");
+    setShowComment(false);
+  }
+  return (
+    <div className="py-1 border-b border-amber-100 dark:border-amber-900/40 last:border-b-0">
+      <div className="flex items-start gap-2 text-xs">
+        {authorColor && (
+          <span className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background: authorColor }} title={authors.join(", ")} />
+        )}
+        {actionEntry && (
+          <span
+            className="text-[10px] px-1.5 py-0.5 rounded font-bold text-white shrink-0 mt-0.5"
+            style={{ background: actionColor || "#64748b" }}
+            title={"Proposed " + actionEntry.action}
+          >{actionEntry.action}</span>
+        )}
+        <div className="flex flex-col min-w-0 flex-1">
+          <span className="font-medium text-gray-900 dark:text-slate-100">
+            {heldTicker}
+            <span className="text-gray-500 dark:text-slate-400 font-normal ml-1.5">{company.name || ""}</span>
+          </span>
+          {weightStr && (
+            <span className="font-mono text-amber-800 dark:text-amber-300 text-[11px]">{weightStr}</span>
+          )}
+        </div>
+        <div className="text-[10px] text-gray-400 dark:text-slate-500 shrink-0 mt-0.5 text-right">
+          <div>
+            {authors.length > 0 && <span className="mr-2">{authors.join(", ")}</span>}
+            {date}
+          </div>
+          <button
+            onClick={function () { setShowComment(!showComment); }}
+            className="text-blue-600 dark:text-blue-400 hover:underline cursor-pointer text-[10px] mt-0.5"
+            title="Add a comment to this proposal"
+          >
+            💬 {comments.length > 0 ? "Comment (" + comments.length + ")" : "Comment"}
+          </button>
+        </div>
+      </div>
+      {/* Existing comments — always visible when present so the
+          thread reads naturally without needing to expand each row. */}
+      {comments.length > 0 && (
+        <div className="ml-6 mt-1 space-y-0.5 pl-2 border-l-2 border-amber-200 dark:border-amber-800">
+          {comments.map(function (cm) {
+            var cmColor = TEAM_COLORS[cm.author] || "#94a3b8";
+            return (
+              <div key={cm.id} className="text-[11px]">
+                <span className="inline-block w-1.5 h-1.5 rounded-full mr-1.5 align-middle" style={{ background: cmColor }} />
+                <span className="font-semibold text-gray-700 dark:text-slate-300">{cm.author}</span>
+                <span className="text-gray-400 dark:text-slate-500 text-[9px] ml-1.5">{cm.date}</span>
+                <div className="ml-3 text-gray-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">{cm.text}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {/* Comment composer — toggled by the 💬 button. Posts to the
+          targetEntry's id if present, else the actionEntry's id. */}
+      {showComment && commentTargetId && (
+        <div className="ml-6 mt-1 flex gap-1">
+          <input
+            type="text"
+            value={commentText}
+            onChange={function (e) { setCommentText(e.target.value); }}
+            onKeyDown={function (e) { if (e.key === "Enter") postComment(); if (e.key === "Escape") { setShowComment(false); setCommentText(""); } }}
+            placeholder={"Your comment (visible to all teammates)…"}
+            autoFocus
+            className="flex-1 text-[11px] px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+          />
+          <button onClick={postComment} className="text-[11px] px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white rounded cursor-pointer">Post</button>
+          <button onClick={function () { setShowComment(false); setCommentText(""); }} className="text-[11px] px-2 py-0.5 border border-slate-200 dark:border-slate-700 rounded cursor-pointer">Cancel</button>
+        </div>
+      )}
     </div>
   );
 }

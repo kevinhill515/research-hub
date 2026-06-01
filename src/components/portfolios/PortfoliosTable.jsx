@@ -122,7 +122,20 @@ export function PortfoliosTable(props) {
     companies, repData, fxRates, specialWeights, annotations, dark,
     updateTargetWeight, markTradeAgenda, alertRules, lastPriceUpdate,
     proposeTargetWeight, clearProposedWeight, commitProposedWeights,
+    refreshCompaniesFromSupabase,
   } = useCompanyContext();
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshMsg, setRefreshMsg] = useState("");
+  async function refreshPortfolios() {
+    if (refreshing) return;
+    setRefreshing(true);
+    setRefreshMsg("");
+    var n = await refreshCompaniesFromSupabase();
+    setRefreshing(false);
+    if (n === -1) setRefreshMsg("Refresh failed");
+    else setRefreshMsg("✓ " + n + " refreshed");
+    setTimeout(function () { setRefreshMsg(""); }, 3000);
+  }
 
   /* ---- Pending proposals on the active portfolio. Counts both target-%
      proposals (isAgenda:true with newWeight, no action) and B/A/P/S
@@ -473,9 +486,24 @@ export function PortfoliosTable(props) {
             Rep AUM: ${totalMV.toLocaleString(undefined, { maximumFractionDigits: 0 })}
           </span>
         )}
+        {/* Refresh button — re-fetches just the companies table from
+            Supabase so the team can pick up teammates' proposals during
+            a meeting without paying the full app reload cost. Same
+            helper the PM Meeting modal uses. */}
+        <button
+          onClick={refreshPortfolios}
+          disabled={refreshing}
+          className={BTN_SM + " ml-auto no-print" + (refreshing ? " opacity-50 cursor-not-allowed" : "")}
+          title="Re-fetch portfolio data from Supabase (pulls just companies — light, ~1 connection). Use during meetings to see teammates' just-submitted proposals."
+        >
+          {refreshing ? "↻ Refreshing…" : "↻ Refresh"}
+        </button>
+        {refreshMsg && (
+          <span className="text-[11px] text-emerald-700 dark:text-emerald-300 no-print">{refreshMsg}</span>
+        )}
         <button
           onClick={function () { openDiscussions({ scope: "portfolio", portfolio: portTab }); }}
-          className={BTN_SM + " ml-auto no-print"}
+          className={BTN_SM + " no-print"}
         >
           💬 Discuss
           {portAnnotations.length > 0 && (

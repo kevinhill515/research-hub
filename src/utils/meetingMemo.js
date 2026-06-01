@@ -150,7 +150,9 @@ function formatAgendaLines(company, entries, repData) {
     const group = slot.group;
     if (action === "Sell") {
       const ports = group.map(function (e) { return PORT_MEMO_LABELS[e.port] || e.port; }).join(", ");
-      lines.push(ticker + " (" + (company.name || "?") + ") – Sell (" + ports + ")");
+      /* "Sell All" instead of "Sell" — makes the intent explicit on
+         the compliance memo (full exit, not a trim). */
+      lines.push(ticker + " (" + (company.name || "?") + ") – Sell All (" + ports + ")");
       return;
     }
     let verb;
