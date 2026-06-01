@@ -13,6 +13,24 @@ import {
   fmtPrice, fmtMOS, fmtMOS0, shortSector, sectorStyle, countryStyle, truncName,
 } from "../../utils/index.js";
 import FpeRangeMini from "../ui/FpeRangeMini.jsx";
+import { TEAM_COLORS } from "../../constants/index.js";
+import { useCompanyContext } from "../../context/CompanyContext.jsx";
+
+const RECENT_TARGET_CHANGE_DAYS = 6;
+/* Build the same stable key the Meeting Memo modal uses for target-change
+   acknowledgments. Both surfaces have to agree on the key or "mark as
+   seen" in one place won't quiet the pill in the other. */
+function targetChangeKey(co, h) {
+  if (h && h.id) return h.id;
+  return (co.id || "") + "|" + (h.portfolio || "") + "|" + (h.date || "") + "|" +
+    (h.newWeight != null ? h.newWeight : h.weight);
+}
+function _daysAgo(iso) {
+  if (!iso) return Infinity;
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return Infinity;
+  return Math.floor((Date.now() - d.getTime()) / 86400000);
+}
 
 const CELL_BASE = "align-middle pr-3 py-1.5";
 
@@ -86,6 +104,42 @@ function PortfolioRow(props) {
     }
     return null;
   })();
+  /* Author of the active B/A/P/S stamp — used to render a small
+     TEAM_COLORS dot on the active button so teammates can see WHO
+     proposed it at a glance. Data was already in portWeightHistory
+     but wasn't surfaced before. */
+  const rowAgendaAuthor = (function () {
+    const hist = company.portWeightHistory || [];
+    for (let i = 0; i < hist.length; i++) {
+      const h = hist[i];
+      if (h.isAgenda && h.portfolio === portTab && h.action) return h.author || h.user || null;
+    }
+    return null;
+  })();
+  /* Recent committed (non-agenda) target-weight change on this row's
+     portfolio that the current user hasn't acknowledged yet. Surfaces
+     as an amber ⏳ pill next to the Target % cell so a teammate's
+     overnight change jumps out — without forcing the user to dig
+     through the Meeting Memo modal. */
+  const { targetChangeReads, currentUser, markTargetChangeRead } = useCompanyContext();
+  const unreadTargetChange = (function () {
+    const hist = company.portWeightHistory || [];
+    const reads = targetChangeReads || {};
+    for (let i = 0; i < hist.length; i++) {
+      const h = hist[i];
+      if (!h || h.isAgenda) continue;
+      if (h.portfolio !== portTab) continue;
+      if (_daysAgo(h.date) > RECENT_TARGET_CHANGE_DAYS) continue;
+      const key = targetChangeKey(company, h);
+      const seenBy = reads[key] || [];
+      if (seenBy.indexOf(currentUser) >= 0) continue;
+      /* Don't surface a "change" if the user themselves made it. They
+         already know. */
+      if ((h.author || h.user) === currentUser) continue;
+      return { key: key, h: h };
+    }
+    return null;
+  })();
   const TRADE_BTNS = [
     ["B", "Buy",  "#16a34a"],
     ["A", "Add",  "#0891b2"],
@@ -136,15 +190,29 @@ function PortfolioRow(props) {
             >
               {TRADE_BTNS.map(function (b) {
                 const active = rowAgendaAction === b[1];
+                /* Author dot — TEAM_COLORS pip in the top-right corner
+                   of the active button. Surfaces who stamped this
+                   B/A/P/S without making the user dig through the
+                   PM Meeting modal. Data was already in
+                   portWeightHistory[].author; previously unused in UI. */
+                const dotColor = active && rowAgendaAuthor ? (TEAM_COLORS[rowAgendaAuthor] || null) : null;
                 return (
                   <button
                     key={b[0]}
                     type="button"
                     onClick={function (e) { e.stopPropagation(); markTradeAgenda(c.id, portTab, b[1]); }}
-                    title={"Stamp " + b[1] + " on the trading agenda for " + portTab}
-                    className={"text-[10px] font-bold w-5 h-5 rounded-sm leading-none border transition-colors " + (active ? "text-white shadow" : "text-gray-500 dark:text-slate-400 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 hover:border-slate-400 hidden group-hover:inline-block")}
+                    title={active && rowAgendaAuthor ? "Stamped by " + rowAgendaAuthor + " — click to clear" : ("Stamp " + b[1] + " on the trading agenda for " + portTab)}
+                    className={"relative text-[10px] font-bold w-5 h-5 rounded-sm leading-none border transition-colors " + (active ? "text-white shadow" : "text-gray-500 dark:text-slate-400 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 hover:border-slate-400 hidden group-hover:inline-block")}
                     style={active ? { background: b[2], borderColor: b[2] } : undefined}
-                  >{b[0]}</button>
+                  >
+                    {b[0]}
+                    {dotColor && (
+                      <span
+                        className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full ring-1 ring-white dark:ring-slate-900"
+                        style={{ background: dotColor }}
+                      />
+                    )}
+                  </button>
                 );
               })}
             </span>
@@ -369,8 +437,19 @@ function PortfolioRow(props) {
             className="w-14 px-1 py-0 text-sm rounded border border-blue-400 dark:border-blue-500 bg-white dark:bg-slate-900 focus:outline-none"
           />
         ) : (
-          <span className="cursor-text hover:bg-slate-100 dark:hover:bg-slate-800 px-1 rounded">
-            {target > 0 ? parseFloat(target).toFixed(1) + "%" : "--"}
+          <span className="inline-flex items-center gap-1">
+            <span className="cursor-text hover:bg-slate-100 dark:hover:bg-slate-800 px-1 rounded">
+              {target > 0 ? parseFloat(target).toFixed(1) + "%" : "--"}
+            </span>
+            {unreadTargetChange && (
+              <span
+                onClick={function (e) { e.stopPropagation(); markTargetChangeRead(unreadTargetChange.key); }}
+                title={"Target changed " + unreadTargetChange.h.date +
+                  (unreadTargetChange.h.author ? " by " + unreadTargetChange.h.author : "") +
+                  " — click to mark seen"}
+                className="text-amber-600 dark:text-amber-400 hover:text-amber-800 cursor-pointer text-[11px] leading-none"
+              >⏳</span>
+            )}
           </span>
         )}
       </Cell>
