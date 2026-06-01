@@ -294,6 +294,8 @@ export function MeetingMemoModal({ open, onClose }) {
               onClear={clearAgenda}
               onDiscard={discardProfileAgenda}
               hasPending={totalPendingCount > 0}
+              profilePorts={profilePorts}
+              profile={profile}
             />
           )}
         </div>
@@ -718,26 +720,36 @@ function ProposalRow({ company, port, heldTicker, actionEntry, targetEntry, acti
 
 /* ===== GENERATE TAB ===== */
 
-function GenerateView({ memo, copied, onCopy, onClear, onDiscard, hasPending }) {
+function GenerateView({ memo, copied, onCopy, onClear, onDiscard, hasPending, profilePorts, profile }) {
+  /* Button labels include the active profile's ports so it's always
+     unambiguous what gets cleared — Tue clears FIN/IN/FGL/GL, Thu
+     clears EM/SC. Same buttons on either tab; only the scope label
+     changes. Discard button is ALWAYS rendered (just disabled when
+     nothing's pending) so it's discoverable on both profiles even
+     when one happens to have an empty agenda. */
+  var portsLabel = (profilePorts || []).join(" / ") || (profile === "thursday" ? "EM / SC" : "FIN / IN / FGL / GL");
   return (
     <div>
       <div className="flex items-center gap-2 mb-2 flex-wrap">
         <button onClick={onCopy} className={BTN_PRIMARY}>{copied ? "✓ Copied" : "Copy to clipboard"}</button>
-        <button onClick={onClear} className={BTN_GHOST} title="Mark every Trading Agenda entry as executed AND save this memo to the Log tab. After this, those entries surface in 'Allocation Changes' on future memos instead of 'Trading Agenda'.">
-          Mark executed + log
+        <button onClick={onClear} className={BTN_GHOST} title={"Mark every pending agenda entry on " + portsLabel + " as executed AND save this memo to the Log tab. After this, those entries surface in 'Allocation Changes' on future memos."}>
+          Mark executed + log ({portsLabel})
         </button>
-        {/* Discard-only path — removes pending agenda items without
-            committing them OR saving a memo. For when the team threw
-            out everything proposed and you want a clean slate. */}
-        {hasPending && onDiscard && (
-          <button
-            onClick={onDiscard}
-            className="text-xs px-3 py-1.5 font-medium rounded-md border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 cursor-pointer hover:bg-rose-100 dark:hover:bg-rose-900/40 transition-colors"
-            title="DELETE all pending agenda entries (target % proposals + B/A/P/S stamps) for this meeting's portfolios. Does NOT save a memo, does NOT commit any change. CASH is restored. Use when the team threw out the proposals."
-          >
-            Clear agenda (discard)
-          </button>
-        )}
+        {/* Discard-only path — always rendered, disabled state when
+            no pending entries on this profile. Removes pending agenda
+            items without committing or saving a memo. */}
+        <button
+          onClick={hasPending ? onDiscard : undefined}
+          disabled={!hasPending}
+          className={"text-xs px-3 py-1.5 font-medium rounded-md border transition-colors " + (hasPending
+            ? "border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 cursor-pointer hover:bg-rose-100 dark:hover:bg-rose-900/40"
+            : "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-gray-400 dark:text-slate-500 cursor-not-allowed")}
+          title={hasPending
+            ? "DELETE all pending agenda entries (target % proposals + B/A/P/S stamps) on " + portsLabel + ". Does NOT save a memo, does NOT commit. CASH is restored."
+            : "No pending entries on " + portsLabel + " to clear."}
+        >
+          Clear agenda ({portsLabel})
+        </button>
       </div>
       <textarea
         value={memo}
