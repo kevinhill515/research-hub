@@ -12,6 +12,7 @@ import { GlobalSearch, TemplateSearch, QuickUploadModal, DiscussionsPanel, TpApp
 import { CoRow, OverlapMatrix } from './components/tables/index.js';
 import { EarningsCalendar } from './components/calendar/index.js';
 import { useCompanyContext } from './context/CompanyContext.jsx';
+import { MEETING_PROFILES } from './utils/meetingMemo.js';
 import { ErrorBoundary } from './components/ErrorBoundary.jsx';
 /* Dashboard subtabs are lazy-loaded — recharts (~150KB gz) only ships
    to users who actually open a dashboard view. Each lazy() compiles to
@@ -37,7 +38,7 @@ import { FeedbackTab } from './components/feedback/FeedbackTab.jsx';
 
 /* Components extracted to src/components/ — see barrel index.js files in each subdirectory */
 export default function App(){
-  const { companies, setCompanies, saved, setSaved, ready, setReady, loadStatus, setLoadStatus, loadFailed, tpApprovals, saveStatus, lastPriceUpdate, setLastPriceUpdate, lastPriceUpdatedBy, setLastPriceUpdatedBy, entryComments, setEntryComments, newCommentText, setNewCommentText, repData, setRepData, fxRates, setFxRates, specialWeights, setSpecialWeights, benchmarkWeights, alertRules, currentUser, setCurrentUser, dark, setDark, authed, setAuthed, showUserPicker, setShowUserPicker, calLastUpdated, setCalLastUpdated, calLastUpdatedBy, setCalLastUpdatedBy, repLastUpdated, setRepLastUpdated, fxLastUpdated, setFxLastUpdated, copied, setCopied, loadFromStorage, addComment, deleteComment, updateCo, cp, annotations, updateTargetWeight, addTargetHistoryEntry, deleteTargetHistoryEntry, addTransaction, deleteTransaction, setTxInitOverride, updateInitiatedDate } = useCompanyContext();
+  const { companies, setCompanies, saved, setSaved, ready, setReady, loadStatus, setLoadStatus, loadFailed, tpApprovals, saveStatus, lastPriceUpdate, setLastPriceUpdate, lastPriceUpdatedBy, setLastPriceUpdatedBy, entryComments, setEntryComments, newCommentText, setNewCommentText, repData, setRepData, fxRates, setFxRates, specialWeights, setSpecialWeights, benchmarkWeights, alertRules, currentUser, setCurrentUser, dark, setDark, authed, setAuthed, showUserPicker, setShowUserPicker, calLastUpdated, setCalLastUpdated, calLastUpdatedBy, setCalLastUpdatedBy, repLastUpdated, setRepLastUpdated, fxLastUpdated, setFxLastUpdated, copied, setCopied, loadFromStorage, addComment, deleteComment, updateCo, cp, annotations, updateTargetWeight, addTargetHistoryEntry, deleteTargetHistoryEntry, addTransaction, deleteTransaction, setTxInitOverride, updateInitiatedDate, targetChangeReads } = useCompanyContext();
 
   /* Memoize the per-company warn-alerts map so CoRow can read its own
      entry without re-evaluating alerts on every render. Recomputes only
@@ -419,30 +420,52 @@ export default function App(){
           );
         })()}
         {(function(){
-          /* IC Meeting button \u2014 chip count matches the Agenda tab's
-             per-port "X companies pending" rollups exactly. Dedupes
-             per (company, port): a row in the Agenda tab represents
-             ONE (company, port) regardless of whether it carries a
-             B/A/P/S stamp, a target % proposal, or both. So a Buy +
-             target-bump on TSM in FOC = 1 row, not 2. */
-          var seenRows = {};
-          var pendingAgendaCount = 0;
-          (companies || []).forEach(function(c){
-            (c.portWeightHistory || []).forEach(function(h){
-              if (!h || !h.isAgenda || !h.portfolio) return;
-              var hasAction = !!h.action;
-              var hasTarget = !hasAction && h.newWeight !== undefined && h.newWeight !== null;
-              if (!hasAction && !hasTarget) return;
-              var key = c.id + "|" + h.portfolio;
-              if (seenRows[key]) return;
-              seenRows[key] = true;
-              pendingAgendaCount++;
+          /* IC Meeting chip \u2014 mirrors the EXACT calculation behind the
+             modal's "Agenda (N)" tab label, just summed across BOTH
+             meeting profiles (Tuesday MultiCap + Thursday EM/SC) so
+             the chip reflects everything across the team. Same as:
+                totalPendingCount (raw isAgenda:true entries in profile ports)
+              + unseenChangeCount (recent committed target moves the
+                current user hasn't acknowledged via targetChangeReads)
+             which is what the modal computes per-profile. */
+          var allMeetingPorts = [];
+          Object.values(MEETING_PROFILES || {}).forEach(function(p){
+            (p.ports || []).forEach(function(port){
+              if (allMeetingPorts.indexOf(port) < 0) allMeetingPorts.push(port);
             });
           });
+          var RECENT_DAYS = 6;
+          var todayMs = Date.now();
+          var totalPending = 0;
+          var unseenRecent = 0;
+          var reads = targetChangeReads || {};
+          (companies || []).forEach(function(c){
+            (c.portWeightHistory || []).forEach(function(h){
+              if (!h || !h.portfolio) return;
+              if (allMeetingPorts.indexOf(h.portfolio) < 0) return;
+              if (h.isAgenda) {
+                totalPending++;
+                return;
+              }
+              if (!h.date) return;
+              var d = new Date(h.date);
+              if (isNaN(d.getTime())) return;
+              if ((todayMs - d.getTime()) / 86400000 > RECENT_DAYS) return;
+              var key = h.id || (c.id + "|" + h.portfolio + "|" + h.date + "|" + (h.newWeight != null ? h.newWeight : h.weight));
+              var seenBy = reads[key] || [];
+              if (seenBy.indexOf(currentUser) < 0) unseenRecent++;
+            });
+          });
+          var chipCount = totalPending + unseenRecent;
           return (
             <button onClick={function(){setShowMeetingMemo(true);}} className={BTN+" relative"} title="Open the IC Meeting agenda + compliance memo">
               {"\uD83D\uDCDD"} IC Meeting
-              {pendingAgendaCount>0 && <span className="ml-1 text-[10px] px-1.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 font-semibold">{pendingAgendaCount}</span>}
+              {chipCount>0 && (
+                /* Purple chip \u2014 distinct from Discussions (blue) +
+                   TP Approvals (amber). Avoids red/green which carry
+                   their own semantic baggage. */
+                <span className="ml-1 text-[10px] px-1.5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 font-semibold">{chipCount}</span>
+              )}
             </button>
           );
         })()}
