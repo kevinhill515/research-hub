@@ -1043,31 +1043,77 @@ class ExcelSession:
                         break
                     except Exception:
                         continue
-                time.sleep(0.5)
-                # Attempt 1: Alt+S, R, W (ribbon navigation).
+                # Force Excel to the foreground via Win32 so SendKeys
+                # actually lands there. AppActivate is best-effort and
+                # doesn't always make Excel the foreground window;
+                # background apps can keep focus and silently eat the
+                # keystrokes. SetForegroundWindow + ShowWindow(SW_RESTORE)
+                # together handle minimized + obscured states.
                 try:
-                    shell.SendKeys("%s")     # Alt+S → opens FactSet ribbon
-                    time.sleep(0.6)
-                    shell.SendKeys("r")      # → Refresh menu/group
+                    import ctypes
+                    user32 = ctypes.windll.user32
+                    hwnd = int(self.xl.Hwnd) if hasattr(self.xl, "Hwnd") else 0
+                    if hwnd:
+                        SW_RESTORE = 9
+                        user32.ShowWindow(hwnd, SW_RESTORE)
+                        # AttachThreadInput trick to bypass Windows'
+                        # foreground-lock: temporarily attach our thread
+                        # to the foreground thread, then SetForegroundWindow
+                        # is allowed. Safe to no-op on errors.
+                        try:
+                            fg_hwnd = user32.GetForegroundWindow()
+                            cur_tid = ctypes.windll.kernel32.GetCurrentThreadId()
+                            fg_tid = user32.GetWindowThreadProcessId(fg_hwnd, None)
+                            if fg_tid and fg_tid != cur_tid:
+                                user32.AttachThreadInput(cur_tid, fg_tid, True)
+                                user32.SetForegroundWindow(hwnd)
+                                user32.AttachThreadInput(cur_tid, fg_tid, False)
+                            else:
+                                user32.SetForegroundWindow(hwnd)
+                        except Exception:
+                            user32.SetForegroundWindow(hwnd)
+                        log(f"  Excel foreground: hwnd={hwnd} (SetForegroundWindow)")
+                except Exception as e:
+                    log(f"  Foreground force failed (continuing): {type(e).__name__}: {e}")
+                time.sleep(0.8)
+                # Attempt 1: Alt+S, R, W as separate keystrokes.
+                # CRITICAL: the QAT/ribbon keytip path requires Alt to
+                # be tapped ALONE first (activates keytips), then the
+                # letter pressed. SendKeys("%s") sends Alt+S as a single
+                # modifier+key combo, which is a different keystroke
+                # event class — Office may not interpret it as the
+                # keytip chord. Sending "%" alone (Alt tap-and-release)
+                # then "s" as a separate keystroke mimics actual user
+                # behavior and reliably activates the FactSet tab.
+                try:
+                    shell.SendKeys("%")      # Alt tap — activates keytip overlay
+                    time.sleep(0.5)
+                    shell.SendKeys("s")      # FactSet tab keytip
+                    time.sleep(0.7)
+                    shell.SendKeys("r")      # Refresh group keytip
                     time.sleep(0.4)
-                    shell.SendKeys("w")      # → Workbook
-                    log(f"  SendKeys Alt+S, R, W (ribbon path) "
-                        f"{'activated=' + str(activated)}")
+                    shell.SendKeys("w")      # Workbook keytip
+                    log(f"  SendKeys Alt, S, R, W (separated keystrokes, ribbon path) "
+                        f"activated={activated}")
                     time.sleep(2)
                     macro_ok = True
                 except Exception as e:
-                    log(f"  SendKeys Alt+S,R,W failed: {type(e).__name__}: {e}")
-                # Attempt 2: Alt+<N> QAT fallback. Only fires when the
-                # ribbon path didn't claim success.
+                    log(f"  SendKeys Alt,S,R,W failed: {type(e).__name__}: {e}")
+                # Attempt 2: Alt then <N> QAT fallback — also as
+                # SEPARATED keystrokes for the same keytip-activation
+                # reason. Only fires when the ribbon path didn't claim
+                # success.
                 if not macro_ok and FACTSET_REFRESH_QAT_POS:
                     try:
-                        shell.SendKeys("%" + str(FACTSET_REFRESH_QAT_POS))
-                        log(f"  SendKeys Alt+{FACTSET_REFRESH_QAT_POS} (QAT fallback) "
-                            f"{'activated=' + str(activated)}")
+                        shell.SendKeys("%")  # Alt tap
+                        time.sleep(0.5)
+                        shell.SendKeys(str(FACTSET_REFRESH_QAT_POS))
+                        log(f"  SendKeys Alt, {FACTSET_REFRESH_QAT_POS} (separated, QAT fallback) "
+                            f"activated={activated}")
                         time.sleep(2)
                         macro_ok = True
                     except Exception as e:
-                        log(f"  SendKeys Alt+{FACTSET_REFRESH_QAT_POS} fallback failed: {type(e).__name__}: {e}")
+                        log(f"  SendKeys Alt,{FACTSET_REFRESH_QAT_POS} fallback failed: {type(e).__name__}: {e}")
             except Exception as e:
                 log(f"  SendKeys outer setup failed: {type(e).__name__}: {e}")
         if not macro_ok:
