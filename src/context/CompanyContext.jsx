@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useRef } from "react";
-import { supaGet, supaGetAll, supaUpsert, supaDelete } from '../api/index.js';
+import { supaGet, supaGetAll, supaGetMetaMany, supaUpsert, supaDelete } from '../api/index.js';
 import { todayStr, inferQuarter } from '../utils/index.js';
 import { DEFAULT_PERF_SERIES, findDefaultSeries } from '../constants/perfDefaults.js';
 
@@ -195,34 +195,49 @@ export function CompanyProvider({children}){
   async function loadFromStorage(){
     setLoadStatus({companies:null,library:null});
     var coOk=false,libOk=false;
-    /* Fan out all 15 reads in parallel — they're independent and were
-       previously awaited serially, adding 15× per-call latency on cold
-       start. Wrap each in a try so a single failure doesn't block the
-       rest, and let Promise.all return the array. */
+    /* Reload uses only THREE concurrent connections instead of the
+       previous 17 (1 library + 1 companies + 15 meta blobs). The meta
+       blobs all live in the same `meta` table and are now fetched in a
+       single request with PostgREST's in.() filter. Cuts the Supabase
+       connection-pool pressure 5-6x on every reload, which matters when
+       multiple teammates reload at the same time on free tier
+       (limited connections + concurrent sessions can wedge the project). */
     var safe=function(p){return p.then(function(r){return r;},function(){return null;});};
-    var [r,r2,r3,r4,r5,r6,r7,r8,r9,r10,r11,r12,r13,r14,r15,r16,r17]=await Promise.all([
+    /* The 15 meta keys we need at load time. Kept as a list so a single
+       in.() query covers them all. Order doesn't matter — we look up
+       each by key from the returned Map. */
+    var META_KEYS = [
+      "lastPriceUpdate","entryComments","calLastUpdated","repData","fxRates",
+      "specialWeights","annotations","researchAssignments","perfData","feedback",
+      "benchmarkWeights","alertRules","breakdownHistory","tpApprovals","memoLog",
+    ];
+    var [r, r2, metaMap] = await Promise.all([
       safe(supaGet("library","id","shared")),
-      /* Companies are now stored as one Supabase row per company (each
-         row's data column holds a single company JSON, ~30KB typical).
-         Pull every row in one request and parse each. The legacy "shared"
-         row containing the whole array is migrated below. */
+      /* Companies are stored as one row per company (each row's data
+         column holds a single company JSON, ~30KB typical). Pulled in
+         one request. The legacy "shared" single-blob row is migrated below. */
       safe(supaGetAll("companies")),
-      safe(supaGet("meta","key","lastPriceUpdate")),
-      safe(supaGet("meta","key","entryComments")),
-      safe(supaGet("meta","key","calLastUpdated")),
-      safe(supaGet("meta","key","repData")),
-      safe(supaGet("meta","key","fxRates")),
-      safe(supaGet("meta","key","specialWeights")),
-      safe(supaGet("meta","key","annotations")),
-      safe(supaGet("meta","key","researchAssignments")),
-      safe(supaGet("meta","key","perfData")),
-      safe(supaGet("meta","key","feedback")),
-      safe(supaGet("meta","key","benchmarkWeights")),
-      safe(supaGet("meta","key","alertRules")),
-      safe(supaGet("meta","key","breakdownHistory")),
-      safe(supaGet("meta","key","tpApprovals")),
-      safe(supaGet("meta","key","memoLog")),
+      safe(supaGetMetaMany(META_KEYS)),
     ]);
+    /* Unpack the meta Map into the named slots the rest of this function
+       expects. A missing key returns undefined (handled by the same
+       try/if(r3) guards that existed when each call was independent). */
+    var _m = metaMap || new Map();
+    var r3  = _m.get("lastPriceUpdate")     || null;
+    var r4  = _m.get("entryComments")       || null;
+    var r5  = _m.get("calLastUpdated")      || null;
+    var r6  = _m.get("repData")             || null;
+    var r7  = _m.get("fxRates")             || null;
+    var r8  = _m.get("specialWeights")      || null;
+    var r9  = _m.get("annotations")         || null;
+    var r10 = _m.get("researchAssignments") || null;
+    var r11 = _m.get("perfData")            || null;
+    var r12 = _m.get("feedback")            || null;
+    var r13 = _m.get("benchmarkWeights")    || null;
+    var r14 = _m.get("alertRules")          || null;
+    var r15 = _m.get("breakdownHistory")    || null;
+    var r16 = _m.get("tpApprovals")         || null;
+    var r17 = _m.get("memoLog")             || null;
     try{if(r){var d=JSON.parse(r.data);if(Array.isArray(d)&&d.length){var libMig=migrateTags(d);setSaved(libMig.data);libOk=libMig.data.length;if(libMig.changed)supaUpsert("library",{id:"shared",data:JSON.stringify(libMig.data)});}}}catch(e){}
     try{if(r2&&Array.isArray(r2)){
       /* Two formats coexist during migration:

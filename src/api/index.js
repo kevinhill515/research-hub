@@ -8,6 +8,34 @@ export async function supaGet(table,key,val){var col=table==="meta"?"value":"dat
    array of {id, data} objects, or null on error. */
 export async function supaGetAll(table){var col=table==="meta"?"key,value":"id,data";var r=await fetch(SUPA_URL+"/rest/v1/"+table+"?select="+col,{headers:{"apikey":"sb_publishable_7kqbGZlL_im9kIpgFXLA-A_9CdqsyiT","Authorization":"Bearer sb_publishable_7kqbGZlL_im9kIpgFXLA-A_9CdqsyiT"}});if(!r.ok)return null;try{return await r.json();}catch(e){return null;}}
 
+/* Bulk-fetch a set of meta keys in ONE request using PostgREST's
+   in.(...) filter. Returns a Map<key, {value}> for easy lookup, matching
+   the shape supaGet returns (so callers can drop in by reading .value).
+   Replaces the load-time pattern of firing 15+ parallel supaGet calls
+   (one per key), which spiked the Supabase connection pool on every
+   reload and contributed to "unhealthy project" failures when multiple
+   teammates reloaded simultaneously. A single combined request keeps
+   per-reload concurrent connections to ~3 (library + companies + meta).
+   Returns null on transport error so the caller can fall back. */
+export async function supaGetMetaMany(keys){
+  if(!keys || !keys.length) return new Map();
+  /* PostgREST's in.() takes a comma-separated list inside parens. URL-encode
+     each key so any unusual characters can't break the filter. */
+  var encoded = keys.map(function(k){ return encodeURIComponent(k); }).join(",");
+  var url = SUPA_URL + "/rest/v1/meta?select=key,value&key=in.(" + encoded + ")";
+  try {
+    var r = await fetch(url, { headers: {
+      "apikey":"sb_publishable_7kqbGZlL_im9kIpgFXLA-A_9CdqsyiT",
+      "Authorization":"Bearer sb_publishable_7kqbGZlL_im9kIpgFXLA-A_9CdqsyiT"
+    }});
+    if(!r.ok) return null;
+    var arr = await r.json();
+    var m = new Map();
+    if(Array.isArray(arr)) arr.forEach(function(row){ m.set(row.key, { value: row.value }); });
+    return m;
+  } catch(e){ return null; }
+}
+
 /* Upsert. `obj` may be a single row OR an array of rows — PostgREST
    handles arrays as bulk upsert in a single transaction (each row's
    INSERT...ON CONFLICT is fast since the data column stays small under
