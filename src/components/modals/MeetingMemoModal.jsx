@@ -71,16 +71,76 @@ export function MeetingMemoModal({ open, onClose }) {
     markMeetingProposalRead,
     targetChangeReads, markTargetChangeRead,
   } = useCompanyContext();
+  /* ALL hooks must run on every render — including when the modal is
+     closed — so the hook count stays stable. Don't move any useState /
+     useMemo below the `if (!open) return null` short-circuit, or React
+     throws error #310 ("rendered more hooks than during the previous
+     render") the moment the modal toggles. */
   const [tab, setTab] = useState("agenda"); /* "agenda" | "generate" | "log" */
   const [profile, setProfile] = useState("tuesday"); /* "tuesday" | "thursday" */
   const [copied, setCopied] = useState(false);
   const [expandedLogId, setExpandedLogId] = useState(null);
 
+  const memo = profile ? buildMeetingMemo(companies, profile, repData) : "";
+  const logEntries = memoLog || [];
+  const allProposals = meetingProposals || [];
+  const profilePorts = (MEETING_PROFILES[profile] && MEETING_PROFILES[profile].ports) || [];
+  const profilePortsKey = profilePorts.join(",");
+
+  /* Pending proposals scoped to the current meeting profile's ports.
+     Pending first (newest first within), then promoted, then withdrawn. */
+  const scopedProposals = useMemo(function () {
+    var inScope = allProposals.filter(function (p) {
+      return profilePorts.indexOf(p.portfolio) >= 0;
+    });
+    inScope.sort(function (a, b) {
+      var rank = { pending: 0, promoted: 1, withdrawn: 2 };
+      var ra = rank[a.status] != null ? rank[a.status] : 3;
+      var rb = rank[b.status] != null ? rank[b.status] : 3;
+      if (ra !== rb) return ra - rb;
+      return (b.suggestedAt || "").localeCompare(a.suggestedAt || "");
+    });
+    return inScope;
+  }, [allProposals, profilePortsKey]);
+
+  const totalPendingCount = allProposals.filter(function (p) { return p.status === "pending"; }).length;
+
+  /* Recent committed target-weight changes, scoped to the current
+     meeting's ports, from the last RECENT_CHANGE_DAYS. */
+  const recentChanges = useMemo(function () {
+    var out = [];
+    (companies || []).forEach(function (c) {
+      var hist = c.portWeightHistory || [];
+      hist.forEach(function (h) {
+        if (!h || h.isAgenda) return;
+        if (profilePorts.indexOf(h.portfolio) < 0) return;
+        if (daysAgo(h.date) > RECENT_CHANGE_DAYS) return;
+        var key = h.id || (c.id + "|" + h.portfolio + "|" + h.date + "|" + (h.newWeight != null ? h.newWeight : h.weight));
+        out.push({
+          key: key,
+          companyId: c.id,
+          companyName: c.name || c.ticker || "?",
+          ticker: c.ticker || "",
+          portfolio: h.portfolio,
+          date: h.date,
+          oldWeight: h.oldWeight != null ? h.oldWeight : (h.prevWeight != null ? h.prevWeight : null),
+          newWeight: h.newWeight != null ? h.newWeight : h.weight,
+          author: h.author || h.user || "",
+        });
+      });
+    });
+    out.sort(function (a, b) { return (b.date || "").localeCompare(a.date || ""); });
+    return out;
+  }, [companies, profilePortsKey]);
+
+  const unseenChangeCount = recentChanges.filter(function (rc) {
+    return !((targetChangeReads || {})[rc.key] || []).includes(currentUser);
+  }).length;
+
+  /* Now safe to early-return — every hook above ran. */
   if (!open) return null;
 
   function close() { setCopied(false); setExpandedLogId(null); onClose(); }
-
-  const memo = profile ? buildMeetingMemo(companies, profile, repData) : "";
 
   function copyMemo() {
     if (!memo) return;
@@ -103,68 +163,6 @@ export function MeetingMemoModal({ open, onClose }) {
     setCompanies(function (cs) { return clearAgendaFlags(cs, ports); });
     setTab("log");
   }
-
-  const logEntries = memoLog || [];
-  const allProposals = meetingProposals || [];
-
-  /* Pending proposals scoped to the current meeting profile's ports.
-     Withdrawn / promoted entries are pushed to the bottom — useful for
-     reference but visually de-emphasized. */
-  const profilePorts = (MEETING_PROFILES[profile] && MEETING_PROFILES[profile].ports) || [];
-  const scopedProposals = useMemo(function () {
-    var inScope = allProposals.filter(function (p) {
-      return profilePorts.indexOf(p.portfolio) >= 0;
-    });
-    /* Sort: pending first (newest first within), then promoted, then withdrawn. */
-    inScope.sort(function (a, b) {
-      var rank = { pending: 0, promoted: 1, withdrawn: 2 };
-      var ra = rank[a.status] != null ? rank[a.status] : 3;
-      var rb = rank[b.status] != null ? rank[b.status] : 3;
-      if (ra !== rb) return ra - rb;
-      return (b.suggestedAt || "").localeCompare(a.suggestedAt || "");
-    });
-    return inScope;
-  }, [allProposals, profilePorts.join(",")]);
-
-  /* Pending count across all profiles — used for the Agenda tab badge. */
-  const totalPendingCount = allProposals.filter(function (p) { return p.status === "pending"; }).length;
-
-  /* Recent target weight changes, scoped to the current meeting's
-     ports, from the last RECENT_CHANGE_DAYS. Reads each company's
-     portWeightHistory; only NON-agenda entries (the executed /
-     committed target moves, not pending B/A/P/S stamps). */
-  const recentChanges = useMemo(function () {
-    var out = [];
-    (companies || []).forEach(function (c) {
-      var hist = c.portWeightHistory || [];
-      hist.forEach(function (h, idx) {
-        if (!h || h.isAgenda) return;
-        if (profilePorts.indexOf(h.portfolio) < 0) return;
-        if (daysAgo(h.date) > RECENT_CHANGE_DAYS) return;
-        /* Synthetic stable key per (company, portfolio, date, value) tuple.
-           Used as the readBy bucket — works even when history entries lack
-           explicit ids. */
-        var key = h.id || (c.id + "|" + h.portfolio + "|" + h.date + "|" + (h.newWeight != null ? h.newWeight : h.weight));
-        out.push({
-          key: key,
-          companyId: c.id,
-          companyName: c.name || c.ticker || "?",
-          ticker: c.ticker || "",
-          portfolio: h.portfolio,
-          date: h.date,
-          oldWeight: h.oldWeight != null ? h.oldWeight : (h.prevWeight != null ? h.prevWeight : null),
-          newWeight: h.newWeight != null ? h.newWeight : h.weight,
-          author: h.author || h.user || "",
-        });
-      });
-    });
-    out.sort(function (a, b) { return (b.date || "").localeCompare(a.date || ""); });
-    return out;
-  }, [companies, profilePorts.join(",")]);
-
-  const unseenChangeCount = recentChanges.filter(function (rc) {
-    return !((targetChangeReads || {})[rc.key] || []).includes(currentUser);
-  }).length;
 
   return (
     <div className="fixed inset-0 bg-black/50 z-[1500] flex items-start justify-center p-4 overflow-y-auto" onClick={close}>
