@@ -708,7 +708,21 @@ export function CompanyDetail(props){
                   <div className="px-3 py-2 rounded-lg" style={{background:tp!==null?"#dcfce7":undefined,border:"1px solid "+(tp!==null?"#86efac":"#e2e8f0")}}>
                     <div className="text-[10px] text-gray-500 dark:text-slate-400 mb-0.5">TP Live{impliedFYLabel(pv)?" ("+impliedFYLabel(pv)+")":""}</div>
                     <div className="text-[16px] font-bold leading-tight" style={{color:tp!==null?"#166534":undefined}}>{fmtTP(tp,activeCurrency)}</div>
-                    {tp!==null&&<div className="text-[10px] text-gray-500 dark:text-slate-400 mt-0.5">{pv.pe}x {"\u00D7"} {activeCurrency} {eps&&eps.toFixed?eps.toFixed(2):eps}</div>}
+                    {tp!==null&&<div className="text-[10px] text-gray-500 dark:text-slate-400 mt-0.5">{pv.pe}\u00D7 \u00D7 {activeCurrency} {eps&&eps.toFixed?eps.toFixed(2):eps}</div>}
+                    {/* EPS breakdown \u2014 what's blended into normEPS. Shows
+                        the team where each Live FactSet number is
+                        landing, no need to dig through the EPS Inputs
+                        section below. Only renders when we have at
+                        least one EPS leg and weights to attribute. */}
+                    {(function(){
+                      var e1 = parseFloat(pv.eps1), e2 = parseFloat(pv.eps2);
+                      var w1 = parseFloat(pv.w1), w2 = parseFloat(pv.w2);
+                      var parts = [];
+                      if (isFinite(e1)) parts.push((pv.fy1 || "FY1") + ": " + activeCurrency + " " + e1.toFixed(2) + (isFinite(w1) ? " \u00D7 " + w1 + "%" : ""));
+                      if (isFinite(e2)) parts.push((pv.fy2 || "FY2") + ": " + activeCurrency + " " + e2.toFixed(2) + (isFinite(w2) ? " \u00D7 " + w2 + "%" : ""));
+                      if (!parts.length) return null;
+                      return <div className="text-[10px] text-gray-500 dark:text-slate-400 mt-0.5">{parts.join(" + ")}</div>;
+                    })()}
                   </div>
                   <div className="px-3 py-2 rounded-lg" style={{background:mosStyle?mosStyle.bg:undefined,border:"1px solid "+(mosStyle?"transparent":"#e2e8f0")}}>
                     <div className="text-[10px] mb-0.5" style={{color:mosStyle?mosStyle.color:undefined}}>MOS Live</div>
@@ -722,7 +736,43 @@ export function CompanyDetail(props){
                   <div className="px-3 py-2 rounded-lg" style={{background:tpFixed!==null?"#ecfdf5":undefined,border:"1px solid "+(tpFixed!==null?"#a7f3d0":"#e2e8f0")}}>
                     <div className="text-[10px] text-gray-500 dark:text-slate-400 mb-0.5">TP Fixed {pv.tpFixedDate?"("+fmtDateUS(pv.tpFixedDate)+")":(pv.normEPSFixedDate?"("+fmtDateUS(pv.normEPSFixedDate)+")":"")}</div>
                     <div className="text-[16px] font-bold leading-tight" style={{color:tpFixed!==null?"#047857":undefined}}>{tpFixed!==null?fmtTP(tpFixed,activeCurrency):"--"}</div>
-                    {tpFixed!==null&&impliedNormEPSFixed!==null&&<div className="text-[10px] text-gray-500 dark:text-slate-400 mt-0.5">implied EPS: {activeCurrency} {impliedNormEPSFixed.toFixed(2)}</div>}
+                    {/* Fixed PE × Fixed normEPS = TP Fixed. Same shape as
+                        the TP Live tile so the eye reads "this is what
+                        was locked in at the last approval." If the
+                        per-leg Fixed EPS values aren't stored
+                        (pre-approval-flow legacy rows), fall back to
+                        the implied-EPS calc with an "implied" tag. */}
+                    {(function(){
+                      if (tpFixed === null) return null;
+                      var peF = parseFloat(pv.peFixed);
+                      var pe = isFinite(peF) && peF > 0 ? peF : parseFloat(pv.pe);
+                      var e1F = parseFloat(pv.eps1Fixed), e2F = parseFloat(pv.eps2Fixed);
+                      var w1F = parseFloat(pv.w1Fixed),   w2F = parseFloat(pv.w2Fixed);
+                      var hasLeg = isFinite(e1F) || isFinite(e2F);
+                      if (hasLeg) {
+                        var parts = [];
+                        if (isFinite(e1F)) parts.push((pv.fy1Fixed || pv.fy1 || "FY1") + ": " + activeCurrency + " " + e1F.toFixed(2) + (isFinite(w1F) ? " × " + w1F + "%" : ""));
+                        if (isFinite(e2F)) parts.push((pv.fy2Fixed || pv.fy2 || "FY2") + ": " + activeCurrency + " " + e2F.toFixed(2) + (isFinite(w2F) ? " × " + w2F + "%" : ""));
+                        /* Blended normEPS Fixed for the headline line. */
+                        var blended = null;
+                        if (isFinite(e1F) && isFinite(e2F) && isFinite(w1F) && isFinite(w2F)) {
+                          blended = (e1F * w1F + e2F * w2F) / 100;
+                        } else if (isFinite(e1F)) blended = e1F;
+                        else if (isFinite(e2F)) blended = e2F;
+                        return (
+                          <>
+                            {isFinite(pe) && blended !== null && (
+                              <div className="text-[10px] text-gray-500 dark:text-slate-400 mt-0.5">{pe}× × {activeCurrency} {blended.toFixed(2)}</div>
+                            )}
+                            <div className="text-[10px] text-gray-500 dark:text-slate-400 mt-0.5">{parts.join(" + ")}</div>
+                          </>
+                        );
+                      }
+                      if (impliedNormEPSFixed !== null) {
+                        return <div className="text-[10px] text-gray-500 dark:text-slate-400 mt-0.5">implied EPS: {activeCurrency} {impliedNormEPSFixed.toFixed(2)}</div>;
+                      }
+                      return null;
+                    })()}
                     {pendingTP !== null && (
                       <div className="text-[10px] mt-0.5 font-medium" style={{color:"#b45309"}} title={"Pending TP change submitted by " + (pendingApproval.suggestedBy || "teammate") + " on " + (pendingApproval.suggestedAt || "?")}>
                         ⏳ Pending: <span className="font-bold">{fmtTP(pendingTP, activeCurrency)}</span>
@@ -753,11 +803,7 @@ export function CompanyDetail(props){
                   tpFixed={tpFixed}
                   activeCurrency={activeCurrency}
                 />
-                {/* Snapshot controls for the fixed TP. User enters TP Fixed
-                    directly (or imports it via the Valuation upload); the
-                    implied NormEPS = TP Fixed / Target P/E is shown on the
-                    tile above for context. "Snapshot current" copies the
-                    current (live, FactSet-derived) TP into TP Fixed. */}
+                {false && (
                 <div className="flex items-center gap-2 mb-4 flex-wrap text-xs">
                   <label className="text-gray-500 dark:text-slate-400">TP Fixed ({activeCurrency}):</label>
                   <input
@@ -789,6 +835,7 @@ export function CompanyDetail(props){
                   )}
                   <span className="text-[10px] text-gray-400 dark:text-slate-500 italic">Fixed until updated — FactSet estimate changes won't affect it.</span>
                 </div>
+                )}
  {/* 5-year P/E range visual — shows low/median/avg/high endpoints with a
                     marker at the current FPE. Rendered only when we have enough to place it. */}
                  {(function(){
@@ -843,12 +890,31 @@ export function CompanyDetail(props){
                     );
                   })()}
                  {(pv.peCurrent||pv.peLow5||pv.peHigh5||pv.peAvg5||pv.peMed5||true)&&<div className="flex gap-2 mb-4 flex-wrap">{[["Current",pv.peCurrent],["5Yr Low",pv.peLow5],["5Yr High",pv.peHigh5],["5Yr Avg",pv.peAvg5],["5Yr Median",pv.peMed5]].map(function(item){return item[1]?(<div key={item[0]} className="px-3.5 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 min-w-[80px]"><div className="text-[10px] text-gray-500 dark:text-slate-400 mb-0.5">{item[0]} {item[0]==="Current"?"FPE":"P/E"}</div><div className="text-base font-semibold text-gray-900 dark:text-slate-100">{(function(){var n=parseFloat(item[1]);return isNaN(n)?item[1]:n.toFixed(1);})()}x</div></div>):null;})}</div>}
-                {/* 2. Price, P/E, currency, FY month */}
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-3 mb-4">
-                  <div><label className={LABEL}>Current Price ({activeCurrency})</label><input type="number" step="0.01" value={pv.price||""} onChange={function(e){setPendingVal(function(p){return Object.assign({},p,{price:e.target.value});});}} placeholder="e.g. 45.20" className={INP + " w-full box-border"}/></div>
-                  <div><label className={LABEL}>Target P/E</label><input type="number" step="0.1" value={pv.pe||""} onChange={function(e){setPendingVal(function(p){return Object.assign({},p,{pe:e.target.value});});}} placeholder="e.g. 18.5" className={INP + " w-full box-border"}/></div>
-                  <div><label className={LABEL}>Fiscal Year End</label><select value={pv.fyMonth||""} onChange={function(e){setPendingVal(function(p){return Object.assign({},p,{fyMonth:e.target.value});});}} className={INP + " w-full"}><option value="">-- Month</option>{MONTHS.map(function(m){return <option key={m}>{m}</option>;})}</select></div>
-                  <div><label className={LABEL}>Reporting Currency</label><select value={pv.currency||currency} onChange={function(e){setPendingVal(function(p){return Object.assign({},p,{currency:e.target.value});});}} className={INP + " w-full"}>{ALL_CURRENCIES.map(function(c){return <option key={c}>{c}</option>;})}</select></div>
+                {/* Price / P/E inputs removed — both are already shown
+                    in the TP Live and TP Fixed cards above, and the
+                    Suggest TP Change panel is the right place to
+                    propose changes. FY-end month + Reporting Currency
+                    surfaced as a compact inline row instead (below)
+                    so they're still configurable when needed. */}
+                <div className="flex items-center gap-3 flex-wrap text-xs mb-3">
+                  <span className="text-gray-500 dark:text-slate-400">FY End:</span>
+                  <select
+                    value={pv.fyMonth||""}
+                    onChange={function(e){setPendingVal(function(p){return Object.assign({},p,{fyMonth:e.target.value});});commitValuation(selCo,Object.assign({},pv,{fyMonth:e.target.value}));}}
+                    className={INP + " !text-xs !px-2 !py-0.5 w-20"}
+                  >
+                    <option value="">--</option>
+                    {MONTHS.map(function(m){return <option key={m}>{m}</option>;})}
+                  </select>
+                  <span className="text-gray-400 dark:text-slate-500">·</span>
+                  <span className="text-gray-500 dark:text-slate-400">Reporting currency:</span>
+                  <select
+                    value={pv.currency||currency}
+                    onChange={function(e){setPendingVal(function(p){return Object.assign({},p,{currency:e.target.value});});commitValuation(selCo,Object.assign({},pv,{currency:e.target.value}));}}
+                    className={INP + " !text-xs !px-2 !py-0.5 w-20"}
+                  >
+                    {ALL_CURRENCIES.map(function(c){return <option key={c}>{c}</option>;})}
+                  </select>
                 </div>
 
                 {/* TP Live ↔ TP Fixed drift indicator. Surfaces when the
@@ -891,7 +957,12 @@ export function CompanyDetail(props){
                       TP change. Read-only (only written by approval) so
                       the team always knows what the "official" EPS
                       assumption is and the next TP proposal's "Previous"
-                      row can pre-fill from it. */}
+                      row can pre-fill from it. The whole block is
+                      gated off here — the cards above + Suggest TP
+                      Change panel now cover this surface. Left in code
+                      for reference in case the team needs a direct
+                      editor back later. */}
+                {false && (
                 <div className={CARD + " mb-3"}>
                   <div className={SECTION_LABEL}>EPS Inputs</div>
                   <div className="text-[10px] text-gray-500 dark:text-slate-400 mb-2 italic">
@@ -991,12 +1062,19 @@ export function CompanyDetail(props){
                     );
                   })()}
                 </div>
+                )}
 
-                {/* Save */}
+                {/* Save valuation row removed — there's no editable
+                    valuation form to save anymore. Live values come
+                    from FactSet imports; Fixed values come from
+                    approved TP suggestions; FY/Currency commit on
+                    change inline. */}
+                {false && (
                 <div className="flex gap-2 mb-5">
                   <button onClick={function(){commitValuation(selCo,pv);}} className={BTN_PRIMARY}>Save valuation</button>
                   <button onClick={function(){setPendingVal(Object.assign({},selCo.valuation||{}));}} className={BTN}>Discard changes</button>
                 </div>
+                )}
 
                 {/* 4. Fixed TP History.
                     Sorted by date descending so the most recent
@@ -1004,10 +1082,47 @@ export function CompanyDetail(props){
                     (idxMap) is preserved so the per-row delete button
                     can splice the correct entry out of selCo.tpHistory
                     regardless of the displayed order. */}
-                {selCo.tpHistory&&selCo.tpHistory.length>0&&(<div className="mb-5">
+                {(function(){
+                  var hasHist = selCo.tpHistory && selCo.tpHistory.length > 0;
+                  var pendingForCo = (tpApprovals || []).filter(function(a){
+                    return a.companyId === selCo.id && a.status === "pending";
+                  });
+                  if (!hasHist && pendingForCo.length === 0) return null;
+                  return (<div className="mb-5">
                   <div className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-2.5">Fixed TP History</div>
                   <div style={{display:"table",width:"100%"}} className="text-xs">
                     <div style={{display:"table-row"}}>{["Date","Target Price","P/E","EPS","Fiscal Quarter",""].map(function(h){return <div key={h} className="text-[10px] uppercase text-gray-500 dark:text-slate-400 font-semibold" style={{display:"table-cell",padding:"4px 10px 8px 0"}}>{h}</div>;})}</div>
+                    {/* Pending suggestion rows — surfaced ABOVE the
+                        committed history so the team sees what's
+                        awaiting approval right at the top. Each pending
+                        carries a ⏳ marker; on approval the entry
+                        disappears from this list and the new committed
+                        row takes its place below. */}
+                    {pendingForCo.map(function(rec){
+                      var pTp = rec.toTP != null && isFinite(rec.toTP) ? parseFloat(rec.toTP) : null;
+                      var pPe = rec.toPE != null && isFinite(rec.toPE) ? parseFloat(rec.toPE) : null;
+                      var pEps = pTp !== null && pPe !== null && pPe > 0 ? pTp / pPe : null;
+                      return (
+                        <div key={"pending-"+rec.id} style={{display:"table-row",background:"rgba(251,191,36,0.10)"}}>
+                          <div className="text-gray-700 dark:text-slate-200 font-mono" style={{display:"table-cell",padding:"6px 10px 6px 0"}}>
+                            ⏳ <span title={"Suggested by " + (rec.suggestedBy || "?") + " on " + (rec.suggestedAt || "?")}>{fmtDateUS(rec.suggestedAt)}</span>
+                          </div>
+                          <div className="text-amber-800 dark:text-amber-300 font-semibold font-mono" style={{display:"table-cell",padding:"6px 10px 6px 0"}}>
+                            {pTp !== null ? fmtTP(pTp, activeCurrency) : "—"}
+                          </div>
+                          <div className="text-gray-700 dark:text-slate-200 font-mono" style={{display:"table-cell",padding:"6px 10px 6px 0"}}>
+                            {pPe !== null ? pPe.toFixed(1) + "×" : "—"}
+                          </div>
+                          <div className="text-gray-700 dark:text-slate-200 font-mono" style={{display:"table-cell",padding:"6px 10px 6px 0"}}>
+                            {pEps !== null ? activeCurrency + " " + pEps.toFixed(2) : "—"}
+                          </div>
+                          <div className="text-gray-500 dark:text-slate-400 italic" style={{display:"table-cell",padding:"6px 10px 6px 0"}}>
+                            pending approval
+                          </div>
+                          <div style={{display:"table-cell",padding:"6px 10px 6px 0"}}></div>
+                        </div>
+                      );
+                    })}
                     {(function(){
                       var arr = (selCo.tpHistory||[]).map(function(h, originalIdx){ return { h: h, originalIdx: originalIdx }; });
                       arr.sort(function(a, b){ return (b.h.date || "").localeCompare(a.h.date || ""); });
@@ -1187,7 +1302,8 @@ export function CompanyDetail(props){
                       </div>);
                     })}
                   </div>
-                </div>)}
+                </div>);
+                })()}
               </div>)}
               {/* key={sectionName} forces a full remount on every
                   section switch — otherwise React reuses the same
