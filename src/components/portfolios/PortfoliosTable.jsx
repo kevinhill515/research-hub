@@ -162,6 +162,54 @@ export function PortfoliosTable(props) {
     return { targetCount: targetCount, stampCount: stampCount, byCompany: byCompany };
   }, [companies, portTab]);
 
+  /* ---- Cash projection bar: current rep CASH % vs target CASH % if
+     every pending proposal + Sell stamp on this port were committed
+     today. Helps the team see the cash impact of the meeting's
+     proposed trade slate at a glance before hitting Commit & log. */
+  const cashProjection = useMemo(function () {
+    var pRep = (repData || {})[portTab] || {};
+    var inPort = (companies || []).filter(function (c) { return (c.portfolios || []).indexOf(portTab) >= 0; });
+    var others = (companies || []).filter(function (c) { return (c.portfolios || []).indexOf(portTab) < 0; });
+    var owners = buildTickerOwners(inPort, others);
+    var totMV = calcTotalMV(inPort, pRep, fxRates, owners);
+    var cashMV = repShares(pRep.CASH);
+    var currentCashPct = totMV > 0 ? (cashMV / totMV) * 100 : 0;
+    /* Projected committed-weight sum: walk all companies, prefer
+       pending-proposal newWeight, then Sell-stamp 0, else committed. */
+    var sumCompanyTgt = 0;
+    inPort.forEach(function (c) {
+      var hist = c.portWeightHistory || [];
+      var pendingTgt = null;
+      var hasSell = false;
+      for (var i = 0; i < hist.length; i++) {
+        var h = hist[i];
+        if (!h || !h.isAgenda || h.portfolio !== portTab) continue;
+        if (!h.action && h.newWeight !== undefined && h.newWeight !== null && pendingTgt === null) {
+          pendingTgt = parseFloat(h.newWeight);
+        } else if (h.action === "Sell") {
+          hasSell = true;
+        }
+      }
+      var w;
+      if (pendingTgt !== null && isFinite(pendingTgt)) w = pendingTgt;
+      else if (hasSell) w = 0;
+      else w = parseFloat((c.portWeights || {})[portTab]) || 0;
+      sumCompanyTgt += w;
+    });
+    var divTgt = parseFloat((specialWeights.DIVACC || {})[portTab]) || 0;
+    var projectedCashTgt = Math.max(0, Math.round((100 - sumCompanyTgt - divTgt) * 10) / 10);
+    /* Compare projected target to current rep — both in percent units —
+       so the delta reads as "after these trades execute, cash should
+       sit at X%." */
+    var delta = projectedCashTgt - currentCashPct;
+    return {
+      currentCashPct: currentCashPct,
+      projectedCashTgt: projectedCashTgt,
+      delta: delta,
+      hasAnyPending: pendingSummary.targetCount > 0 || pendingSummary.stampCount > 0,
+    };
+  }, [companies, repData, fxRates, specialWeights, portTab, pendingSummary]);
+
   /* ---- Per-company alerts, memoized so evaluateAlertsForCompany doesn't
      run twice per row on every parent re-render (mobile + desktop both
      consume it). Keyed by company id; only the warn-severity ones are
@@ -515,6 +563,37 @@ export function PortfoliosTable(props) {
         <button onClick={printPage} className={BTN_SM + " no-print"} title="Print this view (landscape)">
           🖨 Print
         </button>
+      </div>
+
+      {/* Cash projection bar — shows current rep CASH % and the
+          projected target CASH % if every pending target proposal +
+          Sell stamp on this port were committed. Always rendered so
+          the team sees the live cash level even when nothing's
+          pending; the delta chip lights up only when there's a
+          meaningful change to flag. */}
+      <div className="mb-2 px-3 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 flex items-center gap-3 flex-wrap text-xs no-print">
+        <span className="font-semibold text-gray-700 dark:text-slate-200">💵 Cash ({portTab})</span>
+        <span className="text-gray-600 dark:text-slate-300">
+          Current rep: <span className="font-mono font-semibold text-gray-900 dark:text-slate-100">{cashProjection.currentCashPct.toFixed(1)}%</span>
+        </span>
+        {cashProjection.hasAnyPending && (
+          <>
+            <span className="text-gray-400 dark:text-slate-500">·</span>
+            <span className="text-gray-600 dark:text-slate-300">
+              If trades commit: <span className="font-mono font-semibold text-gray-900 dark:text-slate-100">{cashProjection.projectedCashTgt.toFixed(1)}%</span>
+            </span>
+            <span
+              className={"text-[11px] font-semibold px-2 py-0.5 rounded-full font-mono " + (Math.abs(cashProjection.delta) < 0.05
+                ? "bg-slate-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400"
+                : cashProjection.delta > 0
+                  ? "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300"
+                  : "bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300")}
+              title={cashProjection.delta > 0 ? "Cash rises if trades execute — net Sells exceed Buys" : "Cash falls if trades execute — net Buys exceed Sells"}
+            >
+              {cashProjection.delta >= 0 ? "+" : ""}{cashProjection.delta.toFixed(1)}%
+            </span>
+          </>
+        )}
       </div>
 
       {/* Sticky proposals bar — visible only when pending changes exist

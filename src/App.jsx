@@ -427,43 +427,26 @@ export default function App(){
           );
         })()}
         {(function(){
-          /* IC Meeting chip \u2014 mirrors the EXACT calculation behind the
-             modal's "Agenda (N)" tab label, just summed across BOTH
-             meeting profiles (Tuesday MultiCap + Thursday EM/SC) so
-             the chip reflects everything across the team. Same as:
-                totalPendingCount (raw isAgenda:true entries in profile ports)
-              + unseenChangeCount (recent committed target moves the
-                current user hasn't acknowledged via targetChangeReads)
-             which is what the modal computes per-profile. */
+          /* IC Meeting chip \u2014 counts pending agenda entries (isAgenda:true)
+             across BOTH meeting profiles. Previously also summed
+             "unseen recent target changes" but that section was removed
+             from the Agenda tab, so the chip stays focused on
+             genuinely-pending IC items. */
           var allMeetingPorts = [];
           Object.values(MEETING_PROFILES || {}).forEach(function(p){
             (p.ports || []).forEach(function(port){
               if (allMeetingPorts.indexOf(port) < 0) allMeetingPorts.push(port);
             });
           });
-          var RECENT_DAYS = 6;
-          var todayMs = Date.now();
           var totalPending = 0;
-          var unseenRecent = 0;
-          var reads = targetChangeReads || {};
           (companies || []).forEach(function(c){
             (c.portWeightHistory || []).forEach(function(h){
               if (!h || !h.portfolio) return;
               if (allMeetingPorts.indexOf(h.portfolio) < 0) return;
-              if (h.isAgenda) {
-                totalPending++;
-                return;
-              }
-              if (!h.date) return;
-              var d = new Date(h.date);
-              if (isNaN(d.getTime())) return;
-              if ((todayMs - d.getTime()) / 86400000 > RECENT_DAYS) return;
-              var key = h.id || (c.id + "|" + h.portfolio + "|" + h.date + "|" + (h.newWeight != null ? h.newWeight : h.weight));
-              var seenBy = reads[key] || [];
-              if (seenBy.indexOf(currentUser) < 0) unseenRecent++;
+              if (h.isAgenda) totalPending++;
             });
           });
-          var chipCount = totalPending + unseenRecent;
+          var chipCount = totalPending;
           return (
             <button onClick={function(){setShowMeetingMemo(true);}} className={BTN+" relative"} title="Open the IC Meeting agenda + compliance memo">
               {"\uD83D\uDCDD"} IC Meeting
