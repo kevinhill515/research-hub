@@ -133,6 +133,9 @@ export default function App(){
   const [showAnnualStale,setShowAnnualStale]=useState(function(){
     try { return localStorage.getItem("ccd:showAnnualStale") === "1"; } catch (e) { return false; }
   });
+  const [showTxRecon,setShowTxRecon]=useState(function(){
+    try { return localStorage.getItem("ccd:showTxRecon") === "1"; } catch (e) { return false; }
+  });
   const [showFollowUps,setShowFollowUps]=useState(function(){
     try { return localStorage.getItem("ccd:showFollowUps") === "1"; } catch (e) { return true; }
   });
@@ -717,29 +720,37 @@ export default function App(){
   var missingCount = issues.reduce(function(s, x){ return s + x.rows.filter(function(r){return r.kind==="missing";}).length; }, 0);
   var mismatchCount = issues.reduce(function(s, x){ return s + x.rows.filter(function(r){return r.kind==="mismatch";}).length; }, 0);
   return (
-    <div className="mb-5 rounded-lg bg-rose-50 dark:bg-rose-950/30 border border-rose-300 dark:border-rose-800 px-3.5 py-2.5">
-      <div className="text-xs font-semibold text-rose-800 dark:text-rose-300 mb-1">⚠ Transaction reconciliation: {issues.length} compan{issues.length===1?"y":"ies"} ({missingCount} missing, {mismatchCount} mismatched)</div>
-      <div className="text-[11px] text-rose-700 dark:text-rose-400 mb-2">For each row, transactions summed should equal current rep shares. Chips show <code>port: txSum / rep (diff)</code>. <span className="font-semibold">missing</span> = no transactions; <span className="font-semibold">mismatch</span> = totals don't reconcile. Click a chip to open the company's Transactions tab.</div>
-      <div className="flex flex-wrap gap-1 max-h-64 overflow-y-auto">
-        {issues.map(function(g){
-          return (
-            <span key={g.c.id} onClick={function(){setSelCo(g.c);setTab("companies");setCoView("transactions");}} className="text-[11px] px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-900/40 border border-rose-300 dark:border-rose-700 text-rose-900 dark:text-rose-200 cursor-pointer hover:bg-rose-200 dark:hover:bg-rose-900/60">
-              {g.c.name}
-              {g.rows.map(function(r, i){
-                var fmtN = function(n){return Math.round(n).toLocaleString();};
-                var sign = r.diff > 0 ? "+" : "";
-                return (
-                  <span key={i} className="ml-1 text-rose-700 dark:text-rose-400">
-                    {r.port}: {r.kind === "missing"
-                      ? "missing (rep " + fmtN(r.held) + ")"
-                      : fmtN(r.txSum) + " / " + fmtN(r.held) + " (" + sign + fmtN(r.diff) + ")"}
-                  </span>
-                );
-              })}
-            </span>
-          );
-        })}
+    <div className="mb-5 rounded-lg bg-rose-50 dark:bg-rose-950/30 border border-rose-300 dark:border-rose-800">
+      <div onClick={function(){setShowTxRecon(function(v){var nv=!v;try{localStorage.setItem("ccd:showTxRecon",nv?"1":"0");}catch(e){}return nv;});}} className="px-3.5 py-2.5 cursor-pointer flex items-center gap-2">
+        <span className="text-[11px] text-rose-700 dark:text-rose-400">{showTxRecon?"▼":"▶"}</span>
+        <span className="text-xs font-semibold text-rose-800 dark:text-rose-300">⚠ Transaction reconciliation: {issues.length} compan{issues.length===1?"y":"ies"} ({missingCount} missing, {mismatchCount} mismatched)</span>
+        <span className="text-[10px] text-rose-700 dark:text-rose-400 italic ml-auto">{showTxRecon?"click to collapse":"click to expand"}</span>
       </div>
+      {showTxRecon&&(
+        <div className="px-3.5 pb-2.5">
+          <div className="text-[11px] text-rose-700 dark:text-rose-400 mb-2">For each row, transactions summed should equal current rep shares. Chips show <code>port: txSum / rep (diff)</code>. <span className="font-semibold">missing</span> = no transactions; <span className="font-semibold">mismatch</span> = totals don't reconcile. Click a chip to open the company's Transactions tab.</div>
+          <div className="flex flex-wrap gap-1 max-h-64 overflow-y-auto">
+            {issues.map(function(g){
+              return (
+                <span key={g.c.id} onClick={function(){setSelCo(g.c);setTab("companies");setCoView("transactions");}} className="text-[11px] px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-900/40 border border-rose-300 dark:border-rose-700 text-rose-900 dark:text-rose-200 cursor-pointer hover:bg-rose-200 dark:hover:bg-rose-900/60">
+                  {g.c.name}
+                  {g.rows.map(function(r, i){
+                    var fmtN = function(n){return Math.round(n).toLocaleString();};
+                    var sign = r.diff > 0 ? "+" : "";
+                    return (
+                      <span key={i} className="ml-1 text-rose-700 dark:text-rose-400">
+                        {r.port}: {r.kind === "missing"
+                          ? "missing (rep " + fmtN(r.held) + ")"
+                          : fmtN(r.txSum) + " / " + fmtN(r.held) + " (" + sign + fmtN(r.diff) + ")"}
+                      </span>
+                    );
+                  })}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 })()}{(function(){
@@ -762,31 +773,63 @@ export default function App(){
     if (hits.length > 0) bad.push({ c: c, hits: hits });
   });
   if (bad.length === 0) return null;
+  /* Robust date parser — covers the formats parseDate misses.
+     parseDate's `new Date(s)` fallback chokes on "5-8-26"-style
+     numeric dashes and YY years (Firefox especially), and its
+     regex branch requires a 3-letter month name. Handle the
+     common M/D/Y and M-D-Y numeric variants explicitly so the
+     Normalize button can finish the job. Two-digit year < 50 →
+     20YY; ≥ 50 → 19YY (consistent with Excel). */
+  function toIso(s){
+    if (!s) return null;
+    if (isoRe.test(s)) return s;
+    /* M/D/YY, M/D/YYYY, M-D-YY, M-D-YYYY */
+    var m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2}|\d{4})$/);
+    if (m) {
+      var mo = parseInt(m[1], 10);
+      var dy = parseInt(m[2], 10);
+      var yr = parseInt(m[3], 10);
+      if (yr < 100) yr += yr < 50 ? 2000 : 1900;
+      if (mo >= 1 && mo <= 12 && dy >= 1 && dy <= 31) {
+        return yr + "-" + String(mo).padStart(2, "0") + "-" + String(dy).padStart(2, "0");
+      }
+    }
+    /* Fall back to parseDate (covers DD-MMM-YYYY and anything Date() handles). */
+    var d = parseDate(s);
+    if (d && !isNaN(d.getTime())) {
+      return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    }
+    return null;
+  }
   function doNormalize(){
+    var skipped = [];
     setCompanies(function(prev){
       return prev.map(function(c){
         var changed = false;
         var u = Object.assign({}, c);
         if (u.lastReportDate && !isoRe.test(u.lastReportDate)) {
-          var d = parseDate(u.lastReportDate);
-          if (d && !isNaN(d.getTime())) {
-            u.lastReportDate = d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
-            changed = true;
-          }
+          var iso = toIso(u.lastReportDate);
+          if (iso) { u.lastReportDate = iso; changed = true; }
+          else { skipped.push(c.name + ".lastReportDate=" + u.lastReportDate); }
         }
         if (u.earningsEntries && u.earningsEntries.length) {
           u.earningsEntries = u.earningsEntries.map(function(e){
             if (!e || !e.reportDate || isoRe.test(e.reportDate)) return e;
-            var d = parseDate(e.reportDate);
-            if (!d || isNaN(d.getTime())) return e;
+            var iso2 = toIso(e.reportDate);
+            if (!iso2) { skipped.push(c.name + ".earningsEntries.reportDate=" + e.reportDate); return e; }
             changed = true;
-            var iso = d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
-            return Object.assign({}, e, { reportDate: iso });
+            return Object.assign({}, e, { reportDate: iso2 });
           });
         }
         return changed ? u : c;
       });
     });
+    if (skipped.length) {
+      /* Surface unparseable formats so the user can fix them by hand
+         instead of silently leaving the warning row up forever. */
+      try { console.warn("Normalize: " + skipped.length + " value(s) unparseable", skipped); } catch(e){}
+      alert("Normalized what I could. " + skipped.length + " value(s) had an unrecognized format — check the console for the list.");
+    }
   }
   return (
     <div className="mb-5 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800 px-3.5 py-2.5">
