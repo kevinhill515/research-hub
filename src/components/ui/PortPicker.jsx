@@ -7,7 +7,7 @@ import PillEl from './PillEl.jsx';
    (compact table rows) aren't affected. The Overlap tab's Tier(s)
    column passes stack so multiple tiers stack vertically and don't
    blow out the column width. */
-function PortPicker({ active, onChange, pillBg, pillColor, plusColor, opts, pillStyleFn, dashedPills, stack }) {
+function PortPicker({ active, onChange, pillBg, pillColor, plusColor, opts, pillStyleFn, dashedPills, stack, compact }) {
   var [open, setOpen] = useState(false);
   var allOpts = opts || PORTFOLIOS;
   // Display pills in canonical opts order, not insertion order
@@ -44,13 +44,13 @@ function PortPicker({ active, onChange, pillBg, pillColor, plusColor, opts, pill
         return dashedPills ? (
           <span
             key={p}
-            className="inline-flex items-center gap-1 whitespace-nowrap text-xs px-2 py-0.5 rounded-full bg-transparent"
+            className={"inline-flex items-center whitespace-nowrap rounded-full bg-transparent " + (compact ? "text-[10px] px-1.5 py-px gap-0.5" : "text-xs px-2 py-0.5 gap-1")}
             style={{ border: "1.5px dashed " + s.color, color: s.color }}
           >
             {p}
             <span
               onClick={function () { sortedOnChange(al.filter(function (x) { return x !== p; })); }}
-              className="cursor-pointer opacity-70 hover:opacity-100 text-[10px] transition-opacity"
+              className={"cursor-pointer opacity-70 hover:opacity-100 transition-opacity " + (compact ? "text-[9px]" : "text-[10px]")}
             >
               x
             </span>
@@ -62,6 +62,7 @@ function PortPicker({ active, onChange, pillBg, pillColor, plusColor, opts, pill
             bg={s.bg}
             color={s.color}
             border="none"
+            compact={compact}
             onRemove={function () { sortedOnChange(al.filter(function (x) { return x !== p; })); }}
           />
         );
@@ -71,7 +72,7 @@ function PortPicker({ active, onChange, pillBg, pillColor, plusColor, opts, pill
         <div className="relative inline-block">
           <span
             onClick={function () { setOpen(function (o) { return !o; }); }}
-            className="text-xs px-2 py-0.5 rounded-full cursor-pointer transition-colors"
+            className={"rounded-full cursor-pointer transition-colors " + (compact ? "text-[10px] px-1.5 py-px" : "text-xs px-2 py-0.5")}
             style={{ border: "1px dashed " + plusColor, color: plusColor }}
           >
             +

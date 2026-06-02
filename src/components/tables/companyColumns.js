@@ -33,7 +33,10 @@ export const COMPANY_COLUMNS = [
   { id: "Updated",   label: "Updated",   sort: "Last Updated",  compact: false },
   { id: "Thesis",    label: "Thesis",    sort: null,            compact: true  },
   { id: "Status",    label: "Status",    sort: null,            compact: true  },
-  { id: "Del",       label: "Del",       sort: null,            compact: true  },
+  /* "Del" column was removed — companies are rarely deleted (and when
+     they need to be, the bulk dedupe / "Clear all" affordances on the
+     Companies toolbar cover it). Dropping the column gives ~3rem back
+     to the row before the right-edge scroll kicks in. */
 ];
 
 /* Derived views for backward compat with existing consumers. */

@@ -1,7 +1,13 @@
-function PillEl({ label, bg, color, border, onRemove }) {
+/* `compact` shrinks the pill (smaller text + tighter padding). Used
+   by the Companies-table Portfolio column where the row is already
+   width-constrained and the pills were forcing horizontal scroll. */
+function PillEl({ label, bg, color, border, onRemove, compact }) {
+  var sizeCls = compact
+    ? "text-[10px] px-1.5 py-px gap-0.5"
+    : "text-xs px-2 py-0.5 gap-1";
   return (
     <span
-      className="inline-flex items-center gap-1 whitespace-nowrap text-xs font-normal px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400"
+      className={"inline-flex items-center whitespace-nowrap font-normal rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 " + sizeCls}
       style={{
         ...(bg ? { background: bg } : {}),
         ...(color ? { color } : {}),
@@ -12,7 +18,7 @@ function PillEl({ label, bg, color, border, onRemove }) {
       {onRemove && (
         <span
           onClick={(e) => { e.stopPropagation(); onRemove(); }}
-          className="cursor-pointer opacity-70 hover:opacity-100 text-[10px] transition-opacity"
+          className={"cursor-pointer opacity-70 hover:opacity-100 transition-opacity " + (compact ? "text-[9px]" : "text-[10px]")}
         >
           x
         </span>

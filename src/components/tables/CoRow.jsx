@@ -394,8 +394,9 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
       {show("Portfolio") && (
         <div className={tdBase + " !whitespace-nowrap"} style={rowBg ? { background: rowBg } : undefined}>
           <div className="flex gap-1 items-center flex-nowrap">
-            <PortPicker active={portfolios} onChange={function (v) { onUpdate(company.id, { portfolios: v }); }} pillBg="#166534" pillColor="#fff" plusColor="#4ade80" />
+            <PortPicker compact active={portfolios} onChange={function (v) { onUpdate(company.id, { portfolios: v }); }} pillBg="#166534" pillColor="#fff" plusColor="#4ade80" />
             <PortPicker
+              compact
               active={portNote}
               onChange={function (v) { onUpdate(company.id, { portNote: v.join(", ") }); }}
               plusColor="#1a3a6b"
@@ -491,8 +492,8 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
           onClick={function (e) { e.stopPropagation(); onSelect(company, "earnings"); }}
           title="Open Earnings & Thesis Check"
         >
-          <span className={"text-[10px] " + (company.lastUpdated ? "text-emerald-600 dark:text-emerald-400" : "text-slate-300 dark:text-slate-600")}>
-            {company.lastUpdated || "--"}
+          <span className={"text-[10px] whitespace-nowrap " + (company.lastUpdated ? "text-emerald-600 dark:text-emerald-400" : "text-slate-300 dark:text-slate-600")}>
+            {company.lastUpdated ? fmtDateUS(company.lastUpdated) : "--"}
           </span>
         </div>
       )}
@@ -545,17 +546,6 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
         </div>
       )}
 
-      {/* Delete */}
-      {show("Del") && (
-        <div className={tdBase + " !pr-0"} style={rowBg ? { background: rowBg } : undefined}>
-          <span
-            onClick={function (e) { e.stopPropagation(); onDelete(company.id); }}
-            className="text-xs text-red-500 dark:text-red-400 cursor-pointer hover:text-red-700 dark:hover:text-red-300 transition-colors"
-          >
-            Del
-          </span>
-        </div>
-      )}
     </div>
   );
 }
