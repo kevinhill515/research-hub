@@ -970,11 +970,23 @@ export function CompanyProvider({children}){
   }
   function approveTpApproval(id){
     if(!currentUser)return;
-    var rec=null;
+    /* Read rec from the CURRENT closure-captured tpApprovals state up
+       front — not from inside the setTpApprovals updater. The updater
+       runs asynchronously (React 18 schedules functional updates for
+       the next render commit), so reading `rec` from inside it left
+       the gate below to read a still-null `rec` on rapid-fire
+       approvals — which is why 9 IC-meeting approvals only wrote 2
+       through to companies (the first one or two happened to run sync,
+       the rest didn't). Capturing here synchronously fixes the race. */
+    var rec = (tpApprovals||[]).find(function(a){return a.id===id;});
+    if(!rec||rec.status!=="pending"||rec.suggestedBy===currentUser)return;
+    var approvedAt=todayStr();
     setTpApprovals(function(prev){
-      rec=prev.find(function(a){return a.id===id;});
-      if(!rec||rec.status!=="pending"||rec.suggestedBy===currentUser)return prev;
-      var approvedAt=todayStr();
+      /* Re-find inside the updater so multi-user races still see the
+         freshest state — but if it's already been decided by another
+         user, leave it. */
+      var live = prev.find(function(a){return a.id===id;});
+      if(!live || live.status!=="pending") return prev;
       return prev.map(function(a){
         /* Approve the target. Sibling pending records on the SAME company
            get auto-rejected so a stale change can't sneak in later. */
@@ -986,7 +998,6 @@ export function CompanyProvider({children}){
       });
     });
     /* Apply the change to the company's valuation + push to tpHistory. */
-    if(!rec||rec.status!=="pending"||rec.suggestedBy===currentUser)return;
     setCompanies(function(cs){
       return cs.map(function(c){
         if(c.id!==rec.companyId)return c;

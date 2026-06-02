@@ -191,39 +191,40 @@ export function MeetingMemoModal({ open, onClose }) {
   function clearSnapshot() {
     setLockedSnapshot(function (s) { var n = Object.assign({}, s); delete n[profile]; return n; });
   }
-  function clearAgenda() {
+  /* Combined commit + log path. Replaces the old two-button workflow
+     (Lock in all → Mark executed + log) per user request: there's no
+     scenario where the team wants to lock weights without also logging
+     the memo. This single button does everything end-of-meeting:
+       1. Snapshot the live memo (so the log records what users saw).
+       2. Commit every pending target proposal on the profile's ports
+          (writes portWeights, flips isAgenda:false). Also flips any
+          B/A/P/S agenda stamps to executed.
+       3. Save the snapshot to memoLog.
+       4. Flip any remaining isAgenda:true flags (defense in depth —
+          shouldn't be any after step 2, but cheap to be sure).
+       5. Clear the locked snapshot since the meeting is now logged.
+       6. Switch the user to the Log tab. */
+  function commitAndLog() {
     if (!profile) return;
     const ports = MEETING_PROFILES[profile].ports;
-    /* Use the snapshot if locked, else the live memo — either way the
-       log gets the version the user actually saw. */
-    addMemoLog({ profile: profile, memo: memo });
+    var snapshot = liveMemo;
+    ports.forEach(function (p) { commitProposedWeights(p); });
+    addMemoLog({ profile: profile, memo: snapshot });
     setCompanies(function (cs) { return clearAgendaFlags(cs, ports); });
     clearSnapshot();
     setTab("log");
   }
+  /* Kept under old name as an alias so any other call sites continue
+     to work without an audit pass — semantics are now "commit + log". */
+  var clearAgenda = commitAndLog;
 
   function lockInPortfolio(port) {
+    /* Kept for the Portfolios-page sticky bar (per-port commit
+       outside the meeting flow). Still snapshots so re-opening the
+       Memo modal afterwards shows what was committed. */
     if (typeof window !== "undefined" && window.confirm && !window.confirm("Lock in all pending changes for " + port + "?")) return;
-    /* Snapshot the live memo before committing — same reason as the
-       lock-all path. */
     setLockedSnapshot(function (s) { return Object.assign({}, s, profile && liveMemo ? { [profile]: liveMemo } : {}); });
     commitProposedWeights(port);
-  }
-  function lockInAllProfilePorts() {
-    var n = profilePorts.reduce(function (acc, p) { return acc + (pendingByPort[p] || []).length; }, 0);
-    if (n === 0) return;
-    if (typeof window !== "undefined" && window.confirm &&
-        !window.confirm("Lock in ALL " + n + " pending changes across " + profilePorts.join(" / ") + "?")) return;
-    /* CRITICAL: snapshot the live memo BEFORE committing. Once
-       commitProposedWeights runs, every isAgenda:true entry flips to
-       isAgenda:false and the live builder returns an empty Trading
-       Agenda + empty Allocation Changes — the memo would look "wiped"
-       at the exact moment the user is about to copy it. The snapshot
-       preserves the text until Mark-executed-log or Discard. */
-    if (profile && liveMemo) {
-      setLockedSnapshot(function (s) { return Object.assign({}, s, { [profile]: liveMemo }); });
-    }
-    profilePorts.forEach(function (p) { commitProposedWeights(p); });
   }
   function discardProfileAgenda() {
     var n = profilePorts.reduce(function (acc, p) { return acc + (pendingByPort[p] || []).length; }, 0);
@@ -299,7 +300,6 @@ export function MeetingMemoModal({ open, onClose }) {
               repData={repData}
               fxRates={fxRates}
               repWeightCtx={repWeightCtx}
-              onLockInAll={lockInAllProfilePorts}
               onMarkTargetRead={markTargetChangeRead}
               onComment={commentOnAgendaEntry}
               onEditComment={editAgendaComment}
@@ -338,7 +338,7 @@ export function MeetingMemoModal({ open, onClose }) {
 
 /* ===== AGENDA TAB (read-only summary) ===== */
 
-function AgendaSummary({ profilePorts, pendingByPort, recentChanges, targetChangeReads, currentUser, repData, fxRates, repWeightCtx, onLockInAll, onMarkTargetRead, onComment, onEditComment, onDeleteComment }) {
+function AgendaSummary({ profilePorts, pendingByPort, recentChanges, targetChangeReads, currentUser, repData, fxRates, repWeightCtx, onMarkTargetRead, onComment, onEditComment, onDeleteComment }) {
   /* Compute current rep weight (actual holding as % of port AUM) for a
      given (company, port). Uses the precomputed per-port context so
      totalMV isn't recomputed per row. Returns null when port has zero
@@ -363,15 +363,10 @@ function AgendaSummary({ profilePorts, pendingByPort, recentChanges, targetChang
               go to the Portfolios page — click B/A/P/S or edit the Target % directly on the row.
             </div>
           </div>
-          {totalPending > 0 && (
-            <button
-              onClick={onLockInAll}
-              className="text-xs px-3 py-1.5 rounded-md font-semibold bg-amber-600 hover:bg-amber-700 text-white cursor-pointer shrink-0 ml-2"
-              title={"Lock in all " + totalPending + " pending changes across " + profilePorts.join(" / ") + " in one shot."}
-            >
-              Lock in ALL ({totalPending})
-            </button>
-          )}
+          {/* "Lock in ALL" button removed — locking and logging are now
+              one step. Generate the memo on the Memo tab and hit
+              "Commit & log" there to commit weights + save the memo
+              in a single click. */}
         </div>
         {profilePorts.map(function (port) {
           var items = pendingByPort[port] || [];
@@ -718,8 +713,8 @@ function GenerateView({ memo, copied, onCopy, onClear, onDiscard, hasPending, pr
     <div>
       <div className="flex items-center gap-2 mb-2 flex-wrap">
         <button onClick={onCopy} className={BTN_PRIMARY}>{copied ? "✓ Copied" : "Copy to clipboard"}</button>
-        <button onClick={onClear} className={BTN_GHOST} title={"Mark every pending agenda entry on " + portsLabel + " as executed AND save this memo to the Log tab. After this, those entries surface in 'Allocation Changes' on future memos."}>
-          Mark executed + log ({portsLabel})
+        <button onClick={onClear} className="text-xs px-3 py-1.5 font-medium bg-emerald-600 text-white rounded-md cursor-pointer hover:bg-emerald-700 transition-colors" title={"Commit every pending target % proposal on " + portsLabel + " to the live portfolio, flip B/A/P/S trades to executed, AND save this memo to the Log tab — all in one click. Replaces the old two-step (Lock in → Mark executed + log) workflow."}>
+          ✓ Commit &amp; log ({portsLabel})
         </button>
         {/* Discard-only path — always rendered, disabled state when
             no pending entries on this profile. Removes pending agenda
@@ -751,7 +746,7 @@ function GenerateView({ memo, copied, onCopy, onClear, onDiscard, hasPending, pr
         </div>
       )}
       <div className="text-[11px] text-gray-400 dark:text-slate-500 italic mt-2">
-        Trading Agenda lists items in the <b>proposed</b> state (isAgenda:true). Allocation Changes lists pending target-% moves. Hitting <b>Lock in</b> snapshots this memo so it survives the commit — the snapshot stays until you hit <b>Mark executed + log</b> or <b>Clear agenda</b>.
+        <b>Commit &amp; log</b> commits every pending target % proposal + B/A/P/S trade on this meeting's ports AND saves this memo to the Log tab. <b>Clear agenda</b> discards pending entries without committing or logging. The memo is captured as a snapshot before commit so the text doesn't evaporate the moment isAgenda flips.
       </div>
     </div>
   );
