@@ -68,7 +68,7 @@ function PortfolioRow(props) {
   const c = company;
   const {
     val, mos, mosStyle, mosFixed, mosFixedStyle,
-    priceVal, displayTp, displayTpCcy, avgCostVal, unrealVal,
+    priceVal, priceCcy, displayTp, displayTpCcy, avgCostVal, unrealVal,
     target, repWeight, diff,
     lastTx, monthsHeld, perf5d, nextReport, today,
   } = rowData;
@@ -453,14 +453,14 @@ function PortfolioRow(props) {
         </span>
       </Cell>
 
-      {/* Avg Cost */}
+      {/* Avg Cost — currency-symbol prefixed (matches Price + TP). */}
       <Cell className="text-xs text-gray-900 dark:text-slate-100" style={cellStyle}>
-        {avgCostVal > 0 ? fmtPrice(avgCostVal) : "--"}
+        {avgCostVal > 0 ? ccyPrefix(priceCcy) + fmtPrice(avgCostVal) : "--"}
       </Cell>
 
       {/* Price */}
       <Cell className="text-xs text-gray-900 dark:text-slate-100" style={cellStyle}>
-        {!isNaN(priceVal) ? fmtPrice(priceVal) : "--"}
+        {!isNaN(priceVal) ? ccyPrefix(priceCcy) + fmtPrice(priceVal) : "--"}
       </Cell>
 
       {/* Unreal */}
@@ -480,10 +480,14 @@ function PortfolioRow(props) {
          ord-ccy TP; ADR-held rows show the USD-equivalent ADR TP
          derived from (ord TP / FX) × adrRatio. Cells without a
          resolvable TP (e.g. USD-ADR holding without adrRatio set)
-         render "--" so the user knows to fill in the ratio. */}
+         render "--" so the user knows to fill in the ratio.
+         Rounding rule: values ≥ 20 round to the nearest whole unit
+         (saves space on JPY/HKD/etc. where decimals are noise);
+         values < 20 keep fmtPrice's normal 2-decimal formatting
+         (matters for low-priced ADRs and tight USD names). */}
       <Cell className="text-xs text-gray-900 dark:text-slate-100 cursor-pointer" style={cellStyle} onClick={function(e){e.stopPropagation();onOpenCompany(c,"section:Valuation");}}>
         {displayTp !== null && isFinite(displayTp)
-          ? ccyPrefix(displayTpCcy) + fmtPrice(displayTp)
+          ? ccyPrefix(displayTpCcy) + (Math.abs(displayTp) < 20 ? fmtPrice(displayTp) : Math.round(displayTp).toLocaleString())
           : "--"}
       </Cell>
 

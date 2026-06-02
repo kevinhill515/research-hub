@@ -333,6 +333,11 @@ export function PortfoliosTable(props) {
         mosFixedStyle: mosBg(mosFixedVal),
         /* Rep holdings */
         priceVal: priceVal,
+        /* Currency of the price/avg-cost display ticker — drives the
+           currency-symbol prefix on those cells. Falls back to ord
+           currency, then USD, so a missing-currency row still renders
+           something sensible. */
+        priceCcy: ((priceTicker && priceTicker.currency) || (ordTicker && ordTicker.currency) || val.currency || "USD").toUpperCase(),
         displayTp: displayTp,
         displayTpCcy: displayTpCcy,
         avgCostVal: avgCostVal,
