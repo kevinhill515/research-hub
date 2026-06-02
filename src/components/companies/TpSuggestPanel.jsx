@@ -284,10 +284,12 @@ export default function TpSuggestPanel({ selCo, pv, tpFixed, activeCurrency }) {
         <ComparisonRow label="Weight Y2" k="w2" suffix="%" />
       </div>
 
-      {/* Optional explicit override — moved below the grid since the
-          headline tile up top is the primary read. */}
+      {/* Optional explicit override — when the proposer wants to
+          land on a clean round number (e.g. TWD 2,400 instead of
+          the 2,395.83 the math produces) rather than carry forward
+          the implied PE × EPS to two decimals. */}
       <div className="flex items-center gap-2 mb-3 text-xs">
-        <span className="text-gray-500 dark:text-slate-400">Override TP (skip implied calc):</span>
+        <span className="text-gray-500 dark:text-slate-400">Round to (override TP):</span>
         <input
           type="number"
           step="0.01"
@@ -295,9 +297,9 @@ export default function TpSuggestPanel({ selCo, pv, tpFixed, activeCurrency }) {
           onChange={function(e){ setOverrideTp(e.target.value); }}
           placeholder="—"
           className={INP + " w-24 !text-xs !px-2 !py-1"}
-          title="Set an explicit TP that overrides the implied PE × EPS calc — for cases where the proposer wants to land on a specific round number"
+          title="Use this to land on a round number (e.g. TWD 2,400) instead of the precise implied PE × EPS calc. Leave blank to submit the implied TP exactly."
         />
-        <span className="text-[10px] text-gray-400 dark:text-slate-500 italic">leave blank to use implied</span>
+        <span className="text-[10px] text-gray-400 dark:text-slate-500 italic">use this if you want to submit a clean round number; leave blank to use implied</span>
       </div>
 
       <div className="mb-2">

@@ -693,8 +693,32 @@ export function CompanyDetail(props){
                 })()}
               </div>
               </div>)} {isValuation&&(<div className="mb-6">
-                <div className="flex justify-between items-center mb-3">
+                <div className="flex items-center gap-3 flex-wrap mb-3">
                   <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">Target Price</div>
+                  {/* FY End / Reporting Currency surfaced inline next
+                      to the section heading so both fields are visible
+                      + editable at a glance, without a separate input
+                      row below the cards. Commits on change. */}
+                  <span className="text-gray-400 dark:text-slate-500">·</span>
+                  <span className="text-[11px] text-gray-500 dark:text-slate-400">FY End:</span>
+                  <select
+                    value={pv.fyMonth||""}
+                    onChange={function(e){var v=e.target.value;setPendingVal(function(p){return Object.assign({},p,{fyMonth:v});});commitValuation(selCo,Object.assign({},pv,{fyMonth:v}));}}
+                    className={INP + " !text-xs !px-2 !py-0.5 w-20"}
+                  >
+                    <option value="">--</option>
+                    {MONTHS.map(function(m){return <option key={m}>{m}</option>;})}
+                  </select>
+                  <span className="text-gray-400 dark:text-slate-500">·</span>
+                  <span className="text-[11px] text-gray-500 dark:text-slate-400">Reporting currency:</span>
+                  <select
+                    value={pv.currency||currency}
+                    onChange={function(e){var v=e.target.value;setPendingVal(function(p){return Object.assign({},p,{currency:v});});commitValuation(selCo,Object.assign({},pv,{currency:v}));}}
+                    className={INP + " !text-xs !px-2 !py-0.5 w-20"}
+                  >
+                    {ALL_CURRENCIES.map(function(c){return <option key={c}>{c}</option>;})}
+                  </select>
+                  <span className="ml-auto"/>
                   {selCo.sections&&selCo.sections["Valuation"]&&(!pv.pe||!pv.eps1)&&(
                     <button onClick={async function(){
                       try{var res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":ANTHROPIC_KEY,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:400,system:"Extract valuation data. Return ONLY valid JSON with keys: pe (number), eps1 (number), eps2 (number), fy1 (string), fy2 (string), fyMonth (string like Dec). If not found use null. No markdown.",messages:[{role:"user",content:[{type:"text",text:selCo.sections["Valuation"]}]}]})});var data=await res.json();if(data.error){alertFn("API error: "+(data.error.message||"Unknown"));return;}var raw=(data.content||[]).map(function(b){return b.text||"";}).join("").replace(/```json|```/g,"").trim();var parsed=JSON.parse(raw);var patch={};if(parsed.pe!=null)patch.pe=String(parsed.pe);if(parsed.eps1!=null)patch.eps1=String(parsed.eps1);if(parsed.eps2!=null)patch.eps2=String(parsed.eps2);if(parsed.fy1)patch.fy1=parsed.fy1;if(parsed.fy2)patch.fy2=parsed.fy2;if(parsed.fyMonth)patch.fyMonth=parsed.fyMonth;if(!pv.w1)patch.w1="50";if(!pv.w2)patch.w2="50";setPendingVal(function(prev){return Object.assign({},prev,patch);});}catch(e){alertFn("Failed: "+e.message);}
@@ -708,8 +732,12 @@ export function CompanyDetail(props){
                   <div className="px-3 py-2 rounded-lg" style={{background:tp!==null?"#dcfce7":undefined,border:"1px solid "+(tp!==null?"#86efac":"#e2e8f0")}}>
                     <div className="text-[10px] text-gray-500 dark:text-slate-400 mb-0.5">TP Live{impliedFYLabel(pv)?" ("+impliedFYLabel(pv)+")":""}</div>
                     <div className="text-[16px] font-bold leading-tight" style={{color:tp!==null?"#166534":undefined}}>{fmtTP(tp,activeCurrency)}</div>
-                    {tp!==null&&<div className="text-[10px] text-gray-500 dark:text-slate-400 mt-0.5">{pv.pe}\u00D7 \u00D7 {activeCurrency} {eps&&eps.toFixed?eps.toFixed(2):eps}</div>}
-                    {/* EPS breakdown \u2014 what's blended into normEPS. Shows
+                    {/* The middle "21\u00D7 \u00D7 TWD 111.47" line was removed
+                        as redundant \u2014 the breakdown below shows the
+                        same math broken out per FY leg, and the
+                        headline TP at the top already states the
+                        product. Skipping it tightens the card.
+                       EPS breakdown \u2014 what's blended into normEPS. Shows
                         the team where each Live FactSet number is
                         landing, no need to dig through the EPS Inputs
                         section below. Only renders when we have at
@@ -760,12 +788,7 @@ export function CompanyDetail(props){
                         } else if (isFinite(e1F)) blended = e1F;
                         else if (isFinite(e2F)) blended = e2F;
                         return (
-                          <>
-                            {isFinite(pe) && blended !== null && (
-                              <div className="text-[10px] text-gray-500 dark:text-slate-400 mt-0.5">{pe}× × {activeCurrency} {blended.toFixed(2)}</div>
-                            )}
-                            <div className="text-[10px] text-gray-500 dark:text-slate-400 mt-0.5">{parts.join(" + ")}</div>
-                          </>
+                          <div className="text-[10px] text-gray-500 dark:text-slate-400 mt-0.5">{parts.join(" + ")}</div>
                         );
                       }
                       if (impliedNormEPSFixed !== null) {
@@ -890,32 +913,10 @@ export function CompanyDetail(props){
                     );
                   })()}
                  {(pv.peCurrent||pv.peLow5||pv.peHigh5||pv.peAvg5||pv.peMed5||true)&&<div className="flex gap-2 mb-4 flex-wrap">{[["Current",pv.peCurrent],["5Yr Low",pv.peLow5],["5Yr High",pv.peHigh5],["5Yr Avg",pv.peAvg5],["5Yr Median",pv.peMed5]].map(function(item){return item[1]?(<div key={item[0]} className="px-3.5 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 min-w-[80px]"><div className="text-[10px] text-gray-500 dark:text-slate-400 mb-0.5">{item[0]} {item[0]==="Current"?"FPE":"P/E"}</div><div className="text-base font-semibold text-gray-900 dark:text-slate-100">{(function(){var n=parseFloat(item[1]);return isNaN(n)?item[1]:n.toFixed(1);})()}x</div></div>):null;})}</div>}
-                {/* Price / P/E inputs removed — both are already shown
-                    in the TP Live and TP Fixed cards above, and the
-                    Suggest TP Change panel is the right place to
-                    propose changes. FY-end month + Reporting Currency
-                    surfaced as a compact inline row instead (below)
-                    so they're still configurable when needed. */}
-                <div className="flex items-center gap-3 flex-wrap text-xs mb-3">
-                  <span className="text-gray-500 dark:text-slate-400">FY End:</span>
-                  <select
-                    value={pv.fyMonth||""}
-                    onChange={function(e){setPendingVal(function(p){return Object.assign({},p,{fyMonth:e.target.value});});commitValuation(selCo,Object.assign({},pv,{fyMonth:e.target.value}));}}
-                    className={INP + " !text-xs !px-2 !py-0.5 w-20"}
-                  >
-                    <option value="">--</option>
-                    {MONTHS.map(function(m){return <option key={m}>{m}</option>;})}
-                  </select>
-                  <span className="text-gray-400 dark:text-slate-500">·</span>
-                  <span className="text-gray-500 dark:text-slate-400">Reporting currency:</span>
-                  <select
-                    value={pv.currency||currency}
-                    onChange={function(e){setPendingVal(function(p){return Object.assign({},p,{currency:e.target.value});});commitValuation(selCo,Object.assign({},pv,{currency:e.target.value}));}}
-                    className={INP + " !text-xs !px-2 !py-0.5 w-20"}
-                  >
-                    {ALL_CURRENCIES.map(function(c){return <option key={c}>{c}</option>;})}
-                  </select>
-                </div>
+                {/* Price / P/E / FY End / Reporting Currency inputs all
+                    removed from this row — FY End + Currency now live
+                    inline next to the Target Price heading at the top
+                    of the tab; Price + PE are surfaced on the cards. */}
 
                 {/* TP Live ↔ TP Fixed drift indicator. Surfaces when the
                     Live valuation (PE × blended Live EPS) has moved more
