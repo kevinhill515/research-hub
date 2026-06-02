@@ -1197,7 +1197,19 @@ export function CompanyDetail(props){
               </div>
             </div>
             {earningsEntries.length===0&&<p className="text-sm text-gray-500 dark:text-slate-400">No earnings entries yet. Click "+ Add earnings entry" to get started.</p>}
-            {earningsEntries.map(function(entry){return(
+            {/* Sort newest first by reportDate (descending). Future-
+                dated entries land at the top alongside past entries —
+                so an upcoming Q3 sits above the Q1 that already
+                reported. Entries with no reportDate keep their
+                insertion order at the bottom. */}
+            {earningsEntries.slice().sort(function(a,b){
+              var ad = (a && a.reportDate) || "";
+              var bd = (b && b.reportDate) || "";
+              if (!ad && !bd) return 0;
+              if (!ad) return 1;
+              if (!bd) return -1;
+              return bd.localeCompare(ad);
+            }).map(function(entry){return(
               <div key={entry.id} id={"earnings-entry-"+entry.id} className="rounded-lg transition-shadow">
                 <EarningsEntry entry={entry} currency={activeCurrency} valuation={selCo.valuation||{}}
                   company={selCo}
