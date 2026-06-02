@@ -119,69 +119,39 @@ export function CompanyDetail(props){
             <span className="text-[15px] font-medium text-gray-900 dark:text-slate-100">{selCo.name}</span>
             <input defaultValue={selCo.usTickerName||""} key={selCo.id+"-usname-"+(selCo.usTickerName||"")} onBlur={function(e){updateCo(selCo.id,{usTickerName:e.target.value.trim()});}} placeholder="US ticker name (alt)" className="text-[11px] px-1.5 py-0.5 rounded border border-transparent hover:border-slate-300 dark:hover:border-slate-600 focus:border-blue-400 dark:focus:border-blue-500 bg-transparent focus:bg-white dark:focus:bg-slate-900 focus:outline-none text-gray-500 dark:text-slate-400 italic w-[160px]"/>
             {(selCo.tickers||[]).filter(function(t){return t.price;}).map(function(t){return <span key={t.ticker} className="text-xs px-2.5 py-0.5 rounded-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-gray-900 dark:text-slate-100">{t.ticker}: {t.currency||""} {fmtPrice(t.price)}</span>;})}
-            {/* ADR ratio + derived ADR TP / premium-discount.
-                Lives here next to the ticker pills (not on Valuation)
-                so the team's mental model — "ords and ADR live in the
-                header" — stays intact. Math:
-                  ADR_TP_USD = (ord_TP_local / fxRates[ord_ccy]) × adrRatio
-                fxRates[ccy] is stored local-per-USD (1 USD = N CCY),
-                so dividing converts the ord TP into USD per ord share;
-                multiplying by the ratio (e.g. 0.25 means 1 ADR = 0.25
-                ords) gives the per-ADR USD target. Premium/discount
-                compares the US ticker's live USD price to that target. */}
+            {/* ADR premium/discount at current prices.
+                Read-only pill — purely a function of live prices, not
+                of the TP. Shows whether the ADR is currently trading
+                above or below its implied fair value derived from the
+                ord price. The ratio + ADR TP entry lives on the
+                Overview subtab (right next to the editable ticker
+                list) so the header stays focused on at-a-glance reads.
+                Implied ADR price (USD) = (ord_price / fxRates[ord_ccy]) × ratio
+                Premium = (US_price - implied_ADR_price) / implied × 100. */}
             {(function(){
-              var ratioStr = selCo.adrRatio != null ? String(selCo.adrRatio) : "";
-              /* Read the resolved ord TP that the TP Fixed card below
-                 displays — `tpFixed` variable already handles the
-                 legacy normEPSFixed fallback path so both surfaces
-                 always agree. */
-              var ordTpRaw = (tpFixed !== null && isFinite(tpFixed)) ? tpFixed : NaN;
-              var ratioNum = parseFloat(ratioStr);
-              var ordCcy = (activeCurrency || "USD").toUpperCase();
-              var fx = ordCcy === "USD" ? 1 : parseFloat((fxRates||{})[ordCcy]);
+              var ratioNum = parseFloat(selCo.adrRatio);
+              if (!(isFinite(ratioNum) && ratioNum > 0)) return null;
+              var ordTicker = (selCo.tickers||[]).find(function(t){ return t.isOrdinary; });
               var usTicker = (selCo.tickers||[]).find(function(t){
                 return t.ticker && (t.currency||"USD").toUpperCase()==="USD" && !t.isOrdinary;
               });
-              var adrPrice = usTicker ? parseFloat(usTicker.price) : NaN;
-              var adrTp = (isFinite(ordTpRaw) && isFinite(ratioNum) && ratioNum>0 && isFinite(fx) && fx>0)
-                ? (ordTpRaw / fx) * ratioNum : null;
-              var prem = (adrTp!==null && isFinite(adrPrice) && adrPrice>0)
-                ? (adrPrice - adrTp) / adrTp * 100 : null;
+              if (!ordTicker || !usTicker) return null;
+              var ordPrice = parseFloat(ordTicker.price);
+              var adrPrice = parseFloat(usTicker.price);
+              var ordCcy = ((ordTicker.currency) || activeCurrency || "USD").toUpperCase();
+              var fx = ordCcy === "USD" ? 1 : parseFloat((fxRates||{})[ordCcy]);
+              if (!isFinite(ordPrice) || !isFinite(adrPrice) || !isFinite(fx) || fx<=0) return null;
+              var impliedAdr = (ordPrice / fx) * ratioNum;
+              if (!(impliedAdr > 0)) return null;
+              var prem = (adrPrice - impliedAdr) / impliedAdr * 100;
               return (
-                <span className="inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                  <span className="text-gray-500 dark:text-slate-400">ADR ratio:</span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    defaultValue={ratioStr}
-                    key={selCo.id + "-adr-" + ratioStr}
-                    placeholder="—"
-                    onBlur={function(e){
-                      var v = e.target.value.trim();
-                      if (v === "") { updateCo(selCo.id, { adrRatio: null }); return; }
-                      var n = parseFloat(v);
-                      if (isFinite(n) && n > 0) updateCo(selCo.id, { adrRatio: n });
-                    }}
-                    className="w-12 px-1 py-0 text-[11px] text-right bg-transparent border-b border-slate-300 dark:border-slate-600 focus:border-blue-500 focus:outline-none text-gray-900 dark:text-slate-100"
-                    title="ords per ADR — e.g. 0.25 means 1 ADR = 0.25 ord shares (Vinci VCISY)"
-                  />
-                  {adrTp!==null && (
-                    <>
-                      <span className="text-gray-400 dark:text-slate-500">·</span>
-                      <span className="text-gray-700 dark:text-slate-300" title={"= " + ordCcy + " " + ordTpRaw + " ÷ " + fx.toFixed(4) + " × " + ratioNum}>
-                        ADR TP: <span className="font-semibold">${adrTp.toFixed(2)}</span>
-                      </span>
-                    </>
-                  )}
-                  {prem!==null && (
-                    <span
-                      className={"font-semibold " + (prem >= 0 ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300")}
-                      title={"US ticker price ($" + adrPrice.toFixed(2) + ") vs ADR TP ($" + adrTp.toFixed(2) + ")"}
-                    >
-                      {prem >= 0 ? "+" : ""}{prem.toFixed(1)}%
-                    </span>
-                  )}
+                <span
+                  className={"text-[11px] px-2 py-0.5 rounded-full font-semibold " + (prem >= 0
+                    ? "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300"
+                    : "bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300")}
+                  title={"ADR @ $" + adrPrice.toFixed(2) + " vs implied $" + impliedAdr.toFixed(2) + " (ord " + ordCcy + " " + ordPrice.toFixed(2) + " ÷ " + fx.toFixed(4) + " × " + ratioNum + ")"}
+                >
+                  ADR {prem >= 0 ? "premium +" : "discount "}{prem.toFixed(1)}%
                 </span>
               );
             })()}
@@ -665,7 +635,66 @@ export function CompanyDetail(props){
           {coView.startsWith("section:")&&(function(){
             var sectionName=coView.replace("section:","");var isValuation=sectionName==="Valuation";var isOverview=sectionName==="Overview";
             return(<div>
-              {isOverview&&(<div className="mb-4"><div className={SECTION_LABEL}>Tickers & Prices</div><div className="text-[11px] text-gray-500 dark:text-slate-400 mb-2">Add all tickers for this security. Mark the ordinary share used for TP/MOS.</div>{(function(){var co=companies.find(function(c){return c.id===selCo.id;})||selCo;var tickers=co.tickers||(co.ticker?[{ticker:co.ticker,price:(co.valuation&&co.valuation.price)||"",currency:(co.valuation&&co.valuation.currency)||getCurrency(co.country),isOrdinary:true}]:[{ticker:"",price:"",currency:"",isOrdinary:true}]);return tickers.map(function(t,i){function updTicker(patch){var nt=tickers.slice();nt[i]=Object.assign({},nt[i],patch);var u=Object.assign({},selCo,{tickers:nt});setSelCo(u);setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});});}return(<div key={i} className="flex gap-1.5 mb-1.5 items-center"><input value={t.ticker||""} onChange={function(e){updTicker({ticker:e.target.value.toUpperCase()});}} placeholder="Ticker" className={INP + " w-[90px] !text-xs !px-2 !py-1"}/><input value={t.price||""} onChange={function(e){updTicker({price:e.target.value.replace(/,/g,"")});}} placeholder="Price" className={INP + " w-[90px] !text-xs !px-2 !py-1"}/><select value={t.currency||""} onChange={function(e){updTicker({currency:e.target.value});}} className={INP + " !text-xs !px-2 !py-1"}><option value="">CCY</option>{ALL_CURRENCIES.map(function(c){return <option key={c}>{c}</option>;})}</select><label className="text-[11px] text-gray-500 dark:text-slate-400 flex items-center gap-1 cursor-pointer"><input type="radio" checked={!!t.isOrdinary} onChange={function(){var nt=tickers.map(function(x,j){return Object.assign({},x,{isOrdinary:j===i});});var newOrd=nt[i];var newVal=Object.assign({},selCo.valuation||{},{price:newOrd.price,currency:newOrd.currency||getCurrency(selCo.country)});var u=Object.assign({},selCo,{tickers:nt,valuation:newVal});setSelCo(u);setPendingVal(Object.assign({},newVal));setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});});}}/>Ordinary</label>{tickers.length>1&&<span onClick={function(){var nt=tickers.filter(function(_,j){return j!==i;});var u=Object.assign({},selCo,{tickers:nt});setSelCo(u);setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});});}} className="text-[11px] text-red-600 dark:text-red-400 cursor-pointer">{"\u00D7"}</span>}</div>);});})()}<button onClick={function(){var nt=(selCo.tickers||[]).concat([{ticker:"",price:"",currency:"",isOrdinary:false}]);var u=Object.assign({},selCo,{tickers:nt});setSelCo(u);setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});});}} className={BTN + " mt-1"}>+ Add ticker</button></div>)} {isValuation&&(<div className="mb-6">
+              {isOverview&&(<div className="mb-4"><div className={SECTION_LABEL}>Tickers & Prices</div><div className="text-[11px] text-gray-500 dark:text-slate-400 mb-2">Add all tickers for this security. Mark the ordinary share used for TP/MOS.</div>{(function(){var co=companies.find(function(c){return c.id===selCo.id;})||selCo;var tickers=co.tickers||(co.ticker?[{ticker:co.ticker,price:(co.valuation&&co.valuation.price)||"",currency:(co.valuation&&co.valuation.currency)||getCurrency(co.country),isOrdinary:true}]:[{ticker:"",price:"",currency:"",isOrdinary:true}]);return tickers.map(function(t,i){function updTicker(patch){var nt=tickers.slice();nt[i]=Object.assign({},nt[i],patch);var u=Object.assign({},selCo,{tickers:nt});setSelCo(u);setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});});}return(<div key={i} className="flex gap-1.5 mb-1.5 items-center"><input value={t.ticker||""} onChange={function(e){updTicker({ticker:e.target.value.toUpperCase()});}} placeholder="Ticker" className={INP + " w-[90px] !text-xs !px-2 !py-1"}/><input value={t.price||""} onChange={function(e){updTicker({price:e.target.value.replace(/,/g,"")});}} placeholder="Price" className={INP + " w-[90px] !text-xs !px-2 !py-1"}/><select value={t.currency||""} onChange={function(e){updTicker({currency:e.target.value});}} className={INP + " !text-xs !px-2 !py-1"}><option value="">CCY</option>{ALL_CURRENCIES.map(function(c){return <option key={c}>{c}</option>;})}</select><label className="text-[11px] text-gray-500 dark:text-slate-400 flex items-center gap-1 cursor-pointer"><input type="radio" checked={!!t.isOrdinary} onChange={function(){var nt=tickers.map(function(x,j){return Object.assign({},x,{isOrdinary:j===i});});var newOrd=nt[i];var newVal=Object.assign({},selCo.valuation||{},{price:newOrd.price,currency:newOrd.currency||getCurrency(selCo.country)});var u=Object.assign({},selCo,{tickers:nt,valuation:newVal});setSelCo(u);setPendingVal(Object.assign({},newVal));setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});});}}/>Ordinary</label>{tickers.length>1&&<span onClick={function(){var nt=tickers.filter(function(_,j){return j!==i;});var u=Object.assign({},selCo,{tickers:nt});setSelCo(u);setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});});}} className="text-[11px] text-red-600 dark:text-red-400 cursor-pointer">{"\u00D7"}</span>}</div>);});})()}<button onClick={function(){var nt=(selCo.tickers||[]).concat([{ticker:"",price:"",currency:"",isOrdinary:false}]);var u=Object.assign({},selCo,{tickers:nt});setSelCo(u);setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});});}} className={BTN + " mt-1"}>+ Add ticker</button>
+              {/* ADR ratio + implied ADR-converted TP.
+                  Lives here on the Overview subtab — same place the
+                  team manages tickers / prices. Entering the ratio
+                  (e.g. 0.25 for Vinci, meaning 1 ADR = 0.25 ord
+                  shares) automatically derives the ADR-side TP in USD
+                  from the ord-side TP Fixed:
+                    ADR TP USD = (ord_TP / fxRates[ord_ccy]) × ratio
+                  Used both here (for review) and on the Portfolios
+                  table TP column (which picks ADR TP for ADR-held
+                  rows). The current-price ADR premium/discount pill
+                  in the page header reads the same ratio. */}
+              <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-700">
+                <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-slate-400 mb-1">ADR conversion</div>
+                {(function(){
+                  var ratioStr = selCo.adrRatio != null ? String(selCo.adrRatio) : "";
+                  var ordTpRaw = (tpFixed !== null && isFinite(tpFixed)) ? tpFixed : NaN;
+                  var ratioNum = parseFloat(ratioStr);
+                  var ordCcy = (activeCurrency || "USD").toUpperCase();
+                  var fx = ordCcy === "USD" ? 1 : parseFloat((fxRates||{})[ordCcy]);
+                  var adrTp = (isFinite(ordTpRaw) && isFinite(ratioNum) && ratioNum>0 && isFinite(fx) && fx>0)
+                    ? (ordTpRaw / fx) * ratioNum : null;
+                  return (
+                    <div className="flex items-center gap-2 flex-wrap text-xs">
+                      <label className="text-gray-500 dark:text-slate-400">ADR ratio (ords per ADR):</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        defaultValue={ratioStr}
+                        key={selCo.id + "-adr-ratio-" + ratioStr}
+                        placeholder="e.g. 0.25"
+                        onBlur={function(e){
+                          var v = e.target.value.trim();
+                          if (v === "") { updateCo(selCo.id, { adrRatio: null }); return; }
+                          var n = parseFloat(v);
+                          if (isFinite(n) && n > 0) updateCo(selCo.id, { adrRatio: n });
+                        }}
+                        className={INP + " w-24 !text-xs !px-2 !py-1"}
+                        title="ords per ADR — e.g. 0.25 means 1 ADR represents 0.25 ord shares (Vinci VCISY)"
+                      />
+                      {isFinite(ratioNum) && ratioNum > 0 && (
+                        <span className="text-gray-500 dark:text-slate-400">
+                          · Implied ADR TP:&nbsp;
+                          {adrTp !== null ? (
+                            <span className="font-semibold text-gray-900 dark:text-slate-100" title={"= " + ordCcy + " " + (isFinite(ordTpRaw) ? ordTpRaw.toFixed(2) : "—") + " ÷ " + fx.toFixed(4) + " × " + ratioNum}>
+                              ${adrTp.toFixed(2)}
+                            </span>
+                          ) : (
+                            <span className="italic text-gray-400 dark:text-slate-500">
+                              {!isFinite(ordTpRaw) ? "(set TP Fixed first)" : "(missing FX rate for " + ordCcy + ")"}
+                            </span>
+                          )}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+              </div>)} {isValuation&&(<div className="mb-6">
                 <div className="flex justify-between items-center mb-3">
                   <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">Target Price</div>
                   {selCo.sections&&selCo.sections["Valuation"]&&(!pv.pe||!pv.eps1)&&(
