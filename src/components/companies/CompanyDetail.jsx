@@ -732,12 +732,17 @@ export function CompanyDetail(props){
                   <div className="px-3 py-2 rounded-lg" style={{background:tp!==null?"#dcfce7":undefined,border:"1px solid "+(tp!==null?"#86efac":"#e2e8f0")}}>
                     <div className="text-[10px] text-gray-500 dark:text-slate-400 mb-0.5">TP Live{impliedFYLabel(pv)?" ("+impliedFYLabel(pv)+")":""}</div>
                     <div className="text-[16px] font-bold leading-tight" style={{color:tp!==null?"#166534":undefined}}>{fmtTP(tp,activeCurrency)}</div>
-                    {/* The middle "21\u00D7 \u00D7 TWD 111.47" line was removed
-                        as redundant \u2014 the breakdown below shows the
-                        same math broken out per FY leg, and the
-                        headline TP at the top already states the
-                        product. Skipping it tightens the card.
-                       EPS breakdown \u2014 what's blended into normEPS. Shows
+                    {/* Target multiple \u00D7 normalized EPS = TP Live.
+                        Kept in (along with the per-FY breakdown
+                        below) so the reader sees both the high-level
+                        multiple \u00D7 normEPS framing and the underlying
+                        EPS components in one glance. {"\u00D7"} is
+                        used as a JSX expression for the multiply sign
+                        so the source file can stay ASCII-safe \u2014 the
+                        prior inline glyph caused a render glitch on
+                        this one card. */}
+                    {tp!==null&&<div className="text-[10px] text-gray-500 dark:text-slate-400 mt-0.5">{pv.pe}{"\u00D7"} {"\u00D7"} {activeCurrency} {eps&&eps.toFixed?eps.toFixed(2):eps}</div>}
+                    {/* EPS breakdown \u2014 what's blended into normEPS. Shows
                         the team where each Live FactSet number is
                         landing, no need to dig through the EPS Inputs
                         section below. Only renders when we have at
@@ -788,7 +793,12 @@ export function CompanyDetail(props){
                         } else if (isFinite(e1F)) blended = e1F;
                         else if (isFinite(e2F)) blended = e2F;
                         return (
-                          <div className="text-[10px] text-gray-500 dark:text-slate-400 mt-0.5">{parts.join(" + ")}</div>
+                          <>
+                            {isFinite(pe) && blended !== null && (
+                              <div className="text-[10px] text-gray-500 dark:text-slate-400 mt-0.5">{pe}{"×"} {"×"} {activeCurrency} {blended.toFixed(2)}</div>
+                            )}
+                            <div className="text-[10px] text-gray-500 dark:text-slate-400 mt-0.5">{parts.join(" + ")}</div>
+                          </>
                         );
                       }
                       if (impliedNormEPSFixed !== null) {
