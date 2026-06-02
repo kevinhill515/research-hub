@@ -162,10 +162,17 @@ export function PortfoliosTable(props) {
     return { targetCount: targetCount, stampCount: stampCount, byCompany: byCompany };
   }, [companies, portTab]);
 
-  /* ---- Cash projection bar: current rep CASH % vs target CASH % if
-     every pending proposal + Sell stamp on this port were committed
-     today. Helps the team see the cash impact of the meeting's
-     proposed trade slate at a glance before hitting Commit & log. */
+  /* ---- Cash projection bar: current rep CASH % and where it lands
+     once every B/A/P/S trade on the agenda executes. The cash impact
+     of each trade is the size of the buy or sell needed to drag the
+     company's REP weight to its target:
+       - Buy/Add: rep < target → buy (target - rep) → cash falls.
+       - Pare:    rep > target → sell (rep - target) → cash rises.
+       - Sell:    sell the whole rep position → cash rises by rep%.
+     The "target" used is the pending target proposal if one exists,
+     else the committed portWeights value. Bare target proposals (no
+     paired B/A/P/S) DON'T move cash here — the trade hasn't been
+     scheduled yet. */
   const cashProjection = useMemo(function () {
     var pRep = (repData || {})[portTab] || {};
     var inPort = (companies || []).filter(function (c) { return (c.portfolios || []).indexOf(portTab) >= 0; });
@@ -174,38 +181,37 @@ export function PortfoliosTable(props) {
     var totMV = calcTotalMV(inPort, pRep, fxRates, owners);
     var cashMV = repShares(pRep.CASH);
     var currentCashPct = totMV > 0 ? (cashMV / totMV) * 100 : 0;
-    /* Projected committed-weight sum: walk all companies, prefer
-       pending-proposal newWeight, then Sell-stamp 0, else committed. */
-    var sumCompanyTgt = 0;
+    var cashDelta = 0;
     inPort.forEach(function (c) {
       var hist = c.portWeightHistory || [];
       var pendingTgt = null;
-      var hasSell = false;
+      var action = null;
       for (var i = 0; i < hist.length; i++) {
         var h = hist[i];
         if (!h || !h.isAgenda || h.portfolio !== portTab) continue;
-        if (!h.action && h.newWeight !== undefined && h.newWeight !== null && pendingTgt === null) {
+        if (h.action && !action) action = h.action;
+        else if (!h.action && h.newWeight !== undefined && h.newWeight !== null && pendingTgt === null) {
           pendingTgt = parseFloat(h.newWeight);
-        } else if (h.action === "Sell") {
-          hasSell = true;
         }
       }
-      var w;
-      if (pendingTgt !== null && isFinite(pendingTgt)) w = pendingTgt;
-      else if (hasSell) w = 0;
-      else w = parseFloat((c.portWeights || {})[portTab]) || 0;
-      sumCompanyTgt += w;
+      if (!action) return; /* bare target proposal → no scheduled trade */
+      var committedTgt = parseFloat((c.portWeights || {})[portTab]) || 0;
+      var effTgt = (pendingTgt !== null && isFinite(pendingTgt)) ? pendingTgt : committedTgt;
+      var repMV = calcCompanyRepMV(c, pRep, fxRates, owners);
+      var repPct = totMV > 0 ? (repMV / totMV) * 100 : 0;
+      if (action === "Sell") {
+        cashDelta += repPct; /* sell whole position */
+      } else if (action === "Pare") {
+        cashDelta += Math.max(0, repPct - effTgt);
+      } else if (action === "Add" || action === "Buy") {
+        cashDelta -= Math.max(0, effTgt - repPct);
+      }
     });
-    var divTgt = parseFloat((specialWeights.DIVACC || {})[portTab]) || 0;
-    var projectedCashTgt = Math.max(0, Math.round((100 - sumCompanyTgt - divTgt) * 10) / 10);
-    /* Compare projected target to current rep — both in percent units —
-       so the delta reads as "after these trades execute, cash should
-       sit at X%." */
-    var delta = projectedCashTgt - currentCashPct;
+    var projectedCashPct = currentCashPct + cashDelta;
     return {
       currentCashPct: currentCashPct,
-      projectedCashTgt: projectedCashTgt,
-      delta: delta,
+      projectedCashPct: projectedCashPct,
+      delta: cashDelta,
       hasAnyPending: pendingSummary.targetCount > 0 || pendingSummary.stampCount > 0,
     };
   }, [companies, repData, fxRates, specialWeights, portTab, pendingSummary]);
@@ -580,7 +586,7 @@ export function PortfoliosTable(props) {
           <>
             <span className="text-gray-400 dark:text-slate-500">·</span>
             <span className="text-gray-600 dark:text-slate-300">
-              If trades commit: <span className="font-mono font-semibold text-gray-900 dark:text-slate-100">{cashProjection.projectedCashTgt.toFixed(1)}%</span>
+              If trades commit: <span className="font-mono font-semibold text-gray-900 dark:text-slate-100">{cashProjection.projectedCashPct.toFixed(1)}%</span>
             </span>
             <span
               className={"text-[11px] font-semibold px-2 py-0.5 rounded-full font-mono " + (Math.abs(cashProjection.delta) < 0.05
