@@ -762,6 +762,58 @@ export function CompanyProvider({children}){
   var DEBOUNCE_MS=500;
   var DEBOUNCE_HEAVY_MS=1500;
   var lastSentRef=useRef({});
+
+  /* BroadcastChannel sync between windows on the same machine. Every
+     time autoSendBlob (or the per-company auto-save) successfully
+     persists a piece of state to Supabase, we broadcast a "touched"
+     ping with our session ID + the key that changed. Other windows
+     in the same browser receive it and refetch — which keeps a
+     popped-out modal (Discussions / TP Approvals / IC Meeting) in
+     sync with the main window in near-real-time, without waiting
+     for any manual refresh.
+     Same-origin only (cross-machine still relies on the manual
+     "Refresh Portfolios" path), but covers the popout case which
+     is the primary use of the feature.
+     bcSuppressUntilRef guards the autoSend echo loop: when this
+     window receives a broadcast and refetches, the loaded state
+     change would otherwise trigger autoSend → re-upload → re-
+     broadcast. Suppression silences writes for a short window
+     after a broadcast lands. */
+  var bcRef = useRef(null);
+  var bcSessionIdRef = useRef("");
+  var bcSuppressUntilRef = useRef(0);
+  var bcRefetchTimerRef = useRef(null);
+  function bcBroadcast(key) {
+    if (!bcRef.current) return;
+    try { bcRef.current.postMessage({ sid: bcSessionIdRef.current, key: key, at: Date.now() }); }
+    catch (_e) {}
+  }
+  useEffect(function(){
+    if (typeof BroadcastChannel === "undefined") return;
+    bcSessionIdRef.current = "s_" + Math.random().toString(36).slice(2);
+    try {
+      bcRef.current = new BroadcastChannel("research-hub-sync");
+      bcRef.current.onmessage = function(e) {
+        var msg = e && e.data;
+        if (!msg || !msg.sid || msg.sid === bcSessionIdRef.current) return;
+        /* Debounce: bursts (e.g. user batches 10 approvals or commits
+           a whole agenda) coalesce into one refetch. */
+        if (bcRefetchTimerRef.current) clearTimeout(bcRefetchTimerRef.current);
+        bcRefetchTimerRef.current = setTimeout(function(){
+          bcSuppressUntilRef.current = Date.now() + 5000; /* 5s echo guard */
+          /* Re-run the load to pick up whatever the other window just
+             wrote. Suppression keeps the local autoSend from
+             immediately uploading the just-loaded state back. */
+          try { loadFromStorage(); } catch (_e) {}
+        }, 400);
+      };
+    } catch (_e) {}
+    return function() {
+      if (bcRefetchTimerRef.current) clearTimeout(bcRefetchTimerRef.current);
+      if (bcRef.current) { try { bcRef.current.close(); } catch (_e) {} }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   /* Save-status tracking. Counts in-flight writes ("saving"), failed
      writes that have exhausted retries ("failed"), and tracks the last
      successful write timestamp. Exposed via context so the header can
@@ -832,8 +884,20 @@ export function CompanyProvider({children}){
      user only discovered the data loss the next day. */
   function autoSendBlob(key, jsonStr, table, payload){
     if(lastSentRef.current[key] === jsonStr) return;
+    /* Suppress writes for a short window after a BroadcastChannel-
+       triggered refetch — otherwise the refetch loads remote data,
+       state changes, this autoSend ticks, compares to the previous
+       lastSent (still the old value), and would re-upload the
+       just-loaded data + re-broadcast it. The suppression breaks
+       that echo while still letting writes from genuine local
+       edits go through. */
+    if (bcSuppressUntilRef.current > Date.now()) {
+      lastSentRef.current[key] = jsonStr;
+      return;
+    }
     safeUpsert(table, payload).then(function(){
       lastSentRef.current[key] = jsonStr;
+      bcBroadcast(key);
     }).catch(function(){
       /* lastSentRef NOT updated; next debounce tick retries. */
     });
@@ -923,23 +987,35 @@ export function CompanyProvider({children}){
            into saveStatus (visible in the header). On success the chunk's
            rows get added to lastSentCompaniesRef; on failure they don't,
            so the next debounce tick retries the same rows. */
-        var CHUNK=50;
-        for(var i=0;i<changed.length;i+=CHUNK){
-          (function(chunk){
-            safeUpsert("companies", chunk).then(function(){
-              chunk.forEach(function(row){
-                lastSentCompaniesRef.current[row.id] = row.data;
+        /* Skip the upload entirely if we're inside a broadcast-echo
+           guard window — the data we'd be writing was just loaded
+           from Supabase via a sibling window's broadcast. Mark the
+           ref as "sent" so the next genuine edit creates a real
+           diff. */
+        if (bcSuppressUntilRef.current > Date.now()) {
+          changed.forEach(function(row){ lastSentCompaniesRef.current[row.id] = row.data; });
+        } else {
+          var CHUNK=50;
+          var anyOk = false;
+          for(var i=0;i<changed.length;i+=CHUNK){
+            (function(chunk){
+              safeUpsert("companies", chunk).then(function(){
+                chunk.forEach(function(row){
+                  lastSentCompaniesRef.current[row.id] = row.data;
+                });
+                if (!anyOk) { anyOk = true; bcBroadcast("companies"); }
+              }).catch(function(){
+                /* lastSentCompaniesRef NOT updated — next tick retries. */
               });
-            }).catch(function(){
-              /* lastSentCompaniesRef NOT updated — next tick retries. */
-            });
-          })(changed.slice(i, i+CHUNK));
+            })(changed.slice(i, i+CHUNK));
+          }
         }
       }
       deletedIds.forEach(function(id){
         supaDelete("companies","id",id);
         delete lastSentCompaniesRef.current[id];
       });
+      if (deletedIds.length > 0 && bcSuppressUntilRef.current <= Date.now()) bcBroadcast("companies");
     },DEBOUNCE_HEAVY_MS);
     return function(){clearTimeout(t);};
   },[companies,ready]);
