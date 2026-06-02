@@ -213,9 +213,10 @@ export default function App(){
         var nextCo = displayedCos[nextIdx];
         if(nextCo){ setSelCo(nextCo); setCoView("dashboard"); }
       }
-      if(e.key==="s"){setTab("synthesize");setSelCo(null);}
-      if(e.key==="l"){setTab("library");setSelCo(null);}
-      if(e.key==="r"){setTab("recall");setSelCo(null);}
+      /* Keyboard shortcuts to AI-dependent tabs (s/l/r → synthesize /
+         library / recall) disabled while those tabs are hidden from
+         the nav. Restore alongside the tab buttons if the Anthropic
+         key is reinstated. */
     }
     document.addEventListener("keydown",onKey);return function(){document.removeEventListener("keydown",onKey);};
   },[]);
@@ -502,7 +503,12 @@ export default function App(){
           doReload();
         }} className={BTN} title="Refresh page from network \u2014 picks up any new deploy + reloads all data">{"\u21BA"} Reload</button>
         <button onClick={function(){setShowShortcuts(true);}} className={BTN}>? Keys</button>
-        <button onClick={function(){setApiKeyDraft(ANTHROPIC_KEY||"");setShowSettings(true);}} className={BTN} title={hasAnthropicKey()?"Anthropic API key set (per-browser). Click to update or clear.":"Set your Anthropic API key — required for AI features"}>{hasAnthropicKey()?"⚙ Settings":"⚙ Settings ⚠"}</button>
+        {/* Settings warning ⚠ removed while AI-dependent tabs are
+            hidden — no point flagging a missing key when nothing in
+            the active UI uses it. Restore the warning condition if
+            the Anthropic key is reinstated and Synthesize / Library /
+            Recall / Macro Master come back. */}
+        <button onClick={function(){setApiKeyDraft(ANTHROPIC_KEY||"");setShowSettings(true);}} className={BTN} title="App settings (Anthropic API key only — currently unused by the active UI)">⚙ Settings</button>
         <button onClick={function(){setShowDataPanel(function(s){return !s;});}} className={BTN}>{showDataPanel?"Close":"Import/Export"}</button>
         <button onClick={downloadBackup} className={BTN} title="Download a JSON backup of all data (companies, library, meta, breakdown history). Recommended monthly habit. Restore via Import/Export → paste into Bulk Import.">{copied==="downloadbackup"?"✓ Saved":"⇩ Backup"}</button>
         <AlertsPanel onJumpToCompany={function(cid){var co=companies.find(function(c){return c.id===cid;});if(co){setSelCo(co);setTab("companies");}}}/>
@@ -514,7 +520,12 @@ export default function App(){
           (saves vertical space — 12 buttons would wrap to 3 rows on a
           phone), wraps normally on desktop. */}
       <div className="flex gap-1.5 mb-4 flex-wrap">
-        {[["portfolios","Portfolios"],["research","Research"],["companies","Companies"],["dashboard","Dashboard"],["synthesize","Synthesize"],["library","Library ("+saved.length+")"],["recall","Recall"],["compare","Compare"],["macro","Macro Master"],["calendar","Earnings Calendar"],["performance","Performance"],["feedback","Feedback"]].map(function(item){return <button key={item[0]} className={(tab===item[0]?TABST_ACTIVE:TABST_INACTIVE)+" whitespace-nowrap shrink-0"} onClick={function(){setTab(item[0]);if(item[0]!=="companies")setSelCo(null);}}>{item[1]}</button>;})}
+        {/* AI-dependent tabs (Synthesize / Library / Recall / Macro Master)
+            removed from the top nav because the team's Anthropic API
+            key was revoked by company policy. Their state + code is
+            still in App.jsx — kept around as dead code so we can put
+            the tabs back once a key is available again. */}
+        {[["portfolios","Portfolios"],["research","Research"],["companies","Companies"],["dashboard","Dashboard"],["compare","Compare"],["calendar","Earnings Calendar"],["performance","Performance"],["feedback","Feedback"]].map(function(item){return <button key={item[0]} className={(tab===item[0]?TABST_ACTIVE:TABST_INACTIVE)+" whitespace-nowrap shrink-0"} onClick={function(){setTab(item[0]);if(item[0]!=="companies")setSelCo(null);}}>{item[1]}</button>;})}
       </div>
 
 <ErrorBoundary resetKey={tab}>
