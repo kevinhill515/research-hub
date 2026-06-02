@@ -741,7 +741,7 @@ export function CompanyDetail(props){
                         so the source file can stay ASCII-safe \u2014 the
                         prior inline glyph caused a render glitch on
                         this one card. */}
-                    {tp!==null&&<div className="text-[10px] text-gray-500 dark:text-slate-400 mt-0.5">{pv.pe}{"\u00D7"} {"\u00D7"} {activeCurrency} {eps&&eps.toFixed?eps.toFixed(2):eps}</div>}
+                    {tp!==null&&<div className="text-[10px] text-gray-500 dark:text-slate-400 mt-0.5">{pv.pe} {"\u00D7"} {activeCurrency} {eps&&eps.toFixed?eps.toFixed(2):eps}</div>}
                     {/* EPS breakdown \u2014 what's blended into normEPS. Shows
                         the team where each Live FactSet number is
                         landing, no need to dig through the EPS Inputs
@@ -795,7 +795,7 @@ export function CompanyDetail(props){
                         return (
                           <>
                             {isFinite(pe) && blended !== null && (
-                              <div className="text-[10px] text-gray-500 dark:text-slate-400 mt-0.5">{pe}{"×"} {"×"} {activeCurrency} {blended.toFixed(2)}</div>
+                              <div className="text-[10px] text-gray-500 dark:text-slate-400 mt-0.5">{pe} {"×"} {activeCurrency} {blended.toFixed(2)}</div>
                             )}
                             <div className="text-[10px] text-gray-500 dark:text-slate-400 mt-0.5">{parts.join(" + ")}</div>
                           </>
@@ -875,14 +875,19 @@ export function CompanyDetail(props){
                     var lo=parseFloat(pv.peLow5),hi=parseFloat(pv.peHigh5);
                     var med=parseFloat(pv.peMed5),avg=parseFloat(pv.peAvg5);
                     var cur=parseFloat(pv.peCurrent);
+                    var tgt=parseFloat(pv.pe);
                     if(isNaN(lo)||isNaN(hi)||hi<=lo)return null;
-                    /* extend range a touch if current sits outside low-high */
+                    /* extend range a touch if current or target sits
+                       outside low-high — both are markers we always
+                       want visible on the bar. */
                     var lowB=lo, highB=hi;
                     if(!isNaN(cur)){if(cur<lowB)lowB=cur;if(cur>highB)highB=cur;}
+                    if(!isNaN(tgt)){if(tgt<lowB)lowB=tgt;if(tgt>highB)highB=tgt;}
                     var pad=(highB-lowB)*0.08;
                     var xMin=lowB-pad, xMax=highB+pad;
                     function pct(v){return ((v-xMin)/(xMax-xMin))*100;}
                     var curOutside=!isNaN(cur)&&(cur<lo||cur>hi);
+                    var tgtOutside=!isNaN(tgt)&&(tgt<lo||tgt>hi);
                     return (
                       <div className="mb-3 px-2 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
                         <div className="text-[10px] text-gray-500 dark:text-slate-400 mb-2 uppercase tracking-wide">5-Year P/E Range</div>
@@ -915,14 +920,40 @@ export function CompanyDetail(props){
                           {!isNaN(cur)&&(
                             <>
                               <div className="absolute top-[10px] w-3 h-3 rounded-full border-2 border-white dark:border-slate-900" style={{left:"calc("+pct(cur)+"% - 6px)", background:curOutside?"#dc2626":"#1e40af"}} title={"Current FPE "+cur.toFixed(2)+"x"}/>
-                              <div className="absolute -top-0.5 text-[10px] font-semibold -translate-x-1/2 whitespace-nowrap" style={{left:pct(cur)+"%", color:curOutside?"#dc2626":"#1e40af"}}>Current {cur.toFixed(1)}×</div>
+                              <div className="absolute -top-0.5 text-[10px] font-semibold -translate-x-1/2 whitespace-nowrap" style={{left:pct(cur)+"%", color:curOutside?"#dc2626":"#1e40af"}}>Current {cur.toFixed(1)}{"×"}</div>
+                            </>
+                          )}
+                          {/* Target multiple marker — green diamond/dot
+                              + bold label. The team's chosen multiple
+                              (pv.pe) is what TP Live is built on; seeing
+                              it on the same scale as Current FPE +
+                              Low/Med/Avg/High makes it obvious whether
+                              the multiple is rich, cheap, or in line
+                              with history. Drawn last so it sits on
+                              top of overlapping ticks. */}
+                          {!isNaN(tgt)&&(
+                            <>
+                              <div
+                                className="absolute top-[10px] w-3 h-3 rotate-45 border-2 border-white dark:border-slate-900"
+                                style={{left:"calc("+pct(tgt)+"% - 6px)", background:tgtOutside?"#dc2626":"#16a34a"}}
+                                title={"Target multiple " + tgt.toFixed(2) + "x — what TP Live is built on"}
+                              />
+                              <div
+                                className="absolute -top-0.5 text-[10px] font-semibold -translate-x-1/2 whitespace-nowrap"
+                                style={{left:pct(tgt)+"%", color:tgtOutside?"#dc2626":"#16a34a"}}
+                              >Target {tgt.toFixed(1)}{"×"}</div>
                             </>
                           )}
                         </div>
                       </div>
                     );
                   })()}
-                 {(pv.peCurrent||pv.peLow5||pv.peHigh5||pv.peAvg5||pv.peMed5||true)&&<div className="flex gap-2 mb-4 flex-wrap">{[["Current",pv.peCurrent],["5Yr Low",pv.peLow5],["5Yr High",pv.peHigh5],["5Yr Avg",pv.peAvg5],["5Yr Median",pv.peMed5]].map(function(item){return item[1]?(<div key={item[0]} className="px-3.5 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 min-w-[80px]"><div className="text-[10px] text-gray-500 dark:text-slate-400 mb-0.5">{item[0]} {item[0]==="Current"?"FPE":"P/E"}</div><div className="text-base font-semibold text-gray-900 dark:text-slate-100">{(function(){var n=parseFloat(item[1]);return isNaN(n)?item[1]:n.toFixed(1);})()}x</div></div>):null;})}</div>}
+                 {/* P/E summary tiles (Current/5Yr Low/High/Avg/Median)
+                     removed — same numbers already live on the 5-Year
+                     P/E Range scale above, so the row was duplicating
+                     them. Target Multiple now also marks on the scale
+                     (see the green target tick added in the range
+                     visual). */}
                 {/* Price / P/E / FY End / Reporting Currency inputs all
                     removed from this row — FY End + Currency now live
                     inline next to the Target Price heading at the top
