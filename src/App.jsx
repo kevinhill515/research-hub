@@ -471,7 +471,10 @@ export default function App(){
           );
         })()}
         <button onClick={function(){setDark(function(d){return !d;});}} className={BTN}>{dark?"\u2600 Light":"\uD83C\uDF19 Dark"}</button>
-        <button onClick={function(){setCompact(function(c){var next=!c;setVisibleCols(next?COMPACT_COLS:new Set(ALL_COLS));return next;});}} className={BTN}>{compact?"\u229E Default":"\u229F Compact"}</button>
+        {/* "Compact / Default" toggle moved to the Companies tab's
+            Columns picker (top of the dropdown) \u2014 that toggle only
+            ever affected the Standard view's column set, so housing
+            it next to the column toggles is the right home. */}
         <button onClick={function(){
           /* Hard reload that picks up new deploys. Strategy:
              1. Bust any service-worker / Cache Storage entries (some
@@ -931,7 +934,28 @@ export default function App(){
   </div>
 ):(
   /* Standard picker. */
-  <div className="absolute right-0 top-[calc(100%+4px)] z-[100] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3.5 py-2.5 shadow-lg min-w-[160px]">{ALL_COLS.map(function(col){var on=visibleCols.has(col);return(<div key={col} onClick={function(){setVisibleCols(function(prev){var n=new Set(prev);on?n.delete(col):n.add(col);return n;});}} className="flex items-center gap-2 py-1 cursor-pointer text-xs text-gray-900 dark:text-slate-100"><div className="w-3.5 h-3.5 rounded-[3px] shrink-0" style={{border:"1px solid "+(on?"#3b82f6":"#cbd5e1"),background:on?"#dbeafe":"transparent"}}/>{col}</div>);})}</div>
+  <div className="absolute right-0 top-[calc(100%+4px)] z-[100] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3.5 py-2.5 shadow-lg min-w-[180px] max-h-[65vh] overflow-y-auto">
+    {/* Preset row — moved here from the top toolbar where a "Compact"
+        toggle used to live (which was confusing because it only
+        applied to this Standard view). Default = full ALL_COLS set,
+        Compact = the smaller COMPACT_COLS set. Either preset can
+        then be fine-tuned by toggling individual columns below. */}
+    <div className="flex justify-between mb-1.5 pb-1.5 border-b border-slate-200 dark:border-slate-700">
+      <button
+        type="button"
+        onClick={function(){setCompact(false);setVisibleCols(new Set(ALL_COLS));}}
+        className={"text-[11px] hover:underline " + (!compact ? "text-blue-600 dark:text-blue-400 font-semibold" : "text-gray-500 dark:text-slate-400")}
+        title="Show all columns"
+      >Default</button>
+      <button
+        type="button"
+        onClick={function(){setCompact(true);setVisibleCols(COMPACT_COLS);}}
+        className={"text-[11px] hover:underline " + (compact ? "text-blue-600 dark:text-blue-400 font-semibold" : "text-gray-500 dark:text-slate-400")}
+        title="Show only the compact column set"
+      >Compact</button>
+    </div>
+    {ALL_COLS.map(function(col){var on=visibleCols.has(col);return(<div key={col} onClick={function(){setVisibleCols(function(prev){var n=new Set(prev);on?n.delete(col):n.add(col);return n;});}} className="flex items-center gap-2 py-1 cursor-pointer text-xs text-gray-900 dark:text-slate-100"><div className="w-3.5 h-3.5 rounded-[3px] shrink-0" style={{border:"1px solid "+(on?"#3b82f6":"#cbd5e1"),background:on?"#dbeafe":"transparent"}}/>{col}</div>);})}
+  </div>
 ))}</div>
         </div>
         {selectedIds.size>0&&(<div className="rounded-lg mb-2 flex gap-2 items-center flex-wrap px-3.5 py-3" style={{background:"#dbeafe",border:"1px solid #93c5fd"}}><span className="text-xs font-medium" style={{color:"#1e40af"}}>{selectedIds.size} selected</span><select value={bulkStatus} onChange={function(e){setBulkStatus(e.target.value);}} className={INP + " !text-xs !px-2 !py-0.5"}><option value="">Set status{"\u2026"}</option><option>Own</option><option>Focus</option><option>Watch</option><option>Sold</option></select><select value={bulkTier} onChange={function(e){setBulkTier(e.target.value);}} className={INP + " !text-xs !px-2 !py-0.5"}><option value="">Set tier{"\u2026"}</option>{TIER_ORDER.map(function(t){return <option key={t}>{t}</option>;})}</select><button onClick={applyBulkEdit} disabled={!bulkStatus&&!bulkTier} className={BTN_SM}>Apply</button><span onClick={clearSelected} className="text-xs cursor-pointer" style={{color:"#1e40af"}}>Clear</span><span onClick={selectAll} className="text-xs cursor-pointer" style={{color:"#1e40af"}}>Select all ({displayedCos.length})</span></div>)}
