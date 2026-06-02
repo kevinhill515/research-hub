@@ -150,7 +150,7 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
       {/* Tier(s) */}
       {show("Tier(s)") && (
         <div className={tdBase + " !whitespace-normal"} style={rowBg ? { background: rowBg } : undefined}>
-          <PortPicker active={tiers} onChange={function (v) { var nt=v.join(", "); var ch={tier:nt}; var s=tierToStatus(nt); if(s)ch.status=s; onUpdate(company.id, ch); }} plusColor="#334155" opts={TIER_ORDER} pillStyleFn={tierPillStyle} />
+          <PortPicker compact active={tiers} onChange={function (v) { var nt=v.join(", "); var ch={tier:nt}; var s=tierToStatus(nt); if(s)ch.status=s; onUpdate(company.id, ch); }} plusColor="#334155" opts={TIER_ORDER} pillStyleFn={tierPillStyle} />
         </div>
       )}
 
@@ -452,7 +452,7 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
             return (
               <span className="inline-flex items-center gap-1">
                 {displayValue && (
-                  <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: aBg, color: aColor }}>
+                  <span className="text-[10px] px-1.5 py-px rounded-full whitespace-nowrap" style={{ background: aBg, color: aColor }}>
                     {displayValue}
                   </span>
                 )}
@@ -518,7 +518,7 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
             if (!ts) return <span className="text-xs text-slate-300 dark:text-slate-600">—</span>;
             var cfg = { "On track": { bg: "#dcfce7", color: "#166534" }, "Watch": { bg: "#fef9c3", color: "#854d0e" }, "Broken": { bg: "#fee2e2", color: "#991b1b" } }[ts] || { bg: "#f1f5f9", color: "#475569" };
             return (
-              <span title={"From earnings " + (fmtDateUS(last.reportDate) || "?")} className="text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap" style={{ background: cfg.bg, color: cfg.color }}>
+              <span title={"From earnings " + (fmtDateUS(last.reportDate) || "?")} className="text-[10px] px-1.5 py-px rounded-full font-medium whitespace-nowrap" style={{ background: cfg.bg, color: cfg.color }}>
                 {ts}
               </span>
             );
@@ -534,7 +534,7 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
           <select
             value={company.status || ""}
             onChange={function (e) { onUpdate(company.id, { status: e.target.value }); }}
-            className="text-xs px-1.5 py-0.5 rounded-full border-none cursor-pointer font-medium appearance-none"
+            className="text-[10px] px-1 py-px rounded-full border-none cursor-pointer font-medium appearance-none"
             style={{ background: sCfg.bg, color: sCfg.color }}
           >
             <option value="">--</option>
