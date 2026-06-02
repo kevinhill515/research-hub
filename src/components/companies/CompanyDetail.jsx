@@ -131,9 +131,13 @@ export function CompanyDetail(props){
                 compares the US ticker's live USD price to that target. */}
             {(function(){
               var ratioStr = selCo.adrRatio != null ? String(selCo.adrRatio) : "";
-              var ordTpRaw = parseFloat(selCo.valuation && selCo.valuation.tpFixed);
+              /* Read the resolved ord TP that the TP Fixed card below
+                 displays — `tpFixed` variable already handles the
+                 legacy normEPSFixed fallback path so both surfaces
+                 always agree. */
+              var ordTpRaw = (tpFixed !== null && isFinite(tpFixed)) ? tpFixed : NaN;
               var ratioNum = parseFloat(ratioStr);
-              var ordCcy = (selCo.valuation && selCo.valuation.currency) || "USD";
+              var ordCcy = (activeCurrency || "USD").toUpperCase();
               var fx = ordCcy === "USD" ? 1 : parseFloat((fxRates||{})[ordCcy]);
               var usTicker = (selCo.tickers||[]).find(function(t){
                 return t.ticker && (t.currency||"USD").toUpperCase()==="USD" && !t.isOrdinary;
