@@ -359,6 +359,27 @@ export function CompanyProvider({children}){
             supaUpsert("meta",{key:"cleanup_blank_thesisstatus_2026_05_14",value:"1"});
           }
         }catch(_e){}
+        /* One-shot: default adrRatio to 1 on every company that
+           doesn't have one set. User wanted a starting point of 1
+           across the book so they only need to override the names
+           with a non-1 ratio (e.g. Vinci 0.25). Idempotent + gated
+           by its own meta flag so it only runs once per workspace. */
+        try{
+          var rAdrFlag=await supaGet("meta","key","adr_ratio_default_2026_06_02");
+          if(!(rAdrFlag&&rAdrFlag.value)){
+            var adrChanged=false;
+            coMig.data.forEach(function(c){
+              if(c.adrRatio===null||c.adrRatio===undefined||c.adrRatio===""){
+                c.adrRatio=1;
+                adrChanged=true;
+              }
+            });
+            if(adrChanged){
+              coMig.changed=true;
+            }
+            supaUpsert("meta",{key:"adr_ratio_default_2026_06_02",value:"1"});
+          }
+        }catch(_e){}
         /* Duplicate upcoming-earnings cleanup. The factset_pull script
            creates a new earnings entry whenever the next-report date
            changes (e.g. FactSet revises 7/29 → 7/30). Result: two or
