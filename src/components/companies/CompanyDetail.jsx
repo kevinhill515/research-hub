@@ -824,6 +824,109 @@ export function CompanyDetail(props){
                   </div>
                 </div>
 
+                {/* Reconciliation banner — surfaces when the latest
+                    approved tpHistory entry's TP doesn't match
+                    valuation.tpFixed. This happens when a TP approval
+                    landed in the tpHistory write but the parallel
+                    setCompanies valuation write got skipped — the
+                    pre-fix race condition that bit Suncor + 7 others
+                    after one IC meeting. The race itself is patched
+                    for new approvals; this banner gives a one-click
+                    way to repair stranded data (copies the latest
+                    approval's tp/pe/eps1/eps2/w1/w2 into the
+                    corresponding *Fixed slots so the tile + MOS Fixed
+                    finally show the approved values). */}
+                {(function(){
+                  var hist = (selCo.tpHistory||[]).slice().sort(function(a,b){return (b.date||"").localeCompare(a.date||"");});
+                  var latestApproval = hist.find(function(h){return h && h.source === "approval";});
+                  if (!latestApproval) return null;
+                  var latestTp = parseFloat(latestApproval.tp);
+                  var fixedTp = tpFixed;
+                  if (!isFinite(latestTp)) return null;
+                  if (isFinite(fixedTp) && Math.abs(latestTp - fixedTp) < 0.01) return null;
+                  function reconcile(){
+                    /* Cross-reference the tpApprovals record (which has
+                       the full payload — toPE, toEPS1, toEPS2, toW1,
+                       toW2 — captured at submission time) so the
+                       reconcile fills in per-FY leg values even when
+                       the tpHistory entry itself lacks them (the case
+                       that bit Suncor). Match by TP+date if possible;
+                       fall back to "any approved record for this
+                       company near this TP" so a slight date drift
+                       doesn't block the rescue. */
+                    var sourceRec = (tpApprovals || []).find(function(a){
+                      if (!a || a.companyId !== selCo.id || a.status !== "approved") return false;
+                      var rTp = parseFloat(a.toTP);
+                      return isFinite(rTp) && Math.abs(rTp - latestTp) < 0.5;
+                    });
+                    var src = sourceRec
+                      ? {
+                          pe:   sourceRec.toPE,
+                          eps1: sourceRec.toEPS1,
+                          eps2: sourceRec.toEPS2,
+                          w1:   sourceRec.toW1,
+                          w2:   sourceRec.toW2,
+                          fy1:  sourceRec.fy1,
+                          fy2:  sourceRec.fy2,
+                        }
+                      : {
+                          pe:   latestApproval.pe,
+                          eps1: latestApproval.eps1,
+                          eps2: latestApproval.eps2,
+                          w1:   latestApproval.w1,
+                          w2:   latestApproval.w2,
+                          fy1:  latestApproval.fy1,
+                          fy2:  latestApproval.fy2,
+                        };
+                    var v = Object.assign({}, selCo.valuation || {});
+                    v.tpFixed = String(latestTp);
+                    v.tpFixedDate = latestApproval.date || todayStr();
+                    if (src.pe   != null && src.pe   !== "") { v.pe = src.pe; v.peFixed = src.pe; }
+                    if (src.eps1 != null && src.eps1 !== "") { v.eps1Fixed = src.eps1; v.eps1 = src.eps1; }
+                    if (src.eps2 != null && src.eps2 !== "") { v.eps2Fixed = src.eps2; v.eps2 = src.eps2; }
+                    if (src.w1   != null && src.w1   !== "") { v.w1Fixed = src.w1; v.w1 = src.w1; }
+                    if (src.w2   != null && src.w2   !== "") { v.w2Fixed = src.w2; v.w2 = src.w2; }
+                    if (src.fy1) v.fy1Fixed = src.fy1;
+                    if (src.fy2) v.fy2Fixed = src.fy2;
+                    /* Patch the tpHistory entry too so the Fixed TP
+                       History row stops saying "implied" and shows
+                       the actual per-FY EPS breakdown. */
+                    var newHist = (selCo.tpHistory || []).map(function(h){
+                      if (h !== latestApproval) return h;
+                      return Object.assign({}, h, {
+                        pe:   src.pe   != null ? src.pe   : h.pe,
+                        eps1: src.eps1 != null ? src.eps1 : h.eps1,
+                        eps2: src.eps2 != null ? src.eps2 : h.eps2,
+                        w1:   src.w1   != null ? src.w1   : h.w1,
+                        w2:   src.w2   != null ? src.w2   : h.w2,
+                        fy1:  src.fy1  != null ? src.fy1  : h.fy1,
+                        fy2:  src.fy2  != null ? src.fy2  : h.fy2,
+                      });
+                    });
+                    var u = Object.assign({}, selCo, { valuation: v, tpHistory: newHist });
+                    setSelCo(u);
+                    setPendingVal(Object.assign({}, v));
+                    setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});});
+                  }
+                  return (
+                    <div className="mb-3 px-3 py-2 rounded-md text-xs border-2 flex items-center gap-2 flex-wrap"
+                         style={{borderColor:"#f59e0b", background:"#fef3c7", color:"#854d0e"}}>
+                      <span>⚠</span>
+                      <span>
+                        <span className="font-semibold">TP Fixed out of sync</span>
+                        <span className="ml-2 opacity-80">— latest approval ({fmtDateUS(latestApproval.date)}) committed {activeCurrency} {latestTp.toFixed(2)} to history but TP Fixed still reads {isFinite(fixedTp)?activeCurrency+" "+fixedTp.toFixed(2):"—"}.</span>
+                      </span>
+                      <button
+                        onClick={reconcile}
+                        className="ml-auto text-[11px] px-2.5 py-1 rounded-md font-semibold bg-amber-600 hover:bg-amber-700 text-white cursor-pointer"
+                        title="Copy the latest approved TP and per-FY EPS/Weight values into the *Fixed slots so the TP Fixed tile and MOS Fixed reflect the approval"
+                      >
+                        Reconcile to {activeCurrency} {latestTp.toFixed(2)}
+                      </button>
+                    </div>
+                  );
+                })()}
+
                 {/* Suggest TP change — primary action for coworkers to
                     propose a new TP from the Valuation tab. Side-by-side
                     Fixed vs Live comparison + per-field "Use →" buttons
