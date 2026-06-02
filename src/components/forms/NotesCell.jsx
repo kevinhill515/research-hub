@@ -53,6 +53,19 @@ function NotesCell({ company, onUpdate }) {
   return (
     <div className="relative" onClick={function (e) { e.stopPropagation(); }}>
       <div className="flex items-center gap-1">
+        {/* Extended-notes icon moved to the LEFT of the takeaway, inside
+            the dashed-underline cell. The Notes column right-edge was
+            getting pushed off-screen by the trailing 📝, but the space
+            BEFORE the takeaway was empty — so the icon now lives there.
+            Reserves a fixed slot (w-3) whether it renders or not so
+            takeaways across rows line up vertically. */}
+        <span
+          title={hasLong ? "Extended notes — click to open" : ""}
+          className="text-[9px] w-3 shrink-0 inline-flex justify-center cursor-pointer"
+          onClick={openEditor}
+        >
+          {hasLong ? "📝" : ""}
+        </span>
         <span
           onClick={openEditor}
           title={derivedFromEarnings ? "From most recent earnings — open to set a manual note" : undefined}
@@ -71,15 +84,6 @@ function NotesCell({ company, onUpdate }) {
               discoverable on hover. */}
           {displayShort || "add note..."}
         </span>
-        {hasLong && (
-          <span
-            title="Extended notes"
-            className="text-[9px] cursor-pointer"
-            onClick={openEditor}
-          >
-            {"📝"}
-          </span>
-        )}
       </div>
 
       {open && (
