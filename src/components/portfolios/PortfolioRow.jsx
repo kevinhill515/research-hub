@@ -10,7 +10,7 @@
 
 import { memo } from "react";
 import {
-  fmtPrice, fmtMOS, fmtMOS0, shortSector, sectorStyle, countryStyle, truncName, fmtDateUS,
+  fmtPrice, fmtMOS, fmtMOS0, shortSector, sectorStyle, countryStyle, truncName, fmtDateUS, ccyPrefix,
 } from "../../utils/index.js";
 import FpeRangeMini from "../ui/FpeRangeMini.jsx";
 import { TEAM_COLORS } from "../../constants/index.js";
@@ -456,7 +456,7 @@ function PortfolioRow(props) {
          render "--" so the user knows to fill in the ratio. */}
       <Cell className="text-xs text-gray-900 dark:text-slate-100 cursor-pointer" style={cellStyle} onClick={function(e){e.stopPropagation();onOpenCompany(c,"section:Valuation");}}>
         {displayTp !== null && isFinite(displayTp)
-          ? (displayTpCcy ? displayTpCcy + " " : "") + fmtPrice(displayTp)
+          ? ccyPrefix(displayTpCcy) + fmtPrice(displayTp)
           : "--"}
       </Cell>
 
