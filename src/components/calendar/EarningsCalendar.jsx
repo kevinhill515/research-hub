@@ -305,8 +305,8 @@ function EarningsCalendar({ companies, onSelectCompany }) {
   const pctReported = totalInSeason > 0 ? Math.round((reportedInSeason / totalInSeason) * 100) : 0;
 
   /* Format the window endpoints for the header subtitle. */
-  function fmtShort(d) {
-    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  function fmtShort(d) { /* M/D for site-wide US-numeric date style. */
+    return (d.getMonth()+1) + "/" + d.getDate();
   }
 
   return (

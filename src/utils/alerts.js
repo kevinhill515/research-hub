@@ -261,7 +261,7 @@ function evalEarningsImminent(company, params) {
   const t0 = new Date(); t0.setHours(0, 0, 0, 0);
   const days = Math.round((d.getTime() - t0.getTime()) / (24 * 3600 * 1000));
   if (days < 0 || days > within) return null;
-  const label = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const label = (d.getMonth()+1) + "/" + d.getDate();
   return {
     severity: "info",
     message: days === 0 ? "Reports today" : "Reports in " + days + " day" + (days === 1 ? "" : "s") + " · " + label,

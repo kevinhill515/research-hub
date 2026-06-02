@@ -25,6 +25,7 @@ import { useState, useMemo } from "react";
 import { useCompanyContext } from "../../context/CompanyContext.jsx";
 import { buildMeetingMemo, clearAgendaFlags, MEETING_PROFILES, pickHeldTicker } from "../../utils/meetingMemo.js";
 import { TEAM_COLORS } from "../../constants/index.js";
+import { fmtDateUS } from "../../utils/index.js";
 import { buildTickerOwners, calcCompanyRepMV, calcTotalMV } from "../../utils/portfolioMath.js";
 
 const BTN_PRIMARY = "text-xs px-3 py-1.5 font-medium bg-blue-600 text-white rounded-md cursor-pointer hover:bg-blue-700 transition-colors";
@@ -460,7 +461,7 @@ function AgendaSummary({ profilePorts, pendingByPort, recentChanges, targetChang
                       actionColor={actionColor}
                       authorColor={authorColor}
                       authors={row.authors}
-                      date={row.date}
+                      date={row.date /* render-formatted inside renderRow body */}
                       weightStr={weightStr}
                       tgtBadge={tgtBadge}
                       comments={comments}
@@ -531,7 +532,7 @@ function AgendaSummary({ profilePorts, pendingByPort, recentChanges, targetChang
                         {rc.author}
                       </span>
                     )}
-                    {rc.date}
+                    {fmtDateUS(rc.date)}
                   </span>
                 </div>
               );
@@ -620,7 +621,7 @@ function ProposalRow({ company, port, heldTicker, actionEntry, targetEntry, acti
         <div className="text-[10px] text-gray-400 dark:text-slate-500 shrink-0 mt-0.5 text-right">
           <div>
             {authors.length > 0 && <span className="mr-2">{authors.join(", ")}</span>}
-            {date}
+            {fmtDateUS(date)}
           </div>
           <button
             onClick={function () { setShowComment(!showComment); }}
@@ -644,7 +645,7 @@ function ProposalRow({ company, port, heldTicker, actionEntry, targetEntry, acti
               <div key={cm.id} className="text-[11px] group/cm">
                 <span className="inline-block w-1.5 h-1.5 rounded-full mr-1.5 align-middle" style={{ background: cmColor }} />
                 <span className="font-semibold text-gray-700 dark:text-slate-300">{cm.author}</span>
-                <span className="text-gray-400 dark:text-slate-500 text-[9px] ml-1.5">{cm.date}</span>
+                <span className="text-gray-400 dark:text-slate-500 text-[9px] ml-1.5">{fmtDateUS(cm.date)}</span>
                 {cm.editedAt && (
                   <span className="text-gray-400 dark:text-slate-500 text-[9px] ml-1 italic" title={"Edited " + cm.editedAt}>(edited)</span>
                 )}

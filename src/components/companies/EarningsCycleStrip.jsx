@@ -34,9 +34,10 @@ const MONTH_MAP = {
 };
 
 function fmtDateShort(s) {
+  /* M/D/YY for site-wide US-numeric date style. */
   const d = parseDate(s);
   if (!d || isNaN(d.getTime())) return s || "";
-  return d.toLocaleDateString(undefined, { year: "2-digit", month: "short" });
+  return (d.getMonth()+1) + "/" + d.getDate() + "/" + String(d.getFullYear()).slice(-2);
 }
 
 /* Pull (fy, q) out of the entry.quarter free-text string. Accepts:

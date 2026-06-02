@@ -573,7 +573,7 @@ export default function GuidanceTab({ company }) {
           const dt = parseDate(nextRepIso);
           if (dt && !isNaN(dt.getTime())) {
             nextRepDays = Math.round((dt.getTime() - t0.getTime()) / (24*3600*1000));
-            nextRepLabel = dt.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+            nextRepLabel = (dt.getMonth()+1) + "/" + dt.getDate() + "/" + String(dt.getFullYear()).slice(-2);
             if (nextRepDays < 0)      nextRepClass = "text-gray-400 dark:text-slate-500";
             else if (nextRepDays <= 7)  nextRepClass = "text-amber-700 dark:text-amber-400 font-semibold";
             else if (nextRepDays <= 30) nextRepClass = "text-amber-700 dark:text-amber-400";

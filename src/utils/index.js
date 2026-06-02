@@ -52,6 +52,30 @@ export function detectCompanyTags(text,companies){var found=[];companies.forEach
 export function todayStr(){return new Date().toISOString().slice(0,10);}
 export function parseDate(s){if(!s)return null;var d=new Date(s);if(!isNaN(d.getTime()))return d;var m=s.match(/^(\d{1,2})[-\/]([A-Za-z]{3})[-\/](\d{2,4})$/);if(m){var months={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};var mo=months[m[2].toLowerCase()];if(mo===undefined)return null;var yr=parseInt(m[3]);if(yr<100)yr+=2000;return new Date(yr,mo,parseInt(m[1]));}return null;}
 
+/* fmtDateUS — central display formatter. Takes an ISO date string
+   (YYYY-MM-DD) and returns M/D/YY. Storage stays ISO everywhere
+   (sorts, compares, imports, supabase) — this is purely a display
+   layer. Bad inputs pass through unchanged so the UI doesn't go
+   blank if a stray non-ISO sneaks in. Empty/null → "". */
+export function fmtDateUS(iso){
+  if(!iso) return "";
+  var s = String(iso);
+  /* YYYY-MM-DD fast path */
+  var m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m){
+    var yr = parseInt(m[1],10);
+    var mo = parseInt(m[2],10);
+    var dy = parseInt(m[3],10);
+    return mo + "/" + dy + "/" + String(yr).slice(-2);
+  }
+  /* Fallback: try parseDate so legacy non-ISO doesn't render blank. */
+  var d = parseDate(s);
+  if(d && !isNaN(d.getTime())){
+    return (d.getMonth()+1) + "/" + d.getDate() + "/" + String(d.getFullYear()).slice(-2);
+  }
+  return s;
+}
+
 /* Parse a fiscal-year-end month indicator. Accepts 3-letter or full
    names ("Dec", "December") and numeric strings ("12"). Returns 1-12
    or null when the input doesn't make sense. */

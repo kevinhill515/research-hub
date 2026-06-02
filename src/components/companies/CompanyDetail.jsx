@@ -9,7 +9,7 @@ import {
 import {
   calcNormEPS, calcTP, calcMOS, mosBg, fmtPrice, fmtTP, fmtMOS, fmtTime, ccyPrefix,
   getCurrency, countryStyle, sectorStyle, impliedFYLabel,
-  todayStr, reviewedColor, daysSince, parseDate,
+  todayStr, reviewedColor, daysSince, parseDate, fmtDateUS,
   getTiers, tierToStatus, tierBg, tierPillStyle,
   isInitiationTx, getInitiatedDate, monthsSince, blankEarnings,
   escHTML, getCore, getConf, toHTML, toMD,
@@ -187,7 +187,7 @@ export function CompanyDetail(props){
                   <div className="font-semibold mb-1 text-gray-900 dark:text-slate-100 font-sans">Transactions + running position ({txs.length})</div>
                   {txs.length===0?<div className="text-gray-500 dark:text-slate-400">(none)</div>:(<div className="max-h-60 overflow-y-auto">
                     {initRows.map(function(r,i){return(<div key={r.tx.id||i} className="mb-0.5">
-                      <span className="text-gray-500 dark:text-slate-400">{r.tx.date}</span>
+                      <span className="text-gray-500 dark:text-slate-400">{fmtDateUS(r.tx.date)}</span>
                       <span className="text-gray-500 dark:text-slate-400"> · {r.tx.portfolio||"?"}</span>
                       <span className={(parseFloat(r.tx.shares)||0)>=0?"text-green-700 dark:text-green-400":"text-red-700 dark:text-red-400"}> · {(parseFloat(r.tx.shares)||0)>=0?"+":""}{r.tx.shares}</span>
                       <span className="text-gray-500 dark:text-slate-400"> @ {r.tx.price||"-"}</span>
@@ -317,7 +317,7 @@ export function CompanyDetail(props){
                 <button onClick={function(){if(!newTargetHist.date||!newTargetHist.portfolio)return;addTargetHistoryEntry(selCo.id,{date:newTargetHist.date,portfolio:newTargetHist.portfolio,oldWeight:parseFloat(newTargetHist.oldWeight)||0,newWeight:parseFloat(newTargetHist.newWeight)||0});setNewTargetHist({date:"",portfolio:"",oldWeight:"",newWeight:""});setShowAddTargetHist(false);}} disabled={!newTargetHist.date||!newTargetHist.portfolio} className={BTN_SM}>Add</button>
               </div>)}
               {selCo.portWeightHistory&&selCo.portWeightHistory.length>0&&(<div className="space-y-1">
-                {selCo.portWeightHistory.slice().filter(function(h){return weightsFilter==="All"||h.portfolio===weightsFilter;}).sort(function(a,b){return(b.date||"").localeCompare(a.date||"");}).map(function(h){var delta=(parseFloat(h.newWeight)||0)-(parseFloat(h.oldWeight)||0);var color=delta>0?"#166534":delta<0?"#dc2626":"#6b7280";return(<div key={h.id} className="flex items-center gap-2 text-xs py-0.5"><span className="text-gray-500 dark:text-slate-400 font-mono">{h.date}</span><span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-gray-900 dark:text-slate-100 font-medium">{h.portfolio}</span><span className="text-gray-700 dark:text-slate-300">{(parseFloat(h.oldWeight)||0).toFixed(1)}% → <span style={{color:color,fontWeight:600}}>{(parseFloat(h.newWeight)||0).toFixed(1)}%</span></span>{h.author&&<span className="text-[10px] text-gray-400 dark:text-slate-500">({h.author})</span>}<span onClick={function(){deleteTargetHistoryEntry(selCo.id,h.id);}} className="ml-auto text-[11px] text-red-500 dark:text-red-400 cursor-pointer hover:text-red-700">{"\u00D7"}</span></div>);})}
+                {selCo.portWeightHistory.slice().filter(function(h){return weightsFilter==="All"||h.portfolio===weightsFilter;}).sort(function(a,b){return(b.date||"").localeCompare(a.date||"");}).map(function(h){var delta=(parseFloat(h.newWeight)||0)-(parseFloat(h.oldWeight)||0);var color=delta>0?"#166534":delta<0?"#dc2626":"#6b7280";return(<div key={h.id} className="flex items-center gap-2 text-xs py-0.5"><span className="text-gray-500 dark:text-slate-400 font-mono">{fmtDateUS(h.date)}</span><span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-gray-900 dark:text-slate-100 font-medium">{h.portfolio}</span><span className="text-gray-700 dark:text-slate-300">{(parseFloat(h.oldWeight)||0).toFixed(1)}% → <span style={{color:color,fontWeight:600}}>{(parseFloat(h.newWeight)||0).toFixed(1)}%</span></span>{h.author&&<span className="text-[10px] text-gray-400 dark:text-slate-500">({h.author})</span>}<span onClick={function(){deleteTargetHistoryEntry(selCo.id,h.id);}} className="ml-auto text-[11px] text-red-500 dark:text-red-400 cursor-pointer hover:text-red-700">{"\u00D7"}</span></div>);})}
               </div>)}
             </div>)}
                       </div>)}
@@ -563,7 +563,7 @@ export function CompanyDetail(props){
                       <div className="flex items-center gap-2 mb-2 flex-wrap">
                         <span className="text-sm font-semibold text-gray-900 dark:text-slate-100">Most Recent Earnings</span>
                         {last.quarter && <span className="text-xs text-gray-500 dark:text-slate-400">{last.quarter}</span>}
-                        {last.reportDate && <span className="text-xs text-gray-500 dark:text-slate-400">{last.reportDate}</span>}
+                        {last.reportDate && <span className="text-xs text-gray-500 dark:text-slate-400">{fmtDateUS(last.reportDate)}</span>}
                         {tpCfg && (
                           <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: tpCfg.bg, color: tpCfg.color }}>{tpCfg.txt}</span>
                         )}
@@ -1047,7 +1047,7 @@ export function CompanyDetail(props){
                         if(infFromDate && infFromDate.label) fqLabel = infFromDate.label;
                       }
                       return (<div key={originalIdx} style={{display:"table-row"}}>
-                        <div className="text-gray-500 dark:text-slate-400 border-t border-slate-200 dark:border-slate-700" style={{display:"table-cell",padding:"7px 10px 7px 0"}}>{h.date}</div>
+                        <div className="text-gray-500 dark:text-slate-400 border-t border-slate-200 dark:border-slate-700" style={{display:"table-cell",padding:"7px 10px 7px 0"}}>{fmtDateUS(h.date)}</div>
                         <div className="border-t border-slate-200 dark:border-slate-700 font-semibold" style={{display:"table-cell",padding:"7px 10px 7px 0",color:isLatest?"#166534":undefined}}>
                           {fmtTP(h.tp,h.currency||activeCurrency)}
                           {tpPct !== null && (
@@ -1211,8 +1211,8 @@ export function CompanyDetail(props){
           {/* LINKED */}
           {coView==="linked"&&(<div>
             <div className="flex justify-between items-center mb-2.5"><div className="text-sm text-gray-500 dark:text-slate-400">{linkedEntries.length} linked entr{linkedEntries.length===1?"y":"ies"}</div><button onClick={function(){setLinkLibOpen(true);}} className={BTN}>+ Link entry</button></div>
-            {linkLibOpen&&(<div className={CARD + " mb-2.5"}><div className="text-xs text-gray-500 dark:text-slate-400 mb-2">Select a library entry to tag with "{selCo.name}":</div><div className="max-h-[240px] overflow-y-auto flex flex-col gap-1">{saved.filter(function(s){return!(s.tags||[]).includes(selCo.name);}).map(function(s){return(<div key={s.id} onClick={function(){updEntry(s.id,{tags:(s.tags||[]).concat([selCo.name])});setLinkLibOpen(false);}} className="px-2.5 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 cursor-pointer text-xs text-gray-900 dark:text-slate-100 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"><span className="font-medium">{s.title}</span><span className="text-gray-500 dark:text-slate-400 ml-2">{s.date}</span></div>);})}</div><span onClick={function(){setLinkLibOpen(false);}} className={LNK + " block mt-2"}>Cancel</span></div>)}
-            {linkedEntries.length===0?<p className="text-sm text-gray-500 dark:text-slate-400">No library entries linked to {selCo.name}.</p>:linkedEntries.map(function(s){return(<div key={s.id} className={CARD + " cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"} onClick={function(){setTab("library");setExpanded(s.id);}}><div className="flex gap-2 items-center mb-1 flex-wrap"><span className="text-sm font-medium text-gray-900 dark:text-slate-100">{s.title}</span><span className={PILL_BASE}>{s.format}</span>{getConf(s.result)&&<span className="text-[11px] px-1.5 py-0.5 rounded-full border-none" style={{background:CONF_BG[getConf(s.result)],color:CONF_COLOR[getConf(s.result)]}}>{getConf(s.result)}</span>}<span className={PILL_BASE + " ml-auto"}>{s.date}</span></div><p className="text-xs text-gray-500 dark:text-slate-400 m-0 leading-relaxed">{getCore(s.result)}</p></div>);})}
+            {linkLibOpen&&(<div className={CARD + " mb-2.5"}><div className="text-xs text-gray-500 dark:text-slate-400 mb-2">Select a library entry to tag with "{selCo.name}":</div><div className="max-h-[240px] overflow-y-auto flex flex-col gap-1">{saved.filter(function(s){return!(s.tags||[]).includes(selCo.name);}).map(function(s){return(<div key={s.id} onClick={function(){updEntry(s.id,{tags:(s.tags||[]).concat([selCo.name])});setLinkLibOpen(false);}} className="px-2.5 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 cursor-pointer text-xs text-gray-900 dark:text-slate-100 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"><span className="font-medium">{s.title}</span><span className="text-gray-500 dark:text-slate-400 ml-2">{fmtDateUS(s.date)}</span></div>);})}</div><span onClick={function(){setLinkLibOpen(false);}} className={LNK + " block mt-2"}>Cancel</span></div>)}
+            {linkedEntries.length===0?<p className="text-sm text-gray-500 dark:text-slate-400">No library entries linked to {selCo.name}.</p>:linkedEntries.map(function(s){return(<div key={s.id} className={CARD + " cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"} onClick={function(){setTab("library");setExpanded(s.id);}}><div className="flex gap-2 items-center mb-1 flex-wrap"><span className="text-sm font-medium text-gray-900 dark:text-slate-100">{s.title}</span><span className={PILL_BASE}>{s.format}</span>{getConf(s.result)&&<span className="text-[11px] px-1.5 py-0.5 rounded-full border-none" style={{background:CONF_BG[getConf(s.result)],color:CONF_COLOR[getConf(s.result)]}}>{getConf(s.result)}</span>}<span className={PILL_BASE + " ml-auto"}>{fmtDateUS(s.date)}</span></div><p className="text-xs text-gray-500 dark:text-slate-400 m-0 leading-relaxed">{getCore(s.result)}</p></div>);})}
           </div>)}
 
           {/* UPLOAD */}
@@ -1224,7 +1224,7 @@ export function CompanyDetail(props){
           </div>)}
 
           {/* LOG */}
-          {coView==="history"&&(<div>{(selCo.updateLog||[]).length===0?<p className="text-sm text-gray-500 dark:text-slate-400">No updates yet.</p>:(selCo.updateLog||[]).map(function(log,i){return(<div key={i} className={CARD}><div className="flex gap-2 items-center mb-1 flex-wrap"><span className={PILL_BASE}>{log.type}</span><span className="text-xs text-gray-500 dark:text-slate-400">{log.date}</span><span className="text-xs text-gray-500 dark:text-slate-400 ml-auto">{log.changes.join(", ")}</span></div><p className="text-sm m-0 leading-relaxed text-gray-900 dark:text-slate-100">{log.summary}</p></div>);})}</div>)}
+          {coView==="history"&&(<div>{(selCo.updateLog||[]).length===0?<p className="text-sm text-gray-500 dark:text-slate-400">No updates yet.</p>:(selCo.updateLog||[]).map(function(log,i){return(<div key={i} className={CARD}><div className="flex gap-2 items-center mb-1 flex-wrap"><span className={PILL_BASE}>{log.type}</span><span className="text-xs text-gray-500 dark:text-slate-400">{fmtDateUS(log.date)}</span><span className="text-xs text-gray-500 dark:text-slate-400 ml-auto">{log.changes.join(", ")}</span></div><p className="text-sm m-0 leading-relaxed text-gray-900 dark:text-slate-100">{log.summary}</p></div>);})}</div>)}
 
           </ErrorBoundary>
         </div>);

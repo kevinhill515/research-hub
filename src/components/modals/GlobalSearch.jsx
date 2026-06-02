@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { sectorStyle, shortSector, getCore } from '../../utils/index.js';
+import { sectorStyle, shortSector, getCore, fmtDateUS } from '../../utils/index.js';
 import StatusPill from '../ui/StatusPill.jsx';
 
 function GlobalSearch({ companies, saved, onSelectCompany, onSelectEntry, onClose }) {
@@ -102,7 +102,7 @@ function GlobalSearch({ companies, saved, onSelectCompany, onSelectEntry, onClos
                     <div className="flex gap-1.5 items-center mb-1">
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300 font-medium">Lib</span>
                       <span className="text-sm font-medium text-gray-900 dark:text-slate-100">{s.title}</span>
-                      <span className="text-xs text-gray-500 dark:text-slate-400">{s.date}</span>
+                      <span className="text-xs text-gray-500 dark:text-slate-400">{fmtDateUS(s.date)}</span>
                     </div>
                     <div className="text-xs text-gray-500 dark:text-slate-400 truncate">{getCore(s.result)}</div>
                   </div>

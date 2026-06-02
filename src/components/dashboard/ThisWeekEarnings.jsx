@@ -18,9 +18,10 @@ function daysUntil(iso, t0) {
 }
 
 function fmtShort(iso) {
+  /* M/D for site-wide US-numeric date style. */
   const d = parseDate(iso);
   if (!d || isNaN(d.getTime())) return iso || "";
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return (d.getMonth()+1) + "/" + d.getDate();
 }
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];

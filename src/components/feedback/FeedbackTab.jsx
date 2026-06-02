@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import { useConfirm, useAlert } from '../ui/DialogProvider.jsx';
+import { fmtDateUS } from '../../utils/index.js';
 
 const BTN_SM = "text-xs px-2.5 py-1.5 font-medium rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors";
 const BTN_PRIMARY = "text-sm px-4 py-2 font-semibold bg-blue-700 text-white border-none rounded-md cursor-pointer hover:bg-blue-800 transition-colors";
@@ -141,7 +142,7 @@ export function FeedbackTab(){
                       <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold" style={typeStyle(item.type)}>{(TYPE_STYLES[item.type]||TYPE_STYLES.improvement).label}</span>
                       <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-gray-700 dark:text-slate-300 font-medium">{item.area||"(no area)"}</span>
                       <span className="text-[11px] text-gray-500 dark:text-slate-400">{item.author}</span>
-                      <span className="text-[11px] text-gray-400 dark:text-slate-500 font-mono">{item.date}</span>
+                      <span className="text-[11px] text-gray-400 dark:text-slate-500 font-mono">{fmtDateUS(item.date)}</span>
                       {item.resolved && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 font-semibold">✓ resolved</span>}
                       <label className="text-[11px] text-gray-500 dark:text-slate-400 flex items-center gap-1 cursor-pointer ml-auto">
                         <input type="checkbox" checked={!!item.resolved} onChange={function(e){updateFeedback(item.id,{resolved:e.target.checked});}} className="accent-green-600"/>

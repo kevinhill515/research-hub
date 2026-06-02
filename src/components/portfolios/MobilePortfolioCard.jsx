@@ -26,11 +26,14 @@ function fmtPctOrDash(v) {
   return (v >= 0 ? "+" : "") + v.toFixed(1) + "%";
 }
 function fmtDateShort(d) {
+  /* M/D for site-wide US-numeric date style. Accepts Date or ISO string. */
   if (!d) return "--";
   if (d instanceof Date) {
     if (isNaN(d.getTime())) return "--";
-    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    return (d.getMonth()+1) + "/" + d.getDate();
   }
+  var m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return parseInt(m[2],10) + "/" + parseInt(m[3],10);
   return d;
 }
 

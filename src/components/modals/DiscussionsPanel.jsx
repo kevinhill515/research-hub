@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { TEAM_MEMBERS, TEAM_COLORS, PORTFOLIOS, PORT_NAMES } from '../../constants/index.js';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import { useConfirm } from '../ui/DialogProvider.jsx';
+import { fmtDateUS } from '../../utils/index.js';
 
 function MentionInput({ value, onChange, onSubmit, placeholder, autoFocus }){
   var [suggestions, setSuggestions] = useState([]);
@@ -148,7 +149,7 @@ function AnnotationCard({ ann, onReply, onResolve, onUnresolve, onDelete, onUpda
       <div className="flex items-center gap-2 mb-1.5">
         <span className="w-2 h-2 rounded-full" style={{background: authorColor}}/>
         <span className="text-xs font-semibold text-gray-900 dark:text-slate-100">{ann.author}</span>
-        <span className="text-[10px] text-gray-500 dark:text-slate-400">{ann.date}</span>
+        <span className="text-[10px] text-gray-500 dark:text-slate-400">{fmtDateUS(ann.date)}</span>
         <span className="text-[10px] text-gray-500 dark:text-slate-400 ml-auto">{scopeLabel}</span>
       </div>
 
@@ -173,7 +174,7 @@ function AnnotationCard({ ann, onReply, onResolve, onUnresolve, onDelete, onUpda
                 <div className="flex items-center gap-1.5 mb-0.5">
                   <span className="w-1.5 h-1.5 rounded-full" style={{background: rColor}}/>
                   <span className="font-semibold text-gray-900 dark:text-slate-100">{r.author}</span>
-                  <span className="text-[10px] text-gray-500 dark:text-slate-400">{r.date}</span>
+                  <span className="text-[10px] text-gray-500 dark:text-slate-400">{fmtDateUS(r.date)}</span>
                 </div>
                 <div className="text-gray-700 dark:text-slate-300 whitespace-pre-wrap">{renderTextWithMentions(r.text)}</div>
               </div>

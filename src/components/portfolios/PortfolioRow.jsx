@@ -10,7 +10,7 @@
 
 import { memo } from "react";
 import {
-  fmtPrice, fmtMOS, fmtMOS0, shortSector, sectorStyle, countryStyle, truncName,
+  fmtPrice, fmtMOS, fmtMOS0, shortSector, sectorStyle, countryStyle, truncName, fmtDateUS,
 } from "../../utils/index.js";
 import FpeRangeMini from "../ui/FpeRangeMini.jsx";
 import { TEAM_COLORS } from "../../constants/index.js";
@@ -404,7 +404,7 @@ function PortfolioRow(props) {
                     <span style={{ color: isBuy ? "#166534" : "#dc2626", fontWeight: 700 }}>
                       {isBuy ? "▲" : "▼"}
                     </span>
-                    <span className="text-gray-700 dark:text-slate-300">{lastTx.date}</span>
+                    <span className="text-gray-700 dark:text-slate-300">{fmtDateUS(lastTx.date)}</span>
                   </span>
                 );
               })()}

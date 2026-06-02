@@ -38,9 +38,10 @@ function fmtPct(v, dp) {
 }
 
 function fmtDateShort(iso) {
+  /* M/D/YY for site-wide US-numeric date style. */
   const d = parseDate(iso);
   if (!d || isNaN(d.getTime())) return iso || "";
-  return d.toLocaleDateString(undefined, { year: "2-digit", month: "short" });
+  return (d.getMonth()+1) + "/" + d.getDate() + "/" + String(d.getFullYear()).slice(-2);
 }
 
 function priorFyEnd(period) {

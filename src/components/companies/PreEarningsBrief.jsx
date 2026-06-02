@@ -34,10 +34,14 @@ function fmtPct(v, dp) {
 }
 
 function fmtDate(iso) {
+  /* M/D/YY for display; storage stays ISO. */
   if (!iso) return "";
-  const d = new Date(iso + "T00:00:00");
-  if (isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  const s = String(iso);
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return parseInt(m[2],10) + "/" + parseInt(m[3],10) + "/" + m[1].slice(-2);
+  const d = new Date(s + "T00:00:00");
+  if (isNaN(d.getTime())) return s;
+  return (d.getMonth()+1) + "/" + d.getDate() + "/" + String(d.getFullYear()).slice(-2);
 }
 
 /* "2026-03-31" → "FY26" */
