@@ -132,6 +132,12 @@ export default function TpSuggestPanel({ selCo, pv, tpFixed, activeCurrency }) {
   var overrideN = num(overrideTp);
   var finalTp = overrideN !== null && overrideN > 0 ? overrideN : impliedTp;
 
+  /* FY-end-month suffix on EPS row labels. Only shown when fyMonth
+     is set and not "Dec" — most US names default to December so
+     adding "(Dec)" everywhere would be noise. Matches the existing
+     suffix logic on EarningsEntry's tile headers. */
+  var fyMonthSuffix = (pv.fyMonth && pv.fyMonth !== "Dec") ? " (" + pv.fyMonth + ")" : "";
+
   function setField(key, value) {
     setProposal(function(p){ var n = Object.assign({}, p); n[key] = value; return n; });
   }
@@ -168,29 +174,34 @@ export default function TpSuggestPanel({ selCo, pv, tpFixed, activeCurrency }) {
     setTimeout(function(){ setSubmitMsg(""); }, 5000);
   }
 
-  /* Render one row of the comparison grid: label · fixed · use-fixed
-     button · live · use-live button · proposal input. Read-only on
-     the side-by-side columns; the proposal column is editable. */
+  /* Render one row of the comparison grid: label · clickable-fixed ·
+     clickable-live · proposal input. The Fixed and Live VALUES
+     themselves are clickable (with hover + cursor-pointer + tooltip)
+     to copy into the proposal — no separate "Use →" button. This
+     makes the action unambiguous: click the number you want and it
+     lands in the proposal column. Empty/missing values are static. */
   function ComparisonRow(props) {
     var label = props.label, key = props.k, suffix = props.suffix || "";
     var fmt = function(v) { return v == null || v === "" ? "—" : v + suffix; };
+    var fixedClickable = fixed[key] != null && fixed[key] !== "";
+    var liveClickable  = live[key]  != null && live[key]  !== "";
     return (
-      <div className="grid grid-cols-[80px_1fr_auto_1fr_auto_1fr] gap-2 items-center text-xs">
+      <div className="grid grid-cols-[80px_1fr_1fr_1fr] gap-2 items-center text-xs">
         <div className="text-gray-600 dark:text-slate-300 font-medium">{label}</div>
-        <div className="text-gray-900 dark:text-slate-100 font-mono">{fmt(fixed[key])}</div>
-        <button
-          onClick={function(){ useFixed(key); }}
-          disabled={fixed[key] == null || fixed[key] === ""}
-          className={BTN_GHOST + " disabled:opacity-30 disabled:cursor-not-allowed"}
-          title="Use Fixed value"
-        >Use →</button>
-        <div className="text-gray-900 dark:text-slate-100 font-mono">{fmt(live[key])}</div>
-        <button
-          onClick={function(){ useLive(key); }}
-          disabled={live[key] == null || live[key] === ""}
-          className={BTN_GHOST + " disabled:opacity-30 disabled:cursor-not-allowed"}
-          title="Use Live value"
-        >Use →</button>
+        <div
+          onClick={fixedClickable ? function(){ useFixed(key); } : undefined}
+          className={"font-mono px-2 py-1 rounded transition-colors " + (fixedClickable
+            ? "text-gray-900 dark:text-slate-100 cursor-pointer hover:bg-emerald-100 dark:hover:bg-emerald-900/40 border border-transparent hover:border-emerald-300 dark:hover:border-emerald-700"
+            : "text-gray-400 dark:text-slate-600 border border-transparent")}
+          title={fixedClickable ? "Click to copy " + fmt(fixed[key]) + " into the proposal" : ""}
+        >{fmt(fixed[key])}</div>
+        <div
+          onClick={liveClickable ? function(){ useLive(key); } : undefined}
+          className={"font-mono px-2 py-1 rounded transition-colors " + (liveClickable
+            ? "text-gray-900 dark:text-slate-100 cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/40 border border-transparent hover:border-blue-300 dark:hover:border-blue-700"
+            : "text-gray-400 dark:text-slate-600 border border-transparent")}
+          title={liveClickable ? "Click to copy " + fmt(live[key]) + " into the proposal" : ""}
+        >{fmt(live[key])}</div>
         <input
           type="number"
           step="0.01"
@@ -213,33 +224,70 @@ export default function TpSuggestPanel({ selCo, pv, tpFixed, activeCurrency }) {
         <button onClick={function(){ setOpen(false); }} className="ml-auto text-[11px] text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300 cursor-pointer">✕</button>
       </div>
 
-      {/* Header row: label · Fixed · (gap) · Live · (gap) · My Proposal */}
-      <div className="grid grid-cols-[80px_1fr_auto_1fr_auto_1fr] gap-2 items-center text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 mb-1 px-0.5">
+      {/* Headline: implied TP + MOS to current price. Pulled up here
+          (was below the rows) so the proposer sees the impact of the
+          assumptions they're entering at the top of the panel, not
+          after scrolling past the comparison grid. MOS uses the
+          override TP when set, else the implied. Reads from the
+          ord-side price (pv.price). */}
+      {(function(){
+        var finalForMos = finalTp;
+        var priceN = num(pv.price);
+        var mosPct = (finalForMos != null && priceN != null && priceN > 0)
+          ? (finalForMos - priceN) / priceN * 100 : null;
+        return (
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            <div className="px-3 py-2 rounded-md bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700">
+              <div className="text-[10px] uppercase tracking-wide text-amber-700 dark:text-amber-400 mb-0.5">Proposed TP (implied)</div>
+              <div className="text-[18px] font-bold text-gray-900 dark:text-slate-100 leading-tight font-mono">
+                {finalTp != null ? activeCurrency + " " + finalTp.toFixed(2) : "—"}
+              </div>
+              {overrideN != null && overrideN > 0 && impliedTp != null && Math.abs(overrideN - impliedTp) > 0.01 && (
+                <div className="text-[10px] text-amber-700 dark:text-amber-400 italic mt-0.5">
+                  override Δ {((overrideN - impliedTp) / impliedTp * 100).toFixed(1)}% vs implied {activeCurrency} {impliedTp.toFixed(2)}
+                </div>
+              )}
+            </div>
+            <div className="px-3 py-2 rounded-md bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700">
+              <div className="text-[10px] uppercase tracking-wide text-amber-700 dark:text-amber-400 mb-0.5">MOS to current price</div>
+              <div
+                className="text-[18px] font-bold leading-tight font-mono"
+                style={{ color: mosPct == null ? undefined : (mosPct >= 0 ? "#166534" : "#dc2626") }}
+              >
+                {mosPct != null ? (mosPct >= 0 ? "+" : "") + mosPct.toFixed(1) + "%" : "—"}
+              </div>
+              {priceN != null && (
+                <div className="text-[10px] text-gray-500 dark:text-slate-400 mt-0.5">
+                  vs {activeCurrency} {priceN.toFixed(2)}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Header row: label · TP Fixed · TP Live · My Proposal. The
+          Fixed and Live cells render the SOURCE values; clicking the
+          number itself copies it into the proposal column. */}
+      <div className="grid grid-cols-[80px_1fr_1fr_1fr] gap-2 items-center text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 mb-1 px-0.5">
         <div></div>
-        <div>Fixed (locked)</div>
-        <div></div>
-        <div>Live (FactSet)</div>
-        <div></div>
-        <div>My proposal</div>
+        <div className="px-2">TP Fixed (Changing From)</div>
+        <div className="px-2">TP Live (FactSet Estimates)</div>
+        <div className="px-2">My Proposal (New Fixed TP)</div>
       </div>
 
       <div className="space-y-1 mb-3">
         <ComparisonRow label="Target P/E" k="pe" />
-        <ComparisonRow label={"EPS " + (pv.fy1 || "Y1")} k="eps1" />
-        <ComparisonRow label={"EPS " + (pv.fy2 || "Y2")} k="eps2" />
+        <ComparisonRow label={"EPS " + (pv.fy1 || "Y1") + fyMonthSuffix} k="eps1" />
+        <ComparisonRow label={"EPS " + (pv.fy2 || "Y2") + fyMonthSuffix} k="eps2" />
         <ComparisonRow label="Weight Y1" k="w1" suffix="%" />
         <ComparisonRow label="Weight Y2" k="w2" suffix="%" />
       </div>
 
-      {/* Implied TP + optional explicit override. Implied recomputes
-          as fields change; override wins when set (>0). */}
-      <div className="flex items-center gap-3 mb-3 px-2 py-1.5 rounded-md bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-800 text-xs flex-wrap">
-        <span className="text-gray-500 dark:text-slate-400">Implied TP:</span>
-        <span className="font-bold text-gray-900 dark:text-slate-100 font-mono">
-          {impliedTp != null ? activeCurrency + " " + impliedTp.toFixed(2) : "—"}
-        </span>
-        <span className="text-gray-400 dark:text-slate-500">·</span>
-        <span className="text-gray-500 dark:text-slate-400">Override (manual TP):</span>
+      {/* Optional explicit override — moved below the grid since the
+          headline tile up top is the primary read. */}
+      <div className="flex items-center gap-2 mb-3 text-xs">
+        <span className="text-gray-500 dark:text-slate-400">Override TP (skip implied calc):</span>
         <input
           type="number"
           step="0.01"
@@ -249,11 +297,7 @@ export default function TpSuggestPanel({ selCo, pv, tpFixed, activeCurrency }) {
           className={INP + " w-24 !text-xs !px-2 !py-1"}
           title="Set an explicit TP that overrides the implied PE × EPS calc — for cases where the proposer wants to land on a specific round number"
         />
-        {overrideN != null && overrideN > 0 && impliedTp != null && Math.abs(overrideN - impliedTp) > 0.01 && (
-          <span className="text-[10px] text-amber-700 dark:text-amber-400 italic">
-            (override Δ {((overrideN - impliedTp) / impliedTp * 100).toFixed(1)}%)
-          </span>
-        )}
+        <span className="text-[10px] text-gray-400 dark:text-slate-500 italic">leave blank to use implied</span>
       </div>
 
       <div className="mb-2">
