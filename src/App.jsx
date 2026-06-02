@@ -784,6 +784,10 @@ export default function App(){
     if (s == null) return null;
     s = String(s).trim();
     if (!s) return null;
+    /* "--" / "-" / "n/a" — pasted-from-Excel placeholders for "no date
+       on file." Treat as a request to clear the field. Caller gets ""
+       back and writes it through, which removes the warning row. */
+    if (/^(?:-+|n\/?a|na|null|none)$/i.test(s)) return "";
     if (isoRe.test(s)) return s;
     /* M/D/YY, M/D/YYYY, M-D-YY, M-D-YYYY, M.D.YY, M.D.YYYY */
     var m = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2}|\d{4})$/);
@@ -822,14 +826,17 @@ export default function App(){
         var u = Object.assign({}, c);
         if (u.lastReportDate && !isoRe.test(u.lastReportDate)) {
           var iso = toIso(u.lastReportDate);
-          if (iso) { u.lastReportDate = iso; changed = true; }
+          /* iso === "" means toIso recognized a "clear me" sentinel
+             ("--", "n/a", etc.); write it through. iso === null means
+             we genuinely can't parse it — log to skipped. */
+          if (iso !== null) { u.lastReportDate = iso; changed = true; }
           else { skipped.push(c.name + ".lastReportDate=" + u.lastReportDate); }
         }
         if (u.earningsEntries && u.earningsEntries.length) {
           u.earningsEntries = u.earningsEntries.map(function(e){
             if (!e || !e.reportDate || isoRe.test(e.reportDate)) return e;
             var iso2 = toIso(e.reportDate);
-            if (!iso2) { skipped.push(c.name + ".earningsEntries.reportDate=" + e.reportDate); return e; }
+            if (iso2 === null) { skipped.push(c.name + ".earningsEntries.reportDate=" + e.reportDate); return e; }
             changed = true;
             return Object.assign({}, e, { reportDate: iso2 });
           });
@@ -852,10 +859,10 @@ export default function App(){
   return (
     <div className="mb-5 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800 px-3.5 py-2.5">
       <div className="flex items-center justify-between mb-1">
-        <div className="text-xs font-semibold text-amber-800 dark:text-amber-300">⚠ Date formats: {bad.length} compan{bad.length===1?"y":"ies"} have report dates in non-ISO format</div>
-        <button onClick={doNormalize} className="text-[11px] px-2.5 py-1 rounded-md bg-amber-600 dark:bg-amber-700 text-white hover:bg-amber-700 dark:hover:bg-amber-600 transition-colors">Normalize all to YYYY-MM-DD</button>
+        <div className="text-xs font-semibold text-amber-800 dark:text-amber-300">⚠ Date formats: {bad.length} compan{bad.length===1?"y":"ies"} have report dates stored in a non-sortable format</div>
+        <button onClick={doNormalize} className="text-[11px] px-2.5 py-1 rounded-md bg-amber-600 dark:bg-amber-700 text-white hover:bg-amber-700 dark:hover:bg-amber-600 transition-colors">Fix date storage</button>
       </div>
-      <div className="text-[11px] text-amber-700 dark:text-amber-400">Mixed date formats (e.g. "5/8/26" vs "2026-02-06") break sort/compare on the Companies dashboard — Thesis / Action / Notes pick the wrong "most recent earnings." One click fixes them all in place.</div>
+      <div className="text-[11px] text-amber-700 dark:text-amber-400">Dates display as <b>M/D/YY</b> everywhere, but internally they need to be stored in a sortable form so the Companies dashboard picks the right "most recent earnings." When a stored value is in a mixed shape (e.g. "5/8/26" vs the canonical form), sort/compare breaks. One click fixes the storage — the display stays M/D/YY.</div>
     </div>
   );
 })()}<div className="flex gap-2.5 flex-wrap mb-5">{[{label:"Missing country",count:companies.filter(function(c){return !c.country;}).length},{label:"Missing sector",count:companies.filter(function(c){return !c.sector;}).length},{label:"Missing tier",count:companies.filter(function(c){return !c.tier;}).length},{label:"No template",count:companies.filter(function(c){return !Object.keys(c.sections||{}).length;}).length},{label:"Not reviewed 30d+",count:companies.filter(function(c){return daysSince(c.lastReviewed)>30;}).length},{label:"Not reviewed 60d+",count:companies.filter(function(c){return daysSince(c.lastReviewed)>60;}).length},{label:"Watch stale 90d+",count:staleWatchCount}].map(function(item){return(<div key={item.label} className={CARD + " !mb-0 min-w-[140px] flex-1"}><div className="text-xl font-semibold" style={{color:item.count>0?"#d97706":"#16a34a"}}>{item.count}</div><div className="text-xs text-gray-500 dark:text-slate-400">{item.label}</div></div>);})}</div><div className="text-sm font-medium mb-2.5 text-gray-900 dark:text-slate-100">Stale companies (60d+ since review)</div>{companies.filter(function(c){return daysSince(c.lastReviewed)>60;}).sort(function(a,b){return daysSince(b.lastReviewed)-daysSince(a.lastReviewed);}).map(function(c){var d=daysSince(c.lastReviewed);return(<div key={c.id} className={CARD + " !mb-1.5 flex gap-2.5 items-center cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"} onClick={function(){setSelCo(c);setTab("companies");setCoView("upload");}}><span className="text-sm font-medium text-gray-900 dark:text-slate-100 flex-1">{c.name}</span>{c.ticker&&<span className={PILL_BASE}>{c.ticker}</span>}{c.status&&<StatusPill status={c.status}/>}<span className="text-[11px] font-semibold" style={{color:d>90?"#dc2626":d>60?"#d97706":"#ca8a04"}}>{d===Infinity?"never":d+"d ago"}</span></div>);})}</div>)}
