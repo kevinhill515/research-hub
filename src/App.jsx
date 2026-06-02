@@ -513,23 +513,23 @@ export default function App(){
           } catch (e) {}
           doReload();
         }} className={BTN} title="Refresh page from network \u2014 picks up any new deploy + reloads all data">{"\u21BA"} Reload</button>
-        {/* Import — kept as its own toolbar button because the user
-            uses it frequently for manual data uploads. The "/Export"
-            label was removed since this panel currently holds only
-            import affordances; CSV / PDF export lives on the
-            Companies tab proper. */}
-        <button onClick={function(){setShowDataPanel(function(s){return !s;});}} className={BTN}>{showDataPanel?"Close":"Import"}</button>
         {/* ⋯ More menu — collapses low-frequency global toggles
-            (Dark mode, ? Keys, API, ⇩ Backup) into a single dropdown.
-            Each was a standalone button before; the toolbar was
-            getting too wide. Clicking outside or pressing Escape
-            closes the menu. */}
+            (Import, Dark mode, ? Keys, API, ⇩ Backup) into a single
+            dropdown. Each was a standalone button before; the toolbar
+            was getting too wide. Import lives here too since with the
+            FactSet automated pulls landing daily, manual paste-imports
+            are now rare. Clicking outside closes the menu. */}
         <div className="relative">
           <button onClick={function(){setShowMoreMenu(function(s){return !s;});}} className={BTN}>⋯ More</button>
           {showMoreMenu && (
             <>
               <div className="fixed inset-0 z-[90]" onClick={function(){setShowMoreMenu(false);}}/>
               <div className="absolute right-0 top-[calc(100%+4px)] z-[100] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg min-w-[180px] py-1">
+                <button
+                  onClick={function(){setShowDataPanel(function(s){return !s;});setShowMoreMenu(false);}}
+                  className="w-full text-left text-xs px-3 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer text-gray-900 dark:text-slate-100"
+                  title="Open the manual data-paste panel (prices, weights, performance, etc.)"
+                >{showDataPanel?"✕ Close Import":"⇪ Import"}</button>
                 <button
                   onClick={function(){setDark(function(d){return !d;});setShowMoreMenu(false);}}
                   className="w-full text-left text-xs px-3 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer text-gray-900 dark:text-slate-100"
@@ -570,17 +570,19 @@ export default function App(){
             values still render — the subnav buttons just set the
             tab state to those values + the parent tab to its
             container. */}
-        {[["portfolios","Portfolios"],["companies","Companies"],["dashboard","Dashboard"],["compare","Compare"],["performance","Performance"]].map(function(item){return <button key={item[0]} className={(tab===item[0]?TABST_ACTIVE:TABST_INACTIVE)+" whitespace-nowrap shrink-0"} onClick={function(){setTab(item[0]);if(item[0]!=="companies")setSelCo(null);}}>{item[1]}</button>;})}
+        {/* Compare tab also hidden — it uses the AI doCompare flow
+            which depends on the revoked Anthropic key. */}
+        {[["portfolios","Portfolios"],["companies","Companies"],["dashboard","Dashboard"],["performance","Performance"]].map(function(item){return <button key={item[0]} className={(tab===item[0]?TABST_ACTIVE:TABST_INACTIVE)+" whitespace-nowrap shrink-0"} onClick={function(){setTab(item[0]);if(item[0]!=="companies")setSelCo(null);}}>{item[1]}</button>;})}
       </div>
 
 <ErrorBoundary resetKey={tab}>
-{tab==="portfolios"&&(<div>   <div className="flex gap-1.5 mb-4 flex-wrap border-b border-slate-200 dark:border-slate-700 pb-2.5">     <button key="overlap" className={portTab==="overlap"?TABST_ACTIVE:TABST_INACTIVE} onClick={function(){setPortTab("overlap");}}>Overlap</button>     {PORTFOLIOS.map(function(p){return <button key={p} className={portTab===p?TABST_ACTIVE:TABST_INACTIVE} onClick={function(){setPortTab(p);}}>{PORT_NAMES[p]||p}</button>;})}   </div>   {portTab==="overlap"?(<OverlapTable overlapMode={overlapMode} setOverlapMode={setOverlapMode} overlapFilter={overlapFilter} setOverlapFilter={setOverlapFilter} setSelCo={setSelCo} setTab={setTab} setCoView={setCoView} setSelCoOrigin={setSelCoOrigin}/>):(<PortfoliosTable portTab={portTab} portSort={portSort} portSortDir={portSortDir} setPortSort={setPortSort} setPortSortDir={setPortSortDir} setTxFilter={setTxFilter} setSelCoOrigin={setSelCoOrigin} setSelCo={setSelCo} setTab={setTab} setCoView={setCoView} openDiscussions={openDiscussions} onAddTransaction={function(c){setSelCoOrigin("portfolios");setSelCo(c);setTab("companies");setCoView("transactions");setTxFilter(portTab);setShowAddTx(true);setNewTx(function(prev){return Object.assign({},prev||{},{portfolio:portTab,date:todayStr()});});}}/>)}   <div className="mt-5 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 px-3.5 py-3 mb-3 no-print">{(function(){var portRep2=repData[portTab]||{};var repTickers=Object.keys(portRep2).filter(function(t){return t!=="CASH"&&t!=="DIVACC";});var portCos2=companies.filter(function(c){return(c.portfolios||[]).indexOf(portTab)>=0;});var missingFromRep=portCos2.filter(function(c){var tks=(c.tickers||[]).map(function(t){return(t.ticker||"").toUpperCase();});return!tks.some(function(tk){return portRep2[tk]!==undefined;});});var missingFromApp=repTickers.filter(function(tk){return!portCos2.some(function(c){return(c.tickers||[]).some(function(t){return(t.ticker||"").toUpperCase()===tk;});});});if(missingFromRep.length===0&&missingFromApp.length===0)return<div className="text-xs text-gray-500 dark:text-slate-400">{"\u2713"} No discrepancies found.</div>;return(<div><div className="text-sm font-medium text-gray-900 dark:text-slate-100 mb-2">Discrepancies</div>{missingFromRep.length>0&&(<div className="mb-2.5"><div className="text-[11px] text-gray-500 dark:text-slate-400 mb-1">In app but no rep position ({missingFromRep.length}):</div>{missingFromRep.map(function(c){return<span key={c.id} className="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-gray-900 dark:text-slate-100 mr-1 inline-block mb-1">{c.name}</span>;})}</div>)}{missingFromApp.length>0&&(<div><div className="text-[11px] text-gray-500 dark:text-slate-400 mb-1">In rep account but no matching company ({missingFromApp.length}):</div>{missingFromApp.map(function(tk){return<span key={tk} className="text-[11px] px-2 py-0.5 rounded-full mr-1 inline-block mb-1" style={{background:"#fef9c3",border:"1px solid #d97706",color:"#854d0e"}}>{tk}</span>;})}</div>)}</div>);})()}</div></div>)}
+{tab==="portfolios"&&(<div>   <div className="flex gap-1.5 mb-4 flex-wrap border-b border-slate-200 dark:border-slate-700 pb-2.5">     <button key="overlap" className={portTab==="overlap"?TABST_ACTIVE:TABST_INACTIVE} onClick={function(){setPortTab("overlap");}}>Overlap</button>     <button key="overlap-matrix" className={portTab==="overlap-matrix"?TABST_ACTIVE:TABST_INACTIVE} onClick={function(){setPortTab("overlap-matrix");}}>Overlap Matrix</button>     {PORTFOLIOS.map(function(p){return <button key={p} className={portTab===p?TABST_ACTIVE:TABST_INACTIVE} onClick={function(){setPortTab(p);}}>{PORT_NAMES[p]||p}</button>;})}   </div>   {portTab==="overlap"?(<OverlapTable overlapMode={overlapMode} setOverlapMode={setOverlapMode} overlapFilter={overlapFilter} setOverlapFilter={setOverlapFilter} setSelCo={setSelCo} setTab={setTab} setCoView={setCoView} setSelCoOrigin={setSelCoOrigin}/>):portTab==="overlap-matrix"?(<div><div className="text-sm font-medium mb-3 text-gray-900 dark:text-slate-100">Portfolio Overlap</div><OverlapMatrix companies={companies}/></div>):(<PortfoliosTable portTab={portTab} portSort={portSort} portSortDir={portSortDir} setPortSort={setPortSort} setPortSortDir={setPortSortDir} setTxFilter={setTxFilter} setSelCoOrigin={setSelCoOrigin} setSelCo={setSelCo} setTab={setTab} setCoView={setCoView} openDiscussions={openDiscussions} onAddTransaction={function(c){setSelCoOrigin("portfolios");setSelCo(c);setTab("companies");setCoView("transactions");setTxFilter(portTab);setShowAddTx(true);setNewTx(function(prev){return Object.assign({},prev||{},{portfolio:portTab,date:todayStr()});});}}/>)}   <div className="mt-5 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 px-3.5 py-3 mb-3 no-print">{(function(){var portRep2=repData[portTab]||{};var repTickers=Object.keys(portRep2).filter(function(t){return t!=="CASH"&&t!=="DIVACC";});var portCos2=companies.filter(function(c){return(c.portfolios||[]).indexOf(portTab)>=0;});var missingFromRep=portCos2.filter(function(c){var tks=(c.tickers||[]).map(function(t){return(t.ticker||"").toUpperCase();});return!tks.some(function(tk){return portRep2[tk]!==undefined;});});var missingFromApp=repTickers.filter(function(tk){return!portCos2.some(function(c){return(c.tickers||[]).some(function(t){return(t.ticker||"").toUpperCase()===tk;});});});if(missingFromRep.length===0&&missingFromApp.length===0)return<div className="text-xs text-gray-500 dark:text-slate-400">{"\u2713"} No discrepancies found.</div>;return(<div><div className="text-sm font-medium text-gray-900 dark:text-slate-100 mb-2">Discrepancies</div>{missingFromRep.length>0&&(<div className="mb-2.5"><div className="text-[11px] text-gray-500 dark:text-slate-400 mb-1">In app but no rep position ({missingFromRep.length}):</div>{missingFromRep.map(function(c){return<span key={c.id} className="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-gray-900 dark:text-slate-100 mr-1 inline-block mb-1">{c.name}</span>;})}</div>)}{missingFromApp.length>0&&(<div><div className="text-[11px] text-gray-500 dark:text-slate-400 mb-1">In rep account but no matching company ({missingFromApp.length}):</div>{missingFromApp.map(function(tk){return<span key={tk} className="text-[11px] px-2 py-0.5 rounded-full mr-1 inline-block mb-1" style={{background:"#fef9c3",border:"1px solid #d97706",color:"#854d0e"}}>{tk}</span>;})}</div>)}</div>);})()}</div></div>)}
      {/* tab==="calendar" render moved into the Companies subtab block
          (companiesView==="calendar"). Bulk import section at the
          bottom dropped — the dedicated Earnings Dates import in
          Import already handles the same paste. */}
 
-      {tab==="dashboard"&&(<div><div className="flex gap-1.5 mb-4 flex-wrap border-b border-slate-200 dark:border-slate-700 pb-2.5">          {[["markets","Markets"],["movers","Top/Bottom Movers"],["characteristics","Characteristics"],["ratiocompare","Ratio Compare"],["sectors","Sector Breakdown"],["countries","Country Breakdown"],["georev","GeoRev"],["sidebyside","Side-by-Side"],["guidcompare","Guidance Compare"],["overlap","Portfolio Overlap"],["quality","Data Quality"],["feedback","Feedback"]].map(function(item){return <button key={item[0]} className={(dashSubTab===item[0]?TABST_ACTIVE:TABST_INACTIVE)+" whitespace-nowrap shrink-0"} onClick={function(){setDashSubTab(item[0]);}}>{item[1]}</button>;})}
+      {tab==="dashboard"&&(<div><div className="flex gap-1.5 mb-4 flex-wrap border-b border-slate-200 dark:border-slate-700 pb-2.5">          {[["markets","Markets"],["movers","Top/Bottom Movers"],["characteristics","Characteristics"],["ratiocompare","Ratio Compare"],["sectors","Sector Breakdown"],["countries","Country Breakdown"],["georev","GeoRev"],["sidebyside","Side-by-Side"],["guidcompare","Guidance Compare"],["quality","Data Quality"],["feedback","Feedback"]].map(function(item){return <button key={item[0]} className={(dashSubTab===item[0]?TABST_ACTIVE:TABST_INACTIVE)+" whitespace-nowrap shrink-0"} onClick={function(){setDashSubTab(item[0]);}}>{item[1]}</button>;})}
         </div>
         {/* Each lazy-loaded dashboard subtab is wrapped in its OWN
             ErrorBoundary so a render failure in one chart (bad data
@@ -600,8 +602,72 @@ export default function App(){
         {dashSubTab==="guidcompare"    &&<ErrorBoundary resetKey="guidcompare"><GuidanceCompareView onSelectCompany={function(cid){var co=companies.find(function(c){return c.id===cid;});if(co){setSelCo(co);setTab("companies");setCoView("guidance");}}}/></ErrorBoundary>}
         </Suspense>
         {false&&(<div></div>)}
-        {dashSubTab==="overlap"&&(<div><div className="text-sm font-medium mb-3 text-gray-900 dark:text-slate-100">Portfolio Overlap</div><OverlapMatrix companies={companies}/></div>)}
-        {dashSubTab==="quality"&&(<div><div className="text-sm font-medium mb-3 text-gray-900 dark:text-slate-100">Data Quality</div>{(function(){
+        {dashSubTab==="quality"&&(<div><div className="text-sm font-medium mb-3 text-gray-900 dark:text-slate-100">Data Quality</div>
+        {/* Stale annual data — moved here from the Companies tab so
+            all data-health surfaces live together. A name is "stale"
+            once either its post-FY-end earnings has reported and the
+            latest year in financials.years is still behind, OR 13
+            months have passed since FY-end with no fresh data. Click
+            any chip to jump to the company's Financials tab. */}
+        {(function(){
+          var stale = companies.map(function(c){
+            return { c: c, st: annualStaleStatus(c) };
+          }).filter(function(x){ return x.st && x.st.stale; });
+          if (stale.length === 0) return null;
+          stale.sort(function(a,b){
+            var ay = (a.st.latestImportedYear || 0);
+            var by = (b.st.latestImportedYear || 0);
+            if (ay !== by) return ay - by;
+            return (a.c.name||"").localeCompare(b.c.name||"");
+          });
+          return (
+            <div className="mb-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800">
+              <div onClick={function(){setShowAnnualStale(function(v){var nv=!v;try{localStorage.setItem("ccd:showAnnualStale",nv?"1":"0");}catch(e){}return nv;});}} className="px-3.5 py-2 cursor-pointer flex items-center gap-2">
+                <span className="text-[11px] text-amber-700 dark:text-amber-400">{showAnnualStale?"▼":"▶"}</span>
+                <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">⚠ Stale data: {stale.length} compan{stale.length===1?"y":"ies"} need a re-import</span>
+                <span className="text-[10px] text-amber-700 dark:text-amber-400 italic ml-auto">{showAnnualStale?"click to collapse":"click to expand"}</span>
+              </div>
+              {showAnnualStale&&(
+                <div className="px-3.5 pb-2">
+                  <div className="text-[11px] text-amber-700 dark:text-amber-400 mb-1">Each name has reported its latest fiscal year (or it's been 13+ months since FY-end) but the new annual data hasn't been re-imported. Click a chip to jump to the company's Financials tab.</div>
+                  <div className="flex flex-wrap gap-1 max-h-40 overflow-y-auto">
+                    {stale.slice(0, 200).map(function(x){
+                      var c = x.c, st = x.st;
+                      var tip;
+                      if (st.reason === "no-data") {
+                        tip = "No annual financials imported yet · Expected through FY" + st.fyYear;
+                      } else if (st.reason === "post-fy-report") {
+                        tip = "Latest imported: FY" + (st.latestImportedYear || "?")
+                            + " · Expected through FY" + st.fyYear
+                            + " · Post-FY-end report on file (" + (st.reportSeenDate || "?") + ")";
+                      } else {
+                        tip = "Latest imported: FY" + (st.latestImportedYear || "?")
+                            + " · Expected through FY" + st.fyYear
+                            + " · 13+ months past FY-end (" + st.fyEnd + ")";
+                      }
+                      var label = st.reason === "no-data"
+                        ? "no data"
+                        : "FY" + (st.latestImportedYear || "?") + "→FY" + st.fyYear;
+                      return (
+                        <span
+                          key={c.id}
+                          title={tip}
+                          onClick={function(){setSelCo(c);setTab("companies");setCoView("financials");}}
+                          className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 cursor-pointer hover:bg-amber-200 dark:hover:bg-amber-900/60"
+                        >
+                          {c.name}
+                          <span className="text-amber-700 dark:text-amber-400 ml-1">{label}</span>
+                        </span>
+                      );
+                    })}
+                    {stale.length > 200 && <span className="text-[11px] text-amber-700 dark:text-amber-400 italic self-center">+ {stale.length - 200} more</span>}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+        {(function(){
   /* Transaction reconciliation: for every (company, portfolio) where
      rep shares > 0, compute the sum of signed transaction shares and
      compare to actual rep shares. Two failure modes:
@@ -784,72 +850,6 @@ export default function App(){
             </div>
           );
         })()}
-        {/* Stale annual data — collapsible. Lists companies whose
-            annual financials need a re-import. A name is "stale" once
-            either its post-FY-end earnings has reported (per
-            earningsEntries.reportDate) and the latest year in
-            company.financials.years is still behind, OR 13 months have
-            passed since FY-end with no fresh data. Sold names skipped.
-            Click any chip to open the company on its Financials tab. */}
-        {(function(){
-          var stale = companies.map(function(c){
-            return { c: c, st: annualStaleStatus(c) };
-          }).filter(function(x){ return x.st && x.st.stale; });
-          if (stale.length === 0) return null;
-          /* Sort by FY year asc (oldest stale first), then name. */
-          stale.sort(function(a,b){
-            var ay = (a.st.latestImportedYear || 0);
-            var by = (b.st.latestImportedYear || 0);
-            if (ay !== by) return ay - by;
-            return (a.c.name||"").localeCompare(b.c.name||"");
-          });
-          return (
-            <div className="mb-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800">
-              <div onClick={function(){setShowAnnualStale(function(v){var nv=!v;try{localStorage.setItem("ccd:showAnnualStale",nv?"1":"0");}catch(e){}return nv;});}} className="px-3.5 py-2 cursor-pointer flex items-center gap-2">
-                <span className="text-[11px] text-amber-700 dark:text-amber-400">{showAnnualStale?"▼":"▶"}</span>
-                <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">⚠ Stale data: {stale.length} compan{stale.length===1?"y":"ies"} need a re-import</span>
-                <span className="text-[10px] text-amber-700 dark:text-amber-400 italic ml-auto">{showAnnualStale?"click to collapse":"click to expand"}</span>
-              </div>
-              {showAnnualStale&&(
-                <div className="px-3.5 pb-2">
-                  <div className="text-[11px] text-amber-700 dark:text-amber-400 mb-1">Each name has reported its latest fiscal year (or it's been 13+ months since FY-end) but the new annual data hasn't been re-imported. Click a chip to jump to the company's Financials tab.</div>
-                  <div className="flex flex-wrap gap-1 max-h-40 overflow-y-auto">
-                    {stale.slice(0, 200).map(function(x){
-                      var c = x.c, st = x.st;
-                      var tip;
-                      if (st.reason === "no-data") {
-                        tip = "No annual financials imported yet · Expected through FY" + st.fyYear;
-                      } else if (st.reason === "post-fy-report") {
-                        tip = "Latest imported: FY" + (st.latestImportedYear || "?")
-                            + " · Expected through FY" + st.fyYear
-                            + " · Post-FY-end report on file (" + (st.reportSeenDate || "?") + ")";
-                      } else {
-                        tip = "Latest imported: FY" + (st.latestImportedYear || "?")
-                            + " · Expected through FY" + st.fyYear
-                            + " · 13+ months past FY-end (" + st.fyEnd + ")";
-                      }
-                      var label = st.reason === "no-data"
-                        ? "no data"
-                        : "FY" + (st.latestImportedYear || "?") + "→FY" + st.fyYear;
-                      return (
-                        <span
-                          key={c.id}
-                          title={tip}
-                          onClick={function(){setSelCo(c);setCoView("financials");}}
-                          className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 cursor-pointer hover:bg-amber-200 dark:hover:bg-amber-900/60"
-                        >
-                          {c.name}
-                          <span className="text-amber-700 dark:text-amber-400 ml-1">{label}</span>
-                        </span>
-                      );
-                    })}
-                    {stale.length > 200 && <span className="text-[11px] text-amber-700 dark:text-amber-400 italic self-center">+ {stale.length - 200} more</span>}
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })()}
         {/* Discussion follow-ups due — collapsible. Surfaces any
             annotation whose followUpDate is today or in the next 7
             days. Click a chip to open the Discussions panel filtered
@@ -974,7 +974,21 @@ export default function App(){
               {["All"].concat(subOpts).map(function(so){var a=coStatusSubFilter===so;return <span key={so} onClick={function(){setCoStatusSubFilter(so);}} className={"text-[10px] px-2 py-0.5 rounded-full cursor-pointer transition-colors "+(a?"font-semibold":"font-normal")} style={{border:"1px solid "+(a&&cfg?cfg.color:"transparent"),background:a&&cfg?cfg.bg:"transparent",color:a&&cfg?cfg.color:undefined}}>{so}</span>;})}
             </span>;
           })()}
-          <div className="ml-auto relative"><button onClick={function(){setShowColPicker(function(s){return !s;});}} className={BTN}>Columns {"\u25BE"}</button>{showColPicker&&(companiesView==="metrics"?(
+          {/* Compact/Default toggle \u2014 visible button next to Columns
+              picker so the user can flip column density in one click
+              without opening the dropdown. Only meaningful on the
+              Standard view (Metrics has its own column schema). */}
+          {companiesView==="standard"&&(
+            <button
+              onClick={function(){
+                if(compact){setCompact(false);setVisibleCols(new Set(ALL_COLS));}
+                else{setCompact(true);setVisibleCols(COMPACT_COLS);}
+              }}
+              className={"ml-auto " + BTN}
+              title={compact?"Switch to Default (all columns)":"Switch to Compact (fewer columns)"}
+            >{compact?"Default":"Compact"}</button>
+          )}
+          <div className={(companiesView==="standard"?"":"ml-auto ")+"relative"}><button onClick={function(){setShowColPicker(function(s){return !s;});}} className={BTN}>Columns {"\u25BE"}</button>{showColPicker&&(companiesView==="metrics"?(
   /* Metrics picker — full list from MetricsTable's column schema. */
   <div className="absolute right-0 top-[calc(100%+4px)] z-[100] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3.5 py-2.5 shadow-lg min-w-[200px] max-h-[65vh] overflow-y-auto">
     <div className="flex justify-between mb-1.5 pb-1.5 border-b border-slate-200 dark:border-slate-700">
@@ -1039,7 +1053,7 @@ export default function App(){
               Research / Calendar) flip companiesView; the parent tab
               stays "companies" throughout. Render block below
               switches on companiesView. */}
-          {[["standard","Standard"],["metrics","Metrics"],["research","Research"],["calendar","Calendar"]].map(function(v){var active=companiesView===v[0];return <button key={v[0]} onClick={function(){setCompaniesView(v[0]);}} className={"text-xs px-3 py-1 rounded-md cursor-pointer transition-colors "+(active?"bg-blue-700 text-white font-semibold":"bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-gray-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800")}>{v[1]}</button>;})}
+          {[["standard","Standard"],["metrics","Metrics"],["research","Assignments"],["calendar","Earnings Calendar"]].map(function(v){var active=companiesView===v[0];return <button key={v[0]} onClick={function(){setCompaniesView(v[0]);}} className={"text-xs px-3 py-1 rounded-md cursor-pointer transition-colors "+(active?"bg-blue-700 text-white font-semibold":"bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-gray-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800")}>{v[1]}</button>;})}
           <button onClick={function(){ printPage("table"); }}
             className="ml-2 text-xs px-3 py-1 rounded-md cursor-pointer bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-gray-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
             title={"Print the " + (companiesView==="metrics"?"Metrics":"Standard") + " table (landscape, dense)"}>🖨 Print</button>
