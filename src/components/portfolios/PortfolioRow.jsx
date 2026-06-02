@@ -331,6 +331,16 @@ function PortfolioRow(props) {
         </span>
       </Cell>
 
+      {/* FPE Range — moved up to sit right after Company name so the
+         valuation-at-a-glance sparkline is the first thing the eye
+         hits on each row. Clicks to Valuation. */}
+      <Cell style={cellStyle} className="cursor-pointer" onClick={function(e){e.stopPropagation();onOpenCompany(c,"section:Valuation");}}>
+        {(function () {
+          const el = <FpeRangeMini valuation={val} width={70} />;
+          return el || <Dash />;
+        })()}
+      </Cell>
+
       {/* Next Report — clicks to Earnings & Thesis Check (where the
          next-report date is set and prior reports are listed). */}
       <Cell
@@ -443,26 +453,14 @@ function PortfolioRow(props) {
         </span>
       </Cell>
 
-      {/* Price — text-xs (down from text-sm) to claw back column
-         width for the new TP column. */}
-      <Cell className="text-xs text-gray-900 dark:text-slate-100" style={cellStyle}>
-        {!isNaN(priceVal) ? fmtPrice(priceVal) : "--"}
-      </Cell>
-
-      {/* TP — apples-to-apples with Price. Ord-held rows show the
-         ord-ccy TP; ADR-held rows show the USD-equivalent ADR TP
-         derived from (ord TP / FX) × adrRatio. Cells without a
-         resolvable TP (e.g. USD-ADR holding without adrRatio set)
-         render "--" so the user knows to fill in the ratio. */}
-      <Cell className="text-xs text-gray-900 dark:text-slate-100 cursor-pointer" style={cellStyle} onClick={function(e){e.stopPropagation();onOpenCompany(c,"section:Valuation");}}>
-        {displayTp !== null && isFinite(displayTp)
-          ? ccyPrefix(displayTpCcy) + fmtPrice(displayTp)
-          : "--"}
-      </Cell>
-
       {/* Avg Cost */}
       <Cell className="text-xs text-gray-900 dark:text-slate-100" style={cellStyle}>
         {avgCostVal > 0 ? fmtPrice(avgCostVal) : "--"}
+      </Cell>
+
+      {/* Price */}
+      <Cell className="text-xs text-gray-900 dark:text-slate-100" style={cellStyle}>
+        {!isNaN(priceVal) ? fmtPrice(priceVal) : "--"}
       </Cell>
 
       {/* Unreal */}
@@ -478,13 +476,15 @@ function PortfolioRow(props) {
             </span>}
       </Cell>
 
-      {/* 5D% */}
-      <Cell className="text-xs text-gray-900 dark:text-slate-100 cursor-pointer" style={cellStyle} onClick={function(e){e.stopPropagation();onOpenCompany(c,"metrics");}}>
-        {perf5d === null
-          ? "--"
-          : <span style={{ color: perf5d >= 0 ? "#166534" : "#dc2626" }} className="font-medium">
-              {perf5d >= 0 ? "+" : ""}{perf5d.toFixed(1)}%
-            </span>}
+      {/* TP — apples-to-apples with Price. Ord-held rows show the
+         ord-ccy TP; ADR-held rows show the USD-equivalent ADR TP
+         derived from (ord TP / FX) × adrRatio. Cells without a
+         resolvable TP (e.g. USD-ADR holding without adrRatio set)
+         render "--" so the user knows to fill in the ratio. */}
+      <Cell className="text-xs text-gray-900 dark:text-slate-100 cursor-pointer" style={cellStyle} onClick={function(e){e.stopPropagation();onOpenCompany(c,"section:Valuation");}}>
+        {displayTp !== null && isFinite(displayTp)
+          ? ccyPrefix(displayTpCcy) + fmtPrice(displayTp)
+          : "--"}
       </Cell>
 
       {/* MOS Live — clicks to Valuation section. */}
@@ -518,12 +518,15 @@ function PortfolioRow(props) {
           : "--"}
       </Cell>
 
-      {/* FPE Range — clicks to Valuation. */}
-      <Cell style={cellStyle} className="cursor-pointer" onClick={function(e){e.stopPropagation();onOpenCompany(c,"section:Valuation");}}>
-        {(function () {
-          const el = <FpeRangeMini valuation={val} width={70} />;
-          return el || <Dash />;
-        })()}
+      {/* 5D% — moved to right after MOS Fixed (was between Unreal and
+         MOS Live). Groups the two short-window-vs-target reads (MOS
+         Live / MOS Fixed / 5D%) next to each other. */}
+      <Cell className="text-xs text-gray-900 dark:text-slate-100 cursor-pointer" style={cellStyle} onClick={function(e){e.stopPropagation();onOpenCompany(c,"metrics");}}>
+        {perf5d === null
+          ? "--"
+          : <span style={{ color: perf5d >= 0 ? "#166534" : "#dc2626" }} className="font-medium">
+              {perf5d >= 0 ? "+" : ""}{perf5d.toFixed(1)}%
+            </span>}
       </Cell>
 
       {/* Target % — proposal-aware. When pendingTargetProposal exists,
