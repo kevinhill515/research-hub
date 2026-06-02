@@ -423,7 +423,7 @@ function ApprovalCard({ rec, company, companyName, onApprove, onReject, onWithdr
 
 export function TpApprovalsPanel({ open, onClose, onNavigate }){
   var { tpApprovals, companies, approveTpApproval, rejectTpApproval, withdrawTpApproval } = useCompanyContext();
-  var [view, setView] = useState("pending"); /* "pending" | "decided" */
+  var [view, setView] = useState("pending"); /* "pending" | "approved" | "rejected" */
 
   /* Lookup the full company by id. Used by ApprovalCard to display the
      name, derive the current ord-ticker price, and pick the currency
@@ -441,13 +441,14 @@ export function TpApprovalsPanel({ open, onClose, onNavigate }){
   }, [tpApprovals]);
 
   var pending = sorted.filter(function(r){return r.status === "pending";});
-  /* Decided excludes self-withdrawals. New withdraws delete the record
-     outright, but records from before that change persist as rejected
-     with reason 'Withdrawn by suggester' — filter those out here so the
-     Decided list stays focused on genuine peer-rejection / approval audit. */
-  var decided = sorted.filter(function(r){
-    if(r.status === "pending") return false;
-    if(r.status === "rejected" && r.rejectReason === "Withdrawn by suggester") return false;
+  var approved = sorted.filter(function(r){return r.status === "approved";});
+  /* Rejected list excludes self-withdrawals. New withdraws delete the
+     record outright, but records from before that change persist as
+     rejected with reason 'Withdrawn by suggester' — filter those out
+     so the Rejected tab stays focused on genuine peer-rejection. */
+  var rejected = sorted.filter(function(r){
+    if(r.status !== "rejected") return false;
+    if(r.rejectReason === "Withdrawn by suggester") return false;
     return true;
   });
 
@@ -461,31 +462,28 @@ export function TpApprovalsPanel({ open, onClose, onNavigate }){
           <button onClick={function(){setView("pending");}} className={"text-[11px] px-2.5 py-1 rounded-full border cursor-pointer " + (view==="pending"?"bg-amber-100 dark:bg-amber-900/40 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200 font-semibold":"border-slate-200 dark:border-slate-700 text-gray-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800")}>
             Pending {pending.length>0 && <span className="ml-1">({pending.length})</span>}
           </button>
-          <button onClick={function(){setView("decided");}} className={"text-[11px] px-2.5 py-1 rounded-full border cursor-pointer " + (view==="decided"?"bg-slate-200 dark:bg-slate-700 border-slate-400 dark:border-slate-500 text-gray-900 dark:text-slate-100 font-semibold":"border-slate-200 dark:border-slate-700 text-gray-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800")}>
-            Decided
+          <button onClick={function(){setView("approved");}} className={"text-[11px] px-2.5 py-1 rounded-full border cursor-pointer " + (view==="approved"?"bg-emerald-100 dark:bg-emerald-900/40 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200 font-semibold":"border-slate-200 dark:border-slate-700 text-gray-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800")}>
+            Approved {approved.length>0 && <span className="ml-1">({approved.length})</span>}
+          </button>
+          <button onClick={function(){setView("rejected");}} className={"text-[11px] px-2.5 py-1 rounded-full border cursor-pointer " + (view==="rejected"?"bg-rose-100 dark:bg-rose-900/40 border-rose-300 dark:border-rose-700 text-rose-800 dark:text-rose-200 font-semibold":"border-slate-200 dark:border-slate-700 text-gray-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800")}>
+            Rejected {rejected.length>0 && <span className="ml-1">({rejected.length})</span>}
           </button>
           <button onClick={onClose} className="ml-auto text-xs text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300 cursor-pointer">Close ✕</button>
         </div>
         <div className="overflow-y-auto p-4 flex-1">
-          {view === "pending" ? (
-            pending.length === 0 ? (
-              <div className="text-sm text-gray-500 dark:text-slate-400 italic text-center py-8">No TP changes pending approval.</div>
-            ) : (
-              pending.map(function(rec){
-                var co = coById[rec.companyId];
-                return <ApprovalCard key={rec.id} rec={rec} company={co} companyName={(co && co.name) || "(unknown)"} onApprove={approveTpApproval} onReject={rejectTpApproval} onWithdraw={withdrawTpApproval} onNavigate={onNavigate}/>;
-              })
-            )
-          ) : (
-            decided.length === 0 ? (
-              <div className="text-sm text-gray-500 dark:text-slate-400 italic text-center py-8">No decided TP changes yet.</div>
-            ) : (
-              decided.map(function(rec){
-                var co = coById[rec.companyId];
-                return <ApprovalCard key={rec.id} rec={rec} company={co} companyName={(co && co.name) || "(unknown)"} onApprove={approveTpApproval} onReject={rejectTpApproval} onWithdraw={withdrawTpApproval} onNavigate={onNavigate}/>;
-              })
-            )
-          )}
+          {(function(){
+            var list = view === "pending" ? pending : view === "approved" ? approved : rejected;
+            var emptyMsg = view === "pending" ? "No TP changes pending approval."
+                         : view === "approved" ? "No approved TP changes yet."
+                         : "No rejected TP changes yet.";
+            if (list.length === 0) {
+              return <div className="text-sm text-gray-500 dark:text-slate-400 italic text-center py-8">{emptyMsg}</div>;
+            }
+            return list.map(function(rec){
+              var co = coById[rec.companyId];
+              return <ApprovalCard key={rec.id} rec={rec} company={co} companyName={(co && co.name) || "(unknown)"} onApprove={approveTpApproval} onReject={rejectTpApproval} onWithdraw={withdrawTpApproval} onNavigate={onNavigate}/>;
+            });
+          })()}
         </div>
       </div>
     </div>
