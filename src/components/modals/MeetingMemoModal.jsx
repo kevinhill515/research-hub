@@ -745,7 +745,7 @@ function GenerateView({ memo, copied, onCopy, onClear, onDiscard, hasPending, pr
             ? "border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 cursor-pointer hover:bg-rose-100 dark:hover:bg-rose-900/40"
             : "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-gray-400 dark:text-slate-500 cursor-not-allowed")}
           title={hasPending
-            ? "DELETE all pending agenda entries (target % proposals + B/A/P/S stamps) on " + portsLabel + ". Does NOT save a memo, does NOT commit. CASH is restored."
+            ? "DELETE all pending agenda entries (target % proposals + B/A/P/S trades) on " + portsLabel + ". Does NOT save a memo, does NOT commit. CASH is restored."
             : "No pending entries on " + portsLabel + " to clear."}
         >
           Clear agenda ({portsLabel})

@@ -530,19 +530,19 @@ export function PortfoliosTable(props) {
           <span className="text-xs text-amber-800 dark:text-amber-300">
             {pendingSummary.byCompany.length} {pendingSummary.byCompany.length === 1 ? "company" : "companies"}
             {pendingSummary.targetCount > 0 && " · " + pendingSummary.targetCount + " target " + (pendingSummary.targetCount === 1 ? "change" : "changes")}
-            {pendingSummary.stampCount > 0 && " · " + pendingSummary.stampCount + " " + (pendingSummary.stampCount === 1 ? "stamp" : "stamps") + " (B/A/P/S)"}
+            {pendingSummary.stampCount > 0 && " · " + pendingSummary.stampCount + " " + (pendingSummary.stampCount === 1 ? "trade" : "trades") + " (B/A/P/S)"}
           </span>
           <button
             onClick={function () {
               if (typeof window !== "undefined" && window.confirm) {
                 var msg = "Lock in " + (pendingSummary.targetCount + pendingSummary.stampCount) + " proposed change(s) in " + portTab + "?\n\n" +
-                  "Target % proposals will be written to committed portWeights. B/A/P/S stamps will flip to executed. This is the equivalent of \"Clear agenda (mark executed)\" but scoped to just this portfolio.";
+                  "Target % proposals will be written to committed portWeights. B/A/P/S trades will flip to executed. This is the equivalent of \"Clear agenda (mark executed)\" but scoped to just this portfolio.";
                 if (!window.confirm(msg)) return;
               }
               commitProposedWeights(portTab);
             }}
             className="text-xs px-3 py-1 rounded-md font-semibold bg-amber-600 hover:bg-amber-700 text-white cursor-pointer ml-auto"
-            title={"Commit every pending change for " + portTab + " — target % proposals become committed, B/A/P/S stamps flip to executed."}
+            title={"Commit every pending change for " + portTab + " — target % proposals become committed, B/A/P/S trades flip to executed."}
           >
             Lock in {portTab}
           </button>
