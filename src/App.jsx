@@ -309,6 +309,27 @@ export default function App(){
      closes the popup. */
   if (popoutKind) {
     var popoutClose = function(){ try { window.close(); } catch(_e){} };
+    /* Show a loading state until the initial Supabase fetch has
+       completed. Before this gate, the modal would render with the
+       empty initial state ([] for annotations/tpApprovals), so a
+       popout opened against a workspace with 3 discussions and 4
+       pending approvals would visibly say "0" until the fetch
+       finished — and the user wouldn't know whether the data was
+       loading or actually missing. Once ready flips true the
+       CompanyProvider has set the real arrays. */
+    if (!ready) {
+      return (
+        <div className={"min-h-screen flex items-center justify-center font-[system-ui,sans-serif] text-sm text-gray-500 dark:text-slate-400 bg-white dark:bg-slate-950 " + (dark ? "dark" : "")}>
+          <div className="text-center">
+            <div className="text-2xl mb-2">⏳</div>
+            <div>Loading data…</div>
+            {loadFailed && (
+              <div className="mt-2 text-xs text-rose-600 dark:text-rose-400">Initial load failed — check the main window and retry.</div>
+            )}
+          </div>
+        </div>
+      );
+    }
     return (
       <div className={"min-h-screen font-[system-ui,sans-serif] text-sm text-gray-900 dark:text-slate-100 bg-white dark:bg-slate-950 " + (dark ? "dark" : "")}>
         {popoutKind === "discussions" && (
