@@ -837,8 +837,16 @@ export function CompanyDetail(props){
                     corresponding *Fixed slots so the tile + MOS Fixed
                     finally show the approved values). */}
                 {(function(){
+                  /* Match the latest tpHistory entry regardless of
+                     source — early entries (Suncor and the IC batch)
+                     were written by the legacy commitValuation /
+                     inline-save path and don't carry source:"approval",
+                     so a stricter filter missed them. The reconcile
+                     still pulls per-FY leg values from the matching
+                     tpApprovals record when present, so the right data
+                     lands either way. */
                   var hist = (selCo.tpHistory||[]).slice().sort(function(a,b){return (b.date||"").localeCompare(a.date||"");});
-                  var latestApproval = hist.find(function(h){return h && h.source === "approval";});
+                  var latestApproval = hist[0];
                   if (!latestApproval) return null;
                   var latestTp = parseFloat(latestApproval.tp);
                   var fixedTp = tpFixed;
