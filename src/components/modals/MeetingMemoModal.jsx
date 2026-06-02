@@ -81,8 +81,18 @@ export function MeetingMemoModal({ open, onClose }) {
   const [profile, setProfile] = useState("tuesday");
   const [copied, setCopied] = useState(false);
   const [expandedLogId, setExpandedLogId] = useState(null);
+  /* Memo snapshot per profile — captured at Lock-in time so the memo
+     text the user is about to copy/paste doesn't evaporate the moment
+     the lock commits (which flips isAgenda → false on every entry and
+     leaves the live builder with nothing to show). The snapshot only
+     clears on "Mark executed + log" or "Discard" — i.e. when the user
+     has explicitly finished with this meeting. Local-only state so a
+     hard reload re-derives from live data; that's fine — the snapshot
+     is a session convenience, not a record-of-truth. */
+  const [lockedSnapshot, setLockedSnapshot] = useState({});
 
-  const memo = profile ? buildMeetingMemo(companies, profile, repData) : "";
+  const liveMemo = profile ? buildMeetingMemo(companies, profile, repData) : "";
+  const memo = (lockedSnapshot[profile] != null && lockedSnapshot[profile] !== "") ? lockedSnapshot[profile] : liveMemo;
   const logEntries = memoLog || [];
   const profilePorts = (MEETING_PROFILES[profile] && MEETING_PROFILES[profile].ports) || [];
   const profilePortsKey = profilePorts.join(",");
@@ -178,16 +188,25 @@ export function MeetingMemoModal({ open, onClose }) {
     }
   }
 
+  function clearSnapshot() {
+    setLockedSnapshot(function (s) { var n = Object.assign({}, s); delete n[profile]; return n; });
+  }
   function clearAgenda() {
     if (!profile) return;
     const ports = MEETING_PROFILES[profile].ports;
+    /* Use the snapshot if locked, else the live memo — either way the
+       log gets the version the user actually saw. */
     addMemoLog({ profile: profile, memo: memo });
     setCompanies(function (cs) { return clearAgendaFlags(cs, ports); });
+    clearSnapshot();
     setTab("log");
   }
 
   function lockInPortfolio(port) {
     if (typeof window !== "undefined" && window.confirm && !window.confirm("Lock in all pending changes for " + port + "?")) return;
+    /* Snapshot the live memo before committing — same reason as the
+       lock-all path. */
+    setLockedSnapshot(function (s) { return Object.assign({}, s, profile && liveMemo ? { [profile]: liveMemo } : {}); });
     commitProposedWeights(port);
   }
   function lockInAllProfilePorts() {
@@ -195,6 +214,15 @@ export function MeetingMemoModal({ open, onClose }) {
     if (n === 0) return;
     if (typeof window !== "undefined" && window.confirm &&
         !window.confirm("Lock in ALL " + n + " pending changes across " + profilePorts.join(" / ") + "?")) return;
+    /* CRITICAL: snapshot the live memo BEFORE committing. Once
+       commitProposedWeights runs, every isAgenda:true entry flips to
+       isAgenda:false and the live builder returns an empty Trading
+       Agenda + empty Allocation Changes — the memo would look "wiped"
+       at the exact moment the user is about to copy it. The snapshot
+       preserves the text until Mark-executed-log or Discard. */
+    if (profile && liveMemo) {
+      setLockedSnapshot(function (s) { return Object.assign({}, s, { [profile]: liveMemo }); });
+    }
     profilePorts.forEach(function (p) { commitProposedWeights(p); });
   }
   function discardProfileAgenda() {
@@ -205,6 +233,7 @@ export function MeetingMemoModal({ open, onClose }) {
                        "?\n\nThis deletes the proposals without committing them. CASH will be restored for target-% proposals. " +
                        "Cannot be undone.")) return;
     discardAgendaEntries(profilePorts);
+    clearSnapshot();
   }
   async function doRefresh() {
     if (refreshing) return;
@@ -224,7 +253,7 @@ export function MeetingMemoModal({ open, onClose }) {
           <div className="text-base font-semibold text-gray-900 dark:text-slate-100">IC Meeting</div>
           <div className="flex items-center gap-1">
             <button onClick={function () { setTab("agenda"); }} className={tabClass(tab === "agenda")}>
-              Agenda{(totalPendingCount + unseenChangeCount) > 0 ? " (" + (totalPendingCount + unseenChangeCount) + ")" : ""}
+              Agenda{totalPendingCount > 0 ? " (" + totalPendingCount + ")" : ""}
             </button>
             <button onClick={function () { setTab("generate"); }} className={tabClass(tab === "generate")}>Memo</button>
             <button onClick={function () { setTab("log"); }} className={tabClass(tab === "log")}>
@@ -297,6 +326,8 @@ export function MeetingMemoModal({ open, onClose }) {
               hasPending={totalPendingCount > 0}
               profilePorts={profilePorts}
               profile={profile}
+              snapshotActive={lockedSnapshot[profile] != null && lockedSnapshot[profile] !== ""}
+              onRegenerate={clearSnapshot}
             />
           )}
         </div>
@@ -489,57 +520,11 @@ function AgendaSummary({ profilePorts, pendingByPort, recentChanges, targetChang
         })}
       </div>
 
-      {/* Section B: recent committed target changes */}
-      <div>
-        <div className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-1">Recent Target Changes (last {RECENT_CHANGE_DAYS} days)</div>
-        <div className="text-[11px] text-gray-500 dark:text-slate-400 mb-2">
-          Already-committed target-weight moves on these portfolios. Click ⏳ to mark seen — once everyone has acknowledged, the row goes quiet.
-        </div>
-        {recentChanges.length === 0 ? (
-          <div className="text-sm text-gray-500 dark:text-slate-400 italic py-3 text-center border border-dashed border-slate-200 dark:border-slate-700 rounded-md">
-            No target changes in the window.
-          </div>
-        ) : (
-          <div className="space-y-1">
-            {recentChanges.map(function (rc) {
-              var seenBy = targetChangeReads[rc.key] || [];
-              var seen = seenBy.indexOf(currentUser) >= 0;
-              return (
-                <div
-                  key={rc.key}
-                  className={"flex items-center gap-2 px-3 py-1.5 rounded-md border text-xs " + (seen
-                    ? "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
-                    : "border-amber-300 dark:border-amber-700 bg-amber-50/60 dark:bg-amber-950/30")}
-                >
-                  {!seen && (
-                    <button
-                      onClick={function () { onMarkTargetRead(rc.key); }}
-                      title="Mark as seen"
-                      className="text-amber-600 dark:text-amber-400 hover:text-amber-800 cursor-pointer text-base leading-none"
-                    >⏳</button>
-                  )}
-                  {seen && <span className="text-emerald-600 dark:text-emerald-400 text-xs">✓</span>}
-                  <span className="font-medium text-gray-900 dark:text-slate-100 min-w-[100px]">{rc.ticker || rc.companyName}</span>
-                  <span className="text-gray-500 dark:text-slate-400">{rc.portfolio}</span>
-                  <span className="text-gray-500 dark:text-slate-400">·</span>
-                  <span className="font-mono text-gray-700 dark:text-slate-200">
-                    {rc.oldWeight != null ? fmtPct(rc.oldWeight) : "—"} → {fmtPct(rc.newWeight)}
-                  </span>
-                  <span className="ml-auto text-[10px] text-gray-400 dark:text-slate-500">
-                    {rc.author && (
-                      <span className="inline-flex items-center gap-1 mr-2">
-                        <span className="w-1.5 h-1.5 rounded-full" style={{ background: TEAM_COLORS[rc.author] || "#94a3b8" }} />
-                        {rc.author}
-                      </span>
-                    )}
-                    {fmtDateUS(rc.date)}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      {/* "Recent Target Changes" section removed — once the meeting is
+          locked and logged the entries belong in the memo's Allocation
+          Changes section + memoLog, not as a separate Agenda-tab feed.
+          Cross-meeting catch-up between Tuesday and Thursday meetings
+          is now served by the memoLog tab itself. */}
     </div>
   );
 }
@@ -721,7 +706,7 @@ function ProposalRow({ company, port, heldTicker, actionEntry, targetEntry, acti
 
 /* ===== GENERATE TAB ===== */
 
-function GenerateView({ memo, copied, onCopy, onClear, onDiscard, hasPending, profilePorts, profile }) {
+function GenerateView({ memo, copied, onCopy, onClear, onDiscard, hasPending, profilePorts, profile, snapshotActive, onRegenerate }) {
   /* Button labels include the active profile's ports so it's always
      unambiguous what gets cleared — Tue clears FIN/IN/FGL/GL, Thu
      clears EM/SC. Same buttons on either tab; only the scope label
@@ -759,8 +744,14 @@ function GenerateView({ memo, copied, onCopy, onClear, onDiscard, hasPending, pr
         onClick={function (e) { e.target.select(); }}
         className="w-full text-xs font-mono px-3 py-2 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 leading-relaxed resize-y"
       />
+      {snapshotActive && (
+        <div className="mt-2 px-2.5 py-1.5 rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 flex items-center gap-2 flex-wrap">
+          <span className="text-[11px] text-amber-800 dark:text-amber-300">📸 Showing snapshot captured at lock-in — protected from being wiped by the commit.</span>
+          <button onClick={onRegenerate} className="text-[10px] px-2 py-0.5 rounded-md border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 text-amber-800 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-900/40 cursor-pointer ml-auto">Regenerate from live</button>
+        </div>
+      )}
       <div className="text-[11px] text-gray-400 dark:text-slate-500 italic mt-2">
-        Trading Agenda lists items currently in the <b>proposed</b> state (isAgenda:true). Allocation Changes lists <b>committed</b> moves from the last 6 days. To move an item from Trading Agenda → Allocation Changes, hit <b>Lock in</b> on its portfolio (on the Portfolios page or the Agenda tab) — or click <b>Mark executed + log</b> here to commit everything in this meeting's ports AND save a memo snapshot.
+        Trading Agenda lists items in the <b>proposed</b> state (isAgenda:true). Allocation Changes lists pending target-% moves. Hitting <b>Lock in</b> snapshots this memo so it survives the commit — the snapshot stays until you hit <b>Mark executed + log</b> or <b>Clear agenda</b>.
       </div>
     </div>
   );

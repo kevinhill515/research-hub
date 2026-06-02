@@ -1543,25 +1543,56 @@ export function CompanyProvider({children}){
     /* baseline for delta-vs-CASH = currently-proposed value if one
        exists; else committed portWeights value. Lets the same edit
        cell handle "first proposal" and "amend an existing proposal"
-       without double-counting CASH. */
+       without double-counting CASH.
+
+       Sell-stamp override: when there's an existing agenda Sell stamp
+       on this port, treat its stored oldWeight as the baseline (not
+       the now-0 portWeights value the Sell zeroed). This lets the IC
+       Meeting flow "Sell All → change mind → set new target" produce
+       the right allocation-change row ("X% → newTarget%" not
+       "0% → newTarget%"). The Sell stamp itself is removed by the
+       new target — the user has decided to keep the position. */
     var deltaForCash = 0;
     setCompanies(function(cs){
       return cs.map(function(c){
         if(c.id !== companyId) return c;
+        /* Find any existing Sell agenda stamp on this port. */
+        var sellIdx = -1;
+        var hist0 = c.portWeightHistory || [];
+        for(var si=0; si<hist0.length; si++){
+          var sh = hist0[si];
+          if(sh && sh.isAgenda && sh.portfolio===portfolio && sh.action==="Sell"){
+            sellIdx = si; break;
+          }
+        }
+        var sellEntry = sellIdx >= 0 ? hist0[sellIdx] : null;
         var committedRaw = (c.portWeights || {})[portfolio];
         var committedNum = parseFloat(committedRaw); if(isNaN(committedNum)) committedNum = 0;
+        /* Override baseline if Sell pre-zeroed portWeights. */
+        if(sellEntry){
+          var sellOld = parseFloat(sellEntry.oldWeight);
+          if(isFinite(sellOld) && sellOld > committedNum) committedNum = sellOld;
+        }
         var newNum = parseFloat(rawNewValue); if(isNaN(newNum)) newNum = 0;
         var pending = _findPendingTargetEntry(c, portfolio);
-        var prevProposed = pending ? parseFloat(pending.entry.newWeight) : committedNum;
+        var prevProposed = pending ? parseFloat(pending.entry.newWeight) : (sellEntry ? 0 : committedNum);
         if(isNaN(prevProposed)) prevProposed = committedNum;
         deltaForCash = newNum - prevProposed;
         /* If proposed === committed, there's nothing pending — clear
            any existing proposal entry on this port. */
         var nowMatchesCommitted = Math.abs(newNum - committedNum) < 0.01;
         var newHist;
+        /* Build the working history with the Sell stamp removed first
+           (whether or not we keep a target proposal — see below). */
+        var histNoSell = sellIdx >= 0
+          ? hist0.filter(function(h, i){ return i !== sellIdx; })
+          : hist0;
         if(nowMatchesCommitted){
-          newHist = (c.portWeightHistory || []).filter(function(h, i){
-            return !(pending && i === pending.index);
+          newHist = histNoSell.filter(function(h, i){
+            /* pending.index was relative to the ORIGINAL hist; if we
+               filtered out a Sell that came before it, the index
+               shifts by -1. Match by id instead to avoid the dance. */
+            return !(pending && pending.entry.id && h.id === pending.entry.id);
           });
         } else {
           var entry = {
@@ -1577,14 +1608,25 @@ export function CompanyProvider({children}){
              prepend. Keeps history clean — multiple keystrokes don't
              accumulate noise. */
           if(pending){
-            newHist = (c.portWeightHistory || []).map(function(h, i){
-              return i === pending.index ? entry : h;
+            newHist = histNoSell.map(function(h){
+              return (h && pending.entry.id && h.id === pending.entry.id) ? entry : h;
             });
           } else {
-            newHist = [entry].concat(c.portWeightHistory || []);
+            newHist = [entry].concat(histNoSell);
           }
         }
-        return Object.assign({}, c, { portWeightHistory: newHist });
+        /* If a Sell stamp was just removed, restore portWeights to the
+           pre-Sell committed value. The Sell originally mutated
+           portWeights to "0"; the target proposal that's replacing it
+           should ride on the proper baseline. */
+        var newPortWeights = c.portWeights;
+        if(sellEntry){
+          var restored = parseFloat(sellEntry.oldWeight);
+          if(isFinite(restored)){
+            newPortWeights = Object.assign({}, c.portWeights || {}, { [portfolio]: String(restored) });
+          }
+        }
+        return Object.assign({}, c, { portWeightHistory: newHist, portWeights: newPortWeights });
       });
     });
     _shiftCash(portfolio, deltaForCash);

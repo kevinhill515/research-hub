@@ -131,15 +131,39 @@ function PortfolioRow(props) {
      newWeight and NO action (B/A/P/S stamps also use isAgenda:true but
      carry an action). When this exists, the Target % cell renders the
      proposed value with the amber-dashed treatment instead of the
-     committed portWeights value. */
+     committed portWeights value.
+     A Sell stamp (action:"Sell") ALSO surfaces here as a quasi-proposal
+     so the Target cell shows "X% → 0%" instead of going to "--". This
+     matches other target-change rendering and prevents the row losing
+     visual context about what was being given up. The proposal flow
+     gives precedence to an explicit (no-action) target proposal when
+     both exist — the user has decided to overwrite the Sell. */
   const pendingTargetProposal = (function () {
     const hist = company.portWeightHistory || [];
+    var sellStamp = null;
     for (let i = 0; i < hist.length; i++) {
       const h = hist[i];
       if (h && h.isAgenda && h.portfolio === portTab && !h.action
           && h.newWeight !== undefined && h.newWeight !== null) {
         return h;
       }
+      if (h && h.isAgenda && h.portfolio === portTab && h.action === "Sell" && !sellStamp) {
+        sellStamp = h;
+      }
+    }
+    if (sellStamp) {
+      /* Synthesize a proposal-shaped object so the Target cell render
+         path (and its proposedNum / showProposed switches) light up
+         without duplicating logic. newWeight is 0 — the Sell intent. */
+      return {
+        id: sellStamp.id,
+        portfolio: portTab,
+        oldWeight: sellStamp.oldWeight,
+        newWeight: 0,
+        author: sellStamp.author || sellStamp.user || "",
+        isAgenda: true,
+        _fromSellStamp: true,
+      };
     }
     return null;
   })();
@@ -563,10 +587,20 @@ function PortfolioRow(props) {
                     /* "was → proposed" rendered as two inline-block spans
                        so the line height matches the steady-state single
                        value and the row can't grow to 2 lines. nowrap +
-                       leading-[1.2] match the surrounding cell metrics. */
+                       leading-[1.2] match the surrounding cell metrics.
+                       For Sell-derived proposals, the "was" comes from
+                       the stamp's stored oldWeight (since portWeights
+                       was zeroed at Sell-stamp time, reading `target`
+                       would just show 0). */
                     <span className="inline-block whitespace-nowrap leading-[1.2]">
                       <span className="text-gray-400 dark:text-slate-500 line-through text-[11px] mr-0.5 not-italic font-normal">
-                        {target > 0 ? parseFloat(target).toFixed(1) : "0"}
+                        {(function(){
+                          if (pendingTargetProposal && pendingTargetProposal._fromSellStamp) {
+                            var ow = parseFloat(pendingTargetProposal.oldWeight);
+                            return isFinite(ow) && ow > 0 ? ow.toFixed(1) : "0";
+                          }
+                          return target > 0 ? parseFloat(target).toFixed(1) : "0";
+                        })()}
                       </span>
                       {proposedNum.toFixed(1) + "%"}
                     </span>

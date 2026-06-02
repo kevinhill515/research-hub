@@ -190,10 +190,46 @@ function formatPortfolioSection(byPort, ports, repData, formatValue) {
 }
 
 /* FV Target Changes — TP changes from tpHistory in last 6 days where
- * source === "approval" (i.e. they went through the approval workflow,
- * not other auto-write paths). Grouped per portfolio: a single TP change
- * is in effect for every portfolio the company belongs to. */
-function buildFvUpdates(companies, ports, repData) {
+ * source === "approval".
+ *
+ * Two formatting modes:
+ *   - consolidated=true  (Multi Cap meeting): one flat list. A single
+ *     TP change applies to every portfolio the company is in, so
+ *     breaking out by portfolio just creates 4 duplicates of every
+ *     row. Show each approved TP once. The held-ticker used for
+ *     display is picked from whichever profile port actually holds
+ *     the position; falls back to any if multiple do.
+ *   - consolidated=false (EM+SC meeting): per-port grouping kept,
+ *     because EM and SC do hold different ticker variants of the
+ *     same name and the breakout disambiguates which sleeve was
+ *     repriced.
+ */
+function buildFvUpdates(companies, ports, repData, consolidated) {
+  if (consolidated) {
+    var rows = [];
+    var seen = {};
+    (companies || []).forEach(function (c) {
+      (c.tpHistory || []).forEach(function (h) {
+        if (h.source !== "approval") return;
+        if (!isRecent(h.date)) return;
+        if (!(c.portfolios || []).some(function (p) { return ports.indexOf(p) >= 0; })) return;
+        if (seen[c.id]) return; /* one TP per company even with multi approvals */
+        seen[c.id] = true;
+        var tpStr = h.tp != null && isFinite(h.tp) ? Number(h.tp).toFixed(2) : "";
+        /* Pick held ticker from any profile port that holds it. */
+        var heldTicker = null;
+        for (var i = 0; i < ports.length; i++) {
+          var p = ports[i];
+          if ((c.portfolios || []).indexOf(p) < 0) continue;
+          var tk = pickHeldTicker(c, p, repData);
+          if (tk) { heldTicker = tk; break; }
+        }
+        if (!heldTicker) heldTicker = c.ticker || "?";
+        rows.push(heldTicker + " (" + (c.name || "?") + ") $" + tpStr);
+      });
+    });
+    return rows.join(", ");
+  }
   const byPort = {};
   ports.forEach(function (p) { byPort[p] = []; });
   (companies || []).forEach(function (c) {
@@ -332,8 +368,12 @@ export function buildMeetingMemo(companies, profileName, repData) {
     return from + " → " + to;
   });
 
-  /* FV Target Changes — TP approvals in the last 6 days. */
-  const fvLines = buildFvUpdates(companies, profile.ports, repData);
+  /* FV Target Changes — TP approvals in the last 6 days. Consolidate
+     into a flat list for Tuesday (Multi Cap) where a single TP applies
+     across FIN/IN/FGL/GL and per-port breakout was just creating
+     duplicates. Thursday (EM+SC) keeps per-port grouping because the
+     sleeves often hold different ticker variants. */
+  const fvLines = buildFvUpdates(companies, profile.ports, repData, profileName === "tuesday");
 
   const out = [];
   out.push(dateHeader());
