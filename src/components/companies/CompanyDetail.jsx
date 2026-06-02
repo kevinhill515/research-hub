@@ -25,6 +25,7 @@ import CompanyDashboard from './CompanyDashboard.jsx';
 import SegmentsTab from './SegmentsTab.jsx';
 import EpsRevisionsTab from './EpsRevisionsTab.jsx';
 import GuidanceTab from './GuidanceTab.jsx';
+import TpSuggestPanel from './TpSuggestPanel.jsx';
 import PreEarningsBrief from './PreEarningsBrief.jsx';
 import SnapshotTab from './SnapshotTab.jsx';
 import PricesTab from './PricesTab.jsx';
@@ -703,42 +704,55 @@ export function CompanyDetail(props){
 
                 {/* 1. TP and MOS display — 2x2 grid: live (FactSet-driven) on
                       top row, fixed (snapshot EPS) on bottom row. */}
-                <div className="grid grid-cols-2 gap-3 mb-3">
-                  <div className="px-4 py-3.5 rounded-lg" style={{background:tp!==null?"#dcfce7":undefined,border:"1px solid "+(tp!==null?"#86efac":"#e2e8f0")}}>
-                    <div className="text-[11px] text-gray-500 dark:text-slate-400 mb-0.5">TP Live{impliedFYLabel(pv)?" ("+impliedFYLabel(pv)+")":""}</div>
-                    <div className="text-[22px] font-bold" style={{color:tp!==null?"#166534":undefined}}>{fmtTP(tp,activeCurrency)}</div>
-                    {tp!==null&&<div className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">{pv.pe}x {"\u00D7"} {activeCurrency} {eps&&eps.toFixed?eps.toFixed(2):eps}</div>}
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  <div className="px-3 py-2 rounded-lg" style={{background:tp!==null?"#dcfce7":undefined,border:"1px solid "+(tp!==null?"#86efac":"#e2e8f0")}}>
+                    <div className="text-[10px] text-gray-500 dark:text-slate-400 mb-0.5">TP Live{impliedFYLabel(pv)?" ("+impliedFYLabel(pv)+")":""}</div>
+                    <div className="text-[16px] font-bold leading-tight" style={{color:tp!==null?"#166534":undefined}}>{fmtTP(tp,activeCurrency)}</div>
+                    {tp!==null&&<div className="text-[10px] text-gray-500 dark:text-slate-400 mt-0.5">{pv.pe}x {"\u00D7"} {activeCurrency} {eps&&eps.toFixed?eps.toFixed(2):eps}</div>}
                   </div>
-                  <div className="px-4 py-3.5 rounded-lg" style={{background:mosStyle?mosStyle.bg:undefined,border:"1px solid "+(mosStyle?"transparent":"#e2e8f0")}}>
-                    <div className="text-[11px] mb-0.5" style={{color:mosStyle?mosStyle.color:undefined}}>MOS Live</div>
-                    <div className="text-[22px] font-bold" style={{color:mosStyle?mosStyle.color:undefined}}>{mos!==null?fmtMOS(mos):"--"}</div>
-                    {mos!==null&&pv.price&&<div className="text-[11px] mt-0.5" style={{color:mosStyle?mosStyle.color:undefined}}>Price: {activeCurrency} {fmtPrice(pv.price)}</div>}
+                  <div className="px-3 py-2 rounded-lg" style={{background:mosStyle?mosStyle.bg:undefined,border:"1px solid "+(mosStyle?"transparent":"#e2e8f0")}}>
+                    <div className="text-[10px] mb-0.5" style={{color:mosStyle?mosStyle.color:undefined}}>MOS Live</div>
+                    <div className="text-[16px] font-bold leading-tight" style={{color:mosStyle?mosStyle.color:undefined}}>{mos!==null?fmtMOS(mos):"--"}</div>
+                    {mos!==null&&pv.price&&<div className="text-[10px] mt-0.5" style={{color:mosStyle?mosStyle.color:undefined}}>Price: {activeCurrency} {fmtPrice(pv.price)}</div>}
                   </div>
                   {/* TP Fixed card. When a TP approval is pending we
                       surface ⏳ + the suggested-new TP under the current
                       TP Fixed value, so the reader sees both at a glance
                       without opening the Approvals modal. */}
-                  <div className="px-4 py-3.5 rounded-lg" style={{background:tpFixed!==null?"#ecfdf5":undefined,border:"1px solid "+(tpFixed!==null?"#a7f3d0":"#e2e8f0")}}>
-                    <div className="text-[11px] text-gray-500 dark:text-slate-400 mb-0.5">TP Fixed {pv.tpFixedDate?"("+pv.tpFixedDate+")":(pv.normEPSFixedDate?"("+pv.normEPSFixedDate+")":"")}</div>
-                    <div className="text-[22px] font-bold" style={{color:tpFixed!==null?"#047857":undefined}}>{tpFixed!==null?fmtTP(tpFixed,activeCurrency):"--"}</div>
-                    {tpFixed!==null&&impliedNormEPSFixed!==null&&<div className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">implied EPS: {activeCurrency} {impliedNormEPSFixed.toFixed(2)}</div>}
+                  <div className="px-3 py-2 rounded-lg" style={{background:tpFixed!==null?"#ecfdf5":undefined,border:"1px solid "+(tpFixed!==null?"#a7f3d0":"#e2e8f0")}}>
+                    <div className="text-[10px] text-gray-500 dark:text-slate-400 mb-0.5">TP Fixed {pv.tpFixedDate?"("+fmtDateUS(pv.tpFixedDate)+")":(pv.normEPSFixedDate?"("+fmtDateUS(pv.normEPSFixedDate)+")":"")}</div>
+                    <div className="text-[16px] font-bold leading-tight" style={{color:tpFixed!==null?"#047857":undefined}}>{tpFixed!==null?fmtTP(tpFixed,activeCurrency):"--"}</div>
+                    {tpFixed!==null&&impliedNormEPSFixed!==null&&<div className="text-[10px] text-gray-500 dark:text-slate-400 mt-0.5">implied EPS: {activeCurrency} {impliedNormEPSFixed.toFixed(2)}</div>}
                     {pendingTP !== null && (
-                      <div className="text-[11px] mt-1 font-medium" style={{color:"#b45309"}} title={"Pending TP change submitted by " + (pendingApproval.suggestedBy || "teammate") + " on " + (pendingApproval.suggestedAt || "?")}>
+                      <div className="text-[10px] mt-0.5 font-medium" style={{color:"#b45309"}} title={"Pending TP change submitted by " + (pendingApproval.suggestedBy || "teammate") + " on " + (pendingApproval.suggestedAt || "?")}>
                         ⏳ Pending: <span className="font-bold">{fmtTP(pendingTP, activeCurrency)}</span>
                       </div>
                     )}
                   </div>
-                  <div className="px-4 py-3.5 rounded-lg" style={{background:mosFixedStyle?mosFixedStyle.bg:undefined,border:"1px solid "+(mosFixedStyle?"transparent":"#e2e8f0")}}>
-                    <div className="text-[11px] mb-0.5" style={{color:mosFixedStyle?mosFixedStyle.color:undefined}}>MOS Fixed</div>
-                    <div className="text-[22px] font-bold" style={{color:mosFixedStyle?mosFixedStyle.color:undefined}}>{mosFixed!==null?fmtMOS(mosFixed):"--"}</div>
-                    {mosFixed!==null&&pv.price&&<div className="text-[11px] mt-0.5" style={{color:mosFixedStyle?mosFixedStyle.color:undefined}}>Price: {activeCurrency} {fmtPrice(pv.price)}</div>}
+                  <div className="px-3 py-2 rounded-lg" style={{background:mosFixedStyle?mosFixedStyle.bg:undefined,border:"1px solid "+(mosFixedStyle?"transparent":"#e2e8f0")}}>
+                    <div className="text-[10px] mb-0.5" style={{color:mosFixedStyle?mosFixedStyle.color:undefined}}>MOS Fixed</div>
+                    <div className="text-[16px] font-bold leading-tight" style={{color:mosFixedStyle?mosFixedStyle.color:undefined}}>{mosFixed!==null?fmtMOS(mosFixed):"--"}</div>
+                    {mosFixed!==null&&pv.price&&<div className="text-[10px] mt-0.5" style={{color:mosFixedStyle?mosFixedStyle.color:undefined}}>Price: {activeCurrency} {fmtPrice(pv.price)}</div>}
                     {pendingMOSFixed !== null && (
-                      <div className="text-[11px] mt-1 font-medium" style={{color:"#b45309"}} title="MOS implied by the pending TP at today's price">
+                      <div className="text-[10px] mt-0.5 font-medium" style={{color:"#b45309"}} title="MOS implied by the pending TP at today's price">
                         ⏳ Pending: <span className="font-bold">{fmtMOS(pendingMOSFixed)}</span>
                       </div>
                     )}
                   </div>
                 </div>
+
+                {/* Suggest TP change — primary action for coworkers to
+                    propose a new TP from the Valuation tab. Side-by-side
+                    Fixed vs Live comparison + per-field "Use →" buttons
+                    + editable proposal. Submits via submitTpApproval
+                    which routes through the existing TP Approvals
+                    panel for peer sign-off. */}
+                <TpSuggestPanel
+                  selCo={selCo}
+                  pv={pv}
+                  tpFixed={tpFixed}
+                  activeCurrency={activeCurrency}
+                />
                 {/* Snapshot controls for the fixed TP. User enters TP Fixed
                     directly (or imports it via the Valuation upload); the
                     implied NormEPS = TP Fixed / Target P/E is shown on the
