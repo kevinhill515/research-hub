@@ -468,7 +468,22 @@ export function TpApprovalsPanel({ open, onClose, onNavigate }){
           <button onClick={function(){setView("rejected");}} className={"text-[11px] px-2.5 py-1 rounded-full border cursor-pointer " + (view==="rejected"?"bg-rose-100 dark:bg-rose-900/40 border-rose-300 dark:border-rose-700 text-rose-800 dark:text-rose-200 font-semibold":"border-slate-200 dark:border-slate-700 text-gray-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800")}>
             Rejected {rejected.length>0 && <span className="ml-1">({rejected.length})</span>}
           </button>
-          <button onClick={onClose} className="ml-auto text-xs text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300 cursor-pointer">Close ✕</button>
+          {/* Pop out — separate browser window so the panel stays
+              visible alongside the main app. Hidden inside the popout
+              itself (no window.opener means we ARE the popout). */}
+          {(typeof window === "undefined" || !window.opener) && (
+            <button
+              onClick={function(){
+                try {
+                  window.open(window.location.pathname + "?popout=tpApprovals", "tpapprovals-popout", "width=900,height=850");
+                  onClose();
+                } catch(_e){}
+              }}
+              className="ml-auto text-[11px] px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-700 dark:text-slate-300 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800"
+              title="Open this panel in a separate window"
+            >↗ Pop out</button>
+          )}
+          <button onClick={onClose} className={"text-xs text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300 cursor-pointer " + ((typeof window === "undefined" || !window.opener) ? "" : "ml-auto")}>Close ✕</button>
         </div>
         <div className="overflow-y-auto p-4 flex-1">
           {(function(){

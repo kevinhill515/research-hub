@@ -287,6 +287,21 @@ export function MeetingMemoModal({ open, onClose }) {
           {refreshMsg && (
             <span className="text-[11px] text-emerald-700 dark:text-emerald-300">{refreshMsg}</span>
           )}
+          {/* Pop out — separate browser window so the meeting modal
+              stays visible alongside the Portfolios page during the
+              IC meeting. Hidden inside the popout itself. */}
+          {(typeof window === "undefined" || !window.opener) && (
+            <button
+              onClick={function(){
+                try {
+                  window.open(window.location.pathname + "?popout=icMeeting", "icmeeting-popout", "width=1100,height=900");
+                  close();
+                } catch(_e){}
+              }}
+              className="text-[11px] px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-700 dark:text-slate-300 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800"
+              title="Open this modal in a separate window — useful during the IC meeting so the agenda stays visible while you navigate the rest of the app"
+            >↗ Pop out</button>
+          )}
           <button onClick={close} className="text-xs text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300 cursor-pointer">Close ✕</button>
         </div>
         <div className="p-4 flex-1 overflow-y-auto">

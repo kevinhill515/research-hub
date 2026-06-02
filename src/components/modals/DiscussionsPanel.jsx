@@ -366,9 +366,27 @@ export default function DiscussionsPanel({ open, onClose, initialScope, initialP
     <div className="fixed inset-0 z-[900] flex justify-end" onClick={onClose}>
       <div className="bg-black/30 absolute inset-0"/>
       <div onClick={function(e){e.stopPropagation();}} className="relative bg-white dark:bg-slate-950 w-full max-w-md h-full shadow-2xl flex flex-col border-l border-slate-200 dark:border-slate-700">
-        <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+        <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2">
           <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">💬 Discussions</div>
-          <span onClick={onClose} className="text-xs text-gray-500 dark:text-slate-400 cursor-pointer hover:text-gray-700 dark:hover:text-slate-300">Close ✕</span>
+          <div className="flex items-center gap-2">
+            {/* Pop out — opens this panel in a separate browser window
+                so users can keep it visible while working in the main
+                Research Hub. Hidden inside the popout itself (no
+                window.opener means we ARE the popout). */}
+            {(typeof window === "undefined" || !window.opener) && (
+              <button
+                onClick={function(){
+                  try {
+                    window.open(window.location.pathname + "?popout=discussions", "discussions-popout", "width=520,height=820");
+                    onClose();
+                  } catch(_e){}
+                }}
+                className="text-[11px] px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-700 dark:text-slate-300 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800"
+                title="Open this panel in a separate window so it stays visible while you work in the main app"
+              >↗ Pop out</button>
+            )}
+            <span onClick={onClose} className="text-xs text-gray-500 dark:text-slate-400 cursor-pointer hover:text-gray-700 dark:hover:text-slate-300">Close ✕</span>
+          </div>
         </div>
 
         <div className="px-4 py-2 border-b border-slate-200 dark:border-slate-700 flex gap-1.5 flex-wrap">

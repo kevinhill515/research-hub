@@ -146,6 +146,28 @@ export default function App(){
   const [showDiscussions,setShowDiscussions]=useState(false);
   const [showTpApprovals,setShowTpApprovals]=useState(false);
   const [showMeetingMemo,setShowMeetingMemo]=useState(false);
+
+  /* Pop-out window detection. When App boots with ?popout=X in the
+     URL, the page is being opened as a separate window from a main-
+     window "↗ Pop out" click. We skip the full app shell and render
+     just the requested modal full-window, with its onClose mapped to
+     window.close() so the user can dismiss the popout the same way
+     they'd dismiss any modal. Captured once on mount — re-renders
+     don't re-read the URL. */
+  const popoutKind = useMemo(function(){
+    if (typeof window === "undefined") return null;
+    var params = new URLSearchParams(window.location.search || "");
+    var k = params.get("popout");
+    return k === "discussions" || k === "tpApprovals" || k === "icMeeting" ? k : null;
+  }, []);
+  useEffect(function(){
+    if (!popoutKind) return;
+    /* Force the matching modal open in the popout window so the
+       isolated subtree renders the right component. */
+    if (popoutKind === "discussions") setShowDiscussions(true);
+    else if (popoutKind === "tpApprovals") setShowTpApprovals(true);
+    else if (popoutKind === "icMeeting") setShowMeetingMemo(true);
+  }, [popoutKind]);
   const [discussionScope,setDiscussionScope]=useState({scope:null,portfolio:null,companyId:null});
   function openDiscussions(scope){
     setDiscussionScope(scope||{scope:null,portfolio:null,companyId:null});
@@ -277,6 +299,57 @@ export default function App(){
     {id:"weights",label:"Weights"+((selCo&&selCo.portWeightHistory&&selCo.portWeightHistory.length>0)?" ("+selCo.portWeightHistory.length+")":"")},
     {id:"transactions",label:"Transactions"+((selCo&&selCo.transactions&&selCo.transactions.length>0)?" ("+selCo.transactions.length+")":"")},
     {id:"linked",label:"Linked"+(linkedEntries.length>0?" ("+linkedEntries.length+")":"")},{id:"upload",label:"Upload"},{id:"history",label:"Log"+((selCo&&selCo.updateLog&&selCo.updateLog.length>0)?" ("+selCo.updateLog.length+")":"")}];
+
+  /* Pop-out window render path — when the URL carries ?popout=X, skip
+     the full app shell (toolbar, tabs, body) and render just the
+     requested modal full-window. CompanyContext + DialogProvider
+     wrap App at the root so all the modal's data + mutators still
+     work the same way as in the main window. The modal's onClose
+     calls window.close() instead of toggling local state, so dismiss
+     closes the popup. */
+  if (popoutKind) {
+    var popoutClose = function(){ try { window.close(); } catch(_e){} };
+    return (
+      <div className={"min-h-screen font-[system-ui,sans-serif] text-sm text-gray-900 dark:text-slate-100 bg-white dark:bg-slate-950 " + (dark ? "dark" : "")}>
+        {popoutKind === "discussions" && (
+          <DiscussionsPanel
+            open={true}
+            onClose={popoutClose}
+            initialScope={discussionScope.scope}
+            initialPortfolio={discussionScope.portfolio}
+            initialCompanyId={discussionScope.companyId}
+            companies={companies}
+          />
+        )}
+        {popoutKind === "tpApprovals" && (
+          <TpApprovalsPanel
+            open={true}
+            onClose={popoutClose}
+            onNavigate={function(companyId, earningsEntryId){
+              /* Cross-window navigation: open the company's earnings
+                 page in the OPENER window if we can reach it, else
+                 fall back to a new tab. Either way close the popout
+                 so the user doesn't end up with two duplicate views
+                 of the destination. */
+              try {
+                if (window.opener && !window.opener.closed) {
+                  window.opener.focus();
+                  /* Best-effort: pass the company id via URL hash so
+                     the main window can pick it up. The main window
+                     listens on hashchange below. */
+                  window.opener.location.hash = "co=" + companyId + (earningsEntryId ? "&ee=" + earningsEntryId : "");
+                }
+              } catch(_e){}
+              popoutClose();
+            }}
+          />
+        )}
+        {popoutKind === "icMeeting" && (
+          <MeetingMemoModal open={true} onClose={popoutClose}/>
+        )}
+      </div>
+    );
+  }
 
   return(
     <div className={"min-h-screen p-4 font-[system-ui,sans-serif] text-sm text-gray-900 dark:text-slate-100 bg-white dark:bg-slate-950 " + (dark ? "dark" : "")}>
