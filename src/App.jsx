@@ -777,14 +777,16 @@ export default function App(){
      parseDate's `new Date(s)` fallback chokes on "5-8-26"-style
      numeric dashes and YY years (Firefox especially), and its
      regex branch requires a 3-letter month name. Handle the
-     common M/D/Y and M-D-Y numeric variants explicitly so the
-     Normalize button can finish the job. Two-digit year < 50 →
-     20YY; ≥ 50 → 19YY (consistent with Excel). */
+     common M/D/Y and M-D-Y numeric variants + dotted variants +
+     YYYY/M/D explicitly so the Normalize button can finish the
+     job. Two-digit year < 50 → 20YY; ≥ 50 → 19YY (Excel-compat). */
   function toIso(s){
+    if (s == null) return null;
+    s = String(s).trim();
     if (!s) return null;
     if (isoRe.test(s)) return s;
-    /* M/D/YY, M/D/YYYY, M-D-YY, M-D-YYYY */
-    var m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2}|\d{4})$/);
+    /* M/D/YY, M/D/YYYY, M-D-YY, M-D-YYYY, M.D.YY, M.D.YYYY */
+    var m = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2}|\d{4})$/);
     if (m) {
       var mo = parseInt(m[1], 10);
       var dy = parseInt(m[2], 10);
@@ -792,6 +794,17 @@ export default function App(){
       if (yr < 100) yr += yr < 50 ? 2000 : 1900;
       if (mo >= 1 && mo <= 12 && dy >= 1 && dy <= 31) {
         return yr + "-" + String(mo).padStart(2, "0") + "-" + String(dy).padStart(2, "0");
+      }
+    }
+    /* YYYY/M/D, YYYY.M.D (ISO-ish with slashes or dots, possibly
+       1-digit month/day). */
+    var m2 = s.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/);
+    if (m2) {
+      var yr2 = parseInt(m2[1],10);
+      var mo2 = parseInt(m2[2],10);
+      var dy2 = parseInt(m2[3],10);
+      if (mo2>=1&&mo2<=12&&dy2>=1&&dy2<=31) {
+        return yr2 + "-" + String(mo2).padStart(2,"0") + "-" + String(dy2).padStart(2,"0");
       }
     }
     /* Fall back to parseDate (covers DD-MMM-YYYY and anything Date() handles). */
@@ -825,10 +838,15 @@ export default function App(){
       });
     });
     if (skipped.length) {
-      /* Surface unparseable formats so the user can fix them by hand
-         instead of silently leaving the warning row up forever. */
+      /* Surface unparseable formats inline so the user doesn't have
+         to open the console (which often shows "Array(2)" collapsed
+         in the minified prod build). Lists each company + field. */
       try { console.warn("Normalize: " + skipped.length + " value(s) unparseable", skipped); } catch(e){}
-      alert("Normalized what I could. " + skipped.length + " value(s) had an unrecognized format — check the console for the list.");
+      alert(
+        "Normalized what I could. " + skipped.length + " value(s) had an unrecognized format:\n\n  " +
+        skipped.join("\n  ") +
+        "\n\nFix these on the company's Earnings tab (set the reportDate field to a valid date) and re-run Normalize."
+      );
     }
   }
   return (

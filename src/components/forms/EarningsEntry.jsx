@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { TP_CHANGES, THESIS_STATUSES } from '../../constants/index.js';
 import { apiCall } from '../../api/index.js';
 import { useAlert } from '../ui/DialogProvider.jsx';
-import { inferQuarter, calcNormEPS, calcTP, getTpFixed, parseDate } from '../../utils/index.js';
+import { inferQuarter, calcNormEPS, calcTP, getTpFixed, parseDate, fmtDateUS } from '../../utils/index.js';
 
 /* Parse a fiscal-year label like "FY2027E", "FY27", "FY9/27E", "FY9/2027E"
    into a 4-digit year. Returns null when no year can be confidently
@@ -347,7 +347,7 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
   var fyMonth = company && company.valuation && company.valuation.fyMonth;
   var inferred = inferQuarter(e.reportDate, fyMonth);
   var titleQuarter = inferred ? inferred.label : (e.quarter || "");
-  var titleDate = e.reportDate || "";
+  var titleDate = fmtDateUS(e.reportDate || "");
   var headerTitle = titleQuarter && titleDate ? (titleQuarter + " · " + titleDate)
                   : titleDate ? titleDate
                   : titleQuarter ? titleQuarter
@@ -387,7 +387,7 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
           </span>
         )}
         {isFutureEntry && (
-          <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-slate-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 italic" title={"Scheduled for " + e.reportDate}>
+          <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-slate-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 italic" title={"Scheduled for " + fmtDateUS(e.reportDate)}>
             Upcoming
           </span>
         )}

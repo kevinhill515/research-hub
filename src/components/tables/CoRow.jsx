@@ -1,7 +1,7 @@
 import { useState, useRef, memo } from "react";
 import { useClickOutside } from '../../hooks/useClickOutside.js';
 import { PORTFOLIOS, TIER_ORDER, COUNTRY_ORDER, SECTOR_ORDER } from '../../constants/index.js';
-import { shortSector, sectorStyle, countryStyle, getTiers, tierPillStyle, tierBg, reviewedColor, daysSince, todayStr, calcNormEPS, calcTP, calcMOS, fmtMOS, fmtMOS0, mosBg, getTpFixed, tierToStatus, truncName, getLastReportedEntry, parseDate } from '../../utils/index.js';
+import { shortSector, sectorStyle, countryStyle, getTiers, tierPillStyle, tierBg, reviewedColor, daysSince, todayStr, calcNormEPS, calcTP, calcMOS, fmtMOS, fmtMOS0, mosBg, getTpFixed, tierToStatus, truncName, getLastReportedEntry, parseDate, fmtDateUS } from '../../utils/index.js';
 import StatusPill from '../ui/StatusPill.jsx';
 import NotesCell from '../forms/NotesCell.jsx';
 import ActionCell from '../forms/ActionCell.jsx';
@@ -85,8 +85,8 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
         label = "Q" + (Math.floor(periodEnd.getMonth() / 3) + 1);
       }
       qBadge = reportedThisQ
-        ? { label: label + " ✓", cls: "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800", title: "Reported " + (latestEntry.quarter || label) + " on " + latestEntry.reportDate }
-        : { label: label,         cls: "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800",        title: "Last reported " + (latestEntry.quarter || label) + " on " + latestEntry.reportDate + " — hasn't filed this quarter yet" };
+        ? { label: label + " ✓", cls: "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800", title: "Reported " + (latestEntry.quarter || label) + " on " + fmtDateUS(latestEntry.reportDate) }
+        : { label: label,         cls: "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800",        title: "Last reported " + (latestEntry.quarter || label) + " on " + fmtDateUS(latestEntry.reportDate) + " — hasn't filed this quarter yet" };
     }
   }
   var hasTemplate = Object.keys(company.sections || {}).length > 0;
@@ -517,7 +517,7 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
             if (!ts) return <span className="text-xs text-slate-300 dark:text-slate-600">—</span>;
             var cfg = { "On track": { bg: "#dcfce7", color: "#166534" }, "Watch": { bg: "#fef9c3", color: "#854d0e" }, "Broken": { bg: "#fee2e2", color: "#991b1b" } }[ts] || { bg: "#f1f5f9", color: "#475569" };
             return (
-              <span title={"From earnings " + (last.reportDate || "?")} className="text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap" style={{ background: cfg.bg, color: cfg.color }}>
+              <span title={"From earnings " + (fmtDateUS(last.reportDate) || "?")} className="text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap" style={{ background: cfg.bg, color: cfg.color }}>
                 {ts}
               </span>
             );
