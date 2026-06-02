@@ -297,6 +297,33 @@ export function PortfoliosTable(props) {
          apart (server script writes one but not the other, etc.). */
       const perfNum = getPerf5d(c);
 
+      /* TP picker — pick the right TP for the price ticker we're
+         displaying. Three cases:
+           - Price ticker is the ord ticker → show ord TP in ord ccy.
+           - Price ticker is a USD ADR + company has adrRatio set →
+             show derived ADR TP in USD. ADR TP = (ord TP / FX) × ratio
+             (fxRates is local-per-USD; dividing converts to USD per
+             ord share, ratio scales ord shares → ADR shares).
+           - Else → blank (e.g. USD price ticker with no adrRatio
+             configured; we don't know the conversion factor). */
+      var ordCcy = ((val.currency) || "USD").toUpperCase();
+      var priceCcy = ((priceTicker && priceTicker.currency) || ordCcy).toUpperCase();
+      var adrRatio = parseFloat(c.adrRatio);
+      var displayTp = null;
+      var displayTpCcy = null;
+      if (tpFixed !== null && isFinite(tpFixed)) {
+        if (priceTicker && !priceTicker.isOrdinary && priceCcy === "USD" && isFinite(adrRatio) && adrRatio > 0 && ordCcy !== "USD") {
+          var fx = parseFloat((fxRates || {})[ordCcy]);
+          if (isFinite(fx) && fx > 0) {
+            displayTp = (tpFixed / fx) * adrRatio;
+            displayTpCcy = "USD";
+          }
+        } else if (priceCcy === ordCcy) {
+          displayTp = tpFixed;
+          displayTpCcy = ordCcy;
+        }
+      }
+
       rowData[c.id] = {
         /* Valuation */
         val: val,
@@ -306,6 +333,8 @@ export function PortfoliosTable(props) {
         mosFixedStyle: mosBg(mosFixedVal),
         /* Rep holdings */
         priceVal: priceVal,
+        displayTp: displayTp,
+        displayTpCcy: displayTpCcy,
         avgCostVal: avgCostVal,
         unrealVal: unrealVal,
         /* Weights / diff */

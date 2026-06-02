@@ -68,7 +68,7 @@ function PortfolioRow(props) {
   const c = company;
   const {
     val, mos, mosStyle, mosFixed, mosFixedStyle,
-    priceVal, avgCostVal, unrealVal,
+    priceVal, displayTp, displayTpCcy, avgCostVal, unrealVal,
     target, repWeight, diff,
     lastTx, monthsHeld, perf5d, nextReport, today,
   } = rowData;
@@ -443,20 +443,31 @@ function PortfolioRow(props) {
         </span>
       </Cell>
 
-      {/* Price */}
-      <Cell className="text-sm text-gray-900 dark:text-slate-100" style={cellStyle}>
+      {/* Price — text-xs (down from text-sm) to claw back column
+         width for the new TP column. */}
+      <Cell className="text-xs text-gray-900 dark:text-slate-100" style={cellStyle}>
         {!isNaN(priceVal) ? fmtPrice(priceVal) : "--"}
       </Cell>
 
+      {/* TP — apples-to-apples with Price. Ord-held rows show the
+         ord-ccy TP; ADR-held rows show the USD-equivalent ADR TP
+         derived from (ord TP / FX) × adrRatio. Cells without a
+         resolvable TP (e.g. USD-ADR holding without adrRatio set)
+         render "--" so the user knows to fill in the ratio. */}
+      <Cell className="text-xs text-gray-900 dark:text-slate-100 cursor-pointer" style={cellStyle} onClick={function(e){e.stopPropagation();onOpenCompany(c,"section:Valuation");}}>
+        {displayTp !== null && isFinite(displayTp)
+          ? (displayTpCcy ? displayTpCcy + " " : "") + fmtPrice(displayTp)
+          : "--"}
+      </Cell>
+
       {/* Avg Cost */}
-      <Cell className="text-sm text-gray-900 dark:text-slate-100" style={cellStyle}>
+      <Cell className="text-xs text-gray-900 dark:text-slate-100" style={cellStyle}>
         {avgCostVal > 0 ? fmtPrice(avgCostVal) : "--"}
       </Cell>
 
-      {/* Unreal — derived from avg cost vs current price, both of
-         which live on the Transactions page. Clicks there. */}
+      {/* Unreal */}
       <Cell
-        className="text-sm font-medium cursor-pointer"
+        className="text-xs font-medium cursor-pointer"
         style={cellStyle}
         onClick={function (e) { e.stopPropagation(); onOpenTransactions(c); }}
       >
@@ -467,8 +478,8 @@ function PortfolioRow(props) {
             </span>}
       </Cell>
 
-      {/* 5D% — clicks to Snapshot. */}
-      <Cell className="text-sm text-gray-900 dark:text-slate-100 cursor-pointer" style={cellStyle} onClick={function(e){e.stopPropagation();onOpenCompany(c,"metrics");}}>
+      {/* 5D% */}
+      <Cell className="text-xs text-gray-900 dark:text-slate-100 cursor-pointer" style={cellStyle} onClick={function(e){e.stopPropagation();onOpenCompany(c,"metrics");}}>
         {perf5d === null
           ? "--"
           : <span style={{ color: perf5d >= 0 ? "#166534" : "#dc2626" }} className="font-medium">
@@ -510,7 +521,7 @@ function PortfolioRow(props) {
       {/* FPE Range — clicks to Valuation. */}
       <Cell style={cellStyle} className="cursor-pointer" onClick={function(e){e.stopPropagation();onOpenCompany(c,"section:Valuation");}}>
         {(function () {
-          const el = <FpeRangeMini valuation={val} width={100} />;
+          const el = <FpeRangeMini valuation={val} width={70} />;
           return el || <Dash />;
         })()}
       </Cell>

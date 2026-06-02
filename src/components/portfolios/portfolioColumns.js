@@ -10,6 +10,7 @@ export const PORTFOLIO_COLUMNS = [
   { id: "held",        label: "Held (mo)",    sort: "held",        align: "left"  },
   { id: "lastTrade",   label: "Last Trade",   sort: "lastTrade",   align: "left"  },
   { id: "price",       label: "Price",        sort: null,          align: "left"  },
+  { id: "tp",          label: "TP",           sort: null,          align: "left"  },
   { id: "avgCost",     label: "Avg Cost",     sort: null,          align: "left"  },
   { id: "unreal",      label: "Unreal",       sort: "unreal",      align: "left"  },
   { id: "perf",        label: "5D%",          sort: "perf",        align: "left"  },

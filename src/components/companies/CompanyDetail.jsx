@@ -119,6 +119,68 @@ export function CompanyDetail(props){
             <span className="text-[15px] font-medium text-gray-900 dark:text-slate-100">{selCo.name}</span>
             <input defaultValue={selCo.usTickerName||""} key={selCo.id+"-usname-"+(selCo.usTickerName||"")} onBlur={function(e){updateCo(selCo.id,{usTickerName:e.target.value.trim()});}} placeholder="US ticker name (alt)" className="text-[11px] px-1.5 py-0.5 rounded border border-transparent hover:border-slate-300 dark:hover:border-slate-600 focus:border-blue-400 dark:focus:border-blue-500 bg-transparent focus:bg-white dark:focus:bg-slate-900 focus:outline-none text-gray-500 dark:text-slate-400 italic w-[160px]"/>
             {(selCo.tickers||[]).filter(function(t){return t.price;}).map(function(t){return <span key={t.ticker} className="text-xs px-2.5 py-0.5 rounded-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-gray-900 dark:text-slate-100">{t.ticker}: {t.currency||""} {fmtPrice(t.price)}</span>;})}
+            {/* ADR ratio + derived ADR TP / premium-discount.
+                Lives here next to the ticker pills (not on Valuation)
+                so the team's mental model — "ords and ADR live in the
+                header" — stays intact. Math:
+                  ADR_TP_USD = (ord_TP_local / fxRates[ord_ccy]) × adrRatio
+                fxRates[ccy] is stored local-per-USD (1 USD = N CCY),
+                so dividing converts the ord TP into USD per ord share;
+                multiplying by the ratio (e.g. 0.25 means 1 ADR = 0.25
+                ords) gives the per-ADR USD target. Premium/discount
+                compares the US ticker's live USD price to that target. */}
+            {(function(){
+              var ratioStr = selCo.adrRatio != null ? String(selCo.adrRatio) : "";
+              var ordTpRaw = parseFloat(selCo.valuation && selCo.valuation.tpFixed);
+              var ratioNum = parseFloat(ratioStr);
+              var ordCcy = (selCo.valuation && selCo.valuation.currency) || "USD";
+              var fx = ordCcy === "USD" ? 1 : parseFloat((fxRates||{})[ordCcy]);
+              var usTicker = (selCo.tickers||[]).find(function(t){
+                return t.ticker && (t.currency||"USD").toUpperCase()==="USD" && !t.isOrdinary;
+              });
+              var adrPrice = usTicker ? parseFloat(usTicker.price) : NaN;
+              var adrTp = (isFinite(ordTpRaw) && isFinite(ratioNum) && ratioNum>0 && isFinite(fx) && fx>0)
+                ? (ordTpRaw / fx) * ratioNum : null;
+              var prem = (adrTp!==null && isFinite(adrPrice) && adrPrice>0)
+                ? (adrPrice - adrTp) / adrTp * 100 : null;
+              return (
+                <span className="inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                  <span className="text-gray-500 dark:text-slate-400">ADR ratio:</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    defaultValue={ratioStr}
+                    key={selCo.id + "-adr-" + ratioStr}
+                    placeholder="—"
+                    onBlur={function(e){
+                      var v = e.target.value.trim();
+                      if (v === "") { updateCo(selCo.id, { adrRatio: null }); return; }
+                      var n = parseFloat(v);
+                      if (isFinite(n) && n > 0) updateCo(selCo.id, { adrRatio: n });
+                    }}
+                    className="w-12 px-1 py-0 text-[11px] text-right bg-transparent border-b border-slate-300 dark:border-slate-600 focus:border-blue-500 focus:outline-none text-gray-900 dark:text-slate-100"
+                    title="ords per ADR — e.g. 0.25 means 1 ADR = 0.25 ord shares (Vinci VCISY)"
+                  />
+                  {adrTp!==null && (
+                    <>
+                      <span className="text-gray-400 dark:text-slate-500">·</span>
+                      <span className="text-gray-700 dark:text-slate-300" title={"= " + ordCcy + " " + ordTpRaw + " ÷ " + fx.toFixed(4) + " × " + ratioNum}>
+                        ADR TP: <span className="font-semibold">${adrTp.toFixed(2)}</span>
+                      </span>
+                    </>
+                  )}
+                  {prem!==null && (
+                    <span
+                      className={"font-semibold " + (prem >= 0 ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300")}
+                      title={"US ticker price ($" + adrPrice.toFixed(2) + ") vs ADR TP ($" + adrTp.toFixed(2) + ")"}
+                    >
+                      {prem >= 0 ? "+" : ""}{prem.toFixed(1)}%
+                    </span>
+                  )}
+                </span>
+              );
+            })()}
             {selCo.country&&(function(){var cs=countryStyle(selCo.country);return <span className="text-[11px] px-1.5 py-0.5 rounded-full font-medium" style={{background:cs.bg,color:cs.color}}>{selCo.country}</span>;}())}
             {selCo.sector&&(function(){var ss=sectorStyle(selCo.sector);return <span className="text-[11px] px-1.5 py-0.5 rounded-full font-medium" style={{background:ss.bg,color:ss.color}}>{selCo.sector}</span>;}())}
             {portfolios.map(function(p){return <span key={p} className="text-[11px] px-1.5 py-0.5 rounded-full font-medium text-white border-none" style={{background:"#1a5c2a"}}>{p}</span>;})}
