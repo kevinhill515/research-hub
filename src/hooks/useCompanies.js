@@ -101,13 +101,70 @@ export function useCompanies(){
   function parseBulk(){
     if(!bulkText.trim())return;setBulkLoading(true);
     try{
-      var lines=bulkText.split(/\r?\n/).filter(function(l){return l.trim();});if(lines.length<2){setBulkLoading(false);return;}
+      var lines=bulkText.split(/\r?\n/).filter(function(l){return l.trim();});if(lines.length<1){setBulkLoading(false);return;}
       var delim=lines[0].indexOf("\t")>=0?"\t":",";
       function parseRow(line){var cols=[],cur="",inQ=false;for(var i=0;i<line.length;i++){var ch=line[i];if(ch==='"'){inQ=!inQ;}else if(ch===delim&&!inQ){cols.push(cur.trim());cur="";}else{cur+=ch;}}cols.push(cur.trim());return cols.map(function(c){return c.replace(/^"|"$/g,"").trim();});}
-      var headers=parseRow(lines[0]).map(function(h){return h.toLowerCase().replace(/[^a-z0-9?]/g," ").trim();});
-      function find(){var keys=Array.from(arguments);for(var i=0;i<keys.length;i++){var ix=headers.findIndex(function(h){return h.indexOf(keys[i])>=0;});if(ix>-1)return ix;}return -1;}
-      var idx={name:find("company","name"),ordTicker:find("ord ticker","ord t"),usTicker:find("us ticker","us t","adr ticker"),usTickerName:find("us ticker name","us name","adr name","us security","adr security"),ticker:find("ticker","symbol"),portfolio:find("portfolio"),port:find("port?","port "),country:find("country"),sector:find("sector"),lastReviewed:find("last reviewed","reviewed"),action:find("action"),takeaway:find("notes","takeaway","summary"),status:find("status"),tier:find("tier")};
-      var rows=lines.slice(1).map(function(line){
+      /* HEADER DETECTION
+         If row 1 contains any well-known header word, treat it as a
+         header row (original behavior). Otherwise infer columns by
+         scanning the content of every row — looks at each column's
+         samples and tags it as country/sector/status/date/ticker/
+         portfolio/tier/name based on what the values look like. Lets
+         users paste a raw exported sheet with no header row. */
+      var HEADER_WORDS = ["company","name","ticker","symbol","country","sector","portfolio","status","tier","reviewed","action","note","takeaway"];
+      var firstRowCells = parseRow(lines[0]);
+      var hasHeader = firstRowCells.some(function(cell){
+        var low = (cell || "").toLowerCase().trim();
+        if (!low) return false;
+        return HEADER_WORDS.some(function(w){ return low === w || low.indexOf(w) >= 0; });
+      });
+      var dataRowLines = hasHeader ? lines.slice(1) : lines;
+      if (dataRowLines.length < 1) { setBulkLoading(false); return; }
+      var idx;
+      if (hasHeader) {
+        var headers = firstRowCells.map(function(h){return h.toLowerCase().replace(/[^a-z0-9?]/g," ").trim();});
+        function find(){var keys=Array.from(arguments);for(var i=0;i<keys.length;i++){var ix=headers.findIndex(function(h){return h.indexOf(keys[i])>=0;});if(ix>-1)return ix;}return -1;}
+        idx={name:find("company","name"),ordTicker:find("ord ticker","ord t"),usTicker:find("us ticker","us t","adr ticker"),usTickerName:find("us ticker name","us name","adr name","us security","adr security"),ticker:find("ticker","symbol"),portfolio:find("portfolio"),port:find("port?","port "),country:find("country"),sector:find("sector"),lastReviewed:find("last reviewed","reviewed"),action:find("action"),takeaway:find("notes","takeaway","summary"),status:find("status"),tier:find("tier")};
+      } else {
+        /* Content-based column inference. Walk every cell of every
+           data row, tally per-column what types of values appear,
+           then assign each known field to the column whose content
+           best matches that field's signature. */
+        var dataRows = dataRowLines.map(parseRow);
+        var numCols = dataRows.reduce(function(m,r){return Math.max(m, r.length);}, 0);
+        var STATUS_RE = /^(buy|own|focus|watch|sold)$/i;
+        var DATE_RE = /^\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}$|^\d{4}-\d{1,2}-\d{1,2}$/;
+        var TICKER_RE = /^[A-Z0-9]+-[A-Z]{2}$|^[A-Z]{1,6}$/;
+        var ACTION_RE = /^(increase|decrease|no action|hold|maintain|up|down|raise|cut|lower).*tp?$|^(increase|decrease|no action|hold|maintain|up|down|raise|cut|lower)\s*tp\b/i;
+        var countrySet = new Set(COUNTRY_ORDER.map(function(s){return s.toLowerCase();}));
+        var sectorSet  = new Set(SECTOR_ORDER.map(function(s){return s.toLowerCase();}));
+        var tierSet    = new Set(TIER_ORDER.map(function(s){return s.toLowerCase();}));
+        var portSet    = new Set(PORTFOLIOS);
+        idx = {name:-1,ordTicker:-1,usTicker:-1,usTickerName:-1,ticker:-1,portfolio:-1,port:-1,country:-1,sector:-1,lastReviewed:-1,action:-1,takeaway:-1,status:-1,tier:-1};
+        var nameCandidate = -1, nameCandLen = 0;
+        for (var c = 0; c < numCols; c++) {
+          var samples = dataRows.map(function(r){return (r[c]||"").trim();}).filter(function(s){return s.length;});
+          if (!samples.length) continue;
+          var all = function(fn){return samples.every(fn);};
+          var any = function(fn){return samples.some(fn);};
+          if (idx.status<0 && all(function(s){return STATUS_RE.test(s);})) { idx.status = c; continue; }
+          if (idx.tier<0 && all(function(s){return tierSet.has(s.toLowerCase());})) { idx.tier = c; continue; }
+          if (idx.country<0 && all(function(s){return countrySet.has(s.toLowerCase());})) { idx.country = c; continue; }
+          if (idx.sector<0 && all(function(s){return sectorSet.has(s.toLowerCase());})) { idx.sector = c; continue; }
+          if (idx.portfolio<0 && all(function(s){return s.split(/[\s,]+/).filter(Boolean).every(function(t){return portSet.has(t.toUpperCase());});})) { idx.portfolio = c; continue; }
+          if (idx.lastReviewed<0 && all(function(s){return DATE_RE.test(s);})) { idx.lastReviewed = c; continue; }
+          if (idx.action<0 && any(function(s){return ACTION_RE.test(s);})) { idx.action = c; continue; }
+          if (idx.ticker<0 && all(function(s){return TICKER_RE.test(s);})) { idx.ticker = c; continue; }
+          /* Name candidate — longest average-length text column not
+             already claimed. Pick AFTER classifying everything else. */
+          var avgLen = samples.reduce(function(s,x){return s + x.length;}, 0) / samples.length;
+          if (avgLen > nameCandLen && avgLen > 5) {
+            nameCandLen = avgLen; nameCandidate = c;
+          }
+        }
+        if (idx.name < 0 && nameCandidate >= 0) idx.name = nameCandidate;
+      }
+      var rows=dataRowLines.map(function(line){
         var cols=parseRow(line);function get(i){return i>-1?(cols[i]||""):""}
         var portRaw=get(idx.portfolio).toUpperCase();var portTokens=portRaw.split(/[\s,]+/).filter(Boolean);
         var portfolios=PORTFOLIOS.filter(function(p){return portTokens.indexOf(p)>=0;}).filter(function(p,i,a){return a.indexOf(p)===i;});
