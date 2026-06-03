@@ -39,13 +39,18 @@ describe("fmtDateUS", () => {
 
 describe("parseDate", () => {
   it("parses ISO YYYY-MM-DD", () => {
+    /* `new Date("2026-06-03")` is parsed as UTC midnight by spec, so
+       the local getDate/getMonth shift in non-UTC zones. Test against
+       getUTC* accessors instead so the assertion is timezone-stable. */
     const d = parseDate("2026-06-03");
-    expect(d.getFullYear()).toBe(2026);
-    expect(d.getMonth()).toBe(5); /* 0-indexed */
-    expect(d.getDate()).toBe(3);
+    expect(d.getUTCFullYear()).toBe(2026);
+    expect(d.getUTCMonth()).toBe(5);
+    expect(d.getUTCDate()).toBe(3);
   });
 
   it("parses DD-MMM-YYYY", () => {
+    /* This branch builds via `new Date(yr, mo, day)` which uses local
+       time, so getDate/getMonth read back as written. */
     const d = parseDate("3-Jun-2026");
     expect(d.getFullYear()).toBe(2026);
     expect(d.getMonth()).toBe(5);
