@@ -120,13 +120,13 @@ export function CompanyDetail(props){
             <span className="text-[15px] font-medium text-gray-900 dark:text-slate-100">{selCo.name}</span>
             <input defaultValue={selCo.usTickerName||""} key={selCo.id+"-usname-"+(selCo.usTickerName||"")} onBlur={function(e){updateCo(selCo.id,{usTickerName:e.target.value.trim()});}} placeholder="US ticker name (alt)" className="text-[11px] px-1.5 py-0.5 rounded border border-transparent hover:border-slate-300 dark:hover:border-slate-600 focus:border-blue-400 dark:focus:border-blue-500 bg-transparent focus:bg-white dark:focus:bg-slate-900 focus:outline-none text-gray-500 dark:text-slate-400 italic w-[160px]"/>
             {(selCo.tickers||[]).filter(function(t){return t.price;}).map(function(t){return <span key={t.ticker} className="text-xs px-2.5 py-0.5 rounded-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-gray-900 dark:text-slate-100">{t.ticker}: {t.currency||""} {fmtPrice(t.price)}</span>;})}
-            {/* ADR premium/discount vs the implied ADR-converted TP.
-                Read-only pill comparing the live US-listed ADR price
-                to the ADR-converted TP that's shown on the Overview
-                subtab. Positive (emerald) = ADR is trading ABOVE its
-                target (rich); negative (rose) = trading BELOW (cheap).
-                Implied ADR TP (USD) = (ord_TP / fxRates[ord_ccy]) × ratio.
-                Premium = (US_price - implied_ADR_TP) / implied × 100. */}
+            {/* ADR premium/discount vs parity with the live local price.
+                Read-only pill comparing the live US-listed ADR price to
+                the ADR-equivalent value of the current ordinary share
+                price. Positive (rose) = ADR trading ABOVE parity (rich);
+                negative (emerald) = trading BELOW (cheap).
+                Parity ADR (USD) = (ord_price / fxRates[ord_ccy]) × ratio.
+                Premium = (US_price - parity_ADR) / parity × 100. */}
             {(function(){
               var ratioNum = parseFloat(selCo.adrRatio);
               if (!(isFinite(ratioNum) && ratioNum > 0)) return null;
@@ -134,20 +134,22 @@ export function CompanyDetail(props){
                 return t.ticker && (t.currency||"USD").toUpperCase()==="USD" && !t.isOrdinary;
               });
               if (!usTicker) return null;
+              var ordTicker = (selCo.tickers||[]).find(function(t){return t.isOrdinary;});
+              if (!ordTicker) return null;
               var adrPrice = parseFloat(usTicker.price);
-              var ordCcy = (activeCurrency || "USD").toUpperCase();
+              var ordPrice = parseFloat(ordTicker.price);
+              var ordCcy = (ordTicker.currency || activeCurrency || "USD").toUpperCase();
               var fx = ordCcy === "USD" ? 1 : parseFloat((fxRates||{})[ordCcy]);
-              var ordTpRaw = (tpFixed !== null && isFinite(tpFixed)) ? tpFixed : NaN;
-              if (!isFinite(adrPrice) || !isFinite(ordTpRaw) || !isFinite(fx) || fx<=0) return null;
-              var impliedAdrTp = (ordTpRaw / fx) * ratioNum;
-              if (!(impliedAdrTp > 0)) return null;
-              var prem = (adrPrice - impliedAdrTp) / impliedAdrTp * 100;
+              if (!isFinite(adrPrice) || !isFinite(ordPrice) || !isFinite(fx) || fx<=0) return null;
+              var impliedAdr = (ordPrice / fx) * ratioNum;
+              if (!(impliedAdr > 0)) return null;
+              var prem = (adrPrice - impliedAdr) / impliedAdr * 100;
               return (
                 <span
                   className={"text-[11px] px-2 py-0.5 rounded-full font-semibold " + (prem >= 0
                     ? "bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300"
                     : "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300")}
-                  title={"ADR @ $" + adrPrice.toFixed(2) + " vs implied ADR TP $" + impliedAdrTp.toFixed(2) + " (ord " + ordCcy + " " + ordTpRaw.toFixed(2) + " ÷ " + fx.toFixed(4) + " × " + ratioNum + ")"}
+                  title={"ADR @ $" + adrPrice.toFixed(2) + " vs parity $" + impliedAdr.toFixed(2) + " (ord " + ordCcy + " " + ordPrice.toFixed(2) + " ÷ " + fx.toFixed(4) + " × " + ratioNum + ")"}
                 >
                   ADR {prem >= 0 ? "premium +" : "discount "}{prem.toFixed(1)}%
                 </span>
