@@ -956,6 +956,20 @@ export function CompanyDetail(props){
                         });
                       });
                     } else {
+                      /* Snapshot the fiscal-quarter label directly off
+                         the approval date + company fyMonth so the
+                         Fixed TP History row reads Q1 FY26 (or
+                         whatever matches the actual approval moment),
+                         not whatever quarter the linked earnings
+                         entry happens to be tagged as (which can lag
+                         the suggestion if the earnings entry was for
+                         the prior quarter). Both Cisco and Textron
+                         had earningsEntryId pointing at the prior Q4
+                         entry; without this snapshot, fqLabel would
+                         walk that linkage and render "Q4 FY25". */
+                      var fyMonthRaw = (selCo.valuation && selCo.valuation.fyMonth) || "Dec";
+                      var inferred = inferQuarter(approvalDate, fyMonthRaw);
+                      var qLabel = (inferred && inferred.label) || "";
                       var newEntry = {
                         date: approvalDate,
                         tp: latestTp,
@@ -968,7 +982,7 @@ export function CompanyDetail(props){
                         fy1: src.fy1 || "",
                         fy2: src.fy2 || "",
                         earningsEntryId: (sourceRec && sourceRec.earningsEntryId) || "",
-                        quarter: "",
+                        quarter: qLabel,
                         currency: ccy,
                         source: "approval",
                         by: sourceRec && sourceRec.suggestedBy,
