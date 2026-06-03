@@ -68,6 +68,7 @@ export function MeetingMemoModal({ open, onClose }) {
   const {
     companies, setCompanies, repData, fxRates, currentUser,
     memoLog, addMemoLog, deleteMemoLog,
+    wednesdayNotes, setWednesdayNotes,
     targetChangeReads, markTargetChangeRead, commitProposedWeights,
     discardAgendaEntries, refreshCompaniesFromSupabase, commentOnAgendaEntry,
     editAgendaComment, deleteAgendaComment,
@@ -90,11 +91,12 @@ export function MeetingMemoModal({ open, onClose }) {
      hard reload re-derives from live data; that's fine — the snapshot
      is a session convenience, not a record-of-truth. */
   const [lockedSnapshot, setLockedSnapshot] = useState({});
-  /* Wednesday notes — free-form text area, kept in modal-local
-     state. Persists across re-opens of the modal within a session
-     but resets on page reload (intentional: the canonical record
-     lives in memoLog once the user clicks "Save to log"). */
-  const [wednesdayText, setWednesdayText] = useState("");
+  /* Wednesday notes — shared text persisted to Supabase via the
+     wednesdayNotes meta blob in CompanyContext. Anyone with the
+     app open + the modal on the Wed tab sees edits propagate
+     within ~500ms (same-machine via BroadcastChannel; cross-
+     machine on next refresh). "Save to log" still archives a
+     snapshot in memoLog and clears the working text. */
 
   const liveMemo = profile ? buildMeetingMemo(companies, profile, repData) : "";
   const memo = (lockedSnapshot[profile] != null && lockedSnapshot[profile] !== "") ? lockedSnapshot[profile] : liveMemo;
@@ -350,17 +352,17 @@ export function MeetingMemoModal({ open, onClose }) {
             <WednesdayNotesView
               copied={copied}
               onCopy={function(){
-                if (!wednesdayText) return;
+                if (!wednesdayNotes) return;
                 if (navigator.clipboard && navigator.clipboard.writeText) {
-                  navigator.clipboard.writeText(wednesdayText).then(function(){setCopied(true);setTimeout(function(){setCopied(false);},2000);});
+                  navigator.clipboard.writeText(wednesdayNotes).then(function(){setCopied(true);setTimeout(function(){setCopied(false);},2000);});
                 }
               }}
-              text={wednesdayText}
-              setText={setWednesdayText}
+              text={wednesdayNotes || ""}
+              setText={setWednesdayNotes}
               onSaveToLog={function(){
-                if (!wednesdayText.trim()) return;
-                addMemoLog({ profile: "wednesday", memo: wednesdayText });
-                setWednesdayText("");
+                if (!(wednesdayNotes||"").trim()) return;
+                addMemoLog({ profile: "wednesday", memo: wednesdayNotes });
+                setWednesdayNotes("");
                 setTab("log");
               }}
             />
@@ -835,7 +837,7 @@ function WednesdayNotesView({ text, setText, copied, onCopy, onSaveToLog }) {
           title="Append these notes to the Log tab and clear the composer for the next meeting"
         >💾 Save to log</button>
         <span className="text-[10px] text-gray-400 dark:text-slate-500 italic ml-2">
-          Notes don't auto-save while you type — hit Save to log when done. Saved entries are searchable from the Log tab.
+          Auto-saved to Supabase as you type (~500ms debounce) — everyone sees the same notes. Hit Save to log when finalized to archive a snapshot in the Log tab and clear the working area for the next meeting.
         </span>
       </div>
     </div>

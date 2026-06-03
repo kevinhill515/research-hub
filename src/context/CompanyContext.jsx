@@ -86,6 +86,13 @@ export function CompanyProvider({children}){
      Shape: [{ id, date, profile:"tuesday"|"thursday", author, memo }]
      Order: newest first (matches feedback/annotations convention). */
   const [memoLog,setMemoLog]=useState([]);
+  /* Wednesday Notes — shared free-form text for the Wednesday
+     meeting. Persisted to Supabase so all attendees see the same
+     content as it's edited (last-write-wins with ~500ms debounce).
+     Lives outside memoLog because it's a working document, not an
+     archived snapshot — once notes are finalized, "Save to log"
+     copies the text into memoLog and clears this. */
+  const [wednesdayNotes,setWednesdayNotes]=useState("");
   /* targetChangeReads — sparse acknowledgment map for portWeightHistory
      entries. Shape: { [historyEntryId]: [user, ...] }. Lets the Recent
      Target Changes section on the Agenda tab (and the amber-⏳ pill on
@@ -238,7 +245,7 @@ export function CompanyProvider({children}){
       "lastPriceUpdate","entryComments","calLastUpdated","repData","fxRates",
       "specialWeights","annotations","researchAssignments","perfData","feedback",
       "benchmarkWeights","alertRules","breakdownHistory","tpApprovals","memoLog",
-      "targetChangeReads",
+      "targetChangeReads","wednesdayNotes",
     ];
     var [r, r2, metaMap] = await Promise.all([
       safe(supaGet("library","id","shared")),
@@ -268,6 +275,7 @@ export function CompanyProvider({children}){
     var r16 = _m.get("tpApprovals")         || null;
     var r17 = _m.get("memoLog")             || null;
     var rTCR = _m.get("targetChangeReads")  || null;
+    var rWN  = _m.get("wednesdayNotes")     || null;
     try{if(r){var d=JSON.parse(r.data);if(Array.isArray(d)&&d.length){var libMig=migrateTags(d);setSaved(libMig.data);libOk=libMig.data.length;if(libMig.changed)supaUpsert("library",{id:"shared",data:JSON.stringify(libMig.data)});}}}catch(e){}
     try{if(r2&&Array.isArray(r2)){
       /* Two formats coexist during migration:
@@ -589,6 +597,15 @@ export function CompanyProvider({children}){
     }}catch(e){}
     try{if(r17&&r17.value){var ml=JSON.parse(r17.value);if(Array.isArray(ml))setMemoLog(ml);}}catch(e){}
     try{if(rTCR&&rTCR.value){var tcr=JSON.parse(rTCR.value);if(tcr&&typeof tcr==="object")setTargetChangeReads(tcr);}}catch(e){}
+    /* wednesdayNotes — meta is stored as raw string (not JSON-wrapped)
+       because it's plain prose. Older versions of this app may have
+       written it JSON-encoded; the try-JSON-else-raw fallback handles
+       both shapes so a format change can't strand the data. */
+    try{if(rWN&&rWN.value!=null){
+      var wnRaw = rWN.value;
+      try { var parsed = JSON.parse(wnRaw); if (typeof parsed === "string") wnRaw = parsed; } catch(_){}
+      setWednesdayNotes(wnRaw);
+    }}catch(e){}
     try{if(r10&&r10.value){var ra=JSON.parse(r10.value);if(ra&&typeof ra==="object"){if(!ra.byMember)ra.byMember={};if(!Array.isArray(ra.reorgs))ra.reorgs=[];/* Migrate legacy category keys: gbl→gl, intl→in, intSmall→sc */var RA_RENAMES={gbl:"gl",intl:"in",intSmall:"sc"};var raChanged=false;Object.keys(ra.byMember).forEach(function(m){var mb=ra.byMember[m]||{};Object.keys(RA_RENAMES).forEach(function(oldK){if(mb[oldK]!==undefined){mb[RA_RENAMES[oldK]]=mb[oldK];delete mb[oldK];raChanged=true;}});ra.byMember[m]=mb;});setResearchAssignments(ra);if(raChanged)supaUpsert("meta",{key:"researchAssignments",value:JSON.stringify(ra)});}}}catch(e){}
     try{if(r11&&r11.value){var pd=JSON.parse(r11.value);if(pd&&typeof pd==="object")setPerfData(pd);}}catch(e){}
     try{if(r12&&r12.value){var fb=JSON.parse(r12.value);if(Array.isArray(fb))setFeedback(fb);}}catch(e){}
@@ -932,6 +949,7 @@ export function CompanyProvider({children}){
       tpApprovals:          JSON.stringify(tpApprovals),
       feedback:             JSON.stringify(feedback),
       memoLog:              JSON.stringify(memoLog),
+      wednesdayNotes:       JSON.stringify(wednesdayNotes),
       researchAssignments:  JSON.stringify(researchAssignments),
       entryComments:        JSON.stringify(entryComments),
       alertRules:           JSON.stringify(alertRules),
@@ -1028,6 +1046,11 @@ export function CompanyProvider({children}){
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(feedback);autoSendBlob("feedback",j,"meta",{key:"feedback",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[feedback,ready]);
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(memoLog);autoSendBlob("memoLog",j,"meta",{key:"memoLog",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[memoLog,ready]);
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(targetChangeReads);autoSendBlob("targetChangeReads",j,"meta",{key:"targetChangeReads",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[targetChangeReads,ready]);
+  /* wednesdayNotes — stored as raw string so the persisted value
+     reads as plain text in the Supabase row (no JSON quoting). The
+     dedupe key is JSON-stringified to be safe against unusual chars,
+     but the value column gets the raw text. */
+  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(wednesdayNotes);autoSendBlob("wednesdayNotes",j,"meta",{key:"wednesdayNotes",value:wednesdayNotes||""});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[wednesdayNotes,ready]);
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(benchmarkWeights);autoSendBlob("benchmarkWeights",j,"meta",{key:"benchmarkWeights",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[benchmarkWeights,ready]);
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(breakdownHistory);autoSendBlob("breakdownHistory",j,"meta",{key:"breakdownHistory",value:j});},DEBOUNCE_HEAVY_MS);return function(){clearTimeout(t);};},[breakdownHistory,ready]);
 
@@ -2022,6 +2045,7 @@ export function CompanyProvider({children}){
     perfData,setPerfData,setPerfSeries,addPerfSeries,removePerfSeries,movePerfSeries,setPerfSeriesOrder,setPerfReturn,setPerfLastMonthEMV,applyPerfBulk,
     feedback,setFeedback,addFeedback,updateFeedback,removeFeedback,moveFeedback,
     memoLog,setMemoLog,addMemoLog,deleteMemoLog,
+    wednesdayNotes,setWednesdayNotes,
     targetChangeReads,setTargetChangeReads,markTargetChangeRead,
     marketsSnapshot,setMarketsSnapshot,marketsStatus,ensureMarketsSnapshot,
     alertRules,setAlertRules,
