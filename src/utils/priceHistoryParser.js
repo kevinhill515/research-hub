@@ -96,11 +96,38 @@ export function parsePriceHistory(text) {
   if (lines.length < 2) {
     return { byTicker: {}, dates: 0, tickers: 0, dropped: 0, errors: ["Need at least a header row + one data row."] };
   }
-  /* Detect delimiter from the header line. Fall back to tab. */
+  /* Detect delimiter from the header line. Fall back to comma. */
   const delim = lines[0].indexOf("\t") >= 0 ? "\t" : ",";
-  const split = function (l) {
-    return l.split(delim).map(function (s) { return s.trim().replace(/^"|"$/g, ""); });
-  };
+  /* Split a delimited line into cells. For tab-delimited input, a
+     naive .split(delim) is fine — pastes from Excel use tabs and
+     don't quote anything. For comma-delimited input we have to
+     handle quoted cells properly: "1,234.56" must stay one cell,
+     not split into "1" + "234.56" (which silently truncated values
+     to the integer part). */
+  const split = delim === ","
+    ? function (l) {
+        const cells = [];
+        let cur = "";
+        let inQuote = false;
+        for (let i = 0; i < l.length; i++) {
+          const c = l[i];
+          if (c === '"') {
+            /* "" inside a quoted cell is an escaped quote. */
+            if (inQuote && l[i + 1] === '"') { cur += '"'; i++; }
+            else inQuote = !inQuote;
+          } else if (c === "," && !inQuote) {
+            cells.push(cur);
+            cur = "";
+          } else {
+            cur += c;
+          }
+        }
+        cells.push(cur);
+        return cells.map(function (s) { return s.trim(); });
+      }
+    : function (l) {
+        return l.split(delim).map(function (s) { return s.trim().replace(/^"|"$/g, ""); });
+      };
   const header = split(lines[0]);
   if (header.length < 2) {
     return { byTicker: {}, dates: 0, tickers: 0, dropped: 0, errors: ["Header row needs a date column followed by ticker columns."] };
