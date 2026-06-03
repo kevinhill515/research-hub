@@ -53,7 +53,7 @@ SUPA_KEY = "sb_publishable_7kqbGZlL_im9kIpgFXLA-A_9CdqsyiT"
 
 # How long to wait after each refresh trigger.
 REP_WAIT_SECONDS      = 25   # Refresh Positions — user said ~15s, give buffer
-FACTSET_WAIT_SECONDS  = 240  # FactSet full workbook refresh — initially
+FACTSET_WAIT_SECONDS  = 300  # FactSet full workbook refresh — initially
                               # 120s, bumped to 240s after a May 20 2026
                               # run captured stale Hitachi 1D (+3.4 vs
                               # the post-refresh +0.3 in the workbook).
@@ -61,6 +61,10 @@ FACTSET_WAIT_SECONDS  = 240  # FactSet full workbook refresh — initially
                               # server fetch for the full set of UDFs
                               # (FX + Perf1 + Valuation + Metrics +
                               # Prices) hadn't completed by t+120.
+                              # Bumped again to 300s in June 2026 after
+                              # two consecutive morning runs missed the
+                              # 240s window — workbook grew + FactSet
+                              # server-side latency creeping up.
 
 # Position of FactSet "Refresh Workbook" in the Quick Access Toolbar
 # (1 = leftmost). Set after FactSet (May 2026) removed every other
