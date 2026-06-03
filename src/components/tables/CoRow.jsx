@@ -11,7 +11,7 @@ import PortPicker from '../ui/PortPicker.jsx';
 import PillEl from '../ui/PillEl.jsx';
 import FpeRangeMini from '../ui/FpeRangeMini.jsx';
 
-function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, selected, onToggleSelect, onQuickUpload, dark, rowAlerts, pendingTpCount }) {
+function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, selected, onToggleSelect, onQuickUpload, dark, rowAlerts, pendingTpCount, latestTpRejected }) {
   /* `rowAlerts` and `dark` are now lifted to props so this component
      doesn't subscribe to the global context. Combined with React.memo
      below, that means a context update unrelated to this row (e.g. a
@@ -468,6 +468,19 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
                   >
                     ⏳
                   </span>
+                )}
+                {/* Rejection indicator — surfaces when the latest
+                    earnings entry's tpChange has a linked TP
+                    suggestion that was voted down. The pill itself
+                    still reflects the analyst's tpChange (Decrease/
+                    Increase) since that's the proposal they made;
+                    the ✗ tag makes it visually obvious the TP
+                    didn't actually move. */}
+                {latestTpRejected && (
+                  <span
+                    className="text-[9px] px-1 py-px rounded-full bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 font-semibold leading-none"
+                    title="A TP change suggestion tied to this earnings entry was rejected — TP Fixed did not move"
+                  >✗ rejected</span>
                 )}
               </span>
             );

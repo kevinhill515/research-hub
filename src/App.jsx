@@ -66,6 +66,34 @@ export default function App(){
     return out;
   }, [tpApprovals]);
 
+  /* Rejected-TP-suggestion indicator. Set when the company's most
+     recent earnings entry's tpChange has a corresponding TP
+     suggestion that was REJECTED — surfaces a ✗ chip next to the
+     "Decrease TP" / "Increase TP" pill on the Companies table so
+     the team sees at a glance that the proposed change was voted
+     down (and the TP Fixed didn't actually move). Match by
+     earningsEntryId so we know the rejection lines up with the
+     same entry the cell's tpChange came from. */
+  const rejectedTpForLatestByCoId = useMemo(function () {
+    const out = {};
+    (companies || []).forEach(function (c) {
+      var entries = c.earningsEntries || [];
+      if (!entries.length) return;
+      /* The latest REPORTED earnings entry (not future-dated) drives
+         the TP Change pill. Mirror that pick here so we only flag
+         rejection when it ties to the visible entry. */
+      var today = new Date().toISOString().slice(0,10);
+      var sorted = entries.slice().sort(function(a,b){return (b.reportDate||"").localeCompare(a.reportDate||"");});
+      var latest = sorted.find(function(e){return e && e.reportDate && e.reportDate <= today;});
+      if (!latest) return;
+      var hasRejected = (tpApprovals || []).some(function(r){
+        return r && r.companyId === c.id && r.status === "rejected" && r.earningsEntryId === latest.id;
+      });
+      if (hasRejected) out[c.id] = true;
+    });
+    return out;
+  }, [companies, tpApprovals]);
+
   /* Stable handlers so React.memo on CoRow is effective — without
      useCallback, every parent render creates a new function ref and
      defeats the memo's prop-equality check. */
@@ -1231,7 +1259,7 @@ export default function App(){
                   to 'MOS Live'). Removed entirely. */}
               {HEADER_COLS.map(function(col,i){var cs=col.sort;var active=cs&&coSort===cs;var arrow=active?(coSortDir==="asc"?" \u2191":" \u2193"):"";var isName=col.label==="Name";return(<div key={i} onClick={cs?function(){handleSortClick(cs);}:undefined} className={"text-[10px] uppercase tracking-wide pb-1 pr-2.5 whitespace-nowrap select-none sticky top-0 bg-white dark:bg-slate-950 " + (isName?"left-0 z-20 ":"z-10 ") + (active?"font-semibold text-gray-900 dark:text-slate-100":"font-normal text-gray-500 dark:text-slate-400") + (cs?" cursor-pointer":" cursor-default")} style={{display:"table-cell"}}>{col.label}{arrow}</div>);})}
             </div>
-            {displayedCos.map(function(c,i){return <CoRow key={c.id+"-"+i} company={c} compact={compact} visibleCols={visibleCols} selected={selectedIds.has(c.id)} onToggleSelect={toggleSelect} onSelect={handleCoSelect} onDelete={handleCoDelete} onUpdate={updateCo} onQuickUpload={handleCoQuickUpload} dark={dark} rowAlerts={coAlertsByCoId[c.id]} pendingTpCount={pendingTpByCoId[c.id] || 0}/>;  })}
+            {displayedCos.map(function(c,i){return <CoRow key={c.id+"-"+i} company={c} compact={compact} visibleCols={visibleCols} selected={selectedIds.has(c.id)} onToggleSelect={toggleSelect} onSelect={handleCoSelect} onDelete={handleCoDelete} onUpdate={updateCo} onQuickUpload={handleCoQuickUpload} dark={dark} rowAlerts={coAlertsByCoId[c.id]} pendingTpCount={pendingTpByCoId[c.id] || 0} latestTpRejected={!!rejectedTpForLatestByCoId[c.id]}/>;  })}
           </div>
           </div>
         )}</div>)

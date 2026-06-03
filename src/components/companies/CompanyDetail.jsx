@@ -851,7 +851,26 @@ export function CompanyDetail(props){
                      valuation.tpFixed, surface the banner so the
                      reconcile can rescue the data. */
                   var fixedTp = tpFixed;
-                  var hist = (selCo.tpHistory||[]).slice().sort(function(a,b){return (b.date||"").localeCompare(a.date||"");});
+                  /* Build a set of rejected suggestion TPs for this
+                     company so we can ignore tpHistory entries that
+                     match a rejected proposal — those rows are noise
+                     from the pre-fix race (a rejected suggestion
+                     should never have produced a tpHistory entry,
+                     but some did), and they shouldn't trip the
+                     reconcile banner. */
+                  var rejectedTps = (tpApprovals || [])
+                    .filter(function(a){return a && a.companyId === selCo.id && a.status === "rejected";})
+                    .map(function(a){return parseFloat(a.toTP);})
+                    .filter(function(n){return isFinite(n);});
+                  function matchesRejected(tpVal){
+                    return rejectedTps.some(function(rt){return Math.abs(rt - tpVal) < 0.01;});
+                  }
+                  var hist = (selCo.tpHistory||[])
+                    .filter(function(h){
+                      var t = parseFloat(h && h.tp);
+                      return !(isFinite(t) && matchesRejected(t));
+                    })
+                    .slice().sort(function(a,b){return (b.date||"").localeCompare(a.date||"");});
                   var latestHistEntry = hist[0];
                   /* Case A signal: tpHistory tip vs valuation. */
                   var latestHistTp = latestHistEntry ? parseFloat(latestHistEntry.tp) : NaN;
@@ -1366,7 +1385,22 @@ export function CompanyDetail(props){
                       );
                     })}
                     {(function(){
-                      var arr = (selCo.tpHistory||[]).map(function(h, originalIdx){ return { h: h, originalIdx: originalIdx }; });
+                      /* Hide tpHistory entries whose TP matches a
+                         REJECTED tpApprovals record — those rows are
+                         leftover damage from rejected suggestions that
+                         shouldn't show up as committed history. The
+                         original entry stays in selCo.tpHistory (so
+                         the originalIdx delete logic keeps working
+                         for any row the user does want to surface);
+                         we just don't render them. */
+                      var rejTps = (tpApprovals || [])
+                        .filter(function(a){return a && a.companyId === selCo.id && a.status === "rejected";})
+                        .map(function(a){return parseFloat(a.toTP);})
+                        .filter(function(n){return isFinite(n);});
+                      function _matchRej(t){return rejTps.some(function(r){return Math.abs(r - t) < 0.01;});}
+                      var arr = (selCo.tpHistory||[])
+                        .map(function(h, originalIdx){ return { h: h, originalIdx: originalIdx }; })
+                        .filter(function(p){var t = parseFloat(p.h && p.h.tp); return !(isFinite(t) && _matchRej(t));});
                       arr.sort(function(a, b){ return (b.h.date || "").localeCompare(a.h.date || ""); });
                       return arr;
                     })().map(function(pair, displayIdx, displayArr){
