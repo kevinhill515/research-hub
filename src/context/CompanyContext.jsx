@@ -839,10 +839,86 @@ export function CompanyProvider({children}){
   var bcSessionIdRef = useRef("");
   var bcSuppressUntilRef = useRef(0);
   var bcRefetchTimerRef = useRef(null);
+  /* Accumulates the set of keys that have been broadcast since the
+     last debounced refetch fired. Bursts (10 approvals, full agenda
+     commit, etc.) coalesce into one refetch that hits only the keys
+     that actually changed — instead of the previous "any broadcast
+     triggers full loadFromStorage" (~14 MB egress per ping). */
+  var bcPendingKeysRef = useRef({});
   function bcBroadcast(key) {
     if (!bcRef.current) return;
     try { bcRef.current.postMessage({ sid: bcSessionIdRef.current, key: key, at: Date.now() }); }
     catch (_e) {}
+  }
+  /* Refetch a single key from Supabase and dispatch it to the right
+     local state setter. Returns a Promise. Each branch parses
+     defensively — a malformed value shouldn't break the whole
+     refresh. Keeping the per-key dispatch table here (rather than
+     a generic mapper) so the parse / shape-check is co-located
+     with the load logic. */
+  async function refetchKey(key) {
+    try {
+      if (key === "companies") {
+        var rows = await supaGetAll("companies");
+        if (!Array.isArray(rows)) return;
+        var perCo = rows.filter(function(r){ return r && r.id !== "shared"; });
+        var loaded = [];
+        perCo.forEach(function(row){
+          try { var c = JSON.parse(row.data); if (c) loaded.push(c); } catch(_e){}
+        });
+        if (loaded.length) setCompanies(loaded);
+        return;
+      }
+      if (key === "library") {
+        var lr = await supaGet("library", "id", "shared");
+        if (lr && lr.data) {
+          try { var d = JSON.parse(lr.data); if (Array.isArray(d)) setSaved(d); } catch(_e){}
+        }
+        return;
+      }
+      /* All other broadcastable keys live in the meta table. */
+      var metaMap = await supaGetMetaMany([key]);
+      if (!metaMap) return;
+      var row = metaMap.get(key);
+      if (!row || row.value == null) return;
+      var raw = row.value;
+      switch (key) {
+        case "lastPriceUpdate": {
+          var parts = String(raw).split(" at ");
+          if (parts.length >= 2) { setLastPriceUpdatedBy(parts[0] || ""); setLastPriceUpdate(parts[1] || ""); }
+          else setLastPriceUpdate(raw);
+          break;
+        }
+        case "calLastUpdated": {
+          var p = String(raw).split(" at ");
+          setCalLastUpdatedBy(p[0] || ""); setCalLastUpdated(p[1] || "");
+          break;
+        }
+        case "entryComments":       try { setEntryComments(JSON.parse(raw)); } catch(_e){} break;
+        case "annotations":         try { var a = JSON.parse(raw); if (Array.isArray(a)) setAnnotations(a); } catch(_e){} break;
+        case "tpApprovals":         try { var t = JSON.parse(raw); if (Array.isArray(t)) setTpApprovals(t); } catch(_e){} break;
+        case "memoLog":             try { var m = JSON.parse(raw); if (Array.isArray(m)) setMemoLog(m); } catch(_e){} break;
+        case "researchAssignments": try { setResearchAssignments(JSON.parse(raw)); } catch(_e){} break;
+        case "perfData":            try { setPerfData(JSON.parse(raw)); } catch(_e){} break;
+        case "feedback":            try { var f = JSON.parse(raw); if (Array.isArray(f)) setFeedback(f); } catch(_e){} break;
+        case "benchmarkWeights":    try { setBenchmarkWeights(JSON.parse(raw)); } catch(_e){} break;
+        case "alertRules":          try { setAlertRules(JSON.parse(raw)); } catch(_e){} break;
+        case "breakdownHistory":    try { setBreakdownHistory(JSON.parse(raw)); } catch(_e){} break;
+        case "fxRates":             try { setFxRates(JSON.parse(raw)); } catch(_e){} break;
+        case "repData":             try { setRepData(JSON.parse(raw)); } catch(_e){} break;
+        case "specialWeights":      try { setSpecialWeights(JSON.parse(raw)); } catch(_e){} break;
+        case "targetChangeReads":   try { var tc = JSON.parse(raw); if (tc && typeof tc === "object") setTargetChangeReads(tc); } catch(_e){} break;
+        case "wednesdayNotes": {
+          var wn = raw;
+          try { var pp = JSON.parse(raw); if (typeof pp === "string") wn = pp; } catch(_){}
+          setWednesdayNotes(wn);
+          break;
+        }
+        default: /* unknown key — skip */ break;
+      }
+    } catch (_e) {
+      /* swallow; next broadcast or manual refresh will retry */
+    }
   }
   useEffect(function(){
     if (typeof BroadcastChannel === "undefined") return;
@@ -852,15 +928,20 @@ export function CompanyProvider({children}){
       bcRef.current.onmessage = function(e) {
         var msg = e && e.data;
         if (!msg || !msg.sid || msg.sid === bcSessionIdRef.current) return;
-        /* Debounce: bursts (e.g. user batches 10 approvals or commits
-           a whole agenda) coalesce into one refetch. */
+        /* Accumulate the touched key so a burst of broadcasts (10
+           approvals, full agenda commit) refetches each affected
+           key exactly once — not the full loadFromStorage per
+           burst. The user's working egress for the popout sync was
+           ~14 MB per ping (full reload) and is now ~1 KB - 30 MB
+           depending on which specific key changed, almost always
+           well under 100 KB for the meeting-traffic blobs. */
+        if (msg.key) bcPendingKeysRef.current[msg.key] = true;
         if (bcRefetchTimerRef.current) clearTimeout(bcRefetchTimerRef.current);
         bcRefetchTimerRef.current = setTimeout(function(){
           bcSuppressUntilRef.current = Date.now() + 5000; /* 5s echo guard */
-          /* Re-run the load to pick up whatever the other window just
-             wrote. Suppression keeps the local autoSend from
-             immediately uploading the just-loaded state back. */
-          try { loadFromStorage(); } catch (_e) {}
+          var keys = Object.keys(bcPendingKeysRef.current);
+          bcPendingKeysRef.current = {};
+          keys.forEach(function(k){ refetchKey(k); });
         }, 400);
       };
     } catch (_e) {}
