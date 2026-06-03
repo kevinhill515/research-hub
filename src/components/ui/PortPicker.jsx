@@ -7,7 +7,7 @@ import PillEl from './PillEl.jsx';
    (compact table rows) aren't affected. The Overlap tab's Tier(s)
    column passes stack so multiple tiers stack vertically and don't
    blow out the column width. */
-function PortPicker({ active, onChange, pillBg, pillColor, plusColor, opts, pillStyleFn, dashedPills, stack, compact }) {
+function PortPicker({ active, onChange, pillBg, pillColor, plusColor, opts, pillStyleFn, dashedPills, stack, compact, noAdd }) {
   var [open, setOpen] = useState(false);
   var allOpts = opts || PORTFOLIOS;
   // Display pills in canonical opts order, not insertion order
@@ -44,8 +44,10 @@ function PortPicker({ active, onChange, pillBg, pillColor, plusColor, opts, pill
         return dashedPills ? (
           <span
             key={p}
-            className={"inline-flex items-center whitespace-nowrap rounded-full bg-transparent " + (compact ? "text-[10px] px-1.5 py-px gap-0.5" : "text-xs px-2 py-0.5 gap-1")}
-            style={{ border: "1.5px dashed " + s.color, color: s.color }}
+            /* compact size matches PillEl so port? and portfolio pills
+               are visually identical in the List view. */
+            className={"inline-flex items-center whitespace-nowrap rounded-full bg-transparent " + (compact ? "text-[9px] px-1 py-0 gap-0.5" : "text-xs px-2 py-0.5 gap-1")}
+            style={{ border: "1px dashed " + s.color, color: s.color }}
           >
             {p}
             <span
@@ -68,7 +70,7 @@ function PortPicker({ active, onChange, pillBg, pillColor, plusColor, opts, pill
         );
       })}
 
-      {avail.length > 0 && (
+      {avail.length > 0 && !noAdd && (
         <div className="relative inline-block">
           <span
             onClick={function () { setOpen(function (o) { return !o; }); }}

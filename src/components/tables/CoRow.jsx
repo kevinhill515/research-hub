@@ -25,8 +25,16 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
   var [hovered, setHovered] = useState(false);
   var [showMenu, setShowMenu] = useState(false);
   var menuRef = useRef();
+  /* Port add menu — opened by clicking anywhere in the Portfolio cell.
+     Click on the cell shouldn't navigate to the company page, so the
+     handler stops propagation. Menu lets the user pick whether to add
+     a Portfolio (committed) or Port? (considering) without first
+     having to hit a tiny + button. */
+  var [portMenuOpen, setPortMenuOpen] = useState(false);
+  var portMenuRef = useRef();
 
   useClickOutside(menuRef, function () { setShowMenu(false); }, showMenu);
+  useClickOutside(portMenuRef, function () { setPortMenuOpen(false); }, portMenuOpen);
 
   var missing = [];
   if (!company.country) missing.push("country");
@@ -147,10 +155,12 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
         <input type="checkbox" checked={selected} onChange={function () {}} className="cursor-pointer accent-blue-600" />
       </div>
 
-      {/* Tier(s) */}
+      {/* Tier(s) — stack=true lets pills wrap to a 2nd row inside the
+          cell (max-w bounds the column so multi-tier names don't blow
+          out the row width). Matches the Metrics TierCell layout. */}
       {show("Tier(s)") && (
-        <div className={tdBase + " !whitespace-normal"} style={rowBg ? { background: rowBg } : undefined}>
-          <PortPicker compact active={tiers} onChange={function (v) { var nt=v.join(", "); var ch={tier:nt}; var s=tierToStatus(nt); if(s)ch.status=s; onUpdate(company.id, ch); }} plusColor="#334155" opts={TIER_ORDER} pillStyleFn={tierPillStyle} />
+        <div className={tdBase + " !whitespace-normal"} style={Object.assign({ maxWidth: 96 }, rowBg ? { background: rowBg } : {})}>
+          <PortPicker compact stack active={tiers} onChange={function (v) { var nt=v.join(", "); var ch={tier:nt}; var s=tierToStatus(nt); if(s)ch.status=s; onUpdate(company.id, ch); }} plusColor="#334155" opts={TIER_ORDER} pillStyleFn={tierPillStyle} />
         </div>
       )}
 
@@ -239,6 +249,23 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
         </div>
       )}
 
+      {/* FPE Range — clicks to Valuation (where the FPE Low/Med/High
+         5y inputs live). Sits between Name and 5D% so valuation
+         context reads left-to-right with the identity. */}
+      {show("FPE Range") && (
+        <div
+          className={tdBase + " cursor-pointer"}
+          style={rowBg ? { background: rowBg } : undefined}
+          onClick={function (e) { e.stopPropagation(); onSelect(company, "section:Valuation"); }}
+          title="Open Valuation"
+        >
+          {(function () {
+            var el = <FpeRangeMini valuation={val} width={compact ? 80 : 100} />;
+            return el || <span className="text-xs text-gray-400 dark:text-slate-500">--</span>;
+          })()}
+        </div>
+      )}
+
       {/* 5D% — clicks to Snapshot (where the trailing-period perf bars
          and tables live). */}
       {show("5D%") && (
@@ -310,22 +337,6 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
         </div>
       )}
 
-      {/* FPE Range — clicks to Valuation (where the FPE Low/Med/High
-         5y inputs live). */}
-      {show("FPE Range") && (
-        <div
-          className={tdBase + " cursor-pointer"}
-          style={rowBg ? { background: rowBg } : undefined}
-          onClick={function (e) { e.stopPropagation(); onSelect(company, "section:Valuation"); }}
-          title="Open Valuation"
-        >
-          {(function () {
-            var el = <FpeRangeMini valuation={val} width={compact ? 80 : 100} />;
-            return el || <span className="text-xs text-gray-400 dark:text-slate-500">--</span>;
-          })()}
-        </div>
-      )}
-
       {/* Country */}
       {show("Country") && (
         <div
@@ -347,7 +358,7 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
             </select>
           ) : cs ? (
             <span
-              className="text-xs px-2 py-0.5 rounded-full font-medium"
+              className={(compact ? "text-[10px] px-1.5 py-0" : "text-xs px-2 py-0.5") + " rounded-full font-medium"}
               style={{ background: cs.bg, color: cs.color }}
             >
               {company.country}
@@ -379,7 +390,7 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
             </select>
           ) : ss ? (
             <span
-              className="text-xs px-2 py-0.5 rounded-full font-medium"
+              className={(compact ? "text-[10px] px-1.5 py-0" : "text-xs px-2 py-0.5") + " rounded-full font-medium"}
               style={{ background: ss.bg, color: ss.color }}
             >
               {shortSector(company.sector)}
@@ -390,13 +401,26 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
         </div>
       )}
 
-      {/* Portfolio */}
+      {/* Portfolio — clicking anywhere in the cell opens an add menu
+          (Portfolio vs Port?) instead of navigating to the company
+          page. Pills themselves are noAdd; the menu is the canonical
+          way to add. Removing a pill still works via its inline ×. */}
       {show("Portfolio") && (
-        <div className={tdBase + " !whitespace-nowrap"} style={rowBg ? { background: rowBg } : undefined}>
-          <div className="flex gap-1 items-center flex-nowrap">
-            <PortPicker compact active={portfolios} onChange={function (v) { onUpdate(company.id, { portfolios: v }); }} pillBg="#166534" pillColor="#fff" plusColor="#4ade80" />
+        <div
+          ref={portMenuRef}
+          className={tdBase + " !whitespace-normal !cursor-pointer relative"}
+          style={Object.assign({ maxWidth: 160 }, rowBg ? { background: rowBg } : {})}
+          onClick={function (e) {
+            e.stopPropagation();
+            setPortMenuOpen(function (o) { return !o; });
+          }}
+        >
+          <div className="flex gap-1 items-center flex-wrap">
+            <PortPicker compact stack noAdd active={portfolios} onChange={function (v) { onUpdate(company.id, { portfolios: v }); }} pillBg="#166534" pillColor="#fff" plusColor="#4ade80" />
             <PortPicker
               compact
+              stack
+              noAdd
               active={portNote}
               onChange={function (v) { onUpdate(company.id, { portNote: v.join(", ") }); }}
               plusColor="#1a3a6b"
@@ -405,6 +429,57 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
               pillStyleFn={function () { return { bg: "transparent", color: "#1a3a6b" }; }}
             />
           </div>
+          {portMenuOpen && (
+            <div
+              onClick={function (e) { e.stopPropagation(); }}
+              className="absolute top-[calc(100%+2px)] left-0 z-[200] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md p-1.5 shadow-lg min-w-[140px]"
+            >
+              {/* Add to Portfolio (committed) */}
+              <div className="text-[10px] font-semibold text-gray-500 dark:text-slate-400 px-1 pb-0.5">Add to Portfolio</div>
+              <div className="flex flex-wrap gap-1 mb-1.5">
+                {PORTFOLIOS.filter(function (p) { return portfolios.indexOf(p) < 0; }).map(function (p) {
+                  return (
+                    <span
+                      key={p}
+                      onClick={function (e) {
+                        e.stopPropagation();
+                        var next = portfolios.concat([p]).sort(function (a, b) { return PORTFOLIOS.indexOf(a) - PORTFOLIOS.indexOf(b); });
+                        onUpdate(company.id, { portfolios: next });
+                        setPortMenuOpen(false);
+                      }}
+                      className="text-[10px] px-1.5 py-0 rounded-full cursor-pointer font-medium"
+                      style={{ background: "#166534", color: "#fff" }}
+                    >{p}</span>
+                  );
+                })}
+                {PORTFOLIOS.filter(function (p) { return portfolios.indexOf(p) < 0; }).length === 0 && (
+                  <span className="text-[10px] text-gray-400 dark:text-slate-500 italic px-1">all assigned</span>
+                )}
+              </div>
+              {/* Add to Port? (considering) */}
+              <div className="text-[10px] font-semibold text-gray-500 dark:text-slate-400 px-1 pb-0.5 border-t border-slate-200 dark:border-slate-700 pt-1">Add to Port?</div>
+              <div className="flex flex-wrap gap-1">
+                {availPortNote.filter(function (p) { return portNote.indexOf(p) < 0; }).map(function (p) {
+                  return (
+                    <span
+                      key={p}
+                      onClick={function (e) {
+                        e.stopPropagation();
+                        var next = portNote.concat([p]);
+                        onUpdate(company.id, { portNote: next.join(", ") });
+                        setPortMenuOpen(false);
+                      }}
+                      className="text-[10px] px-1.5 py-0 rounded-full cursor-pointer font-medium bg-transparent"
+                      style={{ border: "1px dashed #1a3a6b", color: "#1a3a6b" }}
+                    >{p}</span>
+                  );
+                })}
+                {availPortNote.filter(function (p) { return portNote.indexOf(p) < 0; }).length === 0 && (
+                  <span className="text-[10px] text-gray-400 dark:text-slate-500 italic px-1">none available</span>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -480,7 +555,7 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
                   <span
                     className="text-[9px] px-1 py-px rounded-full bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 font-semibold leading-none"
                     title="A TP change suggestion tied to this earnings entry was rejected — TP Fixed did not move"
-                  >✗ rejected</span>
+                  >✗</span>
                 )}
               </span>
             );

@@ -2,8 +2,11 @@
    by the Companies-table Portfolio column where the row is already
    width-constrained and the pills were forcing horizontal scroll. */
 function PillEl({ label, bg, color, border, onRemove, compact }) {
+  /* Compact density matches the Metrics view tier pill
+     (text-[9px] px-1 py-0) so the List + Metrics views feel
+     visually consistent. */
   var sizeCls = compact
-    ? "text-[10px] px-1.5 py-px gap-0.5"
+    ? "text-[9px] px-1 py-0 gap-0.5"
     : "text-xs px-2 py-0.5 gap-1";
   return (
     <span

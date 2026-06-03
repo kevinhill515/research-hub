@@ -226,20 +226,9 @@ export default function CompaniesListTab(props) {
               {["All"].concat(subOpts).map(function(so){var a=coStatusSubFilter===so;return <span key={so} onClick={function(){setCoStatusSubFilter(so);}} className={"text-[10px] px-2 py-0.5 rounded-full cursor-pointer transition-colors "+(a?"font-semibold":"font-normal")} style={{border:"1px solid "+(a&&cfg?cfg.color:"transparent"),background:a&&cfg?cfg.bg:"transparent",color:a&&cfg?cfg.color:undefined}}>{so}</span>;})}
             </span>;
           })()}
-          {/* Compact/Default toggle \u2014 visible button next to Columns
-              picker so the user can flip column density in one click
-              without opening the dropdown. Only meaningful on the
-              Standard view (Metrics has its own column schema). */}
-          {companiesView==="standard"&&(
-            <button
-              onClick={function(){
-                if(compact){setCompact(false);setVisibleCols(new Set(ALL_COLS));}
-                else{setCompact(true);setVisibleCols(COMPACT_COLS);}
-              }}
-              className={"ml-auto " + BTN}
-              title={compact?"Switch to Default (all columns)":"Switch to Compact (fewer columns)"}
-            >{compact?"Default":"Compact"}</button>
-          )}
+          {/* Compact/Default toggle removed \u2014 List view is always
+              compact for cross-tab density consistency with Metrics.
+              `compact=true` is the hardcoded default in useCompanies. */}
           <div className={(companiesView==="standard"?"":"ml-auto ")+"relative"}><button onClick={function(){setShowColPicker(function(s){return !s;});}} className={BTN}>Columns {"\u25BE"}</button>{showColPicker&&(companiesView==="metrics"?(
   /* Metrics picker — full list from MetricsTable's column schema. */
   <div className="absolute right-0 top-[calc(100%+4px)] z-[100] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3.5 py-2.5 shadow-lg min-w-[200px] max-h-[65vh] overflow-y-auto">

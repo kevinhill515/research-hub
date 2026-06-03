@@ -12,6 +12,10 @@
 export const COMPANY_COLUMNS = [
   { id: "Tier(s)",   label: "Tier(s)",   sort: "Tier",          compact: true  },
   { id: "Name",      label: "Name",      sort: "Name",          compact: true  },
+  /* FPE Range sits between Name and 5D% so the valuation context
+     reads left-to-right alongside the company identity rather than
+     being buried after the MOS columns. */
+  { id: "FPE Range", label: "FPE Range", sort: null,            compact: true  },
   { id: "5D%",       label: "5D%",       sort: "5D%",           compact: true  },
   /* "MOS Live" = MOS computed from the LIVE PE × normalized EPS. Renamed
      from bare "MOS" to make the contrast with "MOS Fixed" (committed
@@ -19,7 +23,6 @@ export const COMPANY_COLUMNS = [
      visibility sets and sort state don't break. */
   { id: "MOS",       label: "MOS Live",  sort: "MOS",           compact: true  },
   { id: "MOS Fixed", label: "MOS Fixed", sort: "MOS Fixed",     compact: true  },
-  { id: "FPE Range", label: "FPE Range", sort: null,            compact: true  },
   { id: "Country",   label: "Country",   sort: "Country",       compact: false },
   { id: "Sector",    label: "Sector",    sort: "Sector",        compact: false },
   { id: "Portfolio", label: "Portfolio", sort: null,            compact: false },

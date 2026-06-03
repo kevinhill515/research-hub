@@ -24,49 +24,49 @@ export const METRICS_COLS = [
      Current (LTM) columns are placed before their +1/+2 siblings but
      default-hidden so existing users don't see their view suddenly
      double in width. Toggle them on via the Columns picker. */
-  { key: "__tier",     label: "Tier",       kind: "tier",     w: 72,  vis: true  },
-  { key: "__name",     label: "Name",       kind: "name",     w: 170, vis: true  },
-  { key: "mktCap",     label: "MktCap",     kind: "bn",       w: 70,  vis: true  },
-  { key: "__fpeRange", label: "FPE Range",  kind: "fperange", w: 110, vis: true  },
-  { key: "fpe",        label: "P/E",        kind: "x",        w: 70,  vis: false },
-  { key: "fpe1",       label: "P/E +1",     kind: "x",        w: 70,  vis: true  },
-  { key: "fpe2",       label: "P/E +2",     kind: "x",        w: 70,  vis: false },
-  { key: "fcfYld",     label: "FCF Yld",    kind: "pct",      w: 80,  vis: false },
-  { key: "fcfYld1",    label: "FCF Yld +1", kind: "pct",      w: 80,  vis: true  },
-  { key: "fcfYld2",    label: "FCF Yld +2", kind: "pct",      w: 80,  vis: false },
-  { key: "divYld",     label: "Div Yld",    kind: "pct",      w: 80,  vis: false },
-  { key: "divYld1",    label: "Div Yld +1", kind: "pct",      w: 80,  vis: true  },
-  { key: "divYld2",    label: "Div Yld +2", kind: "pct",      w: 80,  vis: false },
-  { key: "payout",     label: "Payout",     kind: "pct",      w: 75,  vis: false },
-  { key: "payout1",    label: "Payout +1",  kind: "pct",      w: 75,  vis: true  },
-  { key: "payout2",    label: "Payout +2",  kind: "pct",      w: 75,  vis: false },
-  { key: "netDE",      label: "Net D/E",    kind: "pct",      w: 80,  vis: false },
-  { key: "netDE1",     label: "Net D/E +1", kind: "pct",      w: 80,  vis: true  },
-  { key: "netDE2",     label: "Net D/E +2", kind: "pct",      w: 80,  vis: false },
-  { key: "intCov",     label: "Int Cov",    kind: "ratio",    w: 70,  vis: true  },
-  { key: "ltEPS",      label: "LT EPS",     kind: "pct",      w: 70,  vis: true  },
-  { key: "grMgn",      label: "Gr Mgn",     kind: "pct",      w: 80,  vis: false },
-  { key: "grMgn1",     label: "Gr Mgn +1",  kind: "pct",      w: 80,  vis: true  },
-  { key: "grMgn2",     label: "Gr Mgn +2",  kind: "pct",      w: 80,  vis: false },
-  { key: "netMgn",     label: "Net Mgn",    kind: "pct",      w: 80,  vis: false },
-  { key: "netMgn1",    label: "Net Mgn +1", kind: "pct",      w: 80,  vis: true  },
-  { key: "netMgn2",    label: "Net Mgn +2", kind: "pct",      w: 80,  vis: false },
-  { key: "gpAss",      label: "GP/Ass",     kind: "pct",      w: 75,  vis: false },
-  { key: "gpAss1",     label: "GP/Ass +1",  kind: "pct",      w: 75,  vis: true  },
-  { key: "gpAss2",     label: "GP/Ass +2",  kind: "pct",      w: 75,  vis: false },
-  { key: "npAss",      label: "NP/Ass",     kind: "pct",      w: 75,  vis: false },
-  { key: "npAss1",     label: "NP/Ass +1",  kind: "pct",      w: 75,  vis: true  },
-  { key: "npAss2",     label: "NP/Ass +2",  kind: "pct",      w: 75,  vis: false },
-  { key: "opROE",      label: "Op ROE",     kind: "pct",      w: 75,  vis: false },
-  { key: "opROE1",     label: "Op ROE +1",  kind: "pct",      w: 75,  vis: true  },
-  { key: "opROE2",     label: "Op ROE +2",  kind: "pct",      w: 75,  vis: false },
+  { key: "__tier",     label: "Tier",       kind: "tier",     w: 56,  vis: true  },
+  { key: "__name",     label: "Name",       kind: "name",     w: 108, vis: true  },
+  { key: "mktCap",     label: "MktCap",     kind: "bn",       w: 52,  vis: true  },
+  { key: "__fpeRange", label: "FPE Range",  kind: "fperange", w: 78,  vis: true  },
+  { key: "fpe",        label: "P/E",        kind: "x",        w: 48,  vis: false },
+  { key: "fpe1",       label: "P/E +1",     kind: "x",        w: 50,  vis: true  },
+  { key: "fpe2",       label: "P/E +2",     kind: "x",        w: 50,  vis: false },
+  { key: "fcfYld",     label: "FCF Yld",    kind: "pct",      w: 56,  vis: false },
+  { key: "fcfYld1",    label: "FCF Yld +1", kind: "pct",      w: 56,  vis: true  },
+  { key: "fcfYld2",    label: "FCF Yld +2", kind: "pct",      w: 56,  vis: false },
+  { key: "divYld",     label: "Div Yld",    kind: "pct",      w: 56,  vis: false },
+  { key: "divYld1",    label: "Div Yld +1", kind: "pct",      w: 56,  vis: true  },
+  { key: "divYld2",    label: "Div Yld +2", kind: "pct",      w: 56,  vis: false },
+  { key: "payout",     label: "Payout",     kind: "pct",      w: 54,  vis: false },
+  { key: "payout1",    label: "Payout +1",  kind: "pct",      w: 54,  vis: true  },
+  { key: "payout2",    label: "Payout +2",  kind: "pct",      w: 54,  vis: false },
+  { key: "netDE",      label: "Net D/E",    kind: "pct",      w: 56,  vis: false },
+  { key: "netDE1",     label: "Net D/E +1", kind: "pct",      w: 56,  vis: true  },
+  { key: "netDE2",     label: "Net D/E +2", kind: "pct",      w: 56,  vis: false },
+  { key: "intCov",     label: "Int Cov",    kind: "ratio",    w: 50,  vis: true  },
+  { key: "ltEPS",      label: "LT EPS",     kind: "pct",      w: 52,  vis: true  },
+  { key: "grMgn",      label: "Gr Mgn",     kind: "pct",      w: 56,  vis: false },
+  { key: "grMgn1",     label: "Gr Mgn +1",  kind: "pct",      w: 56,  vis: true  },
+  { key: "grMgn2",     label: "Gr Mgn +2",  kind: "pct",      w: 56,  vis: false },
+  { key: "netMgn",     label: "Net Mgn",    kind: "pct",      w: 56,  vis: false },
+  { key: "netMgn1",    label: "Net Mgn +1", kind: "pct",      w: 56,  vis: true  },
+  { key: "netMgn2",    label: "Net Mgn +2", kind: "pct",      w: 56,  vis: false },
+  { key: "gpAss",      label: "GP/Ass",     kind: "pct",      w: 54,  vis: false },
+  { key: "gpAss1",     label: "GP/Ass +1",  kind: "pct",      w: 54,  vis: true  },
+  { key: "gpAss2",     label: "GP/Ass +2",  kind: "pct",      w: 54,  vis: false },
+  { key: "npAss",      label: "NP/Ass",     kind: "pct",      w: 54,  vis: false },
+  { key: "npAss1",     label: "NP/Ass +1",  kind: "pct",      w: 54,  vis: true  },
+  { key: "npAss2",     label: "NP/Ass +2",  kind: "pct",      w: 54,  vis: false },
+  { key: "opROE",      label: "Op ROE",     kind: "pct",      w: 54,  vis: false },
+  { key: "opROE1",     label: "Op ROE +1",  kind: "pct",      w: 54,  vis: true  },
+  { key: "opROE2",     label: "Op ROE +2",  kind: "pct",      w: 54,  vis: false },
   /* Performance — colored cells */
-  { key: "perf.MTD",   label: "MTD",        kind: "perf",     w: 60,  vis: true  },
-  { key: "perf.QTD",   label: "QTD",        kind: "perf",     w: 60,  vis: true  },
-  { key: "perf.3M",    label: "3M",         kind: "perf",     w: 60,  vis: true  },
-  { key: "perf.6M",    label: "6M",         kind: "perf",     w: 60,  vis: true  },
-  { key: "perf.YTD",   label: "YTD",        kind: "perf",     w: 60,  vis: true  },
-  { key: "perf.1Y",    label: "1Y",         kind: "perf",     w: 60,  vis: true  },
+  { key: "perf.MTD",   label: "MTD",        kind: "perf",     w: 44,  vis: true  },
+  { key: "perf.QTD",   label: "QTD",        kind: "perf",     w: 44,  vis: true  },
+  { key: "perf.3M",    label: "3M",         kind: "perf",     w: 42,  vis: true  },
+  { key: "perf.6M",    label: "6M",         kind: "perf",     w: 42,  vis: true  },
+  { key: "perf.YTD",   label: "YTD",        kind: "perf",     w: 44,  vis: true  },
+  { key: "perf.1Y",    label: "1Y",         kind: "perf",     w: 42,  vis: true  },
 ];
 
 export const DEFAULT_METRICS_VISIBLE = new Set(METRICS_COLS.filter(function (c) { return c.vis; }).map(function (c) { return c.key; }));
@@ -462,11 +462,19 @@ export default function MetricsTable({ companies, search, onSelectCompany, dark,
                    than the regular sticky-top thead so the top-left
                    corner cell stacks above both planes. */
                 const isName = col.kind === "name";
+                const isTier = col.kind === "tier";
+                /* Right-align numeric-column headers so they sit over
+                   their right-aligned values. Name + Tier + FPE Range
+                   stay left-aligned (text/visual content). */
+                const headerAlign = (isName || isTier || col.kind === "fperange") ? "text-left" : "text-right";
                 return (
                   <th
                     key={col.key}
                     onClick={sortable ? function () { handleHeaderClick(col.key); } : undefined}
-                    className={"sticky top-0 bg-slate-50 dark:bg-slate-800 px-2 py-1.5 text-[10px] uppercase tracking-wide text-left font-medium text-gray-500 dark:text-slate-400 whitespace-nowrap border-b border-slate-200 dark:border-slate-700 " +
+                    /* Tighter px to compress column widths; headers
+                       allowed to wrap to a 2nd line so the table fits
+                       all default cols on one screen. */
+                    className={"sticky top-0 bg-slate-50 dark:bg-slate-800 px-0.5 py-1 text-[10px] uppercase tracking-wide " + headerAlign + " font-medium text-gray-500 dark:text-slate-400 leading-tight border-b border-slate-200 dark:border-slate-700 " +
                       (isName ? "left-0 z-20 " : "z-10 ") +
                       (sortable ? "cursor-pointer hover:text-gray-700 dark:hover:text-slate-300 select-none" : "")}
                     style={{ minWidth: col.w }}
@@ -487,28 +495,44 @@ export default function MetricsTable({ companies, search, onSelectCompany, dark,
                 return (
                   <th
                     key={col.key + "-flt"}
-                    className={"sticky bg-slate-50 dark:bg-slate-800 px-1 py-1 border-b border-slate-200 dark:border-slate-700 " + (isName ? "left-0 z-20 " : "z-10 ")}
+                    className={"sticky bg-slate-50 dark:bg-slate-800 px-0.5 py-1 border-b border-slate-200 dark:border-slate-700 " + (isName ? "left-0 z-20 " : "z-10 ")}
                     style={{ top: 28, minWidth: col.w }}
                   >
                     {screenable ? (
-                      <div className="flex items-center gap-0.5" onClick={function (e) { e.stopPropagation(); }}>
-                        <select
-                          value={f.op}
-                          onChange={function (e) { updateFilter(col.key, { op: e.target.value }); }}
-                          className="text-[10px] px-0.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 font-mono"
-                        >
-                          <option value=">">&gt;</option>
-                          <option value="<">&lt;</option>
-                          <option value=">=">≥</option>
-                          <option value="<=">≤</option>
-                        </select>
+                      /* justify-end so the filter op + input sit on the
+                         right edge — aligned with the right-aligned
+                         header label + values below. Fixed input width
+                         (no w-full) so the filter row stays compact
+                         instead of stretching to fill the column. The
+                         op control is a button that cycles through the
+                         four operators on click — much narrower than a
+                         native <select> (which forces space for the
+                         browser-rendered arrow). */
+                      <div className="flex items-center gap-px justify-end" onClick={function (e) { e.stopPropagation(); }}>
+                        {(function(){
+                          const OPS = [">", "<", ">=", "<="];
+                          const SYM = { ">": ">", "<": "<", ">=": "≥", "<=": "≤" };
+                          return (
+                            <button
+                              type="button"
+                              onClick={function () {
+                                const i = OPS.indexOf(f.op);
+                                const next = OPS[(i + 1) % OPS.length];
+                                updateFilter(col.key, { op: next });
+                              }}
+                              title="Click to cycle: > → < → ≥ → ≤"
+                              className="text-[10px] px-0.5 py-0 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 font-mono cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800"
+                              style={{ width: 16, lineHeight: "14px" }}
+                            >{SYM[f.op] || ">"}</button>
+                          );
+                        })()}
                         <input
                           type="text"
                           value={f.value}
                           onChange={function (e) { updateFilter(col.key, { value: e.target.value }); }}
                           placeholder={col.kind === "pct" || col.kind === "perf" ? "%" : (col.kind === "bn" ? "B" : col.kind === "x" ? "x" : "")}
-                          className="text-[10px] w-full px-1 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 font-mono"
-                          style={{ minWidth: 32 }}
+                          className="text-[10px] px-0.5 py-0 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 font-mono text-right"
+                          style={{ width: 28 }}
                         />
                       </div>
                     ) : (
@@ -533,7 +557,7 @@ export default function MetricsTable({ companies, search, onSelectCompany, dark,
                   {visibleCols.map(function (col) {
                     if (col.kind === "tier") {
                       return (
-                        <td key={col.key} className="px-2 py-1 align-middle" style={{ minWidth: col.w }}>
+                        <td key={col.key} className="px-0.5 py-1 align-middle" style={{ minWidth: col.w }}>
                           <TierCell tier={c.tier} />
                         </td>
                       );
@@ -548,18 +572,18 @@ export default function MetricsTable({ companies, search, onSelectCompany, dark,
                         : (rowBgLight || "#ffffff");
                       return (
                         <td key={col.key}
-                            className="sticky left-0 z-[5] px-2 py-1 text-gray-900 dark:text-slate-100 font-medium whitespace-nowrap"
+                            className="sticky left-0 z-[5] px-0.5 py-1 text-gray-900 dark:text-slate-100 font-medium whitespace-nowrap"
                             style={{ minWidth: col.w, background: stickyBg }}
                             title={c.name}>
-                          {truncName(c.name, 22)}
+                          {truncName(c.name, 15)}
                         </td>
                       );
                     }
                     if (col.kind === "fperange") {
                       return (
-                        <td key={col.key} className="px-2 py-1 align-middle" style={{ minWidth: col.w }}>
+                        <td key={col.key} className="px-0.5 py-1 align-middle" style={{ minWidth: col.w }}>
                           {(function () {
-                            const el = <FpeRangeMini valuation={c.valuation} width={100} />;
+                            const el = <FpeRangeMini valuation={c.valuation} width={70} />;
                             return el || <span className="text-gray-400 dark:text-slate-500">--</span>;
                           })()}
                         </td>
@@ -581,7 +605,7 @@ export default function MetricsTable({ companies, search, onSelectCompany, dark,
                     return (
                       <td
                         key={col.key}
-                        className="px-2 py-1 text-right font-mono text-gray-700 dark:text-slate-300 whitespace-nowrap"
+                        className="px-0.5 py-1 text-right font-mono text-gray-700 dark:text-slate-300 whitespace-nowrap"
                         style={cellStyle}
                         title={screenStatus === "fail" && filters[col.key] ? "Fails " + filters[col.key].op + " " + filters[col.key].value : undefined}
                       >

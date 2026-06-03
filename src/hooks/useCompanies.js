@@ -35,10 +35,10 @@ export function useCompanies(){
   const [selectedIds,setSelectedIds]=useState(new Set());
   const [bulkStatus,setBulkStatus]=useState("");
   const [bulkTier,setBulkTier]=useState("");
-  /* Default to the compact column set so the List view ships tight
-     out of the box (matches the Metrics view density). User can flip
-     to Default via the Compact/Default toggle. */
-  const [visibleCols,setVisibleCols]=useState(new Set(COMPACT_COLS));
+  /* Default to all columns visible. The List view's density comes
+     from compact=true below (tight padding + small fonts), not from
+     hiding columns. */
+  const [visibleCols,setVisibleCols]=useState(new Set(ALL_COLS));
   const [showColPicker,setShowColPicker]=useState(false);
   const [confirmClear,setConfirmClear]=useState(false);
   const [showNew,setShowNew]=useState(false);
@@ -66,8 +66,9 @@ export function useCompanies(){
   const [pendingDiff,setPendingDiff]=useState(null);
   const [pendingMeta,setPendingMeta]=useState(null);
   const [pendingVal,setPendingVal]=useState(null);
-  /* Compact-by-default (matches visibleCols=COMPACT_COLS above).
-     The toggle in the toolbar still lets the user flip to Default. */
+  /* Compact-by-default for tight row density (matching Metrics view).
+     The Compact/Default toggle still lets users flip to the looser
+     layout if they prefer it. */
   const [compact,setCompact]=useState(true);
   const [showDedupe,setShowDedupe]=useState(false);
   const [dupeGroups,setDupeGroups]=useState([]);
