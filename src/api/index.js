@@ -1,12 +1,38 @@
-export const SUPA_URL="https://vesnqbxswmggdfevqokt.supabase.co";
+/* Supabase + Anthropic API helpers.
+ *
+ * Connection config — Supabase URL + publishable (anon) key — lives in
+ * Vite env vars so dev/staging/prod can point at different projects
+ * without a code change. The publishable key is safe to ship in the
+ * client bundle (it's the anon role, RLS-restricted to public-readable
+ * tables). The .env.local file is gitignored so per-environment values
+ * stay out of source control; the build embeds VITE_-prefixed values
+ * into the bundle at compile time.
+ *
+ * Fallback: if env vars aren't set (e.g. someone clones the repo
+ * without a .env file), we fall back to the original hardcoded
+ * production values so the app still works in the default deploy.
+ * Keeps onboarding simple for read-only dev work; pointing at a
+ * different project just requires setting the env vars.
+ */
+const FALLBACK_URL = "https://vesnqbxswmggdfevqokt.supabase.co";
+const FALLBACK_KEY = "sb_publishable_7kqbGZlL_im9kIpgFXLA-A_9CdqsyiT";
 
-export async function supaGet(table,key,val){var col=table==="meta"?"value":"data";var r=await fetch(SUPA_URL+"/rest/v1/"+table+"?select="+col+"&"+key+"=eq."+val,{headers:{"apikey":"sb_publishable_7kqbGZlL_im9kIpgFXLA-A_9CdqsyiT","Authorization":"Bearer sb_publishable_7kqbGZlL_im9kIpgFXLA-A_9CdqsyiT","Accept":"application/vnd.pgrst.object+json"}});if(!r.ok)return null;try{return await r.json();}catch(e){return null;}}
+export const SUPA_URL = (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_SUPABASE_URL) || FALLBACK_URL;
+const SUPA_KEY = (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_SUPABASE_ANON_KEY) || FALLBACK_KEY;
+
+/* Common auth headers used by every Supabase REST call. */
+function authHeaders(extra) {
+  var base = { "apikey": SUPA_KEY, "Authorization": "Bearer " + SUPA_KEY };
+  return extra ? Object.assign(base, extra) : base;
+}
+
+export async function supaGet(table,key,val){var col=table==="meta"?"value":"data";var r=await fetch(SUPA_URL+"/rest/v1/"+table+"?select="+col+"&"+key+"=eq."+val,{headers:authHeaders({"Accept":"application/vnd.pgrst.object+json"})});if(!r.ok)return null;try{return await r.json();}catch(e){return null;}}
 
 /* Fetch every row of a table. Used by the per-row companies storage to
    pull all 325 company rows in one request (each row is small enough
    that the response stays well under any payload limit). Returns an
    array of {id, data} objects, or null on error. */
-export async function supaGetAll(table){var col=table==="meta"?"key,value":"id,data";var r=await fetch(SUPA_URL+"/rest/v1/"+table+"?select="+col,{headers:{"apikey":"sb_publishable_7kqbGZlL_im9kIpgFXLA-A_9CdqsyiT","Authorization":"Bearer sb_publishable_7kqbGZlL_im9kIpgFXLA-A_9CdqsyiT"}});if(!r.ok)return null;try{return await r.json();}catch(e){return null;}}
+export async function supaGetAll(table){var col=table==="meta"?"key,value":"id,data";var r=await fetch(SUPA_URL+"/rest/v1/"+table+"?select="+col,{headers:authHeaders()});if(!r.ok)return null;try{return await r.json();}catch(e){return null;}}
 
 /* Bulk-fetch a set of meta keys in ONE request using PostgREST's
    in.(...) filter. Returns a Map<key, {value}> for easy lookup, matching
@@ -24,10 +50,7 @@ export async function supaGetMetaMany(keys){
   var encoded = keys.map(function(k){ return encodeURIComponent(k); }).join(",");
   var url = SUPA_URL + "/rest/v1/meta?select=key,value&key=in.(" + encoded + ")";
   try {
-    var r = await fetch(url, { headers: {
-      "apikey":"sb_publishable_7kqbGZlL_im9kIpgFXLA-A_9CdqsyiT",
-      "Authorization":"Bearer sb_publishable_7kqbGZlL_im9kIpgFXLA-A_9CdqsyiT"
-    }});
+    var r = await fetch(url, { headers: authHeaders() });
     if(!r.ok) return null;
     var arr = await r.json();
     var m = new Map();
@@ -40,11 +63,11 @@ export async function supaGetMetaMany(keys){
    handles arrays as bulk upsert in a single transaction (each row's
    INSERT...ON CONFLICT is fast since the data column stays small under
    per-row storage). Same merge-duplicates resolution either way. */
-export async function supaUpsert(table,obj){return fetch(SUPA_URL+"/rest/v1/"+table,{method:"POST",headers:{"apikey":"sb_publishable_7kqbGZlL_im9kIpgFXLA-A_9CdqsyiT","Authorization":"Bearer sb_publishable_7kqbGZlL_im9kIpgFXLA-A_9CdqsyiT","Content-Type":"application/json","Prefer":"resolution=merge-duplicates"},body:JSON.stringify(obj)});}
+export async function supaUpsert(table,obj){return fetch(SUPA_URL+"/rest/v1/"+table,{method:"POST",headers:authHeaders({"Content-Type":"application/json","Prefer":"resolution=merge-duplicates"}),body:JSON.stringify(obj)});}
 
 /* Delete a row by primary-key match. Used to clean up the legacy
    "shared" row after migrating to per-row companies storage. */
-export async function supaDelete(table,key,val){return fetch(SUPA_URL+"/rest/v1/"+table+"?"+key+"=eq."+encodeURIComponent(val),{method:"DELETE",headers:{"apikey":"sb_publishable_7kqbGZlL_im9kIpgFXLA-A_9CdqsyiT","Authorization":"Bearer sb_publishable_7kqbGZlL_im9kIpgFXLA-A_9CdqsyiT"}});}
+export async function supaDelete(table,key,val){return fetch(SUPA_URL+"/rest/v1/"+table+"?"+key+"=eq."+encodeURIComponent(val),{method:"DELETE",headers:authHeaders()});}
 
 /* Anthropic API key — stored per-browser in localStorage and NEVER
    bundled into the production JS. Reading the env var at build time
