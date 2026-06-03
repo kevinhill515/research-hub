@@ -734,121 +734,14 @@ export function CompanyProvider({children}){
     try{if(r12&&r12.value){var fb=JSON.parse(r12.value);if(Array.isArray(fb))setFeedback(fb);}}catch(e){}
     try{if(r13&&r13.value){var bw=JSON.parse(r13.value);if(bw&&typeof bw==="object")setBenchmarkWeights(bw);}}catch(e){}
     try{if(r14&&r14.value){var ar=JSON.parse(r14.value);if(ar&&typeof ar==="object")setAlertRules(ar);}}catch(e){}
-    /* breakdownHistory block moved into loadBreakdownHistoryIfNeeded
-       (lazy-loaded). r15 is null on the eager path so this guard
-       short-circuits — the data cleanups still run when the lazy
-       loader fires for the first time on a Dashboard breakdown tab. */
-    try{if(r15&&r15.value){var bh=JSON.parse(r15.value);if(bh&&typeof bh==="object"){
-       /* One-time data cleanups, gated by meta flags so they only run
-          once and don't repeatedly mutate the saved data. Each cleanup
-          returns true if it changed anything; we persist + flag if so. */
-       var bhChanged=false;
-       try{var rFlag1=await supaGet("meta","key","cleanup_drop_2026_06_30");if(!(rFlag1&&rFlag1.value)){
-         /* Stray 2026-06-30 entries got into multiple benchmarks (the
-            user reported and partially deleted them earlier). Remove
-            from every name in breakdownHistory.  */
-         Object.keys(bh).forEach(function(name){
-           if(bh[name]&&bh[name]["2026-06-30"]){
-             delete bh[name]["2026-06-30"];
-             bhChanged=true;
-           }
-         });
-         supaUpsert("meta",{key:"cleanup_drop_2026_06_30",value:"1"});
-       }}catch(e){}
-       try{var rFlag2=await supaGet("meta","key","cleanup_acwiexus_2025_q2_x100");if(!(rFlag2&&rFlag2.value)){
-         /* Q2 2025 ACWI ex US sectors were uploaded in decimal form
-            (0.243 instead of 24.3), making them 100x too small. Multiply
-            sector values by 100 for that specific name × date. Only
-            applied if the existing values look decimal-form (max < 1). */
-         ["ACWI ex US","ACWI ex US Value"].forEach(function(name){
-           var slot=bh[name]&&bh[name]["2025-06-30"];
-           if(!slot||!slot.sectors)return;
-           var keys=Object.keys(slot.sectors);
-           if(keys.length===0)return;
-           var maxV=keys.reduce(function(m,k){var v=parseFloat(slot.sectors[k]);return isFinite(v)&&v>m?v:m;},0);
-           if(maxV>=1)return; /* Already in percent form — skip. */
-           keys.forEach(function(k){var v=parseFloat(slot.sectors[k]);if(isFinite(v))slot.sectors[k]=v*100;});
-           bhChanged=true;
-         });
-         supaUpsert("meta",{key:"cleanup_acwiexus_2025_q2_x100",value:"1"});
-       }}catch(e){}
-       try{var rFlag3=await supaGet("meta","key","cleanup_bench_scale_v3");if(!(rFlag3&&rFlag3.value)){
-         /* Broad benchmark scale fix. The user pasted FactSet-export
-            data in decimal form (0.243 for 24.3%, 0.179 for 17.9%) and
-            the importer's /100 step on pct-kind ratios compounded the
-            wrong scale. Multiply by 100 to bring back to expected form,
-            for benchmark names only (skip portfolio codes). Heuristics
-            keep the migration safe to re-run on partially-correct data:
-              - sectors / countries: ×100 only if max value < 1
-              - pct-kind ratios:     ×100 only if value < 0.5
-              - x-kind fwdPe:        ×100 only if value < 1 */
-         var PORT_CODES = ["FIN","IN","FGL","GL","EM","SC"];
-         /* "ROE on down" per the user — everything from ROE through Debt
-            to Capital. Active Share is intentionally not in this set; it
-            gets fixed independently if ever uploaded with wrong scale. */
-         var PCT_RATIO_KEYS = ["roe","roe5y","epsGrFwd1","epsGrFwd35","epsGrHist3",
-                               "adpsGr5","adpsGr1","intGr","divYld","payout","debtCap"];
-         function fixBucketIfDecimal(map, threshold) {
-           if (!map) return false;
-           var keys = Object.keys(map);
-           if (keys.length === 0) return false;
-           var maxV = keys.reduce(function (m, k) {
-             var v = parseFloat(map[k]);
-             return isFinite(v) && v > m ? v : m;
-           }, 0);
-           if (maxV >= threshold) return false;
-           keys.forEach(function (k) {
-             var v = parseFloat(map[k]);
-             if (isFinite(v)) map[k] = v * 100;
-           });
-           return true;
-         }
-         Object.keys(bh).forEach(function (name) {
-           if (PORT_CODES.indexOf(name) >= 0) return; /* skip portfolios */
-           Object.keys(bh[name] || {}).forEach(function (date) {
-             var slot = bh[name][date];
-             if (!slot) return;
-             if (fixBucketIfDecimal(slot.sectors, 1))   bhChanged = true;
-             if (fixBucketIfDecimal(slot.countries, 1)) bhChanged = true;
-             if (slot.ratios) {
-               PCT_RATIO_KEYS.forEach(function (k) {
-                 var v = parseFloat(slot.ratios[k]);
-                 if (isFinite(v) && Math.abs(v) > 0 && Math.abs(v) < 0.5) {
-                   slot.ratios[k] = v * 100;
-                   bhChanged = true;
-                 }
-               });
-               var fp = parseFloat(slot.ratios.fwdPe);
-               if (isFinite(fp) && Math.abs(fp) > 0 && Math.abs(fp) < 1) {
-                 slot.ratios.fwdPe = fp * 100;
-                 bhChanged = true;
-               }
-             }
-           });
-         });
-         supaUpsert("meta",{key:"cleanup_bench_scale_v3",value:"1"});
-       }}catch(e){}
-       try{var rFlag4=await supaGet("meta","key","cleanup_bench_fwdpe_v4");if(!(rFlag4&&rFlag4.value)){
-         /* Re-run the fwdPe ×100 fix one more time. The user re-uploaded
-            after v3 ran (which set the flag and exited) and the new
-            data was again in decimal form. Idempotent: if value >= 1
-            it's already correct and we skip. */
-         Object.keys(bh).forEach(function (name) {
-           Object.keys(bh[name] || {}).forEach(function (date) {
-             var slot = bh[name][date];
-             if (!slot || !slot.ratios) return;
-             var fp = parseFloat(slot.ratios.fwdPe);
-             if (isFinite(fp) && Math.abs(fp) > 0 && Math.abs(fp) < 1) {
-               slot.ratios.fwdPe = fp * 100;
-               bhChanged = true;
-             }
-           });
-         });
-         supaUpsert("meta",{key:"cleanup_bench_fwdpe_v4",value:"1"});
-       }}catch(e){}
-       setBreakdownHistory(bh);
-       if(bhChanged)supaUpsert("meta",{key:"breakdownHistory",value:JSON.stringify(bh)});
-     }}}catch(e){}     setLoadStatus({companies:coOk,library:libOk});setReady(true);return coOk||libOk;}
+    /* breakdownHistory is lazy-loaded via loadBreakdownHistoryIfNeeded
+       on first mount of a Dashboard breakdown subtab. The eager
+       block here used to run a series of one-time data cleanups
+       (drop 2026-06-30, ACWI ex US Q2 sectors ×100, broad fwdPe
+       v3/v4) — those have all flipped their meta flags long ago and
+       moved to the lazy loader for the cleanups that are still
+       potentially relevant. Block deleted. */
+    setLoadStatus({companies:coOk,library:libOk});setReady(true);return coOk||libOk;}
 
   useEffect(function(){
     /* Sequential retry pattern. Earlier this was a setInterval at 500ms,

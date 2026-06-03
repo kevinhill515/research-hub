@@ -1055,39 +1055,6 @@ export function CompanyDetail(props){
                   tpFixed={tpFixed}
                   activeCurrency={activeCurrency}
                 />
-                {false && (
-                <div className="flex items-center gap-2 mb-4 flex-wrap text-xs">
-                  <label className="text-gray-500 dark:text-slate-400">TP Fixed ({activeCurrency}):</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={pv.tpFixed||""}
-                    onChange={function(e){setPendingVal(function(p){return Object.assign({},p,{tpFixed:e.target.value,tpFixedDate:todayStr()});});}}
-                    placeholder="e.g. 250.00"
-                    className={INP + " w-28 !text-xs !px-2 !py-1"}
-                  />
-                  <button
-                    type="button"
-                    onClick={function(){
-                      if(tp===null||isNaN(tp))return;
-                      setPendingVal(function(p){return Object.assign({},p,{tpFixed:String(tp),tpFixedDate:todayStr()});});
-                    }}
-                    disabled={tp===null||isNaN(tp)}
-                    className={BTN_SM + " disabled:opacity-50"}
-                    title="Copy the current (live, FactSet-derived) TP into the Fixed field, stamped with today"
-                  >
-                    {"\u2193"} Snapshot current TP ({tp!==null?fmtTP(tp,activeCurrency):"--"})
-                  </button>
-                  {(pv.tpFixed||pv.normEPSFixed)&&(
-                    <button
-                      type="button"
-                      onClick={function(){setPendingVal(function(p){var n=Object.assign({},p);delete n.tpFixed;delete n.tpFixedDate;delete n.normEPSFixed;delete n.normEPSFixedDate;return n;});}}
-                      className={LNK}
-                    >Clear</button>
-                  )}
-                  <span className="text-[10px] text-gray-400 dark:text-slate-500 italic">Fixed until updated — FactSet estimate changes won't affect it.</span>
-                </div>
-                )}
  {/* 5-year P/E range visual — shows low/median/avg/high endpoints with a
                     marker at the current FPE. Rendered only when we have enough to place it. */}
                  {(function(){
@@ -1223,119 +1190,12 @@ export function CompanyDetail(props){
                       Change panel now cover this surface. Left in code
                       for reference in case the team needs a direct
                       editor back later. */}
-                {false && (
-                <div className={CARD + " mb-3"}>
-                  <div className={SECTION_LABEL}>EPS Inputs</div>
-                  <div className="text-[10px] text-gray-500 dark:text-slate-400 mb-2 italic">
-                    <span className="font-semibold text-gray-700 dark:text-slate-300">Live</span> values update daily from the Estimates import and drive TP Live.&nbsp;
-                    <span className="font-semibold text-gray-700 dark:text-slate-300">Fixed</span> values are snapshotted at the moment of TP approval — they're what TP Fixed (and the next "Previous" approval row) are based on.
-                  </div>
-                  <div className="grid grid-cols-2 gap-4 mb-3">
-                    {[{fy:"fy1",eps:"eps1",w:"w1",fyF:"fy1Fixed",epsF:"eps1Fixed",wF:"w1Fixed",label:"Year 1"},{fy:"fy2",eps:"eps2",w:"w2",fyF:"fy2Fixed",epsF:"eps2Fixed",wF:"w2Fixed",label:"Year 2"}].map(function(item){
-                      var fixedDateLabel = pv.tpFixedDate ? " · as of " + pv.tpFixedDate : "";
-                      /* FY-end-month suffix on the Year 1 / Year 2 header.
-                         Only shown when fyMonth is set and not "Dec" — most
-                         US names default to December so adding "(Dec)"
-                         would be visual noise everywhere. */
-                      var fyMonthSuffix = (pv.fyMonth && pv.fyMonth !== "Dec") ? " (" + pv.fyMonth + ")" : "";
-                      return (
-                        <div key={item.fy} className="px-2.5 py-2.5 bg-slate-100 dark:bg-slate-800/50 rounded-md">
-                          <div className="text-[11px] font-medium text-gray-900 dark:text-slate-100 mb-2">{item.label}{fyMonthSuffix}</div>
-                          {/* Fiscal Year — single field, applies to both Live + Fixed */}
-                          <div className="mb-1.5"><label className="text-[10px] text-gray-500 dark:text-slate-400 block mb-0.5">Fiscal Year</label><input value={pv[item.fy]||""} onChange={function(e){var p={};p[item.fy]=e.target.value;setPendingVal(function(prev){return Object.assign({},prev,p);});}} placeholder="e.g. FY2026E" className={INP + " w-full box-border !text-xs"}/></div>
-                          {/* Live + Fixed pair, side by side. */}
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label className="text-[10px] font-semibold text-blue-700 dark:text-blue-300 block mb-0.5">EPS Live ({activeCurrency})</label>
-                              <input type="number" step="0.01" value={pv[item.eps]||""} onChange={function(e){var p={};p[item.eps]=e.target.value;setPendingVal(function(prev){return Object.assign({},prev,p);});}} placeholder="e.g. 4.20" className={INP + " w-full box-border !text-xs"}/>
-                            </div>
-                            <div>
-                              <label className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 block mb-0.5" title={"Locked at last TP approval" + fixedDateLabel}>EPS Fixed ({activeCurrency})</label>
-                              <input type="number" step="0.01" value={pv[item.epsF]||""} onChange={function(e){var p={};p[item.epsF]=e.target.value;setPendingVal(function(prev){return Object.assign({},prev,p);});}} placeholder="—" className={INP + " w-full box-border !text-xs bg-emerald-50 dark:bg-emerald-950/30"}/>
-                            </div>
-                            <div>
-                              <label className="text-[10px] font-semibold text-blue-700 dark:text-blue-300 block mb-0.5">Weight Live %</label>
-                              <input type="number" step="1" min="0" max="100" value={pv[item.w]||""} onChange={function(e){var p={};p[item.w]=e.target.value;setPendingVal(function(prev){return Object.assign({},prev,p);});}} placeholder="50" className={INP + " w-full box-border !text-xs"}/>
-                            </div>
-                            <div>
-                              <label className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 block mb-0.5" title={"Locked at last TP approval" + fixedDateLabel}>Weight Fixed %</label>
-                              <input type="number" step="1" min="0" max="100" value={pv[item.wF]||""} onChange={function(e){var p={};p[item.wF]=e.target.value;setPendingVal(function(prev){return Object.assign({},prev,p);});}} placeholder="—" className={INP + " w-full box-border !text-xs bg-emerald-50 dark:bg-emerald-950/30"}/>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {/* Normalized EPS lines — Live and Fixed both shown so
-                      the reader can see how much the underlying assumption
-                      has drifted since the last approval. Each row extends
-                      the math out to: normEPS × target PE = implied TP, so
-                      the reader can see both sides of the equation and the
-                      resulting target price in one place. Live uses Live
-                      PE (pv.pe). Fixed uses Fixed PE (pv.peFixed) if set,
-                      falls back to Live PE — the assumption being that PE
-                      typically doesn't move between approvals, so a
-                      missing peFixed shouldn't blank out the implied TP. */}
-                  {normEPS!==null&&(function(){
-                    var pe = parseFloat(pv.pe);
-                    var impliedTP = isFinite(pe) && pe > 0 ? pe * normEPS : null;
-                    return (
-                      <div className="px-3 py-2 rounded-md text-xs mb-1.5" style={{background:"#dbeafe",color:"#1e40af"}}>
-                        <span className="font-semibold">Normalized EPS Live: {activeCurrency} {normEPS.toFixed(4)}</span>
-                        <span className="ml-2 opacity-70">= ({pv.eps1||"?"}x{pv.w1||"?"}% + {pv.eps2||"?"}x{pv.w2||"?"}%) / 100</span>
-                        {impliedTP !== null && (
-                          <span className="ml-2">
-                            <span className="opacity-70">× {pe.toFixed(1)}× PE = </span>
-                            <span className="font-semibold">Implied TP Live: {activeCurrency} {impliedTP.toFixed(2)}</span>
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })()}
-                  {(function(){
-                    var e1 = parseFloat(pv.eps1Fixed), e2 = parseFloat(pv.eps2Fixed);
-                    var w1 = parseFloat(pv.w1Fixed),   w2 = parseFloat(pv.w2Fixed);
-                    var fixed = null;
-                    if(isFinite(e1) && isFinite(e2) && isFinite(w1) && isFinite(w2)){
-                      fixed = (e1*w1 + e2*w2) / 100;
-                    } else if(isFinite(e1) && !isFinite(e2)){ fixed = e1; }
-                    else if(isFinite(e2) && !isFinite(e1)){ fixed = e2; }
-                    if(fixed === null) return null;
-                    /* Fixed PE preferred when set; falls back to Live PE
-                       since multiples rarely move with each approval. */
-                    var peFixedNum = parseFloat(pv.peFixed);
-                    var peNum = parseFloat(pv.pe);
-                    var peUsed = isFinite(peFixedNum) && peFixedNum > 0 ? peFixedNum
-                                 : (isFinite(peNum) && peNum > 0 ? peNum : null);
-                    var peSource = isFinite(peFixedNum) && peFixedNum > 0 ? "Fixed" : "Live";
-                    var impliedTPFixed = peUsed !== null ? peUsed * fixed : null;
-                    return (
-                      <div className="px-3 py-2 rounded-md text-xs" style={{background:"#d1fae5",color:"#065f46"}}>
-                        <span className="font-semibold">Normalized EPS Fixed: {activeCurrency} {fixed.toFixed(4)}</span>
-                        <span className="ml-2 opacity-70">snapshot from last approval{pv.tpFixedDate?" ("+pv.tpFixedDate+")":""}</span>
-                        {impliedTPFixed !== null && (
-                          <span className="ml-2">
-                            <span className="opacity-70">× {peUsed.toFixed(1)}× PE ({peSource}) = </span>
-                            <span className="font-semibold">Implied TP Fixed: {activeCurrency} {impliedTPFixed.toFixed(2)}</span>
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })()}
-                </div>
-                )}
 
                 {/* Save valuation row removed — there's no editable
                     valuation form to save anymore. Live values come
                     from FactSet imports; Fixed values come from
                     approved TP suggestions; FY/Currency commit on
                     change inline. */}
-                {false && (
-                <div className="flex gap-2 mb-5">
-                  <button onClick={function(){commitValuation(selCo,pv);}} className={BTN_PRIMARY}>Save valuation</button>
-                  <button onClick={function(){setPendingVal(Object.assign({},selCo.valuation||{}));}} className={BTN}>Discard changes</button>
-                </div>
-                )}
 
                 {/* 4. Fixed TP History.
                     Sorted by date descending so the most recent
