@@ -1427,8 +1427,41 @@ export function CompanyDetail(props){
                         });
                         if (!anyCommittedMatches) {
                           var v = selCo.valuation || {};
+                          /* Date the synthetic row from the earnings
+                             entry that ACTUALLY confirmed the current
+                             TP Fixed, not tpFixedDate (which is just
+                             "last time anything touched the field").
+                             Walk reported entries newest → oldest and
+                             pick the first one whose linked TP
+                             suggestion was NOT rejected. EasyJet:
+                             5/21/26 entry's suggestion was rejected,
+                             so we skip it; 1/29/26 (TP Unchanged)
+                             is the source. Falls back to tpFixedDate
+                             if no qualifying entry exists. */
+                          var todayIso = todayStr();
+                          var rejectedEntryIds = {};
+                          (tpApprovals || []).forEach(function(r){
+                            if (!r || r.companyId !== selCo.id) return;
+                            if (r.status !== "rejected") return;
+                            if (r.rejectReason === "Withdrawn by suggester") return;
+                            if (r.rejectReason === "Superseded by another approval") return;
+                            if (r.earningsEntryId) rejectedEntryIds[r.earningsEntryId] = true;
+                          });
+                          var reportedEntries = (selCo.earningsEntries || [])
+                            .filter(function(e){return e && e.reportDate && e.reportDate <= todayIso;})
+                            .slice().sort(function(a,b){return (b.reportDate||"").localeCompare(a.reportDate||"");});
+                          var sourceEntry = reportedEntries.find(function(e){return !rejectedEntryIds[e.id];});
+                          var fyMonthRaw = (v.fyMonth) || "Dec";
+                          var sourceQuarter = "";
+                          if (sourceEntry) {
+                            if (sourceEntry.quarter) sourceQuarter = sourceEntry.quarter;
+                            else {
+                              var inf = inferQuarter(sourceEntry.reportDate, fyMonthRaw);
+                              if (inf && inf.label) sourceQuarter = inf.label;
+                            }
+                          }
                           var syntheticH = {
-                            date: v.tpFixedDate || "",
+                            date: (sourceEntry && sourceEntry.reportDate) || v.tpFixedDate || "",
                             tp: fixedTpN,
                             pe: v.peFixed != null && v.peFixed !== "" ? v.peFixed : v.pe,
                             eps1: v.eps1Fixed,
@@ -1437,6 +1470,7 @@ export function CompanyDetail(props){
                             w2: v.w2Fixed,
                             fy1: v.fy1Fixed || v.fy1,
                             fy2: v.fy2Fixed || v.fy2,
+                            quarter: sourceQuarter,
                             currency: v.currency,
                           };
                           arr = [{h:syntheticH, originalIdx:-1, isRejected:false, isSynthetic:true}].concat(arr);
