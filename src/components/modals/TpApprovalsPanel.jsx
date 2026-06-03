@@ -198,8 +198,63 @@ function ChangeTable({ rec, pfx, fy1, fy2, currentPrice, fyEndMonth }){
       newMOSValue: newMOS,
     };
   }
-  /* Assemble in display order: TP, MOS, PE, EPS1, EPS2, NormEPS, Weights. */
+  /* Implied TP row — recomputes (normEPS × PE) from the breakdown
+     so the reader can verify the proposed TP actually matches the
+     assumptions baked in. Without this, there's no way to tell
+     whether the suggester typed a TP that's consistent with their
+     PE/EPS/Weight inputs. Only meaningful when we have the
+     breakdown (skip on legacy records). */
+  var impliedRow = null;
+  if(!isLegacy){
+    function _impliedTP(normEps, pe){
+      var nn = parseFloat(normEps), pp = parseFloat(pe);
+      if(!isFinite(nn) || !isFinite(pp)) return null;
+      return nn * pp;
+    }
+    /* Recompute normEPS here — the ones above live inside an inner
+       branch and aren't in scope at this point. */
+    function _blendLocal(e1, e2, w1, w2){
+      var e1n = parseFloat(e1), e2n = parseFloat(e2);
+      var w1n = parseFloat(w1), w2n = parseFloat(w2);
+      if(isFinite(e1n) && isFinite(e2n) && isFinite(w1n) && isFinite(w2n)) return (e1n*w1n + e2n*w2n) / 100;
+      if(isFinite(e1n) && !isFinite(e2n)) return e1n;
+      if(isFinite(e2n) && !isFinite(e1n)) return e2n;
+      return null;
+    }
+    var fromNormForImplied = (rec.fromEPS != null && isFinite(parseFloat(rec.fromEPS))) ? parseFloat(rec.fromEPS) : _blendLocal(rec.fromEPS1, rec.fromEPS2, rec.fromW1, rec.fromW2);
+    var toNormForImplied   = (rec.toEPS   != null && isFinite(parseFloat(rec.toEPS)))   ? parseFloat(rec.toEPS)   : _blendLocal(rec.toEPS1,   rec.toEPS2,   rec.toW1,   rec.toW2);
+    var impliedFrom = _impliedTP(fromNormForImplied, rec.fromPE);
+    var impliedTo   = _impliedTP(toNormForImplied,   rec.toPE);
+    impliedRow = {
+      label: "Implied TP",
+      labelJSX: (<span>Implied TP <span className="text-[10px] italic text-gray-400 dark:text-slate-500">(normEPS × PE)</span></span>),
+      from: impliedFrom != null ? (pfx + fmtNum(impliedFrom, 2)) : "—",
+      to:   impliedTo   != null ? (pfx + fmtNum(impliedTo,   2)) : "—",
+      fromRaw: impliedFrom,
+      toRaw:   impliedTo,
+      changed: changed(impliedFrom, impliedTo, 0.005),
+      noPctChange: true, /* % change already shown on the real TP row */
+      isImplied: true,
+    };
+    /* Flag the TP/Implied pair when proposed TP diverges from the
+       implied (normEPS × PE) value by more than 2% — same threshold
+       used in the EarningsEntry TP-submission form. Sets the flag on
+       both rows so the renderer can box them together. */
+    var toTPNumForDiv = parseFloat(rec.toTP);
+    if(isFinite(toTPNumForDiv) && toTPNumForDiv > 0 && impliedTo != null && isFinite(impliedTo)){
+      var diverges = Math.abs(impliedTo - toTPNumForDiv) / toTPNumForDiv > 0.02;
+      if(diverges){
+        tpRow.divergent = true;
+        impliedRow.divergent = true;
+      }
+    }
+  }
+
+  /* Assemble in display order: TP, Implied TP, MOS, PE, EPS1, EPS2,
+     NormEPS, Weights. Implied sits right under TP so the reader can
+     eyeball the two side-by-side. */
   var rows = [tpRow];
+  if(impliedRow) rows.push(impliedRow);
   if(mosRow) rows.push(mosRow);
   rows.push(peRow);
   if(isLegacy){
@@ -275,9 +330,28 @@ function ChangeTable({ rec, pfx, fy1, fy2, currentPrice, fyEndMonth }){
                 pctCell = <span className={"font-semibold " + pctColor}>{pctSign}{pct.toFixed(1)}%</span>;
               }
             }
+            /* Divergence boxing — amber bg on both the TP Fixed row
+               and the Implied TP row when proposed TP doesn't match
+               (normEPS × PE) within 2%. Border-top on TP, border-bottom
+               on Implied to bracket the pair as one visual unit. */
+            var rowBg = "";
+            var rowBorder = "border-t border-slate-100 dark:border-slate-700";
+            if(r.divergent){
+              rowBg = "bg-amber-50 dark:bg-amber-950/30";
+              if(r.isTP) rowBorder = "border-t-2 border-l-2 border-r-2 border-amber-400 dark:border-amber-600";
+              else if(r.isImplied) rowBorder = "border-b-2 border-l-2 border-r-2 border-amber-400 dark:border-amber-600";
+            } else if(i % 2 === 1){
+              rowBg = "bg-slate-50/40 dark:bg-slate-800/30";
+            }
             return (
-              <tr key={i} className={"border-t border-slate-100 dark:border-slate-700 " + (i % 2 === 1 ? "bg-slate-50/40 dark:bg-slate-800/30" : "")}>
-                <td className={"px-2 py-1 " + rowText}>{r.labelJSX || r.label}{!r.changed && <span className="text-[9px] italic ml-1">unchanged</span>}</td>
+              <tr key={i} className={rowBorder + " " + rowBg}>
+                <td className={"px-2 py-1 " + rowText}>
+                  {r.labelJSX || r.label}
+                  {!r.changed && <span className="text-[9px] italic ml-1">unchanged</span>}
+                  {r.divergent && r.isImplied && (
+                    <span className="text-[9px] text-amber-700 dark:text-amber-300 font-semibold ml-1.5" title="Proposed TP diverges from (normEPS × PE) by more than 2%">⚠ diverges &gt;2%</span>
+                  )}
+                </td>
                 <td className={"px-2 py-1 text-right tabular-nums font-mono " + rowText}>{r.from}</td>
                 <td className={"px-2 py-1 text-right tabular-nums font-mono " + toEmphasis}>{r.to}</td>
                 <td className="px-2 py-1 text-right tabular-nums font-mono">{pctCell}</td>
@@ -354,6 +428,22 @@ function ApprovalCard({ rec, company, companyName, onApprove, onReject, onWithdr
         <span className="text-xs font-semibold text-gray-900 dark:text-slate-100">{rec.suggestedBy}</span>
         <span className="text-[10px] text-gray-500 dark:text-slate-400">{rec.suggestedAt}</span>
         <span className="text-sm font-semibold text-gray-900 dark:text-slate-100">· {companyName}</span>
+        {/* Current portfolio assignments — quick context for which
+            books the change will hit. Shown as pills sized to match
+            the rest of the header. */}
+        {(company && (company.portfolios || []).length > 0) && (
+          <span className="flex gap-1 flex-wrap items-center">
+            {(company.portfolios || []).map(function(p){
+              return (
+                <span
+                  key={p}
+                  className="text-[10px] px-1.5 py-0 rounded-full font-medium"
+                  style={{ background: "#166534", color: "#fff" }}
+                >{p}</span>
+              );
+            })}
+          </span>
+        )}
         <span className="ml-auto">{statusBadge}</span>
         {/* Withdraw button — only on your OWN pending records. Distinct
             from Reject (which is for peers); withdrawing leaves a clear
