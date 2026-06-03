@@ -11,7 +11,7 @@
  * a note pointing to the Data Hub upload.
  */
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import { BENCHMARKS, PORTFOLIOS, SECTOR_COLORS, SECTOR_ORDER, COUNTRY_GROUPS, COUNTRY_COLORS, REGION_GROUPS, REGION_COLORS } from '../../constants/index.js';
 import { calcBreakdowns } from '../../utils/portfolioMath.js';
@@ -148,7 +148,12 @@ function aggregateToRegions(countryMap) {
 
 export default function BreakdownView({ kind }) {
   /* kind = "sectors" | "countries" */
-  const { companies, repData, fxRates, benchmarkWeights, breakdownHistory } = useCompanyContext();
+  const { companies, repData, fxRates, benchmarkWeights, breakdownHistory, loadBreakdownHistoryIfNeeded } = useCompanyContext();
+  /* Lazy-load on mount — breakdownHistory is heavy (~500 KB - 1 MB)
+     and skipped on initial app load to save egress. First mount of
+     any of the three views that need it triggers the fetch; the
+     loader is idempotent so re-mounts are no-ops. */
+  useEffect(function(){ if (loadBreakdownHistoryIfNeeded) loadBreakdownHistoryIfNeeded(); }, [loadBreakdownHistoryIfNeeded]);
   const [portKey, setPortKey] = useState(PORTFOLIOS[0] || "GL");
   const [bmType, setBmType] = useState("core"); /* "core" | "value" */
   /* Column sort: null = default (portfolio weight desc). Otherwise

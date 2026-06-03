@@ -142,7 +142,10 @@ const PORT_BUTTONS = [
 ];
 
 export default function CharacteristicsView() {
-  const { companies, repData, fxRates, benchmarkWeights, breakdownHistory } = useCompanyContext();
+  const { companies, repData, fxRates, benchmarkWeights, breakdownHistory, loadBreakdownHistoryIfNeeded } = useCompanyContext();
+  /* Lazy-load breakdownHistory on first mount — skipped on initial
+     app load to save egress for users who don't open this tab. */
+  useEffect(function(){ if (loadBreakdownHistoryIfNeeded) loadBreakdownHistoryIfNeeded(); }, [loadBreakdownHistoryIfNeeded]);
   const [portKey, setPortKey] = useState("intl");
   /* Ratios — selected date for the benchmark "as of" snapshot, and the
      set of expanded rows showing inline history charts (multi-open like

@@ -266,6 +266,85 @@ export function CompanyProvider({children}){
       return -1; /* signal error to caller */
     }
   }
+  /* breakdownHistory lazy loader. Called from BreakdownView,
+     CharacteristicsView, and BreakdownHistoryChart on mount.
+     Idempotent — first call fetches from Supabase + runs the
+     one-time data cleanups (gated by meta flags); subsequent
+     calls no-op. Skipping the eager fetch on initial app load
+     saves ~500 KB - 1 MB of egress per page load for users who
+     don't open any of those three Dashboard subtabs. */
+  var breakdownHistoryLoadedRef = useRef(false);
+  async function loadBreakdownHistoryIfNeeded(){
+    if (breakdownHistoryLoadedRef.current) return;
+    breakdownHistoryLoadedRef.current = true;
+    try {
+      var m = await supaGetMetaMany(["breakdownHistory"]);
+      var row = m && m.get("breakdownHistory");
+      if (!row || !row.value) return;
+      var bh = JSON.parse(row.value);
+      if (!bh || typeof bh !== "object") return;
+      var bhChanged = false;
+      /* Stray 2026-06-30 entries cleanup. */
+      try {
+        var f1 = await supaGet("meta","key","cleanup_drop_2026_06_30");
+        if (!(f1 && f1.value)) {
+          Object.keys(bh).forEach(function(name){
+            if (bh[name] && bh[name]["2026-06-30"]) { delete bh[name]["2026-06-30"]; bhChanged = true; }
+          });
+          supaUpsert("meta",{key:"cleanup_drop_2026_06_30",value:"1"});
+        }
+      } catch(e){}
+      /* ACWI ex US Q2 2025 sectors uploaded in decimal form. */
+      try {
+        var f2 = await supaGet("meta","key","cleanup_acwiexus_2025_q2_x100");
+        if (!(f2 && f2.value)) {
+          ["ACWI ex US","ACWI ex US Value"].forEach(function(name){
+            var slotByDate = bh[name];
+            if (!slotByDate) return;
+            var q2 = slotByDate["2025-06-30"] || slotByDate["2025-Q2"];
+            if (!q2 || !q2.sectors) return;
+            var vals = Object.values(q2.sectors).map(function(v){return parseFloat(v);}).filter(function(n){return isFinite(n);});
+            var maxV = vals.length ? Math.max.apply(null, vals.map(Math.abs)) : 0;
+            if (maxV > 0 && maxV < 1) {
+              Object.keys(q2.sectors).forEach(function(k){
+                var v = parseFloat(q2.sectors[k]); if (isFinite(v)) { q2.sectors[k] = v * 100; bhChanged = true; }
+              });
+            }
+          });
+          supaUpsert("meta",{key:"cleanup_acwiexus_2025_q2_x100",value:"1"});
+        }
+      } catch(e){}
+      /* fwdPe x100 cleanup (v4). */
+      try {
+        var f3 = await supaGet("meta","key","cleanup_bench_fwdpe_v4");
+        if (!(f3 && f3.value)) {
+          Object.keys(bh).forEach(function(name){
+            var byDate = bh[name];
+            if (!byDate) return;
+            Object.keys(byDate).forEach(function(date){
+              var slot = byDate[date];
+              if (!slot || !slot.ratios) return;
+              var fp = parseFloat(slot.ratios.fwdPe);
+              if (isFinite(fp) && Math.abs(fp) > 0 && Math.abs(fp) < 1) {
+                slot.ratios.fwdPe = fp * 100;
+                bhChanged = true;
+              }
+            });
+          });
+          supaUpsert("meta",{key:"cleanup_bench_fwdpe_v4",value:"1"});
+        }
+      } catch(e){}
+      setBreakdownHistory(bh);
+      /* Sync lastSentRef so the autosave useEffect doesn't see the
+         lazy-load as a "change" and re-upload the same blob. Without
+         this the first lazy load would cost a wasted ~500 KB POST. */
+      try { lastSentRef.current.breakdownHistory = JSON.stringify(bh); } catch (_e) {}
+      if (bhChanged) supaUpsert("meta",{key:"breakdownHistory",value:JSON.stringify(bh)});
+    } catch(_e){
+      /* swallow — next mount of a breakdown view will retry. */
+      breakdownHistoryLoadedRef.current = false;
+    }
+  }
   async function loadFromStorage(){
     setLoadStatus({companies:null,library:null});
     var coOk=false,libOk=false;
@@ -280,10 +359,15 @@ export function CompanyProvider({children}){
     /* The 15 meta keys we need at load time. Kept as a list so a single
        in.() query covers them all. Order doesn't matter — we look up
        each by key from the returned Map. */
+    /* breakdownHistory deliberately NOT in this list — it's heavy
+       (~500 KB - 1 MB), only used by 3 Dashboard subtabs (Sector
+       Breakdown / Country Breakdown / Characteristics), and most
+       reloads don't need it. Lazy-loaded on first open of those
+       views via loadBreakdownHistoryIfNeeded() (exposed below). */
     var META_KEYS = [
       "lastPriceUpdate","entryComments","calLastUpdated","repData","fxRates",
       "specialWeights","annotations","researchAssignments","perfData","feedback",
-      "benchmarkWeights","alertRules","breakdownHistory","tpApprovals","memoLog",
+      "benchmarkWeights","alertRules","tpApprovals","memoLog",
       "targetChangeReads","wednesdayNotes",
     ];
     var [r, r2, metaMap] = await Promise.all([
@@ -310,7 +394,7 @@ export function CompanyProvider({children}){
     var r12 = _m.get("feedback")            || null;
     var r13 = _m.get("benchmarkWeights")    || null;
     var r14 = _m.get("alertRules")          || null;
-    var r15 = _m.get("breakdownHistory")    || null;
+    var r15 = null; /* breakdownHistory lazy-loaded — see loadBreakdownHistoryIfNeeded */
     var r16 = _m.get("tpApprovals")         || null;
     var r17 = _m.get("memoLog")             || null;
     var rTCR = _m.get("targetChangeReads")  || null;
@@ -650,6 +734,10 @@ export function CompanyProvider({children}){
     try{if(r12&&r12.value){var fb=JSON.parse(r12.value);if(Array.isArray(fb))setFeedback(fb);}}catch(e){}
     try{if(r13&&r13.value){var bw=JSON.parse(r13.value);if(bw&&typeof bw==="object")setBenchmarkWeights(bw);}}catch(e){}
     try{if(r14&&r14.value){var ar=JSON.parse(r14.value);if(ar&&typeof ar==="object")setAlertRules(ar);}}catch(e){}
+    /* breakdownHistory block moved into loadBreakdownHistoryIfNeeded
+       (lazy-loaded). r15 is null on the eager path so this guard
+       short-circuits — the data cleanups still run when the lazy
+       loader fires for the first time on a Dashboard breakdown tab. */
     try{if(r15&&r15.value){var bh=JSON.parse(r15.value);if(bh&&typeof bh==="object"){
        /* One-time data cleanups, gated by meta flags so they only run
           once and don't repeatedly mutate the saved data. Each cleanup
@@ -903,7 +991,15 @@ export function CompanyProvider({children}){
         case "feedback":            try { var f = JSON.parse(raw); if (Array.isArray(f)) setFeedback(f); } catch(_e){} break;
         case "benchmarkWeights":    try { setBenchmarkWeights(JSON.parse(raw)); } catch(_e){} break;
         case "alertRules":          try { setAlertRules(JSON.parse(raw)); } catch(_e){} break;
-        case "breakdownHistory":    try { setBreakdownHistory(JSON.parse(raw)); } catch(_e){} break;
+        case "breakdownHistory":
+          /* Only refetch if this window has already lazy-loaded the
+             blob — otherwise a teammate's edit would force the data
+             to load here even though the user hasn't opened any
+             breakdown view, defeating the lazy-load. */
+          if (breakdownHistoryLoadedRef.current) {
+            try { setBreakdownHistory(JSON.parse(raw)); try { lastSentRef.current.breakdownHistory = raw; } catch(_e){} } catch(_e){}
+          }
+          break;
         case "fxRates":             try { setFxRates(JSON.parse(raw)); } catch(_e){} break;
         case "repData":             try { setRepData(JSON.parse(raw)); } catch(_e){} break;
         case "specialWeights":      try { setSpecialWeights(JSON.parse(raw)); } catch(_e){} break;
@@ -2159,7 +2255,7 @@ export function CompanyProvider({children}){
     addAnnotation,updateAnnotation,deleteAnnotation,resolveAnnotation,unresolveAnnotation,addReply,markAnnotationRead,parseMentions,
     updateTargetWeight,markTradeAgenda,addTargetHistoryEntry,deleteTargetHistoryEntry,
     proposeTargetWeight,clearProposedWeight,commitProposedWeights,discardAgendaEntries,
-    refreshCompaniesFromSupabase,commentOnAgendaEntry,editAgendaComment,deleteAgendaComment,
+    refreshCompaniesFromSupabase,loadBreakdownHistoryIfNeeded,commentOnAgendaEntry,editAgendaComment,deleteAgendaComment,
     addTransaction,deleteTransaction,setTxInitOverride,setTxCashFlow,updateInitiatedDate,
     researchAssignments,setResearchAssignments,setResearchSlot,setReorgSlot,
     perfData,setPerfData,setPerfSeries,addPerfSeries,removePerfSeries,movePerfSeries,setPerfSeriesOrder,setPerfReturn,setPerfLastMonthEMV,applyPerfBulk,
