@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useState, useRef, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { useClickOutside } from '../../hooks/useClickOutside.js';
 import { useCompanyContext } from '../../context/CompanyContext.jsx';
 import { PORTFOLIOS, TIER_ORDER } from '../../constants/index.js';
 import { repShares, tierBg, tierPillStyle, tierToStatus, getTiers, truncName,
@@ -56,6 +58,80 @@ function EditableWeightCell({ value, onSubmit, displayClassName, cellStyle }) {
   );
 }
 
+/* Click-to-edit Tier cell — mirrors the Companies>List Tier(s) cell.
+   Click anywhere in the cell to open an Add-Tier popover; removing a
+   tier still works via each pill's inline ×. Per-row local state so
+   only the clicked row's menu opens. */
+function TierCell({ tiers, dark, rowBgColor, onUpdate }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const ref = useRef();
+  const popRef = useRef();
+  /* useClickOutside is bound to the popover when it's open — the
+     trigger cell is excluded by stopPropagation in the toggle handler. */
+  useClickOutside(popRef, function () { setOpen(false); }, open);
+  /* Position the portal'd popover under the cell on open. Computed in
+     useLayoutEffect so it lands in the right spot before paint, even
+     after horizontal scroll. */
+  useLayoutEffect(function () {
+    if (!open || !ref.current) return;
+    var r = ref.current.getBoundingClientRect();
+    setPos({ top: r.bottom + 2, left: r.left });
+  }, [open]);
+  function commitTiers(nextTiers) {
+    var nt = nextTiers.join(", ");
+    var ch = { tier: nt };
+    var s = tierToStatus(nt);
+    if (s) ch.status = s;
+    onUpdate(ch);
+  }
+  return (
+    <div
+      ref={ref}
+      className="align-middle pr-4 py-1.5 whitespace-nowrap cursor-pointer"
+      style={{ display: "table-cell", background: dark ? undefined : rowBgColor, minWidth: 160 }}
+      onClick={function (e) { e.stopPropagation(); setOpen(function (o) { return !o; }); }}
+    >
+      <PortPicker noAdd stack passClicks active={tiers} onChange={commitTiers} plusColor="#334155" opts={TIER_ORDER} pillStyleFn={tierPillStyle} />
+      {open && createPortal(
+        <div
+          ref={popRef}
+          onClick={function (e) { e.stopPropagation(); }}
+          /* position:fixed via portal — escapes the table's stacking
+             contexts that were burying an in-row absolute popover
+             behind subsequent rows' sticky cells. */
+          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md p-1.5 shadow-lg min-w-[160px] max-h-[260px] overflow-y-auto"
+          style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 1000 }}
+        >
+          <div className="text-[10px] font-semibold text-gray-500 dark:text-slate-400 px-1 pb-0.5">Add Tier</div>
+          <div className="flex flex-wrap gap-1">
+            {TIER_ORDER.filter(function (t) { return tiers.indexOf(t) < 0; }).map(function (t) {
+              var ps = tierPillStyle(t);
+              return (
+                <span
+                  key={t}
+                  onClick={function (e) {
+                    e.stopPropagation();
+                    var next = tiers.concat([t]).sort(function (a, b) { return TIER_ORDER.indexOf(a) - TIER_ORDER.indexOf(b); });
+                    commitTiers(next);
+                    setOpen(false);
+                  }}
+                  className="text-[11px] px-1.5 py-0.5 rounded-full cursor-pointer font-medium"
+                  style={{ background: ps.bg, color: ps.color }}
+                >{t}</span>
+              );
+            })}
+            {TIER_ORDER.filter(function (t) { return tiers.indexOf(t) < 0; }).length === 0 && (
+              <span className="text-[10px] text-gray-400 dark:text-slate-500 italic px-1">all assigned</span>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
 /* Portfolio Overlap subtab. Extracted from App.jsx verbatim; original inline
    IIFE referenced parent-scope variables via closure, now explicit props +
    context. */
@@ -99,7 +175,7 @@ var rowMosFixed=rowTpFixed!==null?calcMOS(rowTpFixed,rowVal.price):null;
 var rowMosFixedStyle=mosBg(rowMosFixed);
 var rowMosGap=(rowMos!==null&&rowMosFixed!==null)?Math.abs(rowMos-rowMosFixed):null;
 var rowMosDiverges=rowMosGap!==null&&rowMosGap>10;
-return(<div key={c.id} onClick={function(){setSelCoOrigin("portfolios");setSelCo(c);setTab("companies");setCoView("dashboard");}} className="hover:brightness-110 transition-all" style={{display:"table-row",cursor:"pointer"}}><div className="align-middle pr-4 py-1.5 text-sm font-medium text-gray-900 dark:text-slate-100 sticky left-0 z-[5]" style={{display:"table-cell",background:dark?"#020617":(rowBgColor||"#ffffff")}}><span title={c.name}>{truncName(c.name,15)}</span></div><div className="align-middle pr-4 py-1.5 whitespace-nowrap" style={{display:"table-cell",background:dark?undefined:rowBgColor,minWidth:160}} onClick={function(e){e.stopPropagation();}}><PortPicker active={tiers} onChange={function(v){var nt=v.join(", ");var ch={tier:nt};var s=tierToStatus(nt);if(s)ch.status=s;updateCo(c.id,ch);}} plusColor="#334155" opts={TIER_ORDER} pillStyleFn={tierPillStyle}/></div>
+return(<div key={c.id} onClick={function(){setSelCoOrigin("portfolios");setSelCo(c);setTab("companies");setCoView("dashboard");}} className="hover:brightness-110 transition-all" style={{display:"table-row",cursor:"pointer"}}><div className="align-middle pr-4 py-1.5 text-sm font-medium text-gray-900 dark:text-slate-100 sticky left-0 z-[5]" style={{display:"table-cell",background:dark?"#020617":(rowBgColor||"#ffffff")}}><span title={c.name}>{truncName(c.name,15)}</span></div><TierCell tiers={tiers} dark={dark} rowBgColor={rowBgColor} onUpdate={function(ch){updateCo(c.id, ch);}}/>
 {/* FPE Range mini */}
 <div className="align-middle pr-4 py-1.5" style={{display:"table-cell",background:dark?undefined:rowBgColor}}>{(function(){var el=<FpeRangeMini valuation={rowVal} width={100}/>;return el||<span className="text-xs text-gray-400 dark:text-slate-500">--</span>;})()}</div>
 {/* MOS */}

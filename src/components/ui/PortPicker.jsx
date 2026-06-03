@@ -7,7 +7,7 @@ import PillEl from './PillEl.jsx';
    (compact table rows) aren't affected. The Overlap tab's Tier(s)
    column passes stack so multiple tiers stack vertically and don't
    blow out the column width. */
-function PortPicker({ active, onChange, pillBg, pillColor, plusColor, opts, pillStyleFn, dashedPills, stack, compact, noAdd }) {
+function PortPicker({ active, onChange, pillBg, pillColor, plusColor, opts, pillStyleFn, dashedPills, stack, compact, noAdd, passClicks }) {
   var [open, setOpen] = useState(false);
   var allOpts = opts || PORTFOLIOS;
   // Display pills in canonical opts order, not insertion order
@@ -36,7 +36,12 @@ function PortPicker({ active, onChange, pillBg, pillColor, plusColor, opts, pill
 
   return (
     <div
-      onClick={function (e) { e.stopPropagation(); }}
+      /* passClicks=true lets the parent cell capture clicks on the
+         pill body (used by Companies>List + Portfolios>Overlap so
+         clicking the cell opens the Add-Tier / Add-Portfolio menu).
+         The inline × on each pill still stopPropagation, so removing
+         a single tier doesn't ALSO open the menu. */
+      onClick={passClicks ? undefined : function (e) { e.stopPropagation(); }}
       className={"flex gap-1 items-center " + (stack ? "flex-wrap" : "flex-nowrap")}
     >
       {al.map(function (p) {

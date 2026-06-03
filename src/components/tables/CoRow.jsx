@@ -1,4 +1,5 @@
-import { useState, useRef, memo } from "react";
+import { useState, useRef, useLayoutEffect, memo } from "react";
+import { createPortal } from 'react-dom';
 import { useClickOutside } from '../../hooks/useClickOutside.js';
 import { PORTFOLIOS, TIER_ORDER, COUNTRY_ORDER, SECTOR_ORDER } from '../../constants/index.js';
 import { shortSector, sectorStyle, countryStyle, getTiers, tierPillStyle, tierBg, reviewedColor, daysSince, todayStr, calcNormEPS, calcTP, calcMOS, fmtMOS, fmtMOS0, mosBg, getTpFixed, tierToStatus, truncName, getLastReportedEntry, parseDate, fmtDateUS } from '../../utils/index.js';
@@ -32,9 +33,33 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
      having to hit a tiny + button. */
   var [portMenuOpen, setPortMenuOpen] = useState(false);
   var portMenuRef = useRef();
+  /* Tier add menu — same pattern as portMenu. Clicking the Tier(s)
+     cell opens a scrollable picker of available tiers (TIER_ORDER is
+     long). Removing a tier still works via its inline ×. */
+  var [tierMenuOpen, setTierMenuOpen] = useState(false);
+  var tierMenuRef = useRef();
+  var tierPopRef = useRef();
+  var portPopRef = useRef();
+  /* Portal'd popovers — escape the table-row stacking contexts that
+     otherwise bury an in-row absolute popover behind sticky cells
+     on rows below. Position computed pre-paint. */
+  var [tierPopPos, setTierPopPos] = useState({ top: 0, left: 0 });
+  var [portPopPos, setPortPopPos] = useState({ top: 0, left: 0 });
 
   useClickOutside(menuRef, function () { setShowMenu(false); }, showMenu);
-  useClickOutside(portMenuRef, function () { setPortMenuOpen(false); }, portMenuOpen);
+  useClickOutside(portPopRef, function () { setPortMenuOpen(false); }, portMenuOpen);
+  useClickOutside(tierPopRef, function () { setTierMenuOpen(false); }, tierMenuOpen);
+
+  useLayoutEffect(function () {
+    if (!tierMenuOpen || !tierMenuRef.current) return;
+    var r = tierMenuRef.current.getBoundingClientRect();
+    setTierPopPos({ top: r.bottom + 2, left: r.left });
+  }, [tierMenuOpen]);
+  useLayoutEffect(function () {
+    if (!portMenuOpen || !portMenuRef.current) return;
+    var r = portMenuRef.current.getBoundingClientRect();
+    setPortPopPos({ top: r.bottom + 2, left: r.left });
+  }, [portMenuOpen]);
 
   var missing = [];
   if (!company.country) missing.push("country");
@@ -155,12 +180,56 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
         <input type="checkbox" checked={selected} onChange={function () {}} className="cursor-pointer accent-blue-600" />
       </div>
 
-      {/* Tier(s) — stack=true lets pills wrap to a 2nd row inside the
-          cell (max-w bounds the column so multi-tier names don't blow
-          out the row width). Matches the Metrics TierCell layout. */}
+      {/* Tier(s) — click anywhere to open an Add Tier popover instead
+          of using a tiny + button (mirrors the Portfolio cell pattern).
+          Removing tiers still works via each pill's inline ×. */}
       {show("Tier(s)") && (
-        <div className={tdBase + " !whitespace-normal"} style={Object.assign({ maxWidth: 96 }, rowBg ? { background: rowBg } : {})}>
-          <PortPicker compact stack active={tiers} onChange={function (v) { var nt=v.join(", "); var ch={tier:nt}; var s=tierToStatus(nt); if(s)ch.status=s; onUpdate(company.id, ch); }} plusColor="#334155" opts={TIER_ORDER} pillStyleFn={tierPillStyle} />
+        <div
+          ref={tierMenuRef}
+          className={tdBase + " !whitespace-normal !cursor-pointer relative"}
+          style={Object.assign({ maxWidth: 96 }, rowBg ? { background: rowBg } : {})}
+          onClick={function (e) {
+            e.stopPropagation();
+            setTierMenuOpen(function (o) { return !o; });
+          }}
+        >
+          <PortPicker compact stack noAdd passClicks active={tiers} onChange={function (v) { var nt=v.join(", "); var ch={tier:nt}; var s=tierToStatus(nt); if(s)ch.status=s; onUpdate(company.id, ch); }} plusColor="#334155" opts={TIER_ORDER} pillStyleFn={tierPillStyle} />
+          {tierMenuOpen && createPortal(
+            <div
+              ref={tierPopRef}
+              onClick={function (e) { e.stopPropagation(); }}
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md p-1.5 shadow-lg min-w-[140px] max-h-[260px] overflow-y-auto"
+              style={{ position: "fixed", top: tierPopPos.top, left: tierPopPos.left, zIndex: 1000 }}
+            >
+              <div className="text-[10px] font-semibold text-gray-500 dark:text-slate-400 px-1 pb-0.5">Add Tier</div>
+              <div className="flex flex-wrap gap-1">
+                {TIER_ORDER.filter(function (t) { return tiers.indexOf(t) < 0; }).map(function (t) {
+                  var ps = tierPillStyle(t);
+                  return (
+                    <span
+                      key={t}
+                      onClick={function (e) {
+                        e.stopPropagation();
+                        var next = tiers.concat([t]).sort(function (a, b) { return TIER_ORDER.indexOf(a) - TIER_ORDER.indexOf(b); });
+                        var nt = next.join(", ");
+                        var ch = { tier: nt };
+                        var s = tierToStatus(nt);
+                        if (s) ch.status = s;
+                        onUpdate(company.id, ch);
+                        setTierMenuOpen(false);
+                      }}
+                      className="text-[10px] px-1.5 py-0 rounded-full cursor-pointer font-medium"
+                      style={{ background: ps.bg, color: ps.color }}
+                    >{t}</span>
+                  );
+                })}
+                {TIER_ORDER.filter(function (t) { return tiers.indexOf(t) < 0; }).length === 0 && (
+                  <span className="text-[10px] text-gray-400 dark:text-slate-500 italic px-1">all assigned</span>
+                )}
+              </div>
+            </div>,
+            document.body
+          )}
         </div>
       )}
 
@@ -416,11 +485,12 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
           }}
         >
           <div className="flex gap-1 items-center flex-wrap">
-            <PortPicker compact stack noAdd active={portfolios} onChange={function (v) { onUpdate(company.id, { portfolios: v }); }} pillBg="#166534" pillColor="#fff" plusColor="#4ade80" />
+            <PortPicker compact stack noAdd passClicks active={portfolios} onChange={function (v) { onUpdate(company.id, { portfolios: v }); }} pillBg="#166534" pillColor="#fff" plusColor="#4ade80" />
             <PortPicker
               compact
               stack
               noAdd
+              passClicks
               active={portNote}
               onChange={function (v) { onUpdate(company.id, { portNote: v.join(", ") }); }}
               plusColor="#1a3a6b"
@@ -429,10 +499,12 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
               pillStyleFn={function () { return { bg: "transparent", color: "#1a3a6b" }; }}
             />
           </div>
-          {portMenuOpen && (
+          {portMenuOpen && createPortal(
             <div
+              ref={portPopRef}
               onClick={function (e) { e.stopPropagation(); }}
-              className="absolute top-[calc(100%+2px)] left-0 z-[200] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md p-1.5 shadow-lg min-w-[140px]"
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md p-1.5 shadow-lg min-w-[140px]"
+              style={{ position: "fixed", top: portPopPos.top, left: portPopPos.left, zIndex: 1000 }}
             >
               {/* Add to Portfolio (committed) */}
               <div className="text-[10px] font-semibold text-gray-500 dark:text-slate-400 px-1 pb-0.5">Add to Portfolio</div>
@@ -478,7 +550,8 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
                   <span className="text-[10px] text-gray-400 dark:text-slate-500 italic px-1">none available</span>
                 )}
               </div>
-            </div>
+            </div>,
+            document.body
           )}
         </div>
       )}
