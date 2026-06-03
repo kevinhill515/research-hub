@@ -292,7 +292,7 @@ export function MeetingMemoModal({ open, onClose }) {
             onClick={doRefresh}
             disabled={refreshing}
             className={"ml-auto text-xs px-2.5 py-1 rounded-md cursor-pointer transition-colors " + (refreshing ? "bg-slate-200 dark:bg-slate-700 text-gray-400 dark:text-slate-500" : "border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800")}
-            title="Re-fetch portfolio data only from Supabase. Use this during meetings to see teammates' just-submitted proposals without a full app reload."
+            title="Re-fetch portfolio data + meeting-traffic meta blobs (TP approvals, discussions, memo log, Wednesday notes) from Supabase. Use this during meetings to see teammates' just-submitted edits without a full app reload."
           >
             {refreshing ? "Refreshing…" : "↻ Refresh Portfolios"}
           </button>

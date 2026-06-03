@@ -205,15 +205,26 @@ export function CompanyProvider({children}){
     return{data:migrated,changed:changed};
   }
 
-  /* Refresh JUST the companies table from Supabase — used by the
-     "Refresh Portfolios" button so the team can pull live agenda updates
-     during a meeting without paying for a full app reload (which would
-     re-fetch the library + 15 meta blobs, blowing up egress AND wiping
-     any in-progress modal state). Returns the count refreshed so the
-     caller can flash a quick confirmation. */
+  /* Refresh the companies table + a small set of meeting-relevant
+     meta blobs from Supabase — used by the "Refresh Portfolios"
+     button so the team can pull live updates during a meeting
+     without paying for a full app reload (which would re-fetch
+     the library + 15 meta blobs, blowing up egress AND wiping
+     any in-progress modal state). Returns the count of companies
+     refreshed so the caller can flash a quick confirmation.
+
+     Meta blobs included: tpApprovals, annotations, memoLog, and
+     wednesdayNotes — the four that mutate during a typical IC
+     meeting and that other attendees would want to see propagate
+     between Refresh clicks. Bundled into one supaGetMetaMany call
+     so it's still a single round trip on top of the companies
+     fetch. */
   async function refreshCompaniesFromSupabase(){
     try {
-      var rows = await supaGetAll("companies");
+      var coPromise   = supaGetAll("companies");
+      var metaPromise = supaGetMetaMany(["tpApprovals","annotations","memoLog","wednesdayNotes"]);
+      var rows = await coPromise;
+      var metaMap = await metaPromise;
       if (!Array.isArray(rows)) return 0;
       var perCo = rows.filter(function(row){ return row && row.id !== "shared"; });
       var loaded = [];
@@ -222,6 +233,34 @@ export function CompanyProvider({children}){
       });
       if (loaded.length === 0) return 0;
       setCompanies(loaded);
+      /* Selectively pick up meeting-traffic meta. Each parsed
+         defensively — a malformed value shouldn't blow up the
+         whole refresh. */
+      try {
+        if (metaMap) {
+          var rTpa = metaMap.get("tpApprovals");
+          if (rTpa && rTpa.value) {
+            var tpa = JSON.parse(rTpa.value);
+            if (Array.isArray(tpa)) setTpApprovals(tpa);
+          }
+          var rAnn = metaMap.get("annotations");
+          if (rAnn && rAnn.value) {
+            var ann = JSON.parse(rAnn.value);
+            if (Array.isArray(ann)) setAnnotations(ann);
+          }
+          var rMl = metaMap.get("memoLog");
+          if (rMl && rMl.value) {
+            var ml = JSON.parse(rMl.value);
+            if (Array.isArray(ml)) setMemoLog(ml);
+          }
+          var rWn = metaMap.get("wednesdayNotes");
+          if (rWn && rWn.value != null) {
+            var raw = rWn.value;
+            try { var p = JSON.parse(raw); if (typeof p === "string") raw = p; } catch(_){}
+            setWednesdayNotes(raw);
+          }
+        }
+      } catch(_e){}
       return loaded.length;
     } catch(_e){
       return -1; /* signal error to caller */
