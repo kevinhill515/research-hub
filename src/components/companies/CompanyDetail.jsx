@@ -837,21 +837,50 @@ export function CompanyDetail(props){
                     corresponding *Fixed slots so the tile + MOS Fixed
                     finally show the approved values). */}
                 {(function(){
-                  /* Match the latest tpHistory entry regardless of
-                     source — early entries (Suncor and the IC batch)
-                     were written by the legacy commitValuation /
-                     inline-save path and don't carry source:"approval",
-                     so a stricter filter missed them. The reconcile
-                     still pulls per-FY leg values from the matching
-                     tpApprovals record when present, so the right data
-                     lands either way. */
-                  var hist = (selCo.tpHistory||[]).slice().sort(function(a,b){return (b.date||"").localeCompare(a.date||"");});
-                  var latestApproval = hist[0];
-                  if (!latestApproval) return null;
-                  var latestTp = parseFloat(latestApproval.tp);
+                  /* Two desync cases the race condition left behind:
+                       A) tpHistory got the new entry but valuation
+                          didn't update (Suncor — see latestApproval
+                          path below).
+                       B) tpApprovals marked the record approved but
+                          NEITHER tpHistory nor valuation updated
+                          (Cisco, Textron — the second setCompanies
+                          call inside approveTpApproval was skipped
+                          entirely by the pre-fix race).
+                     Detect both by also checking the latest approved
+                     tpApprovals record. If its toTP doesn't match
+                     valuation.tpFixed, surface the banner so the
+                     reconcile can rescue the data. */
                   var fixedTp = tpFixed;
+                  var hist = (selCo.tpHistory||[]).slice().sort(function(a,b){return (b.date||"").localeCompare(a.date||"");});
+                  var latestHistEntry = hist[0];
+                  /* Case A signal: tpHistory tip vs valuation. */
+                  var latestHistTp = latestHistEntry ? parseFloat(latestHistEntry.tp) : NaN;
+                  var histDesync = isFinite(latestHistTp) && (
+                    !isFinite(fixedTp) || Math.abs(latestHistTp - fixedTp) > 0.01
+                  );
+                  /* Case B signal: latest APPROVED tpApprovals record
+                     for this company, sorted by approvedAt desc. */
+                  var approvedRecs = (tpApprovals || [])
+                    .filter(function(a){return a && a.companyId === selCo.id && a.status === "approved";})
+                    .slice().sort(function(a,b){return (b.approvedAt || "").localeCompare(a.approvedAt || "");});
+                  var latestApprovedRec = approvedRecs[0];
+                  var latestApprovedTp = latestApprovedRec ? parseFloat(latestApprovedRec.toTP) : NaN;
+                  var recDesync = isFinite(latestApprovedTp) && (
+                    !isFinite(fixedTp) || Math.abs(latestApprovedTp - fixedTp) > 0.01
+                  );
+                  if (!histDesync && !recDesync) return null;
+                  /* Pick the source of truth — prefer the approved
+                     tpApprovals record (it has the full payload),
+                     else fall back to the tpHistory entry. */
+                  var latestApproval, latestTp;
+                  if (recDesync && latestApprovedRec) {
+                    latestApproval = latestHistEntry; /* may be null/older; OK */
+                    latestTp = latestApprovedTp;
+                  } else {
+                    latestApproval = latestHistEntry;
+                    latestTp = latestHistTp;
+                  }
                   if (!isFinite(latestTp)) return null;
-                  if (isFinite(fixedTp) && Math.abs(latestTp - fixedTp) < 0.01) return null;
                   function reconcile(){
                     /* Cross-reference the tpApprovals record (which has
                        the full payload — toPE, toEPS1, toEPS2, toW1,
@@ -886,9 +915,16 @@ export function CompanyDetail(props){
                           fy1:  latestApproval.fy1,
                           fy2:  latestApproval.fy2,
                         };
+                    /* Determine the canonical date for this reconcile.
+                       Prefer the matching approval record's date so
+                       Case B (no tpHistory entry yet) still gets a
+                       meaningful date stamped. */
+                    var approvalDate = (latestApproval && latestApproval.date)
+                      || (sourceRec && (sourceRec.suggestedAt || sourceRec.approvedAt))
+                      || todayStr();
                     var v = Object.assign({}, selCo.valuation || {});
                     v.tpFixed = String(latestTp);
-                    v.tpFixedDate = latestApproval.date || todayStr();
+                    v.tpFixedDate = approvalDate;
                     if (src.pe   != null && src.pe   !== "") { v.pe = src.pe; v.peFixed = src.pe; }
                     if (src.eps1 != null && src.eps1 !== "") { v.eps1Fixed = src.eps1; v.eps1 = src.eps1; }
                     if (src.eps2 != null && src.eps2 !== "") { v.eps2Fixed = src.eps2; v.eps2 = src.eps2; }
@@ -896,21 +932,51 @@ export function CompanyDetail(props){
                     if (src.w2   != null && src.w2   !== "") { v.w2Fixed = src.w2; v.w2 = src.w2; }
                     if (src.fy1) v.fy1Fixed = src.fy1;
                     if (src.fy2) v.fy2Fixed = src.fy2;
-                    /* Patch the tpHistory entry too so the Fixed TP
-                       History row stops saying "implied" and shows
-                       the actual per-FY EPS breakdown. */
-                    var newHist = (selCo.tpHistory || []).map(function(h){
-                      if (h !== latestApproval) return h;
-                      return Object.assign({}, h, {
-                        pe:   src.pe   != null ? src.pe   : h.pe,
-                        eps1: src.eps1 != null ? src.eps1 : h.eps1,
-                        eps2: src.eps2 != null ? src.eps2 : h.eps2,
-                        w1:   src.w1   != null ? src.w1   : h.w1,
-                        w2:   src.w2   != null ? src.w2   : h.w2,
-                        fy1:  src.fy1  != null ? src.fy1  : h.fy1,
-                        fy2:  src.fy2  != null ? src.fy2  : h.fy2,
+                    /* Two tpHistory paths:
+                       - latestApproval present + matches our TP →
+                         patch it in place with the per-FY leg values
+                         (Case A: Suncor).
+                       - latestApproval missing or doesn't match (Case
+                         B: Cisco / Textron) → prepend a new entry.
+                    */
+                    var newHist;
+                    var ccy = (selCo.valuation && selCo.valuation.currency) || activeCurrency || "USD";
+                    var canPatch = latestApproval && isFinite(parseFloat(latestApproval.tp)) && Math.abs(parseFloat(latestApproval.tp) - latestTp) < 0.01;
+                    if (canPatch) {
+                      newHist = (selCo.tpHistory || []).map(function(h){
+                        if (h !== latestApproval) return h;
+                        return Object.assign({}, h, {
+                          pe:   src.pe   != null ? src.pe   : h.pe,
+                          eps1: src.eps1 != null ? src.eps1 : h.eps1,
+                          eps2: src.eps2 != null ? src.eps2 : h.eps2,
+                          w1:   src.w1   != null ? src.w1   : h.w1,
+                          w2:   src.w2   != null ? src.w2   : h.w2,
+                          fy1:  src.fy1  != null ? src.fy1  : h.fy1,
+                          fy2:  src.fy2  != null ? src.fy2  : h.fy2,
+                        });
                       });
-                    });
+                    } else {
+                      var newEntry = {
+                        date: approvalDate,
+                        tp: latestTp,
+                        pe: src.pe,
+                        eps: null,
+                        eps1: src.eps1,
+                        eps2: src.eps2,
+                        w1: src.w1,
+                        w2: src.w2,
+                        fy1: src.fy1 || "",
+                        fy2: src.fy2 || "",
+                        earningsEntryId: (sourceRec && sourceRec.earningsEntryId) || "",
+                        quarter: "",
+                        currency: ccy,
+                        source: "approval",
+                        by: sourceRec && sourceRec.suggestedBy,
+                        approvedBy: sourceRec && sourceRec.approvedBy,
+                        rationale: (sourceRec && sourceRec.rationale) || "",
+                      };
+                      newHist = [newEntry].concat(selCo.tpHistory || []);
+                    }
                     var u = Object.assign({}, selCo, { valuation: v, tpHistory: newHist });
                     setSelCo(u);
                     setPendingVal(Object.assign({}, v));
