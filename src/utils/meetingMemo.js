@@ -45,6 +45,17 @@ const PROFILES = {
     header: "*** Multi Cap Strategies: Focused International, International, Focused Global, and Global ***",
     ports: ["FIN", "IN", "FGL", "GL"],
   },
+  wednesday: {
+    /* Free-form notes meeting. No auto-built memo from portfolio
+       data; the user writes whatever they want in an open textarea
+       and saves it to memoLog. The Memo tab swaps its rendered
+       auto-memo for the free-form composer when profile === 'wednesday'.
+       ports: [] tells the rest of the code there are no per-port
+       agenda items to derive — Agenda tab gracefully shows empty. */
+    header: "*** Wednesday Notes ***",
+    ports: [],
+    freeform: true,
+  },
   thursday: {
     header: "*** EM ADR, International Small Cap***",
     ports: ["EM", "SC"],

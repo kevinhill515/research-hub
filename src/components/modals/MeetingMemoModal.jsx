@@ -90,6 +90,11 @@ export function MeetingMemoModal({ open, onClose }) {
      hard reload re-derives from live data; that's fine — the snapshot
      is a session convenience, not a record-of-truth. */
   const [lockedSnapshot, setLockedSnapshot] = useState({});
+  /* Wednesday notes — free-form text area, kept in modal-local
+     state. Persists across re-opens of the modal within a session
+     but resets on page reload (intentional: the canonical record
+     lives in memoLog once the user clicks "Save to log"). */
+  const [wednesdayText, setWednesdayText] = useState("");
 
   const liveMemo = profile ? buildMeetingMemo(companies, profile, repData) : "";
   const memo = (lockedSnapshot[profile] != null && lockedSnapshot[profile] !== "") ? lockedSnapshot[profile] : liveMemo;
@@ -268,6 +273,11 @@ export function MeetingMemoModal({ open, onClose }) {
               title="Multi Cap Strategies — FIN / IN / FGL / GL"
             >Tue (MultiCap)</button>
             <button
+              onClick={function () { setProfile("wednesday"); setTab("generate"); }}
+              className={"text-[11px] px-2 py-0.5 rounded-md cursor-pointer " + (profile === "wednesday" ? "bg-blue-600 text-white" : "bg-slate-100 dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-slate-200")}
+              title="Wednesday free-form notes — open textarea, not auto-built from portfolios"
+            >Wed (Notes)</button>
+            <button
               onClick={function () { setProfile("thursday"); }}
               className={"text-[11px] px-2 py-0.5 rounded-md cursor-pointer " + (profile === "thursday" ? "bg-blue-600 text-white" : "bg-slate-100 dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-slate-200")}
               title="EM ADR + International Small Cap — EM / SC"
@@ -329,6 +339,29 @@ export function MeetingMemoModal({ open, onClose }) {
                 if (typeof window !== "undefined" && window.confirm && !window.confirm("Delete this memo log entry? This cannot be undone.")) return;
                 deleteMemoLog(id);
                 if (expandedLogId === id) setExpandedLogId(null);
+              }}
+            />
+          ) : profile === "wednesday" ? (
+            /* Wednesday Notes — free-form composer instead of the
+               auto-generated portfolio memo. Just an editable
+               textarea + "Save to log" button. Saved entries land
+               in memoLog with profile:"wednesday", visible from the
+               Log tab same as Tuesday / Thursday memos. */
+            <WednesdayNotesView
+              copied={copied}
+              onCopy={function(){
+                if (!wednesdayText) return;
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                  navigator.clipboard.writeText(wednesdayText).then(function(){setCopied(true);setTimeout(function(){setCopied(false);},2000);});
+                }
+              }}
+              text={wednesdayText}
+              setText={setWednesdayText}
+              onSaveToLog={function(){
+                if (!wednesdayText.trim()) return;
+                addMemoLog({ profile: "wednesday", memo: wednesdayText });
+                setWednesdayText("");
+                setTab("log");
               }}
             />
           ) : (
@@ -767,6 +800,48 @@ function GenerateView({ memo, copied, onCopy, onClear, onDiscard, hasPending, pr
   );
 }
 
+/* ===== WEDNESDAY NOTES (free-form composer) ===== */
+
+function WednesdayNotesView({ text, setText, copied, onCopy, onSaveToLog }) {
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
+        <span className="text-sm font-semibold text-gray-900 dark:text-slate-100">📝 Wednesday Notes</span>
+        <span className="text-[11px] text-gray-500 dark:text-slate-400">
+          Free-form agenda + notes. No auto-build from portfolios. Click "Save to log" to archive in the Log tab.
+        </span>
+      </div>
+      <textarea
+        value={text}
+        onChange={function (e) { setText(e.target.value); }}
+        rows={22}
+        placeholder="Agenda items, meeting notes, action items, follow-ups, anything..."
+        className="w-full text-xs font-mono px-3 py-2 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 leading-relaxed resize-y focus:ring-2 focus:ring-blue-500 focus:outline-none"
+      />
+      <div className="flex gap-2 items-center mt-2 flex-wrap">
+        <button
+          onClick={onCopy}
+          disabled={!text || !text.trim()}
+          className={"text-xs px-3 py-1.5 font-medium rounded-md transition-colors " + (text && text.trim()
+            ? "bg-blue-600 text-white border-none cursor-pointer hover:bg-blue-700"
+            : "bg-slate-200 dark:bg-slate-700 text-gray-400 dark:text-slate-500 border-none cursor-not-allowed")}
+        >{copied ? "✓ Copied" : "Copy to clipboard"}</button>
+        <button
+          onClick={onSaveToLog}
+          disabled={!text || !text.trim()}
+          className={"text-xs px-3 py-1.5 font-semibold rounded-md transition-colors " + (text && text.trim()
+            ? "bg-emerald-600 text-white border-none cursor-pointer hover:bg-emerald-700"
+            : "bg-slate-200 dark:bg-slate-700 text-gray-400 dark:text-slate-500 border-none cursor-not-allowed")}
+          title="Append these notes to the Log tab and clear the composer for the next meeting"
+        >💾 Save to log</button>
+        <span className="text-[10px] text-gray-400 dark:text-slate-500 italic ml-2">
+          Notes don't auto-save while you type — hit Save to log when done. Saved entries are searchable from the Log tab.
+        </span>
+      </div>
+    </div>
+  );
+}
+
 /* ===== LOG TAB ===== */
 
 function LogTab({ entries, expandedId, onToggle, onDelete }) {
@@ -783,6 +858,8 @@ function LogTab({ entries, expandedId, onToggle, onDelete }) {
         const expanded = expandedId === e.id;
         const profLabel = e.profile === "tuesday"
           ? "Tuesday (MultiCap)"
+          : e.profile === "wednesday"
+          ? "Wednesday (Notes)"
           : e.profile === "thursday"
           ? "Thursday (EM+SC)"
           : (e.profile || "?");
