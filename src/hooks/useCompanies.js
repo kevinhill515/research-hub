@@ -35,7 +35,10 @@ export function useCompanies(){
   const [selectedIds,setSelectedIds]=useState(new Set());
   const [bulkStatus,setBulkStatus]=useState("");
   const [bulkTier,setBulkTier]=useState("");
-  const [visibleCols,setVisibleCols]=useState(new Set(ALL_COLS));
+  /* Default to the compact column set so the List view ships tight
+     out of the box (matches the Metrics view density). User can flip
+     to Default via the Compact/Default toggle. */
+  const [visibleCols,setVisibleCols]=useState(new Set(COMPACT_COLS));
   const [showColPicker,setShowColPicker]=useState(false);
   const [confirmClear,setConfirmClear]=useState(false);
   const [showNew,setShowNew]=useState(false);
@@ -63,7 +66,9 @@ export function useCompanies(){
   const [pendingDiff,setPendingDiff]=useState(null);
   const [pendingMeta,setPendingMeta]=useState(null);
   const [pendingVal,setPendingVal]=useState(null);
-  const [compact,setCompact]=useState(false);
+  /* Compact-by-default (matches visibleCols=COMPACT_COLS above).
+     The toggle in the toolbar still lets the user flip to Default. */
+  const [compact,setCompact]=useState(true);
   const [showDedupe,setShowDedupe]=useState(false);
   const [dupeGroups,setDupeGroups]=useState([]);
   const [dupeKeep,setDupeKeep]=useState({});
