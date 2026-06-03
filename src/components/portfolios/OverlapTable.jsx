@@ -132,6 +132,80 @@ function TierCell({ tiers, dark, rowBgColor, onUpdate }) {
   );
 }
 
+/* Click-to-edit Port? cell — mirrors TierCell. Clicking anywhere
+   opens an Add-Port? popover with the portfolios that aren't already
+   committed (the dashed "considering" list). Removing a pending entry
+   still works via each pill's inline ×. Portal'd so it escapes the
+   table's stacking contexts. */
+function PortNoteCell({ company, dark, rowBgColor, onUpdate }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const ref = useRef();
+  const popRef = useRef();
+  useClickOutside(popRef, function () { setOpen(false); }, open);
+  useLayoutEffect(function () {
+    if (!open || !ref.current) return;
+    var r = ref.current.getBoundingClientRect();
+    /* Anchor to the cell's right edge so the popover doesn't slide
+       off-screen — Port? is the rightmost column. */
+    setPos({ top: r.bottom + 2, right: window.innerWidth - r.right });
+  }, [open]);
+  var portNote = (company.portNote || "").split(/[,\s]+/).filter(Boolean);
+  var availPortNote = PORTFOLIOS.filter(function (pp) { return (company.portfolios || []).indexOf(pp) < 0; });
+  var remaining = availPortNote.filter(function (p) { return portNote.indexOf(p) < 0; });
+  return (
+    <div
+      ref={ref}
+      className="align-middle pr-4 py-1.5 cursor-pointer"
+      style={{ display: "table-cell", background: dark ? undefined : rowBgColor }}
+      onClick={function (e) { e.stopPropagation(); setOpen(function (o) { return !o; }); }}
+    >
+      <PortPicker
+        noAdd
+        stack
+        passClicks
+        active={portNote}
+        onChange={function (v) { onUpdate({ portNote: v.join(", ") }); }}
+        plusColor={dark ? "#93c5fd" : "#1a3a6b"}
+        opts={availPortNote}
+        dashedPills
+        pillStyleFn={function () { return { bg: "transparent", color: dark ? "#93c5fd" : "#1a3a6b" }; }}
+      />
+      {open && createPortal(
+        <div
+          ref={popRef}
+          onClick={function (e) { e.stopPropagation(); }}
+          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md p-1.5 shadow-lg min-w-[140px]"
+          style={{ position: "fixed", top: pos.top, right: pos.right, zIndex: 1000 }}
+        >
+          <div className="text-[10px] font-semibold text-gray-500 dark:text-slate-400 px-1 pb-0.5">Add to Port?</div>
+          <div className="flex flex-wrap gap-1">
+            {remaining.map(function (p) {
+              return (
+                <span
+                  key={p}
+                  onClick={function (e) {
+                    e.stopPropagation();
+                    var next = portNote.concat([p]);
+                    onUpdate({ portNote: next.join(", ") });
+                    setOpen(false);
+                  }}
+                  className="text-[11px] px-1.5 py-0.5 rounded-full cursor-pointer font-medium bg-transparent"
+                  style={{ border: "1px dashed " + (dark ? "#93c5fd" : "#1a3a6b"), color: dark ? "#93c5fd" : "#1a3a6b" }}
+                >{p}</span>
+              );
+            })}
+            {remaining.length === 0 && (
+              <span className="text-[10px] text-gray-400 dark:text-slate-500 italic px-1">none available</span>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
 /* Portfolio Overlap subtab. Extracted from App.jsx verbatim; original inline
    IIFE referenced parent-scope variables via closure, now explicit props +
    context. */
@@ -217,7 +291,7 @@ return(<div key={c.id} onClick={function(){setSelCoOrigin("portfolios");setSelCo
     );
   }
   return <div key={p} className="align-middle pr-4 py-1.5 text-sm text-gray-900 dark:text-slate-100" style={{display:"table-cell",background:cellBg,color:cellColor,fontWeight:cellFontWeight}}>{v>0?v.toFixed(1)+"%":"--"}</div>;
-})}<div className="align-middle pr-4 py-1.5" style={{display:"table-cell",background:dark?undefined:rowBgColor}} onClick={function(e){e.stopPropagation();}}>{(function(){var portNote=(c.portNote||"").split(/[,\s]+/).filter(Boolean);var availPortNote=PORTFOLIOS.filter(function(pp){return(c.portfolios||[]).indexOf(pp)<0;});return <PortPicker active={portNote} onChange={function(v){updateCo(c.id,{portNote:v.join(", ")});}} plusColor={dark?"#93c5fd":"#1a3a6b"} opts={availPortNote} dashedPills pillStyleFn={function(){return{bg:"transparent",color:dark?"#93c5fd":"#1a3a6b"};}}/>;})()}</div></div>);})}
+})}<PortNoteCell company={c} dark={dark} rowBgColor={rowBgColor} onUpdate={function(ch){updateCo(c.id, ch);}}/></div>);})}
 {/* TOTAL sum row — three blank cells for FPE / MOS / MOS Fixed */}
 <div style={{display:"table-row"}} className="bg-white dark:bg-slate-950"><div className="align-middle pr-4 pt-2 pb-2 text-sm font-bold text-gray-900 dark:text-slate-100 border-t-2 border-slate-200 dark:border-slate-700 sticky left-0 z-[5]" style={{display:"table-cell",background:dark?"#020617":"#ffffff"}}>TOTAL</div><div className="align-middle pr-4 pt-2 pb-2 border-t-2 border-slate-200 dark:border-slate-700" style={{display:"table-cell"}}>--</div><div className="align-middle pr-4 pt-2 pb-2 border-t-2 border-slate-200 dark:border-slate-700" style={{display:"table-cell"}}>--</div><div className="align-middle pr-4 pt-2 pb-2 border-t-2 border-slate-200 dark:border-slate-700" style={{display:"table-cell"}}>--</div><div className="align-middle pr-4 pt-2 pb-2 border-t-2 border-slate-200 dark:border-slate-700" style={{display:"table-cell"}}>--</div>{OVERLAP_ORDER.map(function(p){var s=colSums[p];var isOk=Math.abs(s-100)<0.2;var isEmpty=s===0;return <div key={p} className="align-middle pr-4 pt-2 pb-2 text-sm font-bold border-t-2 border-slate-200 dark:border-slate-700" style={{display:"table-cell",color:isEmpty?"#94a3b8":isOk?(dark?"#4ade80":"#166534"):(dark?"#f87171":"#991b1b")}}>{isEmpty?"--":s.toFixed(1)+"%"}</div>;})}<div className="align-middle pr-4 pt-2 pb-2 border-t-2 border-slate-200 dark:border-slate-700" style={{display:"table-cell"}}>--</div></div>
 </div>
