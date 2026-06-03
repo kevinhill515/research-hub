@@ -167,12 +167,24 @@ export function useCompanies(){
       var rows=dataRowLines.map(function(line){
         var cols=parseRow(line);function get(i){return i>-1?(cols[i]||""):""}
         var portRaw=get(idx.portfolio).toUpperCase();var portTokens=portRaw.split(/[\s,]+/).filter(Boolean);
-        var portfolios=PORTFOLIOS.filter(function(p){return portTokens.indexOf(p)>=0;}).filter(function(p,i,a){return a.indexOf(p)===i;});
+        var portfoliosArr=PORTFOLIOS.filter(function(p){return portTokens.indexOf(p)>=0;}).filter(function(p,i,a){return a.indexOf(p)===i;});
         var status=get(idx.status).trim();status=(/^buy$/i.test(status)||/^own$/i.test(status))?"Own":/^focus$/i.test(status)?"Focus":/^watch$/i.test(status)?"Watch":/^sold$/i.test(status)?"Sold":"";
         var action=get(idx.action);action=/increase|up|raise/i.test(action)?"Increase TP":/decrease|down|cut|lower/i.test(action)?"Decrease TP":/no action|hold|maintain/i.test(action)?"No Action":action||"";
         var ordT=(get(idx.ordTicker)||get(idx.ticker)).toUpperCase();
         var usT=get(idx.usTicker).toUpperCase();
-        return{name:get(idx.name),ticker:ordT,ordTicker:ordT,usTicker:usT,usTickerName:get(idx.usTickerName),portfolios,portNote:get(idx.port),country:get(idx.country),sector:get(idx.sector),lastReviewed:get(idx.lastReviewed),action,takeaway:get(idx.takeaway),status,tier:get(idx.tier)};
+        /* Route inferred portfolio codes to portNote (not portfolios)
+           when status is Watch/Sold/blank — bulk imports of new names
+           almost always represent companies the team is CONSIDERING
+           for a portfolio, not currently held. Own / Focus statuses
+           keep the codes in portfolios (committed). Header-led imports
+           keep the user's explicit "Portfolio" vs "Port?" column
+           routing since they were intentional. */
+        var routeToPortNote = !hasHeader && (status === "Watch" || status === "Sold" || status === "");
+        var portfolios = routeToPortNote ? [] : portfoliosArr;
+        var portNote = routeToPortNote
+          ? (portfoliosArr.length ? portfoliosArr.join(", ") : get(idx.port))
+          : get(idx.port);
+        return{name:get(idx.name),ticker:ordT,ordTicker:ordT,usTicker:usT,usTickerName:get(idx.usTickerName),portfolios:portfolios,portNote:portNote,country:get(idx.country),sector:get(idx.sector),lastReviewed:get(idx.lastReviewed),action,takeaway:get(idx.takeaway),status,tier:get(idx.tier)};
       }).filter(function(r){return r.name||r.ticker;});
       setBulkPreview(rows);
     }catch(e){alertFn("Parse error: "+e.message);}

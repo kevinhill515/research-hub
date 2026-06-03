@@ -119,6 +119,53 @@ function defaultDates(count) {
   return out;
 }
 
+/* Detect a "name-led" alternate layout commonly pasted from Excel:
+ *   Col A: company name (no ticker)
+ *   Col B: FY end date (12/31/2025)
+ *   Col C: anchor or first monthly value
+ *   Cols D..(D+12): 13 monthly values
+ *   Col (D+13): next FY end date
+ *   ... and so on for 4 horizons.
+ *
+ * Detection: row's first cell is a non-ticker string (contains
+ * spaces / lowercase / commas — anything that doesn't look like
+ * a stock ticker) AND the second cell parses as a date.
+ *
+ * Reshape: rewrite the row into the canonical layout the parser
+ * expects (ticker_col=0 empty, B=empty, C=name, D=anchor, E..Q=13
+ * monthly, R=anchor+1, ...) by stripping the 4 FY-end date cells
+ * and inserting an empty ticker + an empty B placeholder + the name
+ * at the start, then a null anchor before each block of 13 monthly
+ * values (the user's format doesn't carry a separate anchor — all
+ * 13 cells per horizon are monthly snapshots). */
+const TICKER_LIKE_RE = /^[A-Z0-9]+(-[A-Z]{2,4})?$/;
+const SLASH_DATE_RE = /^\d{1,2}\/\d{1,2}\/\d{2,4}$/;
+const ISO_DATE_RE  = /^\d{4}-\d{1,2}-\d{1,2}$/;
+function looksLikeNameLed(cells) {
+  if (!cells || cells.length < 16) return false;
+  const a = (cells[0] || "").trim();
+  const b = (cells[1] || "").trim();
+  if (!a || !b) return false;
+  if (TICKER_LIKE_RE.test(a)) return false; /* looks like a ticker, not a name */
+  if (!(SLASH_DATE_RE.test(b) || ISO_DATE_RE.test(b))) return false;
+  return true;
+}
+function reshapeNameLed(cells) {
+  /* Build the canonical-layout array. Each horizon block = 1 anchor
+     (null in this layout) + 13 monthly values. The user's data has
+     each horizon at positions [1 + h*14] (date) + 13 values
+     immediately after. */
+  const out = ["", "", (cells[0] || "").trim()]; /* ticker, B placeholder, name */
+  for (let h = 0; h < 4; h++) {
+    const base = 1 + h * 14; /* date position in source */
+    out.push(null); /* anchor = null — user's format has no separate anchor */
+    for (let i = 0; i < 13; i++) {
+      out.push(cells[base + 1 + i] !== undefined ? cells[base + 1 + i] : null);
+    }
+  }
+  return out;
+}
+
 export function parseEpsRevisionsPaste(text) {
   const lines = (text || "").split(/\r?\n/).filter(function (l) { return l.trim(); });
   if (lines.length < 1) {
@@ -160,7 +207,14 @@ export function parseEpsRevisionsPaste(text) {
   let dropped = 0;
 
   for (let r = firstDataRow; r < lines.length; r++) {
-    const cells = splitRow(lines[r]);
+    let cells = splitRow(lines[r]);
+    /* Auto-reshape: if this row uses the name-led + date-separated
+       layout (col A = name, col B = FY date), rewrite into the
+       canonical ticker-led shape so the rest of the loop works
+       unchanged. */
+    if (looksLikeNameLed(cells)) {
+      cells = reshapeNameLed(cells);
+    }
     const ticker = (cells[0] || "").trim();
     const name = (cells[2] || "").trim();
     if (!ticker && !name) { dropped++; continue; }
