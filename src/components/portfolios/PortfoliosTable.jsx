@@ -574,17 +574,20 @@ export function PortfoliosTable(props) {
             Rep AUM: ${totalMV.toLocaleString(undefined, { maximumFractionDigits: 0 })}
           </span>
         )}
-        {/* Refresh button — re-fetches just the companies table from
-            Supabase so the team can pick up teammates' proposals during
-            a meeting without paying the full app reload cost. Same
-            helper the PM Meeting modal uses. */}
+        {/* Refresh button — re-fetches companies + meeting-traffic
+            meta blobs (tpApprovals, annotations, memoLog,
+            wednesdayNotes) from Supabase so the team can pick up
+            teammates' proposals + Wednesday notes during a meeting
+            without paying the full app reload cost. Same helper
+            the IC Meeting modal uses; labeled identically so the
+            two surfaces match. */}
         <button
           onClick={refreshPortfolios}
           disabled={refreshing}
           className={BTN_SM + " ml-auto no-print" + (refreshing ? " opacity-50 cursor-not-allowed" : "")}
-          title="Re-fetch portfolio data from Supabase (pulls just companies — light, ~1 connection). Use during meetings to see teammates' just-submitted proposals."
+          title="Re-fetch portfolio data + meeting-traffic meta blobs (TP approvals, discussions, memo log, Wednesday notes) from Supabase. Use during meetings to see teammates' just-submitted edits without a full app reload."
         >
-          {refreshing ? "↻ Refreshing…" : "↻ Refresh"}
+          {refreshing ? "↻ Refreshing…" : "↻ Refresh Portfolios"}
         </button>
         {refreshMsg && (
           <span className="text-[11px] text-emerald-700 dark:text-emerald-300 no-print">{refreshMsg}</span>
