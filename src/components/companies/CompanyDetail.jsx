@@ -915,13 +915,23 @@ export function CompanyDetail(props){
                           fy1:  latestApproval.fy1,
                           fy2:  latestApproval.fy2,
                         };
-                    /* Determine the canonical date for this reconcile.
-                       Prefer the matching approval record's date so
-                       Case B (no tpHistory entry yet) still gets a
-                       meaningful date stamped. */
-                    var approvalDate = (latestApproval && latestApproval.date)
-                      || (sourceRec && (sourceRec.suggestedAt || sourceRec.approvedAt))
-                      || todayStr();
+                    /* Canonical date for this reconcile.
+                       Case A (we're patching an existing entry): use
+                       latestApproval.date — that's the entry's stored
+                       date and we don't want to rewrite it.
+                       Case B (we're adding a NEW entry because the
+                       approval was never written): use the source
+                       record's suggestedAt — that's the date the
+                       approval actually happened. Falling back to
+                       latestApproval.date here was the bug: it
+                       picked up a pre-approval entry's date and
+                       stamped the new row with it. */
+                    var canPatchDate = latestApproval
+                      && isFinite(parseFloat(latestApproval.tp))
+                      && Math.abs(parseFloat(latestApproval.tp) - latestTp) < 0.01;
+                    var approvalDate = canPatchDate
+                      ? (latestApproval.date || todayStr())
+                      : ((sourceRec && (sourceRec.suggestedAt || sourceRec.approvedAt)) || todayStr());
                     var v = Object.assign({}, selCo.valuation || {});
                     v.tpFixed = String(latestTp);
                     v.tpFixedDate = approvalDate;
@@ -941,8 +951,7 @@ export function CompanyDetail(props){
                     */
                     var newHist;
                     var ccy = (selCo.valuation && selCo.valuation.currency) || activeCurrency || "USD";
-                    var canPatch = latestApproval && isFinite(parseFloat(latestApproval.tp)) && Math.abs(parseFloat(latestApproval.tp) - latestTp) < 0.01;
-                    if (canPatch) {
+                    if (canPatchDate) {
                       newHist = (selCo.tpHistory || []).map(function(h){
                         if (h !== latestApproval) return h;
                         return Object.assign({}, h, {
