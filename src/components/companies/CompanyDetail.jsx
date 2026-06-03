@@ -1385,28 +1385,73 @@ export function CompanyDetail(props){
                       );
                     })}
                     {(function(){
-                      /* Hide tpHistory entries whose TP matches a
-                         REJECTED tpApprovals record — those rows are
-                         leftover damage from rejected suggestions that
-                         shouldn't show up as committed history. The
-                         original entry stays in selCo.tpHistory (so
-                         the originalIdx delete logic keeps working
-                         for any row the user does want to surface);
-                         we just don't render them. */
+                      /* tpHistory rows whose TP matches a REJECTED
+                         tpApprovals record get tagged so the rendered
+                         row shows a "✗ Rejected" badge — we keep them
+                         visible in history as a record of "this was
+                         proposed and voted down", but the visual treat-
+                         ment (badge + struck-through TP) makes clear
+                         the TP didn't actually move. The Reconcile
+                         banner still ignores these (no desync to
+                         repair when the row represents a rejected
+                         proposal that shouldn't have landed). */
                       var rejTps = (tpApprovals || [])
-                        .filter(function(a){return a && a.companyId === selCo.id && a.status === "rejected";})
+                        .filter(function(a){return a && a.companyId === selCo.id && a.status === "rejected" && a.rejectReason !== "Withdrawn by suggester" && a.rejectReason !== "Superseded by another approval";})
                         .map(function(a){return parseFloat(a.toTP);})
                         .filter(function(n){return isFinite(n);});
                       function _matchRej(t){return rejTps.some(function(r){return Math.abs(r - t) < 0.01;});}
                       var arr = (selCo.tpHistory||[])
-                        .map(function(h, originalIdx){ return { h: h, originalIdx: originalIdx }; })
-                        .filter(function(p){var t = parseFloat(p.h && p.h.tp); return !(isFinite(t) && _matchRej(t));});
+                        .map(function(h, originalIdx){
+                          var t = parseFloat(h && h.tp);
+                          var isRejected = isFinite(t) && _matchRej(t);
+                          return { h: h, originalIdx: originalIdx, isRejected: isRejected };
+                        });
                       arr.sort(function(a, b){ return (b.h.date || "").localeCompare(a.h.date || ""); });
+                      /* Synthetic "current TP Fixed" row — surfaces
+                         when valuation.tpFixed is set but no non-
+                         rejected tpHistory entry matches it. Covers
+                         easyJet's case: TP Fixed is GBP 6.25 (carried
+                         from a prior approval that didn't write a
+                         history row) and the only tpHistory entry is
+                         a rejected 4.45 suggestion — without this
+                         synthesis, the committed 6.25 would be
+                         invisible in the table. The synthetic row is
+                         read-only (no × button) since it's derived
+                         from valuation, not a real history record. */
+                      var fixedTpN = parseFloat(selCo.valuation && selCo.valuation.tpFixed);
+                      if (isFinite(fixedTpN) && fixedTpN > 0) {
+                        var anyCommittedMatches = arr.some(function(p){
+                          if (p.isRejected) return false;
+                          var t = parseFloat(p.h && p.h.tp);
+                          return isFinite(t) && Math.abs(t - fixedTpN) < 0.01;
+                        });
+                        if (!anyCommittedMatches) {
+                          var v = selCo.valuation || {};
+                          var syntheticH = {
+                            date: v.tpFixedDate || "",
+                            tp: fixedTpN,
+                            pe: v.peFixed != null && v.peFixed !== "" ? v.peFixed : v.pe,
+                            eps1: v.eps1Fixed,
+                            eps2: v.eps2Fixed,
+                            w1: v.w1Fixed,
+                            w2: v.w2Fixed,
+                            fy1: v.fy1Fixed || v.fy1,
+                            fy2: v.fy2Fixed || v.fy2,
+                            currency: v.currency,
+                          };
+                          arr = [{h:syntheticH, originalIdx:-1, isRejected:false, isSynthetic:true}].concat(arr);
+                        }
+                      }
                       return arr;
                     })().map(function(pair, displayIdx, displayArr){
                       var h = pair.h;
                       var originalIdx = pair.originalIdx;
-                      var isLatest = displayIdx === 0;
+                      var isRejected = pair.isRejected;
+                      var isSynthetic = pair.isSynthetic;
+                      /* "Latest" semantics skip rejected rows so the
+                         % change baseline / freshest-row formatting
+                         tracks committed-only history. */
+                      var isLatest = !isRejected && displayIdx === 0;
                       /* % change vs the chronologically prior approval — that's
                          the NEXT row in the display array (since sorted desc).
                          Shown next to the current row's Target Price so each
@@ -1543,11 +1588,19 @@ export function CompanyDetail(props){
                         var infFromDate = inferQuarter(h.date, (selCo.valuation||{}).fyMonth || "Dec");
                         if(infFromDate && infFromDate.label) fqLabel = infFromDate.label;
                       }
-                      return (<div key={originalIdx} style={{display:"table-row"}}>
+                      return (<div key={originalIdx} style={{display:"table-row", opacity: isRejected ? 0.6 : 1}}>
                         <div className="text-gray-500 dark:text-slate-400 border-t border-slate-200 dark:border-slate-700" style={{display:"table-cell",padding:"7px 10px 7px 0"}}>{fmtDateUS(h.date)}</div>
                         <div className="border-t border-slate-200 dark:border-slate-700 font-semibold" style={{display:"table-cell",padding:"7px 10px 7px 0",color:isLatest?"#166534":undefined}}>
-                          {fmtTP(h.tp,h.currency||activeCurrency)}
-                          {tpPct !== null && (
+                          <span style={{textDecoration: isRejected ? "line-through" : undefined}}>
+                            {fmtTP(h.tp,h.currency||activeCurrency)}
+                          </span>
+                          {isRejected && (
+                            <span
+                              className="ml-2 text-[10px] px-1.5 py-px rounded-full bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 font-semibold"
+                              title="This TP suggestion was rejected — TP Fixed did not move to this value"
+                            >✗ Rejected</span>
+                          )}
+                          {!isRejected && tpPct !== null && (
                             <span
                               className="ml-2 text-[10px] font-medium"
                               style={{color: tpPct >= 0 ? "#16a34a" : "#dc2626"}}
@@ -1574,7 +1627,7 @@ export function CompanyDetail(props){
                           )}
                         </div>
                         <div className="text-gray-500 dark:text-slate-400 border-t border-slate-200 dark:border-slate-700" style={{display:"table-cell",padding:"7px 10px 7px 0"}}>{fqLabel}</div>
-                        <div className="border-t border-slate-200 dark:border-slate-700" style={{display:"table-cell",padding:"7px 0 7px 0"}}><span onClick={function(){var u=Object.assign({},selCo,{tpHistory:selCo.tpHistory.filter(function(_,j){return j!==originalIdx;})});setSelCo(u);setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});});}} className="text-[11px] text-red-600 dark:text-red-400 cursor-pointer">{"\u00D7"}</span></div>
+                        <div className="border-t border-slate-200 dark:border-slate-700" style={{display:"table-cell",padding:"7px 0 7px 0"}}>{isSynthetic ? <span className="text-[10px] text-gray-400 dark:text-slate-500 italic" title="Synthesized from valuation.tpFixed \u2014 no underlying tpHistory entry to delete">current</span> : <span onClick={function(){var u=Object.assign({},selCo,{tpHistory:selCo.tpHistory.filter(function(_,j){return j!==originalIdx;})});setSelCo(u);setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});});}} className="text-[11px] text-red-600 dark:text-red-400 cursor-pointer">{"\u00D7"}</span>}</div>
                       </div>);
                     })}
                   </div>

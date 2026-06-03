@@ -79,15 +79,28 @@ export default function App(){
     (companies || []).forEach(function (c) {
       var entries = c.earningsEntries || [];
       if (!entries.length) return;
-      /* The latest REPORTED earnings entry (not future-dated) drives
-         the TP Change pill. Mirror that pick here so we only flag
-         rejection when it ties to the visible entry. */
       var today = new Date().toISOString().slice(0,10);
       var sorted = entries.slice().sort(function(a,b){return (b.reportDate||"").localeCompare(a.reportDate||"");});
       var latest = sorted.find(function(e){return e && e.reportDate && e.reportDate <= today;});
       if (!latest) return;
+      /* Skip flagging if ANY approval landed for the same earnings
+         entry — the approval is what counts; rejected siblings are
+         just losing proposals from the same cycle (Flex had this:
+         a sibling pending got auto-rejected with reason
+         "Superseded by another approval" when the winning one was
+         approved). Also skip self-withdrawals (rejectReason
+         "Withdrawn by suggester") and the auto-reject reason,
+         since both are non-decisions from the team's POV. */
+      var hasApproved = (tpApprovals || []).some(function(r){
+        return r && r.companyId === c.id && r.status === "approved" && r.earningsEntryId === latest.id;
+      });
+      if (hasApproved) return;
       var hasRejected = (tpApprovals || []).some(function(r){
-        return r && r.companyId === c.id && r.status === "rejected" && r.earningsEntryId === latest.id;
+        if (!r || r.companyId !== c.id || r.status !== "rejected") return false;
+        if (r.earningsEntryId !== latest.id) return false;
+        if (r.rejectReason === "Withdrawn by suggester") return false;
+        if (r.rejectReason === "Superseded by another approval") return false;
+        return true;
       });
       if (hasRejected) out[c.id] = true;
     });
