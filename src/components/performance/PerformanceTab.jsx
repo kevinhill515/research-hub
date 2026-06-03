@@ -8,8 +8,10 @@ import { PerformanceTable } from './PerformanceTable.jsx';
 import { RiskSummaryTable } from './RiskSummaryTable.jsx';
 import { useConfirm } from '../ui/DialogProvider.jsx';
 
-const TABST_ACTIVE = "text-[13px] px-3 py-1.5 border-b-2 border-blue-600 text-gray-900 dark:text-slate-100 font-semibold cursor-pointer bg-transparent";
-const TABST_INACTIVE = "text-[13px] px-3 py-1.5 border-b-2 border-transparent text-gray-500 dark:text-slate-400 cursor-pointer bg-transparent hover:text-gray-700 dark:hover:text-slate-300";
+/* Unified subtab style — matches Portfolios / Companies / Dashboard
+   for a consistent feel across top-level tabs. */
+const TABST_ACTIVE = "px-3 py-1.5 text-xs font-semibold rounded-t border-b-2 border-blue-600 text-blue-600 dark:text-blue-400 dark:border-blue-400";
+const TABST_INACTIVE = "px-3 py-1.5 text-xs font-medium rounded-t border-b-2 border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200";
 const BTN_SM = "text-xs px-2.5 py-1.5 font-medium rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors";
 const INP = "text-sm px-2 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:outline-none";
 const LABEL = "text-[11px] text-gray-500 dark:text-slate-400 block mb-1";
@@ -18,10 +20,10 @@ const LABEL = "text-[11px] text-gray-500 dark:text-slate-400 block mb-1";
    for Int'l (FIN+IN) and Global (FGL+GL). Each group merges its component
    portfolios' series at display time. EM and SC stand alone. */
 const GROUPS = [
-  { key: "intl",   label: "Int'l",  portfolios: ["FIN","IN"] },
-  { key: "global", label: "Global", portfolios: ["FGL","GL"] },
-  { key: "em",     label: "EM",     portfolios: ["EM"] },
-  { key: "sc",     label: "SC",     portfolios: ["SC"] },
+  { key: "intl",   label: "International",             portfolios: ["FIN","IN"] },
+  { key: "global", label: "Global",                    portfolios: ["FGL","GL"] },
+  { key: "em",     label: "Emerging Markets",          portfolios: ["EM"] },
+  { key: "sc",     label: "International Small Cap",   portfolios: ["SC"] },
 ];
 
 export function PerformanceTab(){

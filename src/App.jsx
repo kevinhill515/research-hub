@@ -1,9 +1,9 @@
-import { useState, useRef, useEffect, useMemo, useCallback, lazy, Suspense } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { evaluateAlertsForCompany } from './utils/alerts.js';
 import { PORTFOLIOS, TIER_ORDER, SECTOR_ORDER, COUNTRY_ORDER, SECTOR_COLORS, SECTOR_SHORT, COUNTRY_GROUPS, COUNTRY_COLORS, REGION_COLORS, REGION_GROUPS, STATUS_RANK, CURRENCY_MAP, ALL_CURRENCIES, MONTHS, CO_SORTS, FORMATS, TONES, LIB_SORTS, PRESET_TAGS, UPLOAD_TYPES, TEMPLATE_SECTIONS, SECTION_SUBHEADINGS, THESIS_STATUSES, TP_CHANGES, AVG_WPM, ALL_COLS, COMPACT_COLS, COMPANY_COLUMNS, SHORTCUTS, CONF_BG, CONF_COLOR, ACTIONS, TEAM_MEMBERS, TEAM_COLORS, REP_ACCOUNTS, PORT_NAMES, FLAG_STYLES } from './constants/index.js';
 import { shortSector, sectorStyle, countryStyle, getRegion, getTiers, getCurrency, calcNormEPS, calcTP, calcMOS, fmtPrice, fmtTP, fmtMOS, mosBg, impliedFYLabel, tierPillStyle, tierBg, fmtTime, getCore, getConf, escHTML, toHTML, toMD, simScore, downloadMD, detectCompanyTags, todayStr, parseDate, daysSince, reviewedColor, getStatusRank, getTierIndex, getCompanyMOS, blankEarnings, sortCos, synPrompt, tierToStatus, repShares, repAvgCost, getInitiatedDate, monthsSince, isInitiationTx, printPage } from './utils/index.js';
 import { supaGet, supaUpsert, ANTHROPIC_KEY, apiCall, setAnthropicKey, hasAnthropicKey } from './api/index.js';
-import { getDataStatus, statusBadge, staleReason, annualStaleStatus } from './utils/dataStatus.js';
+import { getDataStatus, statusBadge, staleReason } from './utils/dataStatus.js';
 import AlertsPanel from './components/dashboard/AlertsPanel.jsx';
 import ThisWeekEarnings from './components/dashboard/ThisWeekEarnings.jsx';
 import { PriceAgeIndicator, BarRow, PillEl, PortPicker, SectionBlock, StatusPill, DiffView } from './components/ui/index.js';
@@ -18,16 +18,15 @@ import { ErrorBoundary } from './components/ErrorBoundary.jsx';
    to users who actually open a dashboard view. Each lazy() compiles to
    its own chunk; vite.config manualChunks then groups recharts/d3 into
    a single shared "recharts" chunk so multiple subtabs reuse the cache. */
-const MarketsDashboard    = lazy(() => import('./components/dashboard/MarketsDashboard.jsx'));
-const TopBottomMovers     = lazy(() => import('./components/dashboard/TopBottomMovers.jsx'));
-const BreakdownView       = lazy(() => import('./components/dashboard/BreakdownView.jsx'));
-const CharacteristicsView = lazy(() => import('./components/dashboard/CharacteristicsView.jsx'));
-const GeoRevView          = lazy(() => import('./components/dashboard/GeoRevView.jsx'));
-const CompareView         = lazy(() => import('./components/dashboard/CompareView.jsx'));
-const GuidanceCompareView = lazy(() => import('./components/dashboard/GuidanceCompareView.jsx'));
-const RatioCompareView    = lazy(() => import('./components/dashboard/RatioCompareView.jsx'));
+/* Dashboard subtab lazy-loads moved into DashboardTab.jsx. The preload
+   import() calls below in the prefetch effect still warm the chunks
+   on idle so navigation feels instant. */
 import MetricsTable, { METRICS_COLS, DEFAULT_METRICS_VISIBLE } from './components/tables/MetricsTable.jsx';
 import UploadTab from './components/dataHub/UploadTab.jsx';
+import ImportPanel from './components/dataHub/ImportPanel.jsx';
+import PortfoliosTab from './components/portfolios/PortfoliosTab.jsx';
+import DashboardTab from './components/dashboard/DashboardTab.jsx';
+import CompaniesListTab from './components/companies/CompaniesListTab.jsx';
 import { useCompanies, useSynthesis, useLibrary, useRecall, useImport } from './hooks/index.js';
 import { PortfoliosTable } from './components/portfolios/PortfoliosTable.jsx';
 import { OverlapTable } from './components/portfolios/OverlapTable.jsx';
@@ -215,7 +214,12 @@ export default function App(){
     setShowDiscussions(true);
   }
 
-  const { selCo,setSelCo,coView,setCoView,coSort,setCoSort,coSortDir,setCoSortDir,coFilter,setCoFilter,coStatusFilter,setCoStatusFilter,coStatusSubFilter,setCoStatusSubFilter,coFilterCountry,setCoFilterCountry,coFilterSector,setCoFilterSector,coSearch,setCoSearch,selectedIds,setSelectedIds,bulkStatus,setBulkStatus,bulkTier,setBulkTier,visibleCols,setVisibleCols,showColPicker,setShowColPicker,confirmClear,setConfirmClear,showNew,setShowNew,showBulk,setShowBulk,showPriceImport,setShowPriceImport,priceImportText,setPriceImportText,showRestore,setShowRestore,restoreText,setRestoreText,newName,setNewName,newNameUS,setNewNameUS,newTicker,setNewTicker,newTickerUS,setNewTickerUS,newFields,setNewFields,bulkText,setBulkText,bulkLoading,setBulkLoading,bulkPreview,setBulkPreview,tmplRaw,setTmplRaw,tmplLoading,setTmplLoading,tmplSearch,setTmplSearch,tmplHighlight,setTmplHighlight,flashSections,setFlashSections,upText,setUpText,upType,setUpType,upLoading,setUpLoading,pendingDiff,setPendingDiff,pendingMeta,setPendingMeta,pendingVal,setPendingVal,compact,setCompact,showDedupe,setShowDedupe,dupeGroups,setDupeGroups,dupeKeep,setDupeKeep,quickUploadCo,setQuickUploadCo,linkLibOpen,setLinkLibOpen,showTmplSearch,setShowTmplSearch,searchRef,addCompany,parseBulk,confirmBulk,applyBulkEdit,toggleSelect,selectAll,clearSelected,findDupes,applyDedupe,commitValuation,saveEarningsEntry,deleteEarningsEntry,acceptQuickDiff,acceptDiff,importTemplate,processUpload,applyPriceImport,handleSortClick,exportCompanyPDF,exportToPDF,exportCSV,displayedCos,flaggedCos,usedCountries,usedSectors } = useCompanies();
+  /* Single useCompanies() instance, retained as `useCompaniesApi` so
+     the extracted CompaniesListTab can receive the whole bundle as
+     one prop. The destructure below keeps the existing references
+     working in the rest of App.jsx. */
+  const useCompaniesApi = useCompanies();
+  const { selCo,setSelCo,coView,setCoView,coSort,setCoSort,coSortDir,setCoSortDir,coFilter,setCoFilter,coStatusFilter,setCoStatusFilter,coStatusSubFilter,setCoStatusSubFilter,coFilterCountry,setCoFilterCountry,coFilterSector,setCoFilterSector,coSearch,setCoSearch,selectedIds,setSelectedIds,bulkStatus,setBulkStatus,bulkTier,setBulkTier,visibleCols,setVisibleCols,showColPicker,setShowColPicker,confirmClear,setConfirmClear,showNew,setShowNew,showBulk,setShowBulk,showPriceImport,setShowPriceImport,priceImportText,setPriceImportText,showRestore,setShowRestore,restoreText,setRestoreText,newName,setNewName,newNameUS,setNewNameUS,newTicker,setNewTicker,newTickerUS,setNewTickerUS,newFields,setNewFields,bulkText,setBulkText,bulkLoading,setBulkLoading,bulkPreview,setBulkPreview,tmplRaw,setTmplRaw,tmplLoading,setTmplLoading,tmplSearch,setTmplSearch,tmplHighlight,setTmplHighlight,flashSections,setFlashSections,upText,setUpText,upType,setUpType,upLoading,setUpLoading,pendingDiff,setPendingDiff,pendingMeta,setPendingMeta,pendingVal,setPendingVal,compact,setCompact,showDedupe,setShowDedupe,dupeGroups,setDupeGroups,dupeKeep,setDupeKeep,quickUploadCo,setQuickUploadCo,linkLibOpen,setLinkLibOpen,showTmplSearch,setShowTmplSearch,searchRef,addCompany,parseBulk,confirmBulk,applyBulkEdit,toggleSelect,selectAll,clearSelected,findDupes,applyDedupe,commitValuation,saveEarningsEntry,deleteEarningsEntry,acceptQuickDiff,acceptDiff,importTemplate,processUpload,applyPriceImport,handleSortClick,exportCompanyPDF,exportToPDF,exportCSV,displayedCos,flaggedCos,usedCountries,usedSectors } = useCompaniesApi;
 
   const { input,setInput,sources,setSources,useSrc,setUseSrc,format,setFormat,tone,setTone,custom,setCustom,output,setOutput,loading,setLoading,pendingTags,setPendingTags,autoTagSuggestions,setAutoTagSuggestions,fuQ,setFuQ,fuA,setFuA,fuLoading,setFuLoading,dupWarn,setDupWarn,cmpIds,setCmpIds,cmpOut,setCmpOut,cmpLoading,setCmpLoading,macroOut,setMacroOut,macroLoading,setMacroLoading,rsId,setRsId,rsFmt,setRsFmt,rsTone,setRsTone,rsOut,setRsOut,rsLoading,setRsLoading,synthesize,saveLib,askFollowUp,doResynth,saveResynth,doCompare,buildMacro } = useSynthesis();
 
@@ -223,7 +227,12 @@ export default function App(){
 
   const { recallQ,setRecallQ,recall,setRecall,recallLoading,setRecallLoading,recallSrcs,setRecallSrcs,recallHist,setRecallHist,suggestions,setSuggestions,askRecall,genSuggestions } = useRecall();
 
-  const { showDataPanel,setShowDataPanel,importText,setImportText,importError,setImportError,dataHubTab,setDataHubTab,valImportText,setValImportText,estImportText,setEstImportText,metricsImportText,setMetricsImportText,applyMetricsImport,benchmarkImportText,setBenchmarkImportText,benchmarkAsOf,setBenchmarkAsOf,applyBenchmarkImport,dashboardImportText,setDashboardImportText,applyDashboardImport,ratioImportText,setRatioImportText,applyRatioImport,financialsImportText,setFinancialsImportText,applyFinancialsImport,segmentsImportText,setSegmentsImportText,applySegmentsImport,epsRevImportText,setEpsRevImportText,applyEpsRevImport,guidanceImportText,setGuidanceImportText,applyGuidanceImport,weightsImportText,setWeightsImportText,calImportText,setCalImportText,repText,setRepText,fxText,setFxText,txText,setTxText,txReplaceMatched,setTxReplaceMatched,perfPortTargets,setPerfPortTargets,perfText,setPerfText,portTab,setPortTab,portSort,setPortSort,portSortDir,setPortSortDir,applyFxImport,applyRepImport,applyTxImport,applyPerfImport,applyCalImport,applyWeightsImport,applyValImport,applyEstImport,priceHistoryImportText,setPriceHistoryImportText,applyPriceHistoryImport,importAll,exportAll,downloadBackup } = useImport();
+  /* Single useImport() instance, retained as `importsApi` so the
+     extracted ImportPanel can receive the whole bundle as one prop
+     (avoids threading ~40 individual setters/state). App.jsx itself
+     still destructures the handful of pieces it needs directly. */
+  const importsApi = useImport();
+  const { showDataPanel,setShowDataPanel,importText,setImportText,importError,setImportError,dataHubTab,setDataHubTab,valImportText,setValImportText,estImportText,setEstImportText,metricsImportText,setMetricsImportText,applyMetricsImport,benchmarkImportText,setBenchmarkImportText,benchmarkAsOf,setBenchmarkAsOf,applyBenchmarkImport,dashboardImportText,setDashboardImportText,applyDashboardImport,ratioImportText,setRatioImportText,applyRatioImport,financialsImportText,setFinancialsImportText,applyFinancialsImport,segmentsImportText,setSegmentsImportText,applySegmentsImport,epsRevImportText,setEpsRevImportText,applyEpsRevImport,guidanceImportText,setGuidanceImportText,applyGuidanceImport,weightsImportText,setWeightsImportText,calImportText,setCalImportText,repText,setRepText,fxText,setFxText,txText,setTxText,txReplaceMatched,setTxReplaceMatched,perfPortTargets,setPerfPortTargets,perfText,setPerfText,portTab,setPortTab,portSort,setPortSort,portSortDir,setPortSortDir,applyFxImport,applyRepImport,applyTxImport,applyPerfImport,applyCalImport,applyWeightsImport,applyValImport,applyEstImport,priceHistoryImportText,setPriceHistoryImportText,applyPriceHistoryImport,importAll,exportAll,downloadBackup } = importsApi;
   /* Pre-warm the dashboard chunks during browser idle time so the first
      click into a Dashboard subtab doesn't pay the chunk-download cost.
      Each `import('...')` here matches one of the lazy() calls at the top
@@ -675,7 +684,15 @@ export default function App(){
         </div>
         </div>
       </div>
-      {flaggedCos.length>0&&(<div className="mb-2 px-3.5 py-2 bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-800 rounded-lg flex gap-2.5 items-center flex-wrap"><span className="text-xs font-semibold text-red-800 dark:text-red-300">{"\u2691"} Flagged ({flaggedCos.length}):</span>{flaggedCos.map(function(c){var fs=FLAG_STYLES[c.flag];return(<span key={c.id} onClick={function(){setSelCo(c);setTab("companies");}} className="text-[11px] px-2 py-0.5 rounded-full cursor-pointer" style={{background:fs.bg,color:fs.color,border:"1px solid "+fs.color}}>{fs.icon} {c.name}</span>);})}</div>)} {showDataPanel&&(<div className={CARD + " mb-3"}><div className="flex gap-1.5 mb-3 border-b border-slate-200 dark:border-slate-700 pb-2.5 flex-wrap">{[["prices","Prices"],["valuation","Valuation"],["epsrev","E[EPS]"],["guidance","Guidance"],["metrics","Metrics"],["benchmarks","Benchmarks"],["dashboard","Dashboard"],["weights","Target Weights"],["earnings","Earnings Dates"],["fx","FX Rates"],["rep","Rep Holdings"],["tx","Transactions"],["perf","Performance"],["ratios","Ratio Analysis"],["financials","Financials"],["segments","Segments"],["pricehistory","Price History"]].map(function(item){return <button key={item[0]} className={dataHubTab===item[0]?TABSM_ACTIVE:TABSM_INACTIVE} onClick={function(){setDataHubTab(item[0]);}}>{item[1]}</button>;})}</div> {dataHubTab==="valuation"&&(<div><div className="text-sm font-medium text-gray-900 dark:text-slate-100 mb-1">Earnings Estimates</div><div className="text-xs text-gray-500 dark:text-slate-400 mb-2">Columns: Company, Target PE, Current FPE, 5Yr Low, 5Yr High, 5Yr Avg, 5Yr Median, FY Month, Currency, FY1, EPS1, W1%, FY2, EPS2, W2%, TP Fixed (optional)</div><textarea value={estImportText||""} onChange={function(e){setEstImportText(e.target.value);}} placeholder="Shell  18.5  15.8  12  22  17  16.5  Dec  USD  FY2026E  4.20  50  FY2027E  4.80  50" rows={8} className={TA_BASE + " font-mono mb-2"} style={{minHeight:120}}/><button onClick={applyEstImport} disabled={!estImportText.trim()} className={BTN_SM}>Import</button></div>)} {dataHubTab==="metrics"&&(<div><div className="text-sm font-medium text-gray-900 dark:text-slate-100 mb-1">Company Metrics</div><div className="text-xs text-gray-500 dark:text-slate-400 mb-2">44 columns: Company, Ord Ticker, MktCap ($B), P/E, P/E +1, P/E +2, FCF Yld, FCF Yld +1, FCF Yld +2, Div Yld, Div Yld +1, Div Yld +2, Payout, Payout +1, Payout +2, Net D/E, Net D/E +1, Net D/E +2, Int Cov, LT EPS, Gr Mgn, Gr Mgn +1, Gr Mgn +2, Net Mgn, Net Mgn +1, Net Mgn +2, GP/Ass, GP/Ass +1, GP/Ass +2, NP/Ass, NP/Ass +1, NP/Ass +2, Op ROE, Op ROE +1, Op ROE +2, P/B, P/B +1, P/B +2, ROE, ROE +1, ROE +2, Internal Growth, ADPS Growth 5Y, ADPS Growth 1Y. Yield/margin/return/growth values can be pasted as percents (3.2 for 3.2%). Trailing returns moved to the Prices upload (per-ticker, with USD context). Older 35-col layout (no P/B/ROE/growth) and 41-col layout (legacy with perf cols) still accepted. Header row auto-detected.</div><textarea value={metricsImportText||""} onChange={function(e){setMetricsImportText(e.target.value);}} placeholder="Shell&#9;SHEL-GB&#9;220&#9;11.2&#9;12.5&#9;11.8&#9;0.07&#9;0.08&#9;0.09&#9;..." rows={8} className={TA_BASE + " font-mono mb-2"} style={{minHeight:120}}/><button onClick={applyMetricsImport} disabled={!metricsImportText.trim()} className={BTN_SM}>Import</button></div>)} {dataHubTab==="benchmarks"&&(<div><div className="text-sm font-medium text-gray-900 dark:text-slate-100 mb-1">Benchmark Weights</div><div className="text-xs text-gray-500 dark:text-slate-400 mb-2">Two formats accepted (mix freely): (a) Current snapshot — 4 cols: Benchmark, Type (Sector | Country | Metric | Ratio), Name, Value. (b) Quarterly history — 5 cols: Date (m/d/yyyy), Name, Type, Item, Value. In the dated format, Name may be either a benchmark or a portfolio code (FGL, GL, FIN, IN, EM, SC) — portfolio rows seed the History view in Breakdown subtabs. Type=Ratio accepts the 11 FactSet labels (AVERAGE/MEDIAN MKTCAP, PRICE TO EARNINGS, PRICE TO BOOK VALUE, ROE, FWD PRICE TO EARN, CURR INTERNAL GROWTH RATE, 5/1 YEAR ADPS GROWTH RATE, PAYOUT RATIO, MONTHLY YIELD) and shows up on the Characteristics → Ratios comparison. A header row is auto-detected. Sectors/Countries power the Breakdown subtabs; Metrics (keys: mktCap, fpe/fpe1/fpe2, fcfYld/fcfYld1/fcfYld2, divYld, payout, netDE, intCov, ltEPS, grMgn, netMgn, gpAss, npAss, opROE — with +1/+2 suffix where applicable) power the Characteristics subtab. Percent-type metric values accept percent form (e.g. 7.2 for 7.2%). Known benchmark names: {"ACWI, ACWI Value, ACWI ex US, ACWI ex US Value, MSCI EM, MSCI EM Value, ACWI ex US SC, ACWI ex US SC Value"}. Current data: {Object.keys(benchmarkWeights||{}).length>0?Object.keys(benchmarkWeights).map(function(b){var bw=benchmarkWeights[b]||{};var sCount=Object.keys(bw.sectors||{}).length;var cCount=Object.keys(bw.countries||{}).length;var mCount=Object.keys(bw.metrics||{}).length;return b+" ("+sCount+"s/"+cCount+"c/"+mCount+"m"+(bw.asOf?" • "+bw.asOf:"")+")";}).join("; "):"(none uploaded yet)"}</div><div className="flex gap-2 items-center mb-2"><label className="text-[11px] text-gray-500 dark:text-slate-400">As-of label (optional):</label><input value={benchmarkAsOf||""} onChange={function(e){setBenchmarkAsOf(e.target.value);}} placeholder="e.g. 2026 Q1" className={INP + " !text-xs w-28"}/></div><textarea value={benchmarkImportText||""} onChange={function(e){setBenchmarkImportText(e.target.value);}} placeholder={"ACWI\u0009Sector\u0009Industrials\u000911.2\nACWI\u0009Sector\u0009Information Technology\u000923.5\nACWI\u0009Country\u0009United States\u000965.0\nACWI Value\u0009Sector\u0009Industrials\u000914.5\n..."} rows={10} className={TA_BASE + " font-mono mb-2"} style={{minHeight:160}}/><button onClick={applyBenchmarkImport} disabled={!benchmarkImportText.trim()} className={BTN_SM}>Import</button></div>)} {dataHubTab==="dashboard"&&(<div><div className="text-sm font-medium text-gray-900 dark:text-slate-100 mb-1">Markets Dashboard</div><div className="text-xs text-gray-500 dark:text-slate-400 mb-2">14-col flat rows + optional FX matrix blocks, mixed in one paste. Flat rows: Section, Label, Ticker, TODAY, 5D, MTD, 1M, QTD, 3M, 6M, YTD, 1Y, 2Y, 3Y — Section ∈ {"{"}Indices, Sectors, Countries, Commodities, Bonds, FX{"}"}. The FX section is for currency-pair returns (USDEUR, USDJPY, etc.); used by the Snapshot tab to convert ord-ticker performance to USD. FX matrix blocks (cross-currency, separate format) start with a header line containing "FX - 3M" or "FX - 12M". Values are percent-form (2.3 for 2.3%, 0.5 for 0.5%). The legacy 10-col layout (1D, 5D, MTD, QTD, YTD, 1Y, 3Y) is also accepted; the parser uses the column-header row to map periods. Replaces the sections you paste; untouched sections preserved.</div><textarea value={dashboardImportText||""} onChange={function(e){setDashboardImportText(e.target.value);}} placeholder={"Indices\u0009MSCI ACWI\u0009ACWI-US\u00090.1\u00090.8\u00092.3\u00095.5\u00098.7\u000915.2\u000923.4\nSectors\u0009Information Technology\u0009IXN-US\u00090.2\u00091.5\u00093.1\u00097.0\u000911.0\u000921.5\u000935.0\nCommodities\u0009Gold\u0009IAU-US\u00090.3\u00091.0\u00092.2\u00094.5\u00097.0\u000913.5\u000920.0"} rows={10} className={TA_BASE + " font-mono mb-2"} style={{minHeight:160}}/><button onClick={applyDashboardImport} disabled={!dashboardImportText.trim()} className={BTN_SM}>Import</button></div>)} {dataHubTab==="prices"&&(<UploadTab title="Price Upload" description="27 columns: Company, Ord Ticker, Ord Price, then 11 trailing returns for the ord ticker (TODAY, 5D, MTD, 1M, QTD, 3M, 6M, YTD, 1YR, 2YR, 3YR), then US Ticker, US Price, then 11 trailing returns for the US ticker. Returns may be percent-form (1.2 / 1.2%) or signed; (-) parens treated as negative. The US-ticker block is optional — leave blank when there's no US listing. Snapshot Trailing Performance + Companies-table 5D% read from the US ticker (USD) when available, else ord (local)." placeholder="Shell  SHEL-GB  26.50  0.1  -1.2  3.2  4.5  6.0  8.1  10.3  12.5  15.8  22.0  35.0  SHEL  34.10  0.0  -1.5  3.1  4.4  5.9  8.0  10.2  12.4  15.6  21.8  34.5" value={priceImportText} onChange={setPriceImportText} onImport={applyPriceImport}/>)}  {dataHubTab==="weights"&&(<div><div className="text-sm font-medium text-gray-900 dark:text-slate-100 mb-1">Target Portfolio Weights</div><div className="text-xs text-gray-500 dark:text-slate-400 mb-2">Columns: Company, GL%, FGL%, IV%, FIV%, EM%, SC%</div><textarea value={weightsImportText||""} onChange={function(e){setWeightsImportText(e.target.value);}} placeholder="Shell  3.5  4.0  3.5  4.0  0  0" rows={8} className={TA_BASE + " font-mono mb-2"} style={{minHeight:120}}/><button onClick={applyWeightsImport} disabled={!weightsImportText.trim()} className={BTN_SM}>Import</button></div>)} {dataHubTab==="earnings"&&(<div><div className="text-sm font-medium text-gray-900 dark:text-slate-100 mb-1">Earnings Dates + Estimates</div><div className="text-xs text-gray-500 dark:text-slate-400 mb-2">13 columns (all after Last Rpt Date are optional — legacy 3-col paste still works): Ticker, Next Rpt Date, Last Rpt Date, Sales Estimate, Sales Actual, Sales Surprise Nom, Sales Surprise %, EPS Estimate, EPS Actual, EPS Surprise Nom, EPS Surprise %, Sales+1 Estimate, EPS+1 Estimate. Dates as YYYY-MM-DD. The first 8 fields after dates apply to the LAST quarter (just-reported). Sales+1 / EPS+1 are consensus heading INTO the next report. Header row auto-detected. {calLastUpdated&&"Last imported by "+calLastUpdatedBy+" at "+calLastUpdated}</div><textarea value={calImportText||""} onChange={function(e){setCalImportText(e.target.value);}} placeholder="AAPL  2026-05-01  2026-02-01  120000  124300  4300  3.6  1.95  2.10  0.15  7.7  130000  2.05" rows={8} className={TA_BASE + " font-mono mb-2"} style={{minHeight:120}}/><button onClick={applyCalImport} disabled={!calImportText.trim()} className={BTN_SM}>Import</button></div>)} {dataHubTab==="fx"&&(<div><div className="text-sm font-medium text-gray-900 dark:text-slate-100 mb-1">FX Rates</div><div className="text-xs text-gray-500 dark:text-slate-400 mb-2">Columns: Pair (e.g. GBPUSD), Rate. {fxLastUpdated&&"Last loaded by "+fxLastUpdated}</div><textarea value={fxText} onChange={function(e){setFxText(e.target.value);}} placeholder="GBPUSD  1.3463" rows={8} className={TA_BASE + " font-mono mb-2"} style={{minHeight:120}}/><button onClick={applyFxImport} disabled={!fxText.trim()} className={BTN_SM}>Load FX</button></div>)} {dataHubTab==="rep"&&(<div><div className="text-sm font-medium text-gray-900 dark:text-slate-100 mb-1">Rep Account Holdings</div><div className="text-xs text-gray-500 dark:text-slate-400 mb-2">Columns: Account Number, Ticker, Shares, Avg Cost (local ccy). {repLastUpdated&&"Last loaded by "+repLastUpdated}</div><textarea value={repText} onChange={function(e){setRepText(e.target.value);}} placeholder="LWGA0013  SHEL  1500  24.80" rows={8} className={TA_BASE + " font-mono mb-2"} style={{minHeight:120}}/><button onClick={applyRepImport} disabled={!repText.trim()} className={BTN_SM}>Load</button></div>)} {dataHubTab==="tx"&&(<div><div className="text-sm font-medium text-gray-900 dark:text-slate-100 mb-1">Transactions Import</div><div className="text-xs text-gray-500 dark:text-slate-400 mb-2">Columns: Trade Date (YYYY-MM-DD), Security Name, Portfolio (FIN/IN/FGL/GL/EM/SC), Shares (neg = sell), Unit Price, Amount. Two optional trailing columns: Ticker (the ticker the trade actually settled in — e.g. ANCUFOLD / ANCTF / BL56KN2 — preserves historical ticker context across renames) and Currency (e.g. USD, CAD, EUR). When supplied, the Tx tab uses them per-row; otherwise it infers from the company's current rep holdings. Rows that match existing transactions (same date/portfolio/shares/price/amount) are skipped.</div><textarea value={txText} onChange={function(e){setTxText(e.target.value);}} placeholder="2025-03-14  Sega Sammy Holdings  SC  1000  1842.50  1842500" rows={8} className={TA_BASE + " font-mono mb-2"} style={{minHeight:120}}/><div className="flex items-center gap-2 mb-2"><label className="inline-flex items-center gap-1.5 text-xs text-gray-700 dark:text-slate-300 cursor-pointer select-none"><input type="checkbox" checked={!!txReplaceMatched} onChange={function(e){setTxReplaceMatched(e.target.checked);}} className="cursor-pointer"/><span>Replace existing transactions for matched companies</span></label><span className="text-[10px] text-gray-500 dark:text-slate-400 italic">Wipes & re-imports — use after correcting fields (e.g. USD → local ccy). Untouched companies stay intact.</span></div><button onClick={applyTxImport} disabled={!txText.trim()} className={BTN_SM}>Import</button></div>)} {dataHubTab==="perf"&&(<div><div className="text-sm font-medium text-gray-900 dark:text-slate-100 mb-1">Performance Upload</div><div className="text-xs text-gray-500 dark:text-slate-400 mb-2">Pick the target portfolio in the dropdown below, then paste monthly returns. <b>Row 1 is the header</b> — first cell is <code>Date</code>, every column after names a <b>series</b> (your portfolio, benchmarks, competitors). Rows 2+ are data: month in YYYY-MM format, then each series&apos; return for that month. Values can be decimal (<code>0.0234</code>) or percent (<code>2.34%</code>). Blanks are fine (series with short histories just leave early rows empty). Series are merged into the selected portfolio by column name — re-importing with more months or more series is safe.</div><div className="flex gap-2 items-center mb-2 flex-wrap"><label className="text-[11px] text-gray-500 dark:text-slate-400">Target portfolio(s):</label>{PORTFOLIOS.map(function(p){var on=perfPortTargets.indexOf(p)>=0;return <span key={p} onClick={function(){setPerfPortTargets(function(prev){var cur=prev||[];var has=cur.indexOf(p)>=0;return has?cur.filter(function(x){return x!==p;}):cur.concat([p]);});}} className={"text-[11px] px-2 py-0.5 rounded-full cursor-pointer border transition-colors "+(on?"bg-blue-100 dark:bg-blue-900/40 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300 font-semibold":"bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-gray-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800")}>{PORT_NAMES[p]||p}</span>;})}<span className="text-[10px] text-gray-400 dark:text-slate-500 italic ml-1">click to toggle; combined pastes (e.g. FGL+GL) apply to both</span></div><textarea value={perfText} onChange={function(e){setPerfText(e.target.value);}} placeholder={"Date,FIN,MSCI World,Competitor A  (then each row below: 2010-01,0.0234,0.0210,0.0150)"} rows={10} className={TA_BASE + " font-mono mb-2"} style={{minHeight:160}}/><button onClick={applyPerfImport} disabled={!perfText.trim()} className={BTN_SM}>Import</button></div>)} {dataHubTab==="ratios"&&(<div><div className="text-sm font-medium text-gray-900 dark:text-slate-100 mb-1">Ratio Analysis</div><div className="text-xs text-gray-500 dark:text-slate-400 mb-2">Paste the FactSet Ratio Analysis block for one company at a time. Row 1 = company name (auto-matched to an existing company by name, with fuzzy normalization for suffixes like SE/PLC/Inc). Row 2 = year header (accepts Dec-YYYY, YYYY-MM-DD, M/D/YYYY, or YYYY). Row 3 = Final/Estimate flags per column. Subsequent rows = section headers (no values) and ratio rows (name + values). Re-importing for the same company replaces its ratio data — use it when refreshing the forward-year estimates. Empty cells and #N/A / #NUM! / #VALUE! become blank in the chart.</div><textarea value={ratioImportText||""} onChange={function(e){setRatioImportText(e.target.value);}} placeholder={"Schneider Electric SE\nRatio Analysis\u00092016-12-31\u00092017-12-31\u2026\u00092030-12-31\n\u0009Final/\u0009Final/\u2026\u0009Estimate\nProfitability\nGross Margin\u000938.59\u000938.85\u2026\u000941.10\n\u2026"} rows={10} className={TA_BASE + " font-mono mb-2"} style={{minHeight:160}}/><button onClick={applyRatioImport} disabled={!ratioImportText.trim()} className={BTN_SM}>Import Ratios</button></div>)} {dataHubTab==="financials"&&(<div><div className="text-sm font-medium text-gray-900 dark:text-slate-100 mb-1">Financial Statements</div><div className="text-xs text-gray-500 dark:text-slate-400 mb-2">Paste the FactSet Financials block (Income Statement + Balance Sheet + Cash Flow, all in one block) for one company at a time. Row 1 = company name. Row 2 = year header (date format — M/D/YYYY, YYYY-MM-DD, Dec-YYYY, or YYYY). Row 3 = FY labels (-10FY through -0FY for historicals, +1FY through +5FY for forward estimates). Subsequent rows = section headers (no values) and line-item rows. Re-importing replaces this company's financials wholesale — use it to refresh forward-year IS estimates. Sub-metric rows (Growth, Margin, % of, per Share, etc.) are auto-detected by name pattern and rendered in red italic, matching the FactSet convention.</div><textarea value={financialsImportText||""} onChange={function(e){setFinancialsImportText(e.target.value);}} placeholder={"Schneider Electric SE\n\u000912/31/2015\u000912/30/2016\u2026\u000912/31/2030\n\u0009-10FY\u0009-9FY\u2026\u0009+5FY\nSales\u000926,640\u000924,459\u2026\u000959,230\n\u2026"} rows={10} className={TA_BASE + " font-mono mb-2"} style={{minHeight:160}}/><button onClick={applyFinancialsImport} disabled={!financialsImportText.trim()} className={BTN_SM}>Import Financials</button></div>)} {dataHubTab==="epsrev"&&(<div><div className="text-sm font-medium text-gray-900 dark:text-slate-100 mb-1">EPS Estimate Revisions</div><div className="text-xs text-gray-500 dark:text-slate-400 mb-2">One row per company. <b>Header row is optional</b> — if column E1:Q1 contains 13 monthly dates, those drive the x-axis; otherwise the parser synthesizes 13 last-of-month dates ending in the current month. Each data row: Col A = Ticker, Col C = Company name, Col D = EPS0 anchor (last completed FY EPS), E:Q = 13 monthly EPS0 estimates, R = EPS+1 anchor, S:AE = 13 monthly EPS+1 estimates, AF = EPS+2 anchor, AG:AS = 13 monthly EPS+2, AT = EPS+3 anchor, AU:BG = 13 monthly EPS+3. Ticker matches first; falls back to fuzzy company-name match.</div><textarea value={epsRevImportText||""} onChange={function(e){setEpsRevImportText(e.target.value);}} placeholder="Paste the EPS revisions block from your spreadsheet…" rows={10} className={TA_BASE + " font-mono mb-2"} style={{minHeight:160}}/><button onClick={applyEpsRevImport} disabled={!epsRevImportText.trim()} className={BTN_SM}>Import EPS Revisions</button></div>)} {dataHubTab==="segments"&&(<div><div className="text-sm font-medium text-gray-900 dark:text-slate-100 mb-1">Segments + Geography</div><div className="text-xs text-gray-500 dark:text-slate-400 mb-2">One-time upload (or whenever the company restructures). Paste the company's Segments + Revenue by Geography template. Row 1 = company name. Year header row = FY YYYY or 12/31/YYYY. Each segment is a labeled row, followed by Sales, EBIT, Margin, ROA. Cost-center rows (no Sales, only EBIT — typically negative in parens) are auto-detected. After segments comes "Revenue by Geography" with a Revenue total row + region rows whose values are percent of revenue. Replaces this company's segment data wholesale.</div><textarea value={segmentsImportText||""} onChange={function(e){setSegmentsImportText(e.target.value);}} placeholder={"Schneider Electric SE\n\u0009FY 2015\u0009FY 2016\u2026\u0009FY 2025\nIndustrial Automation\nSales\u00095,696\u00095,485\u2026\u00097,022\nEBIT\u00091,081\u00091,015\u2026\u00091,121\nMargin\u000919.0%\u000918.5%\u2026\u000916.0%\nROA\n\u2026\nRevenue by Geography\nRevenue\u000926,640\u000924,459\u2026\u000940,152\nFrance\u00096.4%\u00096.8%\u2026\u00095.6%\n\u2026"} rows={10} className={TA_BASE + " font-mono mb-2"} style={{minHeight:160}}/><button onClick={applySegmentsImport} disabled={!segmentsImportText.trim()} className={BTN_SM}>Import Segments</button></div>)} {dataHubTab==="guidance"&&(<div><div className="text-sm font-medium text-gray-900 dark:text-slate-100 mb-1">Guidance History</div><div className="text-xs text-gray-500 dark:text-slate-400 mb-2">Paste a FactSet Guidance History block for one company at a time (typical Excel selection: B2:M58, including the title row with the ticker in parentheses). Parser auto-locates the title row and the Date Issued header, so trimming isn&apos;t needed. Columns: Date Issued, Period (FY end), Item, Guidance L, Guidance H, Mean, Actual, Mean Surp, Actual Surp, Price Impact. All metrics and all periods (including future FYs) are kept; the Guidance tab groups them at render time. Re-paste each quarter to replace the company&apos;s guidance wholesale. Run the FactSet template at 15 calendar months so the prior-FY Actual column is populated for the Y/Y baseline.</div><textarea value={guidanceImportText||""} onChange={function(e){setGuidanceImportText(e.target.value);}} placeholder={"Guidance History - Sony Group Corporation (6758-JP)\nDate Issued	Period	Item	Guidance L	Guidance Low Comment	Guidance H	Guidance High Comment	Mean	Mean Surp (%)	Actual	Actual Surp (%)	Price Impact (%)\n2/14/25	3/31/26	Sales	13,200,000	-	13,200,000	-	12,743,433	3.6%	12,957,064	1.8%	8.7%\n…"} rows={10} className={TA_BASE + " font-mono mb-2"} style={{minHeight:160}}/><button onClick={applyGuidanceImport} disabled={!guidanceImportText.trim()} className={BTN_SM}>Import Guidance</button></div>)} {dataHubTab==="pricehistory"&&(<div><div className="text-sm font-medium text-gray-900 dark:text-slate-100 mb-1">Daily Price History</div><div className="text-xs text-gray-500 dark:text-slate-400 mb-2">Two layouts accepted. <b>Simple</b>: <code>Date, T1, T2, …</code> (shared date column). <b>Paired</b>: <code>Date, T1, Date, T2, …</code> (each ticker has its own date axis — best for cross-market pastes where holidays differ). Dates: YYYY-MM-DD or M/D/YYYY. Each ticker becomes its own row in <code>prices_history</code>; re-uploads merge with existing series (deduped by date), so partial pastes are safe.</div><textarea value={priceHistoryImportText||""} onChange={function(e){setPriceHistoryImportText(e.target.value);}} placeholder={"Date\tANCTF\tATD-CA\n2020-01-02\t35.40\t46.20\n2020-01-03\t35.65\t46.31"} rows={10} className={TA_BASE + " font-mono mb-2"} style={{minHeight:160}}/><button onClick={applyPriceHistoryImport} disabled={!priceHistoryImportText||!priceHistoryImportText.trim()} className={BTN_SM}>Import Price History</button></div>)} </div>)}
+      {flaggedCos.length>0&&(<div className="mb-2 px-3.5 py-2 bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-800 rounded-lg flex gap-2.5 items-center flex-wrap"><span className="text-xs font-semibold text-red-800 dark:text-red-300">{"\u2691"} Flagged ({flaggedCos.length}):</span>{flaggedCos.map(function(c){var fs=FLAG_STYLES[c.flag];return(<span key={c.id} onClick={function(){setSelCo(c);setTab("companies");}} className="text-[11px] px-2 py-0.5 rounded-full cursor-pointer" style={{background:fs.bg,color:fs.color,border:"1px solid "+fs.color}}>{fs.icon} {c.name}</span>);})}</div>)}
+      <ImportPanel
+        imports={Object.assign({}, importsApi, { priceImportText: priceImportText, setPriceImportText: setPriceImportText, applyPriceImport: applyPriceImport })}
+        benchmarkWeights={benchmarkWeights}
+        calLastUpdated={calLastUpdated}
+        calLastUpdatedBy={calLastUpdatedBy}
+        fxLastUpdated={fxLastUpdated}
+        repLastUpdated={repLastUpdated}
+      />
       <div className="border-t border-slate-200 dark:border-slate-700 mb-2.5"/>
       {/* Top-level nav: horizontally-scrollable strip on small screens
           (saves vertical space — 12 buttons would wrap to 3 rows on a
@@ -697,298 +714,28 @@ export default function App(){
       </div>
 
 <ErrorBoundary resetKey={tab}>
-{tab==="portfolios"&&(<div>   <div className="flex gap-1.5 mb-4 flex-wrap border-b border-slate-200 dark:border-slate-700 pb-2.5">     <button key="overlap" className={portTab==="overlap"?TABST_ACTIVE:TABST_INACTIVE} onClick={function(){setPortTab("overlap");}}>Overlap</button>     <button key="overlap-matrix" className={portTab==="overlap-matrix"?TABST_ACTIVE:TABST_INACTIVE} onClick={function(){setPortTab("overlap-matrix");}}>Overlap Matrix</button>     {PORTFOLIOS.map(function(p){return <button key={p} className={portTab===p?TABST_ACTIVE:TABST_INACTIVE} onClick={function(){setPortTab(p);}}>{PORT_NAMES[p]||p}</button>;})}   </div>   {portTab==="overlap"?(<OverlapTable overlapMode={overlapMode} setOverlapMode={setOverlapMode} overlapFilter={overlapFilter} setOverlapFilter={setOverlapFilter} setSelCo={setSelCo} setTab={setTab} setCoView={setCoView} setSelCoOrigin={setSelCoOrigin}/>):portTab==="overlap-matrix"?(<div><div className="text-sm font-medium mb-3 text-gray-900 dark:text-slate-100">Portfolio Overlap</div><OverlapMatrix companies={companies}/></div>):(<PortfoliosTable portTab={portTab} portSort={portSort} portSortDir={portSortDir} setPortSort={setPortSort} setPortSortDir={setPortSortDir} setTxFilter={setTxFilter} setSelCoOrigin={setSelCoOrigin} setSelCo={setSelCo} setTab={setTab} setCoView={setCoView} openDiscussions={openDiscussions} onAddTransaction={function(c){setSelCoOrigin("portfolios");setSelCo(c);setTab("companies");setCoView("transactions");setTxFilter(portTab);setShowAddTx(true);setNewTx(function(prev){return Object.assign({},prev||{},{portfolio:portTab,date:todayStr()});});}}/>)}   <div className="mt-5 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 px-3.5 py-3 mb-3 no-print">{(function(){var portRep2=repData[portTab]||{};var repTickers=Object.keys(portRep2).filter(function(t){return t!=="CASH"&&t!=="DIVACC";});var portCos2=companies.filter(function(c){return(c.portfolios||[]).indexOf(portTab)>=0;});var missingFromRep=portCos2.filter(function(c){var tks=(c.tickers||[]).map(function(t){return(t.ticker||"").toUpperCase();});return!tks.some(function(tk){return portRep2[tk]!==undefined;});});var missingFromApp=repTickers.filter(function(tk){return!portCos2.some(function(c){return(c.tickers||[]).some(function(t){return(t.ticker||"").toUpperCase()===tk;});});});if(missingFromRep.length===0&&missingFromApp.length===0)return<div className="text-xs text-gray-500 dark:text-slate-400">{"\u2713"} No discrepancies found.</div>;return(<div><div className="text-sm font-medium text-gray-900 dark:text-slate-100 mb-2">Discrepancies</div>{missingFromRep.length>0&&(<div className="mb-2.5"><div className="text-[11px] text-gray-500 dark:text-slate-400 mb-1">In app but no rep position ({missingFromRep.length}):</div>{missingFromRep.map(function(c){return<span key={c.id} className="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-gray-900 dark:text-slate-100 mr-1 inline-block mb-1">{c.name}</span>;})}</div>)}{missingFromApp.length>0&&(<div><div className="text-[11px] text-gray-500 dark:text-slate-400 mb-1">In rep account but no matching company ({missingFromApp.length}):</div>{missingFromApp.map(function(tk){return<span key={tk} className="text-[11px] px-2 py-0.5 rounded-full mr-1 inline-block mb-1" style={{background:"#fef9c3",border:"1px solid #d97706",color:"#854d0e"}}>{tk}</span>;})}</div>)}</div>);})()}</div></div>)}
+      {tab==="portfolios"&&(<PortfoliosTab
+        portTab={portTab} setPortTab={setPortTab}
+        portSort={portSort} setPortSort={setPortSort}
+        portSortDir={portSortDir} setPortSortDir={setPortSortDir}
+        overlapMode={overlapMode} setOverlapMode={setOverlapMode}
+        overlapFilter={overlapFilter} setOverlapFilter={setOverlapFilter}
+        setSelCo={setSelCo} setTab={setTab} setCoView={setCoView} setSelCoOrigin={setSelCoOrigin}
+        setTxFilter={setTxFilter} openDiscussions={openDiscussions}
+        setShowAddTx={setShowAddTx} setNewTx={setNewTx}
+      />)}
      {/* tab==="calendar" render moved into the Companies subtab block
          (companiesView==="calendar"). Bulk import section at the
          bottom dropped — the dedicated Earnings Dates import in
          Import already handles the same paste. */}
 
-      {tab==="dashboard"&&(<div><div className="flex gap-1.5 mb-4 flex-wrap border-b border-slate-200 dark:border-slate-700 pb-2.5">          {[["markets","Markets"],["movers","Top/Bottom Movers"],["characteristics","Characteristics"],["ratiocompare","Ratio Compare"],["sectors","Sector Breakdown"],["countries","Country Breakdown"],["georev","GeoRev"],["sidebyside","Side-by-Side"],["guidcompare","Guidance Compare"],["quality","Data Quality"],["feedback","Feedback"]].map(function(item){return <button key={item[0]} className={(dashSubTab===item[0]?TABST_ACTIVE:TABST_INACTIVE)+" whitespace-nowrap shrink-0"} onClick={function(){setDashSubTab(item[0]);}}>{item[1]}</button>;})}
-        </div>
-        {/* Each lazy-loaded dashboard subtab is wrapped in its OWN
-            ErrorBoundary so a render failure in one chart (bad data
-            shape, recharts edge case) doesn't take the whole Dashboard
-            tab down — the user can still switch to a different subtab.
-            Suspense covers the chunk-fetch period; resetKey={dashSubTab}
-            on each boundary clears stale error state on subtab switch. */}
-        <Suspense fallback={<div className="text-xs italic text-gray-500 dark:text-slate-400 py-6 text-center">Loading…</div>}>
-        {dashSubTab==="markets"        &&<ErrorBoundary resetKey="markets"><MarketsDashboard/></ErrorBoundary>}
-        {dashSubTab==="movers"         &&<ErrorBoundary resetKey="movers"><TopBottomMovers onSelectCompany={function(cid){var co=companies.find(function(c){return c.id===cid;});if(co){setSelCo(co);setTab("companies");setCoView("metrics");}}}/></ErrorBoundary>}
-        {dashSubTab==="characteristics"&&<ErrorBoundary resetKey="characteristics"><CharacteristicsView/></ErrorBoundary>}
-        {dashSubTab==="ratiocompare"   &&<ErrorBoundary resetKey="ratiocompare"><RatioCompareView/></ErrorBoundary>}
-        {dashSubTab==="sectors"        &&<ErrorBoundary resetKey="sectors"><BreakdownView kind="sectors"/></ErrorBoundary>}
-        {dashSubTab==="countries"      &&<ErrorBoundary resetKey="countries"><BreakdownView kind="countries"/></ErrorBoundary>}
-        {dashSubTab==="georev"         &&<ErrorBoundary resetKey="georev"><GeoRevView/></ErrorBoundary>}
-        {dashSubTab==="sidebyside"     &&<ErrorBoundary resetKey="sidebyside"><CompareView/></ErrorBoundary>}
-        {dashSubTab==="guidcompare"    &&<ErrorBoundary resetKey="guidcompare"><GuidanceCompareView onSelectCompany={function(cid){var co=companies.find(function(c){return c.id===cid;});if(co){setSelCo(co);setTab("companies");setCoView("guidance");}}}/></ErrorBoundary>}
-        </Suspense>
-        {false&&(<div></div>)}
-        {dashSubTab==="quality"&&(<div><div className="text-sm font-medium mb-3 text-gray-900 dark:text-slate-100">Data Quality</div>
-        {/* Stale annual data — moved here from the Companies tab so
-            all data-health surfaces live together. A name is "stale"
-            once either its post-FY-end earnings has reported and the
-            latest year in financials.years is still behind, OR 13
-            months have passed since FY-end with no fresh data. Click
-            any chip to jump to the company's Financials tab. */}
-        {(function(){
-          var stale = companies.map(function(c){
-            return { c: c, st: annualStaleStatus(c) };
-          }).filter(function(x){ return x.st && x.st.stale; });
-          if (stale.length === 0) return null;
-          stale.sort(function(a,b){
-            var ay = (a.st.latestImportedYear || 0);
-            var by = (b.st.latestImportedYear || 0);
-            if (ay !== by) return ay - by;
-            return (a.c.name||"").localeCompare(b.c.name||"");
-          });
-          return (
-            <div className="mb-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800">
-              <div onClick={function(){setShowAnnualStale(function(v){var nv=!v;try{localStorage.setItem("ccd:showAnnualStale",nv?"1":"0");}catch(e){}return nv;});}} className="px-3.5 py-2 cursor-pointer flex items-center gap-2">
-                <span className="text-[11px] text-amber-700 dark:text-amber-400">{showAnnualStale?"▼":"▶"}</span>
-                <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">⚠ Stale data: {stale.length} compan{stale.length===1?"y":"ies"} need a re-import</span>
-                <span className="text-[10px] text-amber-700 dark:text-amber-400 italic ml-auto">{showAnnualStale?"click to collapse":"click to expand"}</span>
-              </div>
-              {showAnnualStale&&(
-                <div className="px-3.5 pb-2">
-                  <div className="text-[11px] text-amber-700 dark:text-amber-400 mb-1">Each name has reported its latest fiscal year (or it's been 13+ months since FY-end) but the new annual data hasn't been re-imported. Click a chip to jump to the company's Financials tab.</div>
-                  <div className="flex flex-wrap gap-1 max-h-40 overflow-y-auto">
-                    {stale.slice(0, 200).map(function(x){
-                      var c = x.c, st = x.st;
-                      var tip;
-                      if (st.reason === "no-data") {
-                        tip = "No annual financials imported yet · Expected through FY" + st.fyYear;
-                      } else if (st.reason === "post-fy-report") {
-                        tip = "Latest imported: FY" + (st.latestImportedYear || "?")
-                            + " · Expected through FY" + st.fyYear
-                            + " · Post-FY-end report on file (" + (st.reportSeenDate || "?") + ")";
-                      } else {
-                        tip = "Latest imported: FY" + (st.latestImportedYear || "?")
-                            + " · Expected through FY" + st.fyYear
-                            + " · 13+ months past FY-end (" + st.fyEnd + ")";
-                      }
-                      var label = st.reason === "no-data"
-                        ? "no data"
-                        : "FY" + (st.latestImportedYear || "?") + "→FY" + st.fyYear;
-                      return (
-                        <span
-                          key={c.id}
-                          title={tip}
-                          onClick={function(){setSelCo(c);setTab("companies");setCoView("financials");}}
-                          className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 cursor-pointer hover:bg-amber-200 dark:hover:bg-amber-900/60"
-                        >
-                          {c.name}
-                          <span className="text-amber-700 dark:text-amber-400 ml-1">{label}</span>
-                        </span>
-                      );
-                    })}
-                    {stale.length > 200 && <span className="text-[11px] text-amber-700 dark:text-amber-400 italic self-center">+ {stale.length - 200} more</span>}
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })()}
-        {(function(){
-  /* Transaction reconciliation: for every (company, portfolio) where
-     rep shares > 0, compute the sum of signed transaction shares and
-     compare to actual rep shares. Two failure modes:
-       - "missing"  → no transactions at all for that portfolio (the
-         "wiped portfolio" case after a replace-matched import).
-       - "mismatch" → transactions exist but their sum doesn't equal
-         rep shares (a single buy/sell is missing or stale).
-     Tolerance 0.5 shares to handle FactSet rounding on fractional
-     share splits / DRIP. */
-  var issues = [];
-  companies.forEach(function(c){
-    var tickerSet = {};
-    (c.tickers||[]).forEach(function(t){var k=(t.ticker||"").toUpperCase(); if(k) tickerSet[k]=true;});
-    if (Object.keys(tickerSet).length === 0) return;
-    /* heldByPort: portfolio → rep shares of the company's ticker held there. */
-    var heldByPort = {};
-    Object.keys(repData||{}).forEach(function(p){
-      var pRep = repData[p] || {};
-      Object.keys(pRep).forEach(function(tk){
-        if (!tickerSet[tk]) return;
-        var sh = (pRep[tk] && typeof pRep[tk] === "object") ? pRep[tk].shares : pRep[tk];
-        var n = parseFloat(sh);
-        if (isFinite(n) && n > 0) heldByPort[p] = (heldByPort[p] || 0) + n;
-      });
-    });
-    /* txByPort: portfolio → sum of signed transaction shares. */
-    var txByPort = {};
-    (c.transactions||[]).forEach(function(t){
-      if (!t.portfolio) return;
-      var n = parseFloat(t.shares);
-      if (!isFinite(n)) return;
-      txByPort[t.portfolio] = (txByPort[t.portfolio] || 0) + n;
-    });
-    var rows = [];
-    Object.keys(heldByPort).forEach(function(p){
-      var held = heldByPort[p];
-      var txSum = txByPort[p];
-      if (txSum === undefined) {
-        rows.push({ port: p, kind: "missing", held: held, txSum: 0, diff: -held });
-      } else if (Math.abs(txSum - held) > 0.5) {
-        rows.push({ port: p, kind: "mismatch", held: held, txSum: txSum, diff: txSum - held });
-      }
-    });
-    if (rows.length > 0) issues.push({ c: c, rows: rows });
-  });
-  if (issues.length === 0) return null;
-  var missingCount = issues.reduce(function(s, x){ return s + x.rows.filter(function(r){return r.kind==="missing";}).length; }, 0);
-  var mismatchCount = issues.reduce(function(s, x){ return s + x.rows.filter(function(r){return r.kind==="mismatch";}).length; }, 0);
-  return (
-    <div className="mb-5 rounded-lg bg-rose-50 dark:bg-rose-950/30 border border-rose-300 dark:border-rose-800">
-      <div onClick={function(){setShowTxRecon(function(v){var nv=!v;try{localStorage.setItem("ccd:showTxRecon",nv?"1":"0");}catch(e){}return nv;});}} className="px-3.5 py-2.5 cursor-pointer flex items-center gap-2">
-        <span className="text-[11px] text-rose-700 dark:text-rose-400">{showTxRecon?"▼":"▶"}</span>
-        <span className="text-xs font-semibold text-rose-800 dark:text-rose-300">⚠ Transaction reconciliation: {issues.length} compan{issues.length===1?"y":"ies"} ({missingCount} missing, {mismatchCount} mismatched)</span>
-        <span className="text-[10px] text-rose-700 dark:text-rose-400 italic ml-auto">{showTxRecon?"click to collapse":"click to expand"}</span>
-      </div>
-      {showTxRecon&&(
-        <div className="px-3.5 pb-2.5">
-          <div className="text-[11px] text-rose-700 dark:text-rose-400 mb-2">For each row, transactions summed should equal current rep shares. Chips show <code>port: txSum / rep (diff)</code>. <span className="font-semibold">missing</span> = no transactions; <span className="font-semibold">mismatch</span> = totals don't reconcile. Click a chip to open the company's Transactions tab.</div>
-          <div className="flex flex-wrap gap-1 max-h-64 overflow-y-auto">
-            {issues.map(function(g){
-              return (
-                <span key={g.c.id} onClick={function(){setSelCo(g.c);setTab("companies");setCoView("transactions");}} className="text-[11px] px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-900/40 border border-rose-300 dark:border-rose-700 text-rose-900 dark:text-rose-200 cursor-pointer hover:bg-rose-200 dark:hover:bg-rose-900/60">
-                  {g.c.name}
-                  {g.rows.map(function(r, i){
-                    var fmtN = function(n){return Math.round(n).toLocaleString();};
-                    var sign = r.diff > 0 ? "+" : "";
-                    return (
-                      <span key={i} className="ml-1 text-rose-700 dark:text-rose-400">
-                        {r.port}: {r.kind === "missing"
-                          ? "missing (rep " + fmtN(r.held) + ")"
-                          : fmtN(r.txSum) + " / " + fmtN(r.held) + " (" + sign + fmtN(r.diff) + ")"}
-                      </span>
-                    );
-                  })}
-                </span>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-})()}{(function(){
-  /* Date-format audit + one-click normalizer. Walks every company's
-     reportDate fields (earningsEntries[*].reportDate and
-     lastReportDate) and counts any that aren't in YYYY-MM-DD form.
-     The "Normalize" button converts them all to ISO in one pass.
-     Important because mixed formats break string sorts/compares
-     (Toyota's "5/8/26" coming after "2026-02-06" in lexicographic
-     order, etc.). One-shot — running it on already-ISO data is a
-     no-op. */
-  var isoRe = /^\d{4}-\d{2}-\d{2}$/;
-  var bad = [];
-  (companies||[]).forEach(function(c){
-    var hits = [];
-    if (c.lastReportDate && !isoRe.test(c.lastReportDate)) hits.push("lastReportDate=" + c.lastReportDate);
-    (c.earningsEntries||[]).forEach(function(e, idx){
-      if (e && e.reportDate && !isoRe.test(e.reportDate)) hits.push("earningsEntries["+idx+"].reportDate=" + e.reportDate);
-    });
-    if (hits.length > 0) bad.push({ c: c, hits: hits });
-  });
-  if (bad.length === 0) return null;
-  /* Robust date parser — covers the formats parseDate misses.
-     parseDate's `new Date(s)` fallback chokes on "5-8-26"-style
-     numeric dashes and YY years (Firefox especially), and its
-     regex branch requires a 3-letter month name. Handle the
-     common M/D/Y and M-D-Y numeric variants + dotted variants +
-     YYYY/M/D explicitly so the Normalize button can finish the
-     job. Two-digit year < 50 → 20YY; ≥ 50 → 19YY (Excel-compat). */
-  function toIso(s){
-    if (s == null) return null;
-    s = String(s).trim();
-    if (!s) return null;
-    /* "--" / "-" / "n/a" — pasted-from-Excel placeholders for "no date
-       on file." Treat as a request to clear the field. Caller gets ""
-       back and writes it through, which removes the warning row. */
-    if (/^(?:-+|n\/?a|na|null|none)$/i.test(s)) return "";
-    if (isoRe.test(s)) return s;
-    /* M/D/YY, M/D/YYYY, M-D-YY, M-D-YYYY, M.D.YY, M.D.YYYY */
-    var m = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2}|\d{4})$/);
-    if (m) {
-      var mo = parseInt(m[1], 10);
-      var dy = parseInt(m[2], 10);
-      var yr = parseInt(m[3], 10);
-      if (yr < 100) yr += yr < 50 ? 2000 : 1900;
-      if (mo >= 1 && mo <= 12 && dy >= 1 && dy <= 31) {
-        return yr + "-" + String(mo).padStart(2, "0") + "-" + String(dy).padStart(2, "0");
-      }
-    }
-    /* YYYY/M/D, YYYY.M.D (ISO-ish with slashes or dots, possibly
-       1-digit month/day). */
-    var m2 = s.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/);
-    if (m2) {
-      var yr2 = parseInt(m2[1],10);
-      var mo2 = parseInt(m2[2],10);
-      var dy2 = parseInt(m2[3],10);
-      if (mo2>=1&&mo2<=12&&dy2>=1&&dy2<=31) {
-        return yr2 + "-" + String(mo2).padStart(2,"0") + "-" + String(dy2).padStart(2,"0");
-      }
-    }
-    /* Fall back to parseDate (covers DD-MMM-YYYY and anything Date() handles). */
-    var d = parseDate(s);
-    if (d && !isNaN(d.getTime())) {
-      return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
-    }
-    return null;
-  }
-  function doNormalize(){
-    var skipped = [];
-    setCompanies(function(prev){
-      return prev.map(function(c){
-        var changed = false;
-        var u = Object.assign({}, c);
-        if (u.lastReportDate && !isoRe.test(u.lastReportDate)) {
-          var iso = toIso(u.lastReportDate);
-          /* iso === "" means toIso recognized a "clear me" sentinel
-             ("--", "n/a", etc.); write it through. iso === null means
-             we genuinely can't parse it — log to skipped. */
-          if (iso !== null) { u.lastReportDate = iso; changed = true; }
-          else { skipped.push(c.name + ".lastReportDate=" + u.lastReportDate); }
-        }
-        if (u.earningsEntries && u.earningsEntries.length) {
-          u.earningsEntries = u.earningsEntries.map(function(e){
-            if (!e || !e.reportDate || isoRe.test(e.reportDate)) return e;
-            var iso2 = toIso(e.reportDate);
-            if (iso2 === null) { skipped.push(c.name + ".earningsEntries.reportDate=" + e.reportDate); return e; }
-            changed = true;
-            return Object.assign({}, e, { reportDate: iso2 });
-          });
-        }
-        return changed ? u : c;
-      });
-    });
-    if (skipped.length) {
-      /* Surface unparseable formats inline so the user doesn't have
-         to open the console (which often shows "Array(2)" collapsed
-         in the minified prod build). Lists each company + field. */
-      try { console.warn("Normalize: " + skipped.length + " value(s) unparseable", skipped); } catch(e){}
-      alert(
-        "Normalized what I could. " + skipped.length + " value(s) had an unrecognized format:\n\n  " +
-        skipped.join("\n  ") +
-        "\n\nFix these on the company's Earnings tab (set the reportDate field to a valid date) and re-run Normalize."
-      );
-    }
-  }
-  return (
-    <div className="mb-5 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800 px-3.5 py-2.5">
-      <div className="flex items-center justify-between mb-1">
-        <div className="text-xs font-semibold text-amber-800 dark:text-amber-300">⚠ Date formats: {bad.length} compan{bad.length===1?"y":"ies"} have report dates stored in a non-sortable format</div>
-        <button onClick={doNormalize} className="text-[11px] px-2.5 py-1 rounded-md bg-amber-600 dark:bg-amber-700 text-white hover:bg-amber-700 dark:hover:bg-amber-600 transition-colors">Fix date storage</button>
-      </div>
-      <div className="text-[11px] text-amber-700 dark:text-amber-400">Dates display as <b>M/D/YY</b> everywhere, but internally they need to be stored in a sortable form so the Companies dashboard picks the right "most recent earnings." When a stored value is in a mixed shape (e.g. "5/8/26" vs the canonical form), sort/compare breaks. One click fixes the storage — the display stays M/D/YY.</div>
-    </div>
-  );
-})()}<div className="flex gap-2.5 flex-wrap mb-5">{[{label:"Missing country",count:companies.filter(function(c){return !c.country;}).length},{label:"Missing sector",count:companies.filter(function(c){return !c.sector;}).length},{label:"Missing tier",count:companies.filter(function(c){return !c.tier;}).length},{label:"No template",count:companies.filter(function(c){return !Object.keys(c.sections||{}).length;}).length},{label:"Not reviewed 30d+",count:companies.filter(function(c){return daysSince(c.lastReviewed)>30;}).length},{label:"Not reviewed 60d+",count:companies.filter(function(c){return daysSince(c.lastReviewed)>60;}).length},{label:"Watch stale 90d+",count:staleWatchCount}].map(function(item){return(<div key={item.label} className={CARD + " !mb-0 min-w-[140px] flex-1"}><div className="text-xl font-semibold" style={{color:item.count>0?"#d97706":"#16a34a"}}>{item.count}</div><div className="text-xs text-gray-500 dark:text-slate-400">{item.label}</div></div>);})}</div><div className="text-sm font-medium mb-2.5 text-gray-900 dark:text-slate-100">Stale companies (60d+ since review)</div>{companies.filter(function(c){return daysSince(c.lastReviewed)>60;}).sort(function(a,b){return daysSince(b.lastReviewed)-daysSince(a.lastReviewed);}).map(function(c){var d=daysSince(c.lastReviewed);return(<div key={c.id} className={CARD + " !mb-1.5 flex gap-2.5 items-center cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"} onClick={function(){setSelCo(c);setTab("companies");setCoView("upload");}}><span className="text-sm font-medium text-gray-900 dark:text-slate-100 flex-1">{c.name}</span>{c.ticker&&<span className={PILL_BASE}>{c.ticker}</span>}{c.status&&<StatusPill status={c.status}/>}<span className="text-[11px] font-semibold" style={{color:d>90?"#dc2626":d>60?"#d97706":"#ca8a04"}}>{d===Infinity?"never":d+"d ago"}</span></div>);})}</div>)}
-        {/* Feedback — was a top-level "feedback" tab, now a Dashboard
-            subtab since it's low-frequency and doesn't earn nav real
-            estate of its own. */}
-        {dashSubTab==="feedback"&&<ErrorBoundary resetKey="feedback"><FeedbackTab/></ErrorBoundary>}
-      </div>)}
+      {tab==="dashboard"&&(<DashboardTab
+        dashSubTab={dashSubTab} setDashSubTab={setDashSubTab}
+        showAnnualStale={showAnnualStale} setShowAnnualStale={setShowAnnualStale}
+        showTxRecon={showTxRecon} setShowTxRecon={setShowTxRecon}
+        staleWatchCount={staleWatchCount}
+        setSelCo={setSelCo} setTab={setTab} setCoView={setCoView}
+      />)}
 
       {/* tab==="research" and tab==="calendar" no longer reachable —
           Research and Calendar are now subtabs of Companies (rendered
@@ -998,286 +745,22 @@ export default function App(){
 
       {tab==="performance"&&(<PerformanceTab/>)}
 
-      {tab==="companies"&&!selCo&&(<div>
-        {(function(){var owners={};var dupes={};companies.forEach(function(c){(c.tickers||[]).forEach(function(t){var tk=(t.ticker||"").toUpperCase();if(!tk)return;if(owners[tk]&&owners[tk]!==c.id){if(!dupes[tk])dupes[tk]=[owners[tk]];if(dupes[tk].indexOf(c.id)<0)dupes[tk].push(c.id);}else if(!owners[tk]){owners[tk]=c.id;}});});var dupeList=Object.keys(dupes);if(dupeList.length===0)return null;return(<div className="mb-2 px-3.5 py-2 bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800 rounded-lg"><div className="text-xs font-semibold text-amber-800 dark:text-amber-300 mb-1">⚠ Duplicate tickers detected ({dupeList.length})</div><div className="text-[11px] text-amber-700 dark:text-amber-400 mb-1">Each ticker should belong to only one company. The same ticker on multiple companies can cause incorrect rep weight attribution. Click a name to fix.</div><div className="flex flex-col gap-1">{dupeList.map(function(tk){var ids=dupes[tk];var names=ids.map(function(id){var c=companies.find(function(x){return x.id===id;});return c?c.name:"?";});return(<div key={tk} className="text-[11px]"><span className="font-mono font-semibold text-amber-900 dark:text-amber-200">{tk}</span><span className="text-amber-700 dark:text-amber-400"> on: </span>{names.map(function(n,i){var co=companies.find(function(x){return x.name===n;});return <span key={i}>{i>0&&", "}<span onClick={function(){if(co){setSelCo(co);setCoView("section:Overview");}}} className="underline cursor-pointer hover:text-amber-900 dark:hover:text-amber-200">{n}</span></span>;})}</div>);})}</div></div>);})()}
-        {(function(){var byName={};companies.forEach(function(c){var key=(c.name||"").trim().toLowerCase();if(!key)return;if(!byName[key])byName[key]=[];byName[key].push(c);});var nameDupes=Object.keys(byName).filter(function(k){return byName[k].length>1;});if(nameDupes.length===0)return null;return(<div className="mb-2 px-3.5 py-2 bg-rose-50 dark:bg-rose-950/30 border border-rose-300 dark:border-rose-800 rounded-lg"><div className="flex items-center justify-between mb-1"><div className="text-xs font-semibold text-rose-800 dark:text-rose-300">⚠ Duplicate company names ({nameDupes.length})</div><button onClick={function(){var firstDupes=nameDupes.map(function(k){return byName[k][0].name;});if(window.confirm("Auto-merge duplicates?\n\nFor each set of duplicate names, the most recently updated copy will be kept (preferring entries with sections/portfolios populated). Older duplicates will be deleted.\n\nAffected: "+firstDupes.slice(0,5).join(", ")+(firstDupes.length>5?" +"+(firstDupes.length-5)+" more":""))){setCompanies(function(prev){var byNameLocal={};prev.forEach(function(c){var k=(c.name||"").trim().toLowerCase();if(!k)return;if(!byNameLocal[k])byNameLocal[k]=[];byNameLocal[k].push(c);});var keepIds=new Set();Object.keys(byNameLocal).forEach(function(k){var group=byNameLocal[k];if(group.length===1){keepIds.add(group[0].id);return;}var best=group.reduce(function(a,b){var sa=Object.keys(a.sections||{}).length+(a.updateLog||[]).length+(a.portfolios||[]).length+(a.tickers||[]).length;var sb=Object.keys(b.sections||{}).length+(b.updateLog||[]).length+(b.portfolios||[]).length+(b.tickers||[]).length;return sb>sa?b:a;});keepIds.add(best.id);});return prev.filter(function(c){return keepIds.has(c.id);});});}}} className="text-[11px] px-2 py-0.5 rounded-md bg-rose-600 dark:bg-rose-700 text-white hover:bg-rose-700 dark:hover:bg-rose-600 transition-colors">Auto-merge duplicates</button></div><div className="text-[11px] text-rose-700 dark:text-rose-400 mb-1">Multiple company entries share the same name. This can cause double-counting in rep weights and confused price imports. Click a name to open it.</div><div className="flex flex-col gap-1 max-h-48 overflow-y-auto">{nameDupes.map(function(k){var group=byName[k];return(<div key={k} className="text-[11px]"><span className="font-medium text-rose-900 dark:text-rose-200">{group[0].name}</span><span className="text-rose-700 dark:text-rose-400"> \u00d7 {group.length} entries: </span>{group.map(function(c,i){return <span key={c.id}>{i>0&&", "}<span onClick={function(){setSelCo(c);setCoView("section:Overview");}} className="underline cursor-pointer hover:text-rose-900 dark:hover:text-rose-200">[{(c.tier||"no tier")}{c.status?" \u00b7 "+c.status:""}]</span></span>;})}</div>);})}</div></div>);})()}
-        {/* Data-health: companies missing valuation.fyMonth. Collapsed
-            by default — open via the small chevron header. Persisted
-            state lives in localStorage so the user's preference survives
-            tab switches and page reloads. */}
-        {(function(){
-          /* Skip Sold names — we don't review those each cycle, so a
-             missing fyMonth there isn't actionable. */
-          var missing = companies.filter(function(c){
-            if (c && c.status === "Sold") return false;
-            return !(c && c.valuation && c.valuation.fyMonth);
-          });
-          if(missing.length === 0) return null;
-          return (
-            <div className="mb-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800">
-              <div onClick={function(){setShowFyMonthMissing(function(v){var nv=!v;try{localStorage.setItem("ccd:showFyMonthMissing",nv?"1":"0");}catch(e){}return nv;});}} className="px-3.5 py-2 cursor-pointer flex items-center gap-2">
-                <span className="text-[11px] text-amber-700 dark:text-amber-400">{showFyMonthMissing?"▼":"▶"}</span>
-                <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">⚠ {missing.length} compan{missing.length===1?"y":"ies"} missing FY-end month</span>
-                <span className="text-[10px] text-amber-700 dark:text-amber-400 italic ml-auto">{showFyMonthMissing?"click to collapse":"click to expand"}</span>
-              </div>
-              {showFyMonthMissing&&(
-                <div className="px-3.5 pb-2">
-                  <div className="text-[11px] text-amber-700 dark:text-amber-400 mb-1">Set <code>valuation.fyMonth</code> (e.g. <code>Mar</code>, <code>Sep</code>, defaults to <code>Dec</code>) on each. Stale-data badges, the Q1-Q4 grid, and Pre-Earnings Brief math all depend on this. Click a name to fix.</div>
-                  <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
-                    {missing.slice(0, 100).map(function(c){
-                      return (
-                        <span key={c.id} onClick={function(){setSelCo(c);setCoView("section:Valuation");}} className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 cursor-pointer hover:bg-amber-200 dark:hover:bg-amber-900/60">{c.name}</span>
-                      );
-                    })}
-                    {missing.length > 100 && <span className="text-[11px] text-amber-700 dark:text-amber-400 italic self-center">+ {missing.length - 100} more</span>}
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })()}
-        {/* Discussion follow-ups due — collapsible. Surfaces any
-            annotation whose followUpDate is today or in the next 7
-            days. Click a chip to open the Discussions panel filtered
-            to that annotation's context. Defaults to OPEN so a fresh
-            morning page-load can't miss them. */}
-        {(function(){
-          var todayIso = new Date().toISOString().slice(0, 10);
-          var soonIso = (function(){ var d = new Date(); d.setDate(d.getDate() + 7); return d.toISOString().slice(0, 10); })();
-          var due = (annotations || []).filter(function(a){
-            return a.followUpDate && a.followUpDate <= soonIso;
-          });
-          if (due.length === 0) return null;
-          due.sort(function(a, b){ return (a.followUpDate || "").localeCompare(b.followUpDate || ""); });
-          var overdueCount = due.filter(function(a){ return a.followUpDate < todayIso; }).length;
-          function nameFor(a){
-            if (a.companyId){
-              var c = companies.find(function(x){ return x.id === a.companyId; });
-              if (c) return c.name;
-            }
-            if (a.scope === "portfolio") return (a.portfolio || "Portfolio");
-            return "Discussion";
-          }
-          return (
-            <div className="mb-2 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-300 dark:border-blue-800">
-              <div onClick={function(){setShowFollowUps(function(v){var nv=!v;try{localStorage.setItem("ccd:showFollowUps",nv?"1":"0");}catch(e){}return nv;});}} className="px-3.5 py-2 cursor-pointer flex items-center gap-2">
-                <span className="text-[11px] text-blue-700 dark:text-blue-400">{showFollowUps?"▼":"▶"}</span>
-                <span className="text-xs font-semibold text-blue-800 dark:text-blue-300">📅 Follow-ups: {due.length} discussion{due.length===1?"":"s"} {overdueCount>0?"("+overdueCount+" overdue)":"due this week"}</span>
-                <span className="text-[10px] text-blue-700 dark:text-blue-400 italic ml-auto">{showFollowUps?"click to collapse":"click to expand"}</span>
-              </div>
-              {showFollowUps&&(
-                <div className="px-3.5 pb-2">
-                  <div className="text-[11px] text-blue-700 dark:text-blue-400 mb-1">Click a chip to open the discussion. Adjust the follow-up date or resolve & clear it on the card.</div>
-                  <div className="flex flex-wrap gap-1 max-h-40 overflow-y-auto">
-                    {due.map(function(a){
-                      var overdue = a.followUpDate < todayIso;
-                      var nm = nameFor(a);
-                      var preview = (a.text || "").replace(/\s+/g, " ").slice(0, 60);
-                      return (
-                        <span
-                          key={a.id}
-                          title={preview}
-                          onClick={function(){
-                            if (a.companyId) {
-                              var co = companies.find(function(x){ return x.id === a.companyId; });
-                              if (co) { setSelCo(co); setTab("companies"); }
-                            }
-                            openDiscussions();
-                          }}
-                          className={"text-[11px] px-2 py-0.5 rounded-full border cursor-pointer " + (overdue
-                            ? "bg-red-100 dark:bg-red-900/40 border-red-300 dark:border-red-700 text-red-800 dark:text-red-200 hover:bg-red-200 dark:hover:bg-red-900/60"
-                            : "bg-blue-100 dark:bg-blue-900/40 border-blue-300 dark:border-blue-700 text-blue-800 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-blue-900/60")}
-                        >
-                          {nm}
-                          <span className="ml-1 text-[10px] opacity-80">{a.followUpDate}</span>
-                        </span>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })()}
-        {/* This-week earnings — collapsible. Header summarizes count
-            even when collapsed. Sold names excluded — we don't track
-            their next reports. */}
-        {(function(){
-          var t0=new Date();t0.setHours(0,0,0,0);
-          function dayOf(iso){
-            if(!iso)return null;
-            var d=parseDate(iso);
-            if(!d)return null;
-            return Math.round((d.getTime()-t0.getTime())/(24*3600*1000));
-          }
-          var activeCos=displayedCos.filter(function(c){return c.status!=="Sold";});
-          var thisWeekCount=activeCos.filter(function(c){
-            var iso=(c.guidance&&c.guidance.nextReportDate)||null;
-            if(!iso){
-              ((c.earningsEntries)||[]).forEach(function(e){
-                if(!e.reportDate)return;
-                var d=parseDate(e.reportDate);
-                if(!d||d<t0)return;
-                if(!iso||d<parseDate(iso))iso=e.reportDate;
-              });
-            }
-            var n=dayOf(iso);
-            return n!=null&&n>=0&&n<=7;
-          }).length;
-          if(thisWeekCount===0)return null;
-          return (
-            <div className="mb-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
-              <div onClick={function(){setShowThisWeek(function(v){var nv=!v;try{localStorage.setItem("ccd:showThisWeek",nv?"1":"0");}catch(e){}return nv;});}} className="px-3 py-2 cursor-pointer flex items-center gap-2">
-                <span className="text-[11px] text-gray-500 dark:text-slate-400">{showThisWeek?"▼":"▶"}</span>
-                <span className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-semibold">This week</span>
-                <span className="text-[11px] text-gray-700 dark:text-slate-300 font-medium">{thisWeekCount} report{thisWeekCount===1?"":"s"}</span>
-                <span className="text-[10px] text-gray-400 dark:text-slate-500 italic ml-auto">{showThisWeek?"click to collapse":"click to expand"}</span>
-              </div>
-              {showThisWeek&&(
-                <div className="px-3 pb-2 -mt-1">
-                  <ThisWeekEarnings companies={activeCos} onSelectCompany={function(c){setSelCo(c);setCoView("dashboard");}}/>
-                </div>
-              )}
-            </div>
-          );
-        })()}
-        <div className="flex gap-2 flex-wrap mb-1.5 items-center">
-          <input ref={searchRef} value={coSearch} onChange={function(e){setCoSearch(e.target.value);}} placeholder="Search... (/ to focus)" className={INP + " flex-1 min-w-[120px] !text-xs !px-2 !py-1"}/>
-          <select value={coSort} onChange={function(e){var v=e.target.value;setCoSort(v);var descByDefault=v==="Last Reviewed"||v==="Last Updated"||v==="5D%"||v==="MOS";setCoSortDir(descByDefault?"desc":"asc");}} className={INP + " !text-xs !px-2 !py-1"}>{CO_SORTS.map(function(s){return <option key={s}>{s}</option>;})}</select>
-          <select value={coFilter} onChange={function(e){setCoFilter(e.target.value);}} className={INP + " !text-xs !px-2 !py-1"}><option value="All">All portfolios</option>{PORTFOLIOS.map(function(p){return <option key={p} value={p}>{p}</option>;})}</select>
-          <select value={coFilterCountry} onChange={function(e){setCoFilterCountry(e.target.value);}} className={INP + " !text-xs !px-2 !py-1"}><option value="All">All countries</option>{usedCountries.map(function(c){return <option key={c} value={c}>{c}</option>;})}</select>
-          <select value={coFilterSector} onChange={function(e){setCoFilterSector(e.target.value);}} className={INP + " !text-xs !px-2 !py-1"}><option value="All">All sectors</option>{usedSectors.map(function(s){return <option key={s} value={s}>{s}</option>;})}</select>
-          <span className="text-xs text-gray-500 dark:text-slate-400">{displayedCos.length}/{companies.length}</span>
-        </div>
-        <div className="flex gap-1.5 mb-2 items-center flex-wrap">
-          <span className="text-[11px] text-gray-500 dark:text-slate-400">Status:</span>
-          {["All","Own","Focus","Watch","Sold"].map(function(s){var active=coStatusFilter===s;var cfg={All:{bg:undefined,color:undefined},Own:{bg:"#dcfce7",color:"#166534"},Focus:{bg:"#dbeafe",color:"#1e40af"},Watch:{bg:"#fef9c3",color:"#854d0e"},Sold:{bg:"#fee2e2",color:"#991b1b"}}[s];return <span key={s} onClick={function(){setCoStatusFilter(s);setCoStatusSubFilter("All");}} className={"text-[11px] px-2.5 py-0.5 rounded-full cursor-pointer transition-colors " + (active?"font-semibold":"font-normal")} style={{border:"1px solid "+(active&&cfg.color?cfg.color:undefined),background:active?cfg.bg:undefined,color:active?cfg.color:undefined}}>{s}</span>;})}
-          {(function(){
-            if(coStatusFilter==="All")return null;
-            var subOpts=coStatusFilter==="Own"?["FIN","IN","FGL","GL","EM","SC"]:coStatusFilter==="Focus"?["MC","EM","SC"]:coStatusFilter==="Watch"?["MC","EM","SC"]:["Hit TP","Gave Up"];
-            var cfg=({Own:{bg:"#dcfce7",color:"#166534"},Focus:{bg:"#dbeafe",color:"#1e40af"},Watch:{bg:"#fef9c3",color:"#854d0e"},Sold:{bg:"#fee2e2",color:"#991b1b"}})[coStatusFilter];
-            return <span className="inline-flex items-center gap-1.5 ml-2 pl-2 border-l border-slate-200 dark:border-slate-700">
-              {["All"].concat(subOpts).map(function(so){var a=coStatusSubFilter===so;return <span key={so} onClick={function(){setCoStatusSubFilter(so);}} className={"text-[10px] px-2 py-0.5 rounded-full cursor-pointer transition-colors "+(a?"font-semibold":"font-normal")} style={{border:"1px solid "+(a&&cfg?cfg.color:"transparent"),background:a&&cfg?cfg.bg:"transparent",color:a&&cfg?cfg.color:undefined}}>{so}</span>;})}
-            </span>;
-          })()}
-          {/* Compact/Default toggle \u2014 visible button next to Columns
-              picker so the user can flip column density in one click
-              without opening the dropdown. Only meaningful on the
-              Standard view (Metrics has its own column schema). */}
-          {companiesView==="standard"&&(
-            <button
-              onClick={function(){
-                if(compact){setCompact(false);setVisibleCols(new Set(ALL_COLS));}
-                else{setCompact(true);setVisibleCols(COMPACT_COLS);}
-              }}
-              className={"ml-auto " + BTN}
-              title={compact?"Switch to Default (all columns)":"Switch to Compact (fewer columns)"}
-            >{compact?"Default":"Compact"}</button>
-          )}
-          <div className={(companiesView==="standard"?"":"ml-auto ")+"relative"}><button onClick={function(){setShowColPicker(function(s){return !s;});}} className={BTN}>Columns {"\u25BE"}</button>{showColPicker&&(companiesView==="metrics"?(
-  /* Metrics picker — full list from MetricsTable's column schema. */
-  <div className="absolute right-0 top-[calc(100%+4px)] z-[100] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3.5 py-2.5 shadow-lg min-w-[200px] max-h-[65vh] overflow-y-auto">
-    <div className="flex justify-between mb-1.5 pb-1.5 border-b border-slate-200 dark:border-slate-700">
-      <button type="button" onClick={function(){setMetricsVisibleCols(DEFAULT_METRICS_VISIBLE);}} className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline">Defaults</button>
-      <button type="button" onClick={function(){setMetricsVisibleCols(new Set(METRICS_COLS.map(function(c){return c.key;})));}} className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline">All</button>
-    </div>
-    {METRICS_COLS.map(function(col){var on=metricsVisibleCols.has(col.key);return(<div key={col.key} onClick={function(){setMetricsVisibleCols(function(prev){var n=new Set(prev);on?n.delete(col.key):n.add(col.key);return n;});}} className="flex items-center gap-2 py-1 cursor-pointer text-xs text-gray-900 dark:text-slate-100"><div className="w-3.5 h-3.5 rounded-[3px] shrink-0" style={{border:"1px solid "+(on?"#3b82f6":"#cbd5e1"),background:on?"#dbeafe":"transparent"}}/>{col.label}</div>);})}
-  </div>
-):(
-  /* Standard picker. */
-  <div className="absolute right-0 top-[calc(100%+4px)] z-[100] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3.5 py-2.5 shadow-lg min-w-[180px] max-h-[65vh] overflow-y-auto">
-    {/* Preset row — moved here from the top toolbar where a "Compact"
-        toggle used to live (which was confusing because it only
-        applied to this Standard view). Default = full ALL_COLS set,
-        Compact = the smaller COMPACT_COLS set. Either preset can
-        then be fine-tuned by toggling individual columns below. */}
-    <div className="flex justify-between mb-1.5 pb-1.5 border-b border-slate-200 dark:border-slate-700">
-      <button
-        type="button"
-        onClick={function(){setCompact(false);setVisibleCols(new Set(ALL_COLS));}}
-        className={"text-[11px] hover:underline " + (!compact ? "text-blue-600 dark:text-blue-400 font-semibold" : "text-gray-500 dark:text-slate-400")}
-        title="Show all columns"
-      >Default</button>
-      <button
-        type="button"
-        onClick={function(){setCompact(true);setVisibleCols(COMPACT_COLS);}}
-        className={"text-[11px] hover:underline " + (compact ? "text-blue-600 dark:text-blue-400 font-semibold" : "text-gray-500 dark:text-slate-400")}
-        title="Show only the compact column set"
-      >Compact</button>
-    </div>
-    {ALL_COLS.map(function(col){var on=visibleCols.has(col);return(<div key={col} onClick={function(){setVisibleCols(function(prev){var n=new Set(prev);on?n.delete(col):n.add(col);return n;});}} className="flex items-center gap-2 py-1 cursor-pointer text-xs text-gray-900 dark:text-slate-100"><div className="w-3.5 h-3.5 rounded-[3px] shrink-0" style={{border:"1px solid "+(on?"#3b82f6":"#cbd5e1"),background:on?"#dbeafe":"transparent"}}/>{col}</div>);})}
-  </div>
-))}</div>
-        </div>
-        {selectedIds.size>0&&(<div className="rounded-lg mb-2 flex gap-2 items-center flex-wrap px-3.5 py-3" style={{background:"#dbeafe",border:"1px solid #93c5fd"}}><span className="text-xs font-medium" style={{color:"#1e40af"}}>{selectedIds.size} selected</span><select value={bulkStatus} onChange={function(e){setBulkStatus(e.target.value);}} className={INP + " !text-xs !px-2 !py-0.5"}><option value="">Set status{"\u2026"}</option><option>Own</option><option>Focus</option><option>Watch</option><option>Sold</option></select><select value={bulkTier} onChange={function(e){setBulkTier(e.target.value);}} className={INP + " !text-xs !px-2 !py-0.5"}><option value="">Set tier{"\u2026"}</option>{TIER_ORDER.map(function(t){return <option key={t}>{t}</option>;})}</select><button onClick={applyBulkEdit} disabled={!bulkStatus&&!bulkTier} className={BTN_SM}>Apply</button><span onClick={clearSelected} className="text-xs cursor-pointer" style={{color:"#1e40af"}}>Clear</span><span onClick={selectAll} className="text-xs cursor-pointer" style={{color:"#1e40af"}}>Select all ({displayedCos.length})</span></div>)}
-        <div className="flex gap-1.5 flex-wrap mb-2.5 justify-end items-center">
-          {confirmClear?(<div className="flex items-center gap-2"><span className="text-xs text-red-600 dark:text-red-400">Delete all {companies.length}?</span><button onClick={async function(){setCompanies([]);try{await supaUpsert("companies",{id:"shared",data:"[]"});}catch(e){}setConfirmClear(false);}} className="text-xs px-2.5 py-1 text-red-600 dark:text-red-400">Yes</button><span onClick={function(){setConfirmClear(false);}} className={LNK}>Cancel</span></div>):<button onClick={function(){setConfirmClear(true);}} className="text-xs px-2.5 py-1.5 text-red-600 dark:text-red-400">Clear all</button>}
-          <button onClick={exportCSV} className={BTN}>{"\u2B07"} CSV</button>
-          <button onClick={findDupes} className={BTN}>Dedupe</button>
-          <button onClick={function(){setShowBulk(function(s){return !s;});setShowNew(false);setShowPriceImport(false);}} className={BTN}>Bulk import</button>
-          <button onClick={function(){setShowNew(function(s){return !s;});setShowBulk(false);setShowPriceImport(false);}} className={BTN}>+ New</button>
-        </div>
-        {showPriceImport&&(<div className={CARD + " mb-2.5"}><div className="text-sm font-medium mb-1 text-gray-900 dark:text-slate-100">Bulk price update</div><div className="text-xs text-gray-500 dark:text-slate-400 mb-2">27 columns: Company, Ord Ticker, Ord Price, 11 trailing returns (TODAY, 5D, MTD, 1M, QTD, 3M, 6M, YTD, 1YR, 2YR, 3YR), US Ticker, US Price, 11 trailing returns. Old 7-col format still accepted.</div><textarea value={priceImportText} onChange={function(e){setPriceImportText(e.target.value);}} placeholder={"AAPL\t182.50\n..."} className={TA_BASE + " font-mono mb-2"} style={{minHeight:100}}/><div className="flex gap-2"><button onClick={applyPriceImport} disabled={!priceImportText.trim()} className={BTN_SM}>Apply</button><span onClick={function(){setShowPriceImport(false);setPriceImportText("");}} className={LNK}>Cancel</span></div></div>)}
-        {showDedupe&&(<div className={CARD + " mb-2.5"}>{dupeGroups.length===0?<div className="text-sm text-green-600 dark:text-green-400">{"\u2713"} No duplicates found.</div>:(<><div className="flex justify-between mb-2"><div className="text-sm font-medium text-gray-900 dark:text-slate-100">Found {dupeGroups.length} dupe group(s)</div><span onClick={function(){setShowDedupe(false);}} className={LNK}>Cancel</span></div><div className="max-h-[280px] overflow-y-auto mb-2.5 flex flex-col gap-2">{dupeGroups.map(function(g){var gKey=(g[0].ticker||g[0].name||"").toUpperCase();return(<div key={gKey} className="border border-slate-200 dark:border-slate-700 rounded-md overflow-hidden"><div className="px-2.5 py-1 bg-slate-50 dark:bg-slate-800 text-[11px] font-medium text-gray-500 dark:text-slate-400 uppercase">{gKey}</div>{g.map(function(c){var isKeep=dupeKeep[gKey]===c.id;return(<div key={c.id} onClick={function(){setDupeKeep(function(k){return Object.assign({},k,{[gKey]:c.id});});}} className={"px-3 py-1.5 flex gap-2.5 items-center cursor-pointer border-t border-slate-200 dark:border-slate-700 " + (isKeep?"bg-green-50 dark:bg-green-950/30":"bg-transparent")}><div className="w-3.5 h-3.5 rounded-full shrink-0" style={{border:"2px solid "+(isKeep?"#16a34a":"#cbd5e1"),background:isKeep?"#16a34a":"transparent"}}/><span className="text-sm font-medium text-gray-900 dark:text-slate-100 flex-1">{c.name}</span><span className={PILL_BASE}>{c.tier||"no tier"}</span>{c.status&&<span className={PILL_BASE}>{c.status}</span>}</div>);})}</div>);})}</div><button onClick={applyDedupe} className="text-xs px-3.5 py-1.5 text-red-600 dark:text-red-400">Remove duplicates</button></>)}</div>)}
-        {showRestore&&(<div className={CARD + " mb-2.5"}><textarea value={restoreText} onChange={function(e){setRestoreText(e.target.value);}} placeholder="Paste JSON backup..." className={TA_BASE + " font-mono mb-2"} style={{minHeight:80}}/><div className="flex gap-2"><button onClick={function(){try{var d=JSON.parse(restoreText);if(Array.isArray(d)){setCompanies(d);setShowRestore(false);setRestoreText("");}else alert("Invalid.");}catch(e){alert("Bad JSON.");}}} disabled={!restoreText.trim()} className={BTN_SM}>Restore</button><span onClick={function(){setShowRestore(false);}} className={LNK}>Cancel</span></div></div>)}
-        {showBulk&&(<div className={CARD + " mb-2.5"}><div className="text-sm font-medium mb-1 text-gray-900 dark:text-slate-100">Bulk import</div><div className="text-xs text-gray-500 dark:text-slate-400 mb-2">Paste CSV/TSV from Excel.</div><textarea value={bulkText} onChange={function(e){setBulkText(e.target.value);setBulkPreview(null);}} onPaste={function(){setTimeout(function(){var b=document.getElementById("parse-btn");if(b)b.click();},100);}} placeholder="Paste CSV here..." className={TA_BASE + " font-mono mb-2"} style={{minHeight:120}}/>{!bulkPreview&&<button id="parse-btn" onClick={parseBulk} disabled={bulkLoading||!bulkText.trim()} className={BTN_SM + " mb-2"}>{bulkLoading?"Parsing...":"Parse"}</button>}{bulkPreview&&(<div><div className="text-xs text-gray-500 dark:text-slate-400 mb-2">Parsed {bulkPreview.length} companies</div><div className="max-h-[200px] overflow-y-auto mb-2.5 flex flex-col gap-0.5">{bulkPreview.map(function(c,i){
-              /* Detect if this row's tickers conflict with a different existing company */
-              var conflicts=[];
-              [c.ordTicker,c.usTicker].filter(Boolean).forEach(function(tk){
-                tk=tk.toUpperCase();
-                companies.forEach(function(ec){
-                  if(ec.name.toLowerCase()===(c.name||"").toLowerCase())return;
-                  var hasIt=(ec.tickers||[]).some(function(t){return(t.ticker||"").toUpperCase()===tk;})||(ec.ticker||"").toUpperCase()===tk;
-                  if(hasIt&&conflicts.indexOf(tk+":"+ec.name)<0)conflicts.push(tk+":"+ec.name);
-                });
-              });
-              return(<div key={i} className={"px-2.5 py-1 rounded-md border text-xs flex gap-1.5 items-center flex-wrap "+(conflicts.length>0?"bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-800":"bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700")}>{conflicts.length>0&&<span title={"Ticker conflict with: "+conflicts.join(", ")} className="text-amber-700 dark:text-amber-400 font-bold">⚠</span>}<span className="font-medium min-w-[100px] text-gray-900 dark:text-slate-100">{c.name}</span><span className={PILL_BASE}>{c.ticker}</span>{c.tier&&<span className={PILL_BASE}>{c.tier}</span>}{(c.portfolios||[]).map(function(p){return <span key={p} className="text-[11px] px-1.5 py-0.5 rounded-full text-white border-none" style={{background:"#1a5c2a"}}>{p}</span>;})}{c.status&&<span className={PILL_BASE}>{c.status}</span>}</div>);})}</div><div className="flex gap-2"><button onClick={function(){confirmBulk("merge");}} className={BTN_SM}>Merge</button><button onClick={function(){confirmBulk("replace");}} className={BTN}>Replace all</button><span onClick={function(){setBulkPreview(null);setBulkText("");}} className={LNK}>Clear</span><span onClick={function(){setShowBulk(false);}} className={LNK}>Cancel</span></div></div>)}</div>)}
-        {showNew&&(<div className={CARD + " mb-2.5"}><div className="flex gap-2 mb-2.5"><div className="flex-[2]"><label className={LABEL}>Company name</label><input value={newName} onChange={function(e){setNewName(e.target.value);}} className={INP + " w-full box-border"}/></div><div className="flex-[2]"><label className={LABEL}>US Ticker Name <span className="text-gray-400 dark:text-slate-500">(optional)</span></label><input value={newNameUS} onChange={function(e){setNewNameUS(e.target.value);}} placeholder="e.g. Shell plc ADR" className={INP + " w-full box-border"}/></div><div className="flex-1"><label className={LABEL}>Ord Ticker</label><input value={newTicker} onChange={function(e){setNewTicker(e.target.value.toUpperCase());}} placeholder="e.g. SHEL-GB" className={INP + " w-full box-border"}/></div><div className="flex-1"><label className={LABEL}>US Ticker</label><input value={newTickerUS} onChange={function(e){setNewTickerUS(e.target.value.toUpperCase());}} placeholder="e.g. SHEL" className={INP + " w-full box-border"}/></div></div><div className="grid grid-cols-2 gap-2.5 mb-2.5"><div><label className={LABEL}>Tier</label><select value={newFields.tier||""} onChange={function(e){setNewFields(function(p){return{...p,tier:e.target.value};});}} className={INP + " w-full"}><option value="">--</option>{TIER_ORDER.map(function(t){return <option key={t}>{t}</option>;})}</select></div><div><label className={LABEL}>Status</label><select value={newFields.status||"Watch"} onChange={function(e){setNewFields(function(p){return{...p,status:e.target.value};});}} className={INP + " w-full"}><option>Own</option><option>Focus</option><option>Watch</option><option>Sold</option></select></div><div><label className={LABEL}>Sector</label><select value={newFields.sector||""} onChange={function(e){setNewFields(function(p){return{...p,sector:e.target.value};});}} className={INP + " w-full"}><option value="">--</option>{SECTOR_ORDER.map(function(s){return <option key={s}>{s}</option>;})}</select></div><div><label className={LABEL}>Country</label><select value={newFields.country||""} onChange={function(e){setNewFields(function(p){return{...p,country:e.target.value};});}} className={INP + " w-full"}><option value="">--</option>{COUNTRY_ORDER.map(function(c){return <option key={c}>{c}</option>;})}</select></div></div><div className="mb-2.5"><label className={LABEL + " mb-1"}>Portfolio(s)</label><div className="flex gap-1.5 flex-wrap">{PORTFOLIOS.map(function(p){var sel=(newFields.portfolios||[]).indexOf(p)>=0;return <span key={p} onClick={function(){setNewFields(function(ps){return{...ps,portfolios:sel?(ps.portfolios||[]).filter(function(x){return x!==p;}):(ps.portfolios||[]).concat([p])};});}} className={sel?TAGBTN_ACTIVE:TAGBTN_INACTIVE}>{p}</span>;})}</div></div><div><label className={LABEL + " mb-1"}>Port? (considering for)</label><div className="flex gap-1.5 flex-wrap">{PORTFOLIOS.filter(function(p){return(newFields.portfolios||[]).indexOf(p)<0;}).map(function(p){var note=(newFields.portNote||"").split(/[,\s]+/).filter(Boolean);var sel=note.indexOf(p)>=0;return <span key={p} onClick={function(){setNewFields(function(ps){var cur=(ps.portNote||"").split(/[,\s]+/).filter(Boolean);var nxt=sel?cur.filter(function(x){return x!==p;}):cur.concat([p]);return{...ps,portNote:nxt.join(", ")};});}} className={"text-[11px] px-1.5 py-0.5 rounded-full cursor-pointer transition-colors "+(sel?"font-medium":"font-normal")} style={{border:"1.5px dashed "+(dark?"#93c5fd":"#1a3a6b"),background:"transparent",color:dark?"#93c5fd":"#1a3a6b"}}>{p}</span>;})}</div></div><div className="flex gap-2 mt-3"><button onClick={addCompany} className={BTN_SM}>Create</button><span onClick={function(){setShowNew(false);}} className={LNK}>Cancel</span></div></div>)}
-
-        {companies.length>0&&(<div className="flex gap-1 mb-3 no-print items-center">
-          {/* Companies subnav. All four sub-views (Standard / Metrics /
-              Research / Calendar) flip companiesView; the parent tab
-              stays "companies" throughout. Render block below
-              switches on companiesView. */}
-          {[["standard","Standard"],["metrics","Metrics"],["research","Assignments"],["calendar","Earnings Calendar"]].map(function(v){var active=companiesView===v[0];return <button key={v[0]} onClick={function(){setCompaniesView(v[0]);}} className={"text-xs px-3 py-1 rounded-md cursor-pointer transition-colors "+(active?"bg-blue-700 text-white font-semibold":"bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-gray-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800")}>{v[1]}</button>;})}
-          <button onClick={function(){ printPage("table"); }}
-            className="ml-2 text-xs px-3 py-1 rounded-md cursor-pointer bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-gray-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-            title={"Print the " + (companiesView==="metrics"?"Metrics":"Standard") + " table (landscape, dense)"}>🖨 Print</button>
-        </div>)}
-        {/* Research subview — was a top-level "research" tab; now a
-            subtab of Companies sharing the same toolbar / filters / dupe
-            warnings above. */}
-        {companiesView==="research"&&(
-          <ResearchBoard setSelCo={setSelCo} setTab={setTab} setCoView={setCoView} setSelCoOrigin={setSelCoOrigin}/>
-        )}
-        {/* Calendar subview — was a top-level "calendar" tab. Bulk
-            import section at the bottom removed (the dedicated
-            Earnings Dates import in Import already covers the same
-            paste). */}
-        {companiesView==="calendar"&&(
-          <div><div className="flex items-center gap-2.5 mb-3 flex-wrap"><div className="text-sm font-medium text-gray-900 dark:text-slate-100">Earnings This Quarter</div><div className="flex gap-1.5">{["All","Own","Focus","Watch","Sold"].map(function(s){var active=calFilter===s;var cfg={All:{bg:undefined,color:undefined},Own:{bg:"#dcfce7",color:"#166534"},Focus:{bg:"#dbeafe",color:"#1e40af"},Watch:{bg:"#fef9c3",color:"#854d0e"},Sold:{bg:"#fee2e2",color:"#991b1b"}}[s];return <span key={s} onClick={function(){setCalFilter(s);}} className={"text-[11px] px-2.5 py-0.5 rounded-full cursor-pointer transition-colors " + (active ? "font-semibold" : "font-normal")} style={{border:"1px solid "+(active&&cfg.color?cfg.color:undefined),background:active?cfg.bg:undefined,color:active?cfg.color:undefined}}>{s}</span>;})}</div><div className="flex gap-1 ml-2">{["All","FIN","IN","FGL","GL","EM","SC"].map(function(p){var active=calPortFilter===p;return <span key={p} onClick={function(){setCalPortFilter(p);}} className={"text-[11px] px-2 py-0.5 rounded-full cursor-pointer border transition-colors "+(active?"border-gray-900 dark:border-slate-200 bg-gray-900 dark:bg-slate-200 text-white dark:text-slate-900 font-semibold":"border-gray-300 dark:border-slate-600 text-gray-600 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700")}>{p}</span>;})}</div></div><EarningsCalendar companies={companies.filter(function(c){if(calFilter!=="All"&&c.status!==calFilter)return false;if(calPortFilter!=="All"&&(c.portfolios||[]).indexOf(calPortFilter)<0)return false;return true;})} onSelectCompany={function(c){setSelCo(c);setTab("companies");setCoView("dashboard");}}/></div>
-        )}
-        {(companiesView==="standard"||companiesView==="metrics")&&(
-        companies.length===0?<p className="text-sm text-gray-500 dark:text-slate-400">No companies yet.</p>:(<div className="print-target">{companiesView==="metrics"?(
-          <MetricsTable companies={displayedCos} search={coSearch} dark={dark} visible={metricsVisibleCols} onSelectCompany={function(c){setSelCo(c);setCoView("dashboard");}}/>
-        ):(
-          <div>
-          <div style={{display:"table",width:"100%",borderCollapse:"separate",borderSpacing:"0 2px"}}>
-            <div style={{display:"table-row"}} className="print-thead">
-              <div style={{display:"table-cell",paddingBottom:4,paddingRight:6,position:"sticky",top:0,background:"var(--tw-prose-body,#fff)",zIndex:10}} className="bg-white dark:bg-slate-950"><span onClick={function(e){e.stopPropagation();if(selectedIds.size>0){clearSelected();}else{selectAll();}}} className="cursor-pointer inline-flex items-center justify-center w-4 h-4 rounded border border-slate-300 dark:border-slate-600 text-[10px] leading-none select-none hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" style={{background:selectedIds.size===displayedCos.length&&displayedCos.length>0?"#2563eb":selectedIds.size>0?"#93c5fd":undefined,color:selectedIds.size>0?"#fff":undefined}}>{selectedIds.size===displayedCos.length&&displayedCos.length>0?"\u2713":selectedIds.size>0?"\u2013":""}</span></div>
-              {/* HEADER_COLS is already filtered by visibleCols.has(c.id)
-                  upstream; the extra label-based filter that used to live
-                  here was a no-op when label === id but silently dropped
-                  the column when those diverged (e.g. id 'MOS' relabeled
-                  to 'MOS Live'). Removed entirely. */}
-              {HEADER_COLS.map(function(col,i){var cs=col.sort;var active=cs&&coSort===cs;var arrow=active?(coSortDir==="asc"?" \u2191":" \u2193"):"";var isName=col.label==="Name";return(<div key={i} onClick={cs?function(){handleSortClick(cs);}:undefined} className={"text-[10px] uppercase tracking-wide pb-1 pr-2.5 whitespace-nowrap select-none sticky top-0 bg-white dark:bg-slate-950 " + (isName?"left-0 z-20 ":"z-10 ") + (active?"font-semibold text-gray-900 dark:text-slate-100":"font-normal text-gray-500 dark:text-slate-400") + (cs?" cursor-pointer":" cursor-default")} style={{display:"table-cell"}}>{col.label}{arrow}</div>);})}
-            </div>
-            {displayedCos.map(function(c,i){return <CoRow key={c.id+"-"+i} company={c} compact={compact} visibleCols={visibleCols} selected={selectedIds.has(c.id)} onToggleSelect={toggleSelect} onSelect={handleCoSelect} onDelete={handleCoDelete} onUpdate={updateCo} onQuickUpload={handleCoQuickUpload} dark={dark} rowAlerts={coAlertsByCoId[c.id]} pendingTpCount={pendingTpByCoId[c.id] || 0} latestTpRejected={!!rejectedTpForLatestByCoId[c.id]}/>;  })}
-          </div>
-          </div>
-        )}</div>)
-        )}
-      </div>)}
+      {tab==="companies"&&!selCo&&(<CompaniesListTab
+        useCompaniesApi={useCompaniesApi}
+        calFilter={calFilter} setCalFilter={setCalFilter}
+        calPortFilter={calPortFilter} setCalPortFilter={setCalPortFilter}
+        coAlertsByCoId={coAlertsByCoId}
+        companiesView={companiesView} setCompaniesView={setCompaniesView}
+        handleCoDelete={handleCoDelete} handleCoQuickUpload={handleCoQuickUpload} handleCoSelect={handleCoSelect}
+        metricsVisibleCols={metricsVisibleCols} setMetricsVisibleCols={setMetricsVisibleCols}
+        openDiscussions={openDiscussions}
+        pendingTpByCoId={pendingTpByCoId} rejectedTpForLatestByCoId={rejectedTpForLatestByCoId}
+        setSelCoOrigin={setSelCoOrigin}
+        showFollowUps={showFollowUps} setShowFollowUps={setShowFollowUps}
+        showFyMonthMissing={showFyMonthMissing} setShowFyMonthMissing={setShowFyMonthMissing}
+        showThisWeek={showThisWeek} setShowThisWeek={setShowThisWeek}
+        setTab={setTab}
+      />)}
 
       {tab==="companies"&&selCo&&(<CompanyDetail selCo={selCo} setSelCo={setSelCo} coView={coView} setCoView={setCoView} coTabs={coTabs} pendingVal={pendingVal} setPendingVal={setPendingVal} tmplRaw={tmplRaw} setTmplRaw={setTmplRaw} tmplLoading={tmplLoading} tmplSearch={tmplSearch} setTmplSearch={setTmplSearch} tmplHighlight={tmplHighlight} setTmplHighlight={setTmplHighlight} flashSections={flashSections} upText={upText} setUpText={setUpText} upType={upType} setUpType={setUpType} upLoading={upLoading} pendingDiff={pendingDiff} setPendingDiff={setPendingDiff} pendingMeta={pendingMeta} setPendingMeta={setPendingMeta} commitValuation={commitValuation} saveEarningsEntry={saveEarningsEntry} deleteEarningsEntry={deleteEarningsEntry} acceptDiff={acceptDiff} importTemplate={importTemplate} processUpload={processUpload} exportCompanyPDF={exportCompanyPDF} linkLibOpen={linkLibOpen} setLinkLibOpen={setLinkLibOpen} setTab={setTab} selCoOrigin={selCoOrigin} setSelCoOrigin={setSelCoOrigin} showAddTargetHist={showAddTargetHist} setShowAddTargetHist={setShowAddTargetHist} newTargetHist={newTargetHist} setNewTargetHist={setNewTargetHist} showAddTx={showAddTx} setShowAddTx={setShowAddTx} newTx={newTx} setNewTx={setNewTx} weightsFilter={weightsFilter} setWeightsFilter={setWeightsFilter} txFilter={txFilter} setTxFilter={setTxFilter} openDiscussions={openDiscussions} saved={saved} linkedEntries={linkedEntries} setExpanded={setExpanded} setSaved={setSaved} updEntry={updEntry}/>)}
 

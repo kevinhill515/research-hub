@@ -2,6 +2,9 @@ import { createContext, useContext, useState, useEffect, useRef } from "react";
 import { supaGet, supaGetAll, supaGetMetaMany, supaUpsert, supaDelete } from '../api/index.js';
 import { todayStr, inferQuarter } from '../utils/index.js';
 import { DEFAULT_PERF_SERIES, findDefaultSeries } from '../constants/perfDefaults.js';
+import { applyTradeAgenda } from './helpers/markTradeAgenda.js';
+import { applyProposeTargetWeight, findPendingTargetEntry as _findPendingTargetEntry } from './helpers/proposeTargetWeight.js';
+import { applyApprovalToApprovals, applyApprovalToCompany } from './helpers/approveTpApproval.js';
 
 const CompanyContext=createContext(null);
 
@@ -1211,111 +1214,14 @@ export function CompanyProvider({children}){
     if(!rec||rec.status!=="pending"||rec.suggestedBy===currentUser)return;
     var approvedAt=todayStr();
     setTpApprovals(function(prev){
-      /* Re-find inside the updater so multi-user races still see the
-         freshest state — but if it's already been decided by another
-         user, leave it. */
-      var live = prev.find(function(a){return a.id===id;});
-      if(!live || live.status!=="pending") return prev;
-      return prev.map(function(a){
-        /* Approve the target. Sibling pending records on the SAME company
-           get auto-rejected so a stale change can't sneak in later. */
-        if(a.id===id)return Object.assign({},a,{status:"approved",approvedBy:currentUser,approvedAt:approvedAt});
-        if(a.status==="pending"&&a.companyId===rec.companyId){
-          return Object.assign({},a,{status:"rejected",rejectedBy:currentUser,rejectedAt:approvedAt,rejectReason:"Superseded by another approval"});
-        }
-        return a;
-      });
+      return applyApprovalToApprovals(prev, id, rec, currentUser, approvedAt);
     });
     /* Apply the change to the company's valuation + push to tpHistory. */
+    var today=todayStr();
     setCompanies(function(cs){
       return cs.map(function(c){
         if(c.id!==rec.companyId)return c;
-        var v=Object.assign({},c.valuation||{});
-        var today=todayStr();
-        var ccy=(c.valuation&&c.valuation.currency)||"USD";
-        /* Write every breakdown field the suggestion specifies. PE / EPS1
-           / EPS2 / W1 / W2 become the working valuation — these drive TP
-           Live, which keeps recomputing as EPS estimates update over
-           time. Then snapshot rec.toTP into tpFixed so the firm has a
-           stable target frozen at this approval's moment (PE × normEPS
-           at sign-off, regardless of subsequent EPS drift). Older records
-           that predate the breakdown only carry toPE/toEPS — handle
-           both for back-compat. */
-        if(rec.toPE!==null&&rec.toPE!==undefined&&rec.toPE!=="")v.pe=rec.toPE;
-        if(rec.toEPS1!==null&&rec.toEPS1!==undefined&&rec.toEPS1!=="")v.eps1=rec.toEPS1;
-        else if(rec.toEPS!==null&&rec.toEPS!==undefined&&rec.toEPS!=="")v.eps1=rec.toEPS;
-        if(rec.toEPS2!==null&&rec.toEPS2!==undefined&&rec.toEPS2!=="")v.eps2=rec.toEPS2;
-        if(rec.toW1!==null&&rec.toW1!==undefined&&rec.toW1!=="")v.w1=rec.toW1;
-        if(rec.toW2!==null&&rec.toW2!==undefined&&rec.toW2!=="")v.w2=rec.toW2;
-        /* Also snapshot the approved values into *Fixed slots. These are
-           the locked-at-approval values that the Valuation tab surfaces
-           alongside the daily-updated Live values, and they're what the
-           next TP proposal pulls into its "Previous (last approved)"
-           row. Without these the only way to find the locked EPS was
-           to dig through tpHistory. PE/W are usually stable across
-           approvals; we still snapshot them for consistency so any
-           direct edit on the Live side leaves a clear breadcrumb of
-           what was last blessed. */
-        if(rec.toPE   !== null && rec.toPE   !== undefined && rec.toPE   !== "") v.peFixed   = rec.toPE;
-        if(rec.toEPS1 !== null && rec.toEPS1 !== undefined && rec.toEPS1 !== "") v.eps1Fixed = rec.toEPS1;
-        if(rec.toEPS2 !== null && rec.toEPS2 !== undefined && rec.toEPS2 !== "") v.eps2Fixed = rec.toEPS2;
-        if(rec.toW1   !== null && rec.toW1   !== undefined && rec.toW1   !== "") v.w1Fixed   = rec.toW1;
-        if(rec.toW2   !== null && rec.toW2   !== undefined && rec.toW2   !== "") v.w2Fixed   = rec.toW2;
-        if(rec.fy1) v.fy1Fixed = rec.fy1;
-        if(rec.fy2) v.fy2Fixed = rec.fy2;
-        /* TP Fixed snapshot at the approval moment. Uses the computed
-           toTP (PE × normEPS) — the moment-in-time target the team is
-           agreeing to. TP Live diverges from this going forward as EPS
-           estimates refresh; TP Fixed only changes via the next
-           approval. */
-        if(rec.toTP!==null&&rec.toTP!==undefined&&isFinite(rec.toTP)){
-          v.tpFixed=String(rec.toTP);
-          v.tpFixedDate=today;
-        }
-        /* Find the earnings entry the suggestion was attached to and
-           derive its fiscal-quarter label (e.g. "Q1 FY26"). The Fixed
-           TP History table displays this so the reader can see WHICH
-           quarter's earnings drove the TP change. */
-        var qLabel = "";
-        var srcEntry = (c.earningsEntries||[]).find(function(eEnt){
-          return eEnt.id === rec.earningsEntryId;
-        });
-        if(srcEntry){
-          if(srcEntry.quarter){
-            qLabel = String(srcEntry.quarter);
-          } else if(srcEntry.reportDate){
-            var inferred = inferQuarter(srcEntry.reportDate, (c.valuation||{}).fyMonth || "Dec");
-            if(inferred && inferred.label) qLabel = inferred.label;
-          }
-        }
-        var tpEntry={
-          date:today,
-          tp:rec.toTP,
-          pe:rec.toPE,
-          eps:rec.toEPS,
-          eps1:rec.toEPS1,
-          eps2:rec.toEPS2,
-          w1:rec.toW1,
-          w2:rec.toW2,
-          fy1:rec.fy1||"",
-          fy2:rec.fy2||"",
-          /* Earnings-entry linkage so the Fixed TP History row can
-             always resolve its Fiscal Quarter even if the snapshotted
-             label gets stale (e.g. user edits the source entry's
-             quarter/reportDate after the approval). */
-          earningsEntryId:rec.earningsEntryId||"",
-          quarter:qLabel,
-          currency:ccy,
-          source:"approval",
-          by:rec.suggestedBy,
-          approvedBy:currentUser,
-          rationale:rec.rationale||"",
-        };
-        return Object.assign({},c,{
-          valuation:v,
-          tpHistory:[tpEntry].concat(c.tpHistory||[]),
-          lastUpdated:today,
-        });
+        return applyApprovalToCompany(c, rec, currentUser, today, inferQuarter);
       });
     });
   }
@@ -1679,42 +1585,7 @@ export function CompanyProvider({children}){
     var author=currentUser||"Unknown";
     setCompanies(function(cs){return cs.map(function(c){
       if(c.id!==companyId)return c;
-      var hist=c.portWeightHistory||[];
-      /* Find the most recent agenda stamp for this portfolio. */
-      var existingStamp=null;
-      for(var i=0;i<hist.length;i++){
-        if(hist[i].isAgenda&&hist[i].portfolio===portfolio&&hist[i].action){
-          existingStamp=hist[i];break;
-        }
-      }
-      /* Wipe ALL prior agenda stamps for this portfolio (clean slate
-         for the new state) — keeps history compact and avoids
-         confusing the memo generator with multiple actions per port. */
-      var cleaned=hist.filter(function(h){
-        return !(h.isAgenda&&h.portfolio===portfolio&&h.action);
-      });
-      var nw=Object.assign({},c.portWeights||{});
-      /* If the previous stamp was Sell, it zeroed the target; in any
-         transition (toggle-off or switch) we restore the pre-Sell
-         target from the entry's oldWeight. */
-      if(existingStamp&&existingStamp.action==="Sell"){
-        nw[portfolio]=String(existingStamp.oldWeight);
-      }
-      if(existingStamp&&existingStamp.action===action){
-        /* Toggle OFF — same button clicked twice. No new entry. */
-        return Object.assign({},c,{portWeights:nw,portWeightHistory:cleaned});
-      }
-      /* Stamp the new action — either first stamp or switching verbs. */
-      var oldRaw=nw[portfolio]; /* after potential Sell-restore */
-      var oldNum=parseFloat(oldRaw);if(isNaN(oldNum))oldNum=0;
-      var newNum=action==="Sell"?0:oldNum;
-      var entry={
-        id:newId(),date:today,portfolio:portfolio,
-        oldWeight:oldNum,newWeight:newNum,
-        author:author,isAgenda:true,action:action,
-      };
-      if(action==="Sell")nw[portfolio]="0";
-      return Object.assign({},c,{portWeights:nw,portWeightHistory:[entry].concat(cleaned)});
+      return applyTradeAgenda(c, portfolio, action, today, author, newId);
     });});
   }
   /* ---- Proposed-vs-committed target-weight lifecycle ----
@@ -1751,19 +1622,6 @@ export function CompanyProvider({children}){
    * so existing callers (OverlapTable, anything else) behave identically
    * until they migrate to the explicit propose/commit cycle.
    */
-  function _findPendingTargetEntry(c, portfolio){
-    var hist = c.portWeightHistory || [];
-    for(var i=0;i<hist.length;i++){
-      var h = hist[i];
-      /* Pending target = isAgenda:true with a newWeight and NO action
-         (B/A/P/S stamps also use isAgenda:true but have an action). */
-      if(h && h.isAgenda && h.portfolio === portfolio && !h.action
-          && h.newWeight !== undefined && h.newWeight !== null){
-        return { entry: h, index: i };
-      }
-    }
-    return null;
-  }
   function _shiftCash(portfolio, delta){
     if(!(Math.abs(delta) >= 0.01)) return;
     setSpecialWeights(function(prev){
@@ -1793,80 +1651,14 @@ export function CompanyProvider({children}){
        "0% → newTarget%"). The Sell stamp itself is removed by the
        new target — the user has decided to keep the position. */
     var deltaForCash = 0;
+    var today = todayStr();
+    var author = currentUser || "Unknown";
     setCompanies(function(cs){
       return cs.map(function(c){
         if(c.id !== companyId) return c;
-        /* Find any existing Sell agenda stamp on this port. */
-        var sellIdx = -1;
-        var hist0 = c.portWeightHistory || [];
-        for(var si=0; si<hist0.length; si++){
-          var sh = hist0[si];
-          if(sh && sh.isAgenda && sh.portfolio===portfolio && sh.action==="Sell"){
-            sellIdx = si; break;
-          }
-        }
-        var sellEntry = sellIdx >= 0 ? hist0[sellIdx] : null;
-        var committedRaw = (c.portWeights || {})[portfolio];
-        var committedNum = parseFloat(committedRaw); if(isNaN(committedNum)) committedNum = 0;
-        /* Override baseline if Sell pre-zeroed portWeights. */
-        if(sellEntry){
-          var sellOld = parseFloat(sellEntry.oldWeight);
-          if(isFinite(sellOld) && sellOld > committedNum) committedNum = sellOld;
-        }
-        var newNum = parseFloat(rawNewValue); if(isNaN(newNum)) newNum = 0;
-        var pending = _findPendingTargetEntry(c, portfolio);
-        var prevProposed = pending ? parseFloat(pending.entry.newWeight) : (sellEntry ? 0 : committedNum);
-        if(isNaN(prevProposed)) prevProposed = committedNum;
-        deltaForCash = newNum - prevProposed;
-        /* If proposed === committed, there's nothing pending — clear
-           any existing proposal entry on this port. */
-        var nowMatchesCommitted = Math.abs(newNum - committedNum) < 0.01;
-        var newHist;
-        /* Build the working history with the Sell stamp removed first
-           (whether or not we keep a target proposal — see below). */
-        var histNoSell = sellIdx >= 0
-          ? hist0.filter(function(h, i){ return i !== sellIdx; })
-          : hist0;
-        if(nowMatchesCommitted){
-          newHist = histNoSell.filter(function(h, i){
-            /* pending.index was relative to the ORIGINAL hist; if we
-               filtered out a Sell that came before it, the index
-               shifts by -1. Match by id instead to avoid the dance. */
-            return !(pending && pending.entry.id && h.id === pending.entry.id);
-          });
-        } else {
-          var entry = {
-            id: pending ? pending.entry.id : newId(),
-            date: todayStr(),
-            portfolio: portfolio,
-            oldWeight: committedNum,
-            newWeight: newNum,
-            author: currentUser || "Unknown",
-            isAgenda: true,
-          };
-          /* Replace existing pending entry in place if present; else
-             prepend. Keeps history clean — multiple keystrokes don't
-             accumulate noise. */
-          if(pending){
-            newHist = histNoSell.map(function(h){
-              return (h && pending.entry.id && h.id === pending.entry.id) ? entry : h;
-            });
-          } else {
-            newHist = [entry].concat(histNoSell);
-          }
-        }
-        /* If a Sell stamp was just removed, restore portWeights to the
-           pre-Sell committed value. The Sell originally mutated
-           portWeights to "0"; the target proposal that's replacing it
-           should ride on the proper baseline. */
-        var newPortWeights = c.portWeights;
-        if(sellEntry){
-          var restored = parseFloat(sellEntry.oldWeight);
-          if(isFinite(restored)){
-            newPortWeights = Object.assign({}, c.portWeights || {}, { [portfolio]: String(restored) });
-          }
-        }
-        return Object.assign({}, c, { portWeightHistory: newHist, portWeights: newPortWeights });
+        var result = applyProposeTargetWeight(c, portfolio, rawNewValue, today, author, newId);
+        deltaForCash = result.deltaForCash;
+        return result.company;
       });
     });
     _shiftCash(portfolio, deltaForCash);
