@@ -1,5 +1,50 @@
 import { createContext, useContext, useState, useEffect, useRef } from "react";
 import { supaGet, supaGetAll, supaGetMetaMany, supaUpsert, supaDelete } from '../api/index.js';
+
+/* ---- localStorage stale-while-revalidate cache ----
+ *
+ * Each cold load fetches ~15 MB from Supabase (325 companies × ~30 KB
+ * + meta blobs). That adds up fast — a couple weeks of dev iteration
+ * blew through the free-tier 5 GB egress cap.
+ *
+ * Caching pattern:
+ *   1. On mount, paint from localStorage if present. UI is instant.
+ *   2. If cache is <30 s old (FRESH_TTL_MS), skip the Supabase fetch
+ *      entirely. Catches Ctrl-R loops and multi-tab open bursts.
+ *   3. Otherwise refetch in background. On success, replace state and
+ *      re-cache. Stale data is shown for ~1-2 s until fresh arrives.
+ *   4. localStorage is best-effort: cacheSet wraps in try/catch so a
+ *      quota-exceeded error skips caching that blob without breaking
+ *      the load.
+ */
+const CACHE_PREFIX = "rh_cache_v1:";
+const FRESH_TTL_MS = 30 * 1000; /* 30 s — Ctrl-R / multi-tab burst window */
+const MAX_CACHE_BYTES = 4 * 1024 * 1024; /* 4 MB — under typical 5 MB localStorage cap per origin */
+function cacheGet(key) {
+  try {
+    const raw = localStorage.getItem(CACHE_PREFIX + key);
+    if (!raw) return null;
+    const wrapper = JSON.parse(raw);
+    if (!wrapper || typeof wrapper.t !== "number") return null;
+    return wrapper;
+  } catch (e) { return null; }
+}
+function cacheSet(key, value) {
+  try {
+    const payload = JSON.stringify({ t: Date.now(), v: value });
+    if (payload.length > MAX_CACHE_BYTES) return false; /* skip — too big for localStorage */
+    localStorage.setItem(CACHE_PREFIX + key, payload);
+    return true;
+  } catch (e) { return false; }
+}
+function cacheAgeMs(key) {
+  const w = cacheGet(key);
+  return w ? (Date.now() - w.t) : Infinity;
+}
+function cacheValue(key) {
+  const w = cacheGet(key);
+  return w ? w.v : null;
+}
 import { todayStr, inferQuarter } from '../utils/index.js';
 import { DEFAULT_PERF_SERIES, findDefaultSeries } from '../constants/perfDefaults.js';
 import { applyTradeAgenda } from './helpers/markTradeAgenda.js';
@@ -276,6 +321,9 @@ export function CompanyProvider({children}){
           }
         }
       } catch(_e){}
+      /* Invalidate the cache so the next reload refetches fresh
+         instead of falling back to a now-stale snapshot. */
+      try { localStorage.removeItem(CACHE_PREFIX + "raw"); } catch(_e){}
       return loaded.length;
     } catch(_e){
       return -1; /* signal error to caller */
@@ -363,6 +411,48 @@ export function CompanyProvider({children}){
   async function loadFromStorage(){
     setLoadStatus({companies:null,library:null});
     var coOk=false,libOk=false;
+    /* Fast path: if the cache has a snapshot from <FRESH_TTL_MS ago,
+       hydrate state from it and skip the Supabase round trip entirely.
+       Catches Ctrl-R loops and multi-tab open bursts where the same
+       client refetches identical data multiple times per minute.
+       Background refetch still kicks in for cache misses (cold tab) or
+       stale entries. */
+    var fastPathTaken = false;
+    try {
+      var ageRaw = cacheAgeMs("raw");
+      if (ageRaw < FRESH_TTL_MS) {
+        var snap = cacheValue("raw");
+        if (snap && snap.companies && Array.isArray(snap.companies)) {
+          setCompanies(snap.companies);
+          if (snap.saved)              setSaved(snap.saved);
+          if (snap.lastPriceUpdate)    setLastPriceUpdate(snap.lastPriceUpdate);
+          if (snap.lastPriceUpdatedBy != null) setLastPriceUpdatedBy(snap.lastPriceUpdatedBy);
+          if (snap.entryComments)      setEntryComments(snap.entryComments);
+          if (snap.repData)            setRepData(snap.repData);
+          if (snap.fxRates)            setFxRates(snap.fxRates);
+          if (snap.specialWeights)     setSpecialWeights(snap.specialWeights);
+          if (snap.benchmarkWeights)   setBenchmarkWeights(snap.benchmarkWeights);
+          if (snap.alertRules)         setAlertRules(snap.alertRules);
+          if (snap.annotations)        setAnnotations(snap.annotations);
+          if (snap.researchAssignments)setResearchAssignments(snap.researchAssignments);
+          if (snap.perfData)           setPerfData(snap.perfData);
+          if (snap.feedback)           setFeedback(snap.feedback);
+          if (snap.tpApprovals)        setTpApprovals(snap.tpApprovals);
+          if (snap.memoLog)            setMemoLog(snap.memoLog);
+          if (snap.calLastUpdated)     setCalLastUpdated(snap.calLastUpdated);
+          if (snap.calLastUpdatedBy)   setCalLastUpdatedBy(snap.calLastUpdatedBy);
+          if (snap.repLastUpdated)     setRepLastUpdated(snap.repLastUpdated);
+          if (snap.fxLastUpdated)      setFxLastUpdated(snap.fxLastUpdated);
+          if (snap.targetChangeReads)  setTargetChangeReads(snap.targetChangeReads);
+          if (snap.wednesdayNotes != null) setWednesdayNotes(snap.wednesdayNotes);
+          if (snap.valuationSnapshot)  setValuationSnapshot(snap.valuationSnapshot);
+          setLoadStatus({ companies: snap.companies.length, library: (snap.saved || []).length });
+          setReady(true);
+          fastPathTaken = true;
+        }
+      }
+    } catch (_e) {}
+    if (fastPathTaken) return;
     /* Reload uses only THREE concurrent connections instead of the
        previous 17 (1 library + 1 companies + 15 meta blobs). The meta
        blobs all live in the same `meta` table and are now fetched in a
@@ -758,7 +848,41 @@ export function CompanyProvider({children}){
        v3/v4) — those have all flipped their meta flags long ago and
        moved to the lazy loader for the cleanups that are still
        potentially relevant. Block deleted. */
-    setLoadStatus({companies:coOk,library:libOk});setReady(true);return coOk||libOk;}
+    setLoadStatus({companies:coOk,library:libOk});setReady(true);
+    /* Persist the full fetched snapshot to localStorage so subsequent
+       reloads within FRESH_TTL_MS skip the Supabase round trip. We
+       read from a refs-captured snapshot below via the same parsed
+       blobs (rebuilt here from the local r3..rVS rows so we don't
+       depend on stale React closure values). */
+    if (coOk || libOk) {
+      try {
+        var snapToCache = { /* mirror keys consumed by the fast path */ };
+        if (Array.isArray(r2)) {
+          var loadedRows = r2.filter(function(row){return row && row.id !== "shared";});
+          snapToCache.companies = loadedRows.map(function(row){try{return JSON.parse(row.data);}catch(_){return null;}}).filter(Boolean);
+        }
+        try { if (r) { var dLib = JSON.parse(r.data); if (Array.isArray(dLib)) snapToCache.saved = migrateTags(dLib).data; } } catch(_){}
+        try { if (r3 && r3.value)  snapToCache.lastPriceUpdate    = r3.value;            } catch(_){}
+        try { if (r4 && r4.value)  snapToCache.entryComments      = JSON.parse(r4.value);} catch(_){}
+        try { if (r5 && r5.value)  snapToCache.calLastUpdated     = r5.value;            } catch(_){}
+        try { if (r6 && r6.value)  snapToCache.repData            = JSON.parse(r6.value);} catch(_){}
+        try { if (r7 && r7.value)  snapToCache.fxRates            = JSON.parse(r7.value);} catch(_){}
+        try { if (r8 && r8.value)  snapToCache.specialWeights     = JSON.parse(r8.value);} catch(_){}
+        try { if (r9 && r9.value)  snapToCache.annotations        = JSON.parse(r9.value);} catch(_){}
+        try { if (r10 && r10.value)snapToCache.researchAssignments= JSON.parse(r10.value);}catch(_){}
+        try { if (r11 && r11.value)snapToCache.perfData           = JSON.parse(r11.value);}catch(_){}
+        try { if (r12 && r12.value)snapToCache.feedback           = JSON.parse(r12.value);}catch(_){}
+        try { if (r13 && r13.value)snapToCache.benchmarkWeights   = JSON.parse(r13.value);}catch(_){}
+        try { if (r14 && r14.value)snapToCache.alertRules         = JSON.parse(r14.value);}catch(_){}
+        try { if (r16 && r16.value)snapToCache.tpApprovals        = JSON.parse(r16.value);}catch(_){}
+        try { if (r17 && r17.value)snapToCache.memoLog            = JSON.parse(r17.value);}catch(_){}
+        try { if (rTCR && rTCR.value)snapToCache.targetChangeReads= JSON.parse(rTCR.value);}catch(_){}
+        try { if (rWN && rWN.value!=null){var wn=rWN.value;try{var pp=JSON.parse(wn);if(typeof pp==="string")wn=pp;}catch(_){};snapToCache.wednesdayNotes=wn;}}catch(_){}
+        try { if (rVS && rVS.value)snapToCache.valuationSnapshot  = JSON.parse(rVS.value);}catch(_){}
+        cacheSet("raw", snapToCache);
+      } catch(_e){}
+    }
+    return coOk||libOk;}
 
   useEffect(function(){
     /* Sequential retry pattern. Earlier this was a setInterval at 500ms,
