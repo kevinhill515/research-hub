@@ -286,6 +286,10 @@ export default function DiscussionsPanel({ open, onClose, initialScope, initialP
     return initialPortfolio ? [initialPortfolio] : [];
   });
   var [newCompanyId, setNewCompanyId] = useState(initialCompanyId || null);
+  /* New-discussion composer is collapsed by default — the panel
+     opens straight to the existing discussions list. Click the
+     header to expand and post a new one. */
+  var [composerOpen, setComposerOpen] = useState(false);
 
   useEffect(function(){
     if(open){
@@ -323,6 +327,18 @@ export default function DiscussionsPanel({ open, onClose, initialScope, initialP
       var ra = a.resolvedDate || a.date || "";
       var rb = b.resolvedDate || b.date || "";
       return rb.localeCompare(ra);
+    });
+  }
+  /* Active + Mentions: newest first by posting date (ties broken by
+     latest reply so a thread with recent activity floats up). */
+  if(filter === "active" || filter === "mentions"){
+    filtered = filtered.slice().sort(function(a, b){
+      function latestStamp(x){
+        var d = x.date || "";
+        (x.replies || []).forEach(function(r){ if((r.date || "") > d) d = r.date; });
+        return d;
+      }
+      return latestStamp(b).localeCompare(latestStamp(a));
     });
   }
   /* Follow-ups: overdue first, then upcoming by ascending date. */
@@ -417,7 +433,19 @@ export default function DiscussionsPanel({ open, onClose, initialScope, initialP
         )}
 
         <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700">
-          <div className="text-[11px] text-gray-500 dark:text-slate-400 uppercase tracking-wide mb-1">New discussion</div>
+          {/* Header bar — click to toggle the composer. Collapsed by
+              default so the panel opens straight to the discussions
+              list; expand only when you actually want to post. */}
+          <button
+            onClick={function(){ setComposerOpen(function(v){return !v;}); }}
+            className="w-full flex items-center gap-2 text-left text-[11px] text-gray-500 dark:text-slate-400 uppercase tracking-wide hover:text-gray-700 dark:hover:text-slate-200 cursor-pointer"
+          >
+            <span>{composerOpen ? "▾" : "▸"}</span>
+            <span>+ New discussion</span>
+          </button>
+        </div>
+        {composerOpen && (
+        <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700">
           {/* Scope picker — three lanes, each with an example to make the
               choice unambiguous. Per IC feedback: "Company (global)" was
               ambiguous (replaced with "Company-wide"); "Row" was
@@ -496,10 +524,11 @@ export default function DiscussionsPanel({ open, onClose, initialScope, initialP
           </div>
           <MentionInput value={newText} onChange={setNewText} onSubmit={submitNew}/>
           <div className="flex gap-2 mt-1.5">
-            <button onClick={submitNew} disabled={!newText.trim()} className="text-xs px-3 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">Post</button>
+            <button onClick={function(){ submitNew(); setComposerOpen(false); }} disabled={!newText.trim()} className="text-xs px-3 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">Post</button>
             <span className="text-[10px] text-gray-500 dark:text-slate-400 self-center">Ctrl+Enter to post · @mention to tag someone</span>
           </div>
         </div>
+        )}
 
         <div className="flex-1 overflow-y-auto px-4 py-3">
           {filtered.length === 0 ? (
