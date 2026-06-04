@@ -289,6 +289,28 @@ function partitionWeightChanges(companies, ports) {
           oldW: h.oldWeight, newW: h.newWeight,
           action: h.action,
         });
+        /* An action stamp whose newWeight differs from the committed
+           target also represents a target reallocation — Sell goes to
+           0, "Pare to new target" lowers the target, etc. File those
+           under Allocation Changes too so the IC memo lists the
+           weight transition alongside the trade action. Tolerance
+           0.05 ppt to skip rounding noise. Without this, a name that
+           gets a Sell/Pare stamp during IC is missing from
+           Allocation Changes — surfaced after the user noticed Star
+           Bulk + Russel Metals (Pare/Sell) were absent while
+           Equinox (target-only change) showed correctly. */
+        var committedRaw = (c.portWeights || {})[h.portfolio];
+        var committedNum = parseFloat(committedRaw);
+        var oldForAlloc = isFinite(committedNum) ? committedNum : (parseFloat(h.oldWeight) || 0);
+        var newForAlloc = parseFloat(h.newWeight);
+        if (isFinite(newForAlloc) && Math.abs(newForAlloc - oldForAlloc) > 0.05) {
+          allocByPort[h.portfolio].push({
+            company: c,
+            oldW: oldForAlloc,
+            newW: newForAlloc,
+            date: h.date,
+          });
+        }
       } else if (!hasAction && h.isAgenda) {
         /* Target-% change — PENDING (isAgenda:true) only. The 6-day
            recent-committed window was dropped per user request: once
@@ -299,8 +321,8 @@ function partitionWeightChanges(companies, ports) {
            h.oldWeight can be stale if portWeights was edited directly
            after the proposal landed. */
         var committed = (c.portWeights || {})[h.portfolio];
-        var committedNum = parseFloat(committed);
-        var oldW = isFinite(committedNum) ? committedNum : 0;
+        var committedNum2 = parseFloat(committed);
+        var oldW = isFinite(committedNum2) ? committedNum2 : 0;
         allocByPort[h.portfolio].push({
           company: c,
           oldW: oldW,
