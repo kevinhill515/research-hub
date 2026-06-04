@@ -96,6 +96,13 @@ export function CompanyProvider({children}){
      archived snapshot — once notes are finalized, "Save to log"
      copies the text into memoLog and clears this. */
   const [wednesdayNotes,setWednesdayNotes]=useState("");
+  /* Valuation upload snapshot — pinned per-FY values from the last
+     Valuation Upload (Data Hub → Valuation subtab). Shape:
+       { [companyId]: { pe, fy1, eps1, w1, fy2, eps2, w2, uploadedAt } }
+     Used by TpSuggestPanel to seed the Proposed inputs so they
+     reflect the most recently uploaded analyst values, even if
+     subsequent imports clobbered c.valuation.eps1/eps2. */
+  const [valuationSnapshot,setValuationSnapshot]=useState({});
   /* targetChangeReads — sparse acknowledgment map for portWeightHistory
      entries. Shape: { [historyEntryId]: [user, ...] }. Lets the Recent
      Target Changes section on the Agenda tab (and the amber-⏳ pill on
@@ -225,7 +232,7 @@ export function CompanyProvider({children}){
   async function refreshCompaniesFromSupabase(){
     try {
       var coPromise   = supaGetAll("companies");
-      var metaPromise = supaGetMetaMany(["tpApprovals","annotations","memoLog","wednesdayNotes"]);
+      var metaPromise = supaGetMetaMany(["tpApprovals","annotations","memoLog","wednesdayNotes","valuationSnapshot"]);
       var rows = await coPromise;
       var metaMap = await metaPromise;
       if (!Array.isArray(rows)) return 0;
@@ -261,6 +268,11 @@ export function CompanyProvider({children}){
             var raw = rWn.value;
             try { var p = JSON.parse(raw); if (typeof p === "string") raw = p; } catch(_){}
             setWednesdayNotes(raw);
+          }
+          var rVs = metaMap.get("valuationSnapshot");
+          if (rVs && rVs.value) {
+            var vs = JSON.parse(rVs.value);
+            if (vs && typeof vs === "object") setValuationSnapshot(vs);
           }
         }
       } catch(_e){}
@@ -371,7 +383,7 @@ export function CompanyProvider({children}){
       "lastPriceUpdate","entryComments","calLastUpdated","repData","fxRates",
       "specialWeights","annotations","researchAssignments","perfData","feedback",
       "benchmarkWeights","alertRules","tpApprovals","memoLog",
-      "targetChangeReads","wednesdayNotes",
+      "targetChangeReads","wednesdayNotes","valuationSnapshot",
     ];
     var [r, r2, metaMap] = await Promise.all([
       safe(supaGet("library","id","shared")),
@@ -402,6 +414,7 @@ export function CompanyProvider({children}){
     var r17 = _m.get("memoLog")             || null;
     var rTCR = _m.get("targetChangeReads")  || null;
     var rWN  = _m.get("wednesdayNotes")     || null;
+    var rVS  = _m.get("valuationSnapshot")  || null;
     try{if(r){var d=JSON.parse(r.data);if(Array.isArray(d)&&d.length){var libMig=migrateTags(d);setSaved(libMig.data);libOk=libMig.data.length;if(libMig.changed)supaUpsert("library",{id:"shared",data:JSON.stringify(libMig.data)});}}}catch(e){}
     try{if(r2&&Array.isArray(r2)){
       /* Two formats coexist during migration:
@@ -732,6 +745,7 @@ export function CompanyProvider({children}){
       try { var parsed = JSON.parse(wnRaw); if (typeof parsed === "string") wnRaw = parsed; } catch(_){}
       setWednesdayNotes(wnRaw);
     }}catch(e){}
+    try{if(rVS&&rVS.value){var vs=JSON.parse(rVS.value);if(vs&&typeof vs==="object")setValuationSnapshot(vs);}}catch(e){}
     try{if(r10&&r10.value){var ra=JSON.parse(r10.value);if(ra&&typeof ra==="object"){if(!ra.byMember)ra.byMember={};if(!Array.isArray(ra.reorgs))ra.reorgs=[];/* Migrate legacy category keys: gbl→gl, intl→in, intSmall→sc */var RA_RENAMES={gbl:"gl",intl:"in",intSmall:"sc"};var raChanged=false;Object.keys(ra.byMember).forEach(function(m){var mb=ra.byMember[m]||{};Object.keys(RA_RENAMES).forEach(function(oldK){if(mb[oldK]!==undefined){mb[RA_RENAMES[oldK]]=mb[oldK];delete mb[oldK];raChanged=true;}});ra.byMember[m]=mb;});setResearchAssignments(ra);if(raChanged)supaUpsert("meta",{key:"researchAssignments",value:JSON.stringify(ra)});}}}catch(e){}
     try{if(r11&&r11.value){var pd=JSON.parse(r11.value);if(pd&&typeof pd==="object")setPerfData(pd);}}catch(e){}
     try{if(r12&&r12.value){var fb=JSON.parse(r12.value);if(Array.isArray(fb))setFeedback(fb);}}catch(e){}
@@ -1163,6 +1177,7 @@ export function CompanyProvider({children}){
      dedupe key is JSON-stringified to be safe against unusual chars,
      but the value column gets the raw text. */
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(wednesdayNotes);autoSendBlob("wednesdayNotes",j,"meta",{key:"wednesdayNotes",value:wednesdayNotes||""});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[wednesdayNotes,ready]);
+  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(valuationSnapshot);autoSendBlob("valuationSnapshot",j,"meta",{key:"valuationSnapshot",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[valuationSnapshot,ready]);
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(benchmarkWeights);autoSendBlob("benchmarkWeights",j,"meta",{key:"benchmarkWeights",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[benchmarkWeights,ready]);
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(breakdownHistory);autoSendBlob("breakdownHistory",j,"meta",{key:"breakdownHistory",value:j});},DEBOUNCE_HEAVY_MS);return function(){clearTimeout(t);};},[breakdownHistory,ready]);
 
@@ -2009,6 +2024,7 @@ export function CompanyProvider({children}){
     feedback,setFeedback,addFeedback,updateFeedback,removeFeedback,moveFeedback,
     memoLog,setMemoLog,addMemoLog,deleteMemoLog,revertMemoLog,
     wednesdayNotes,setWednesdayNotes,
+    valuationSnapshot,setValuationSnapshot,
     targetChangeReads,setTargetChangeReads,markTargetChangeRead,
     marketsSnapshot,setMarketsSnapshot,marketsStatus,ensureMarketsSnapshot,
     alertRules,setAlertRules,

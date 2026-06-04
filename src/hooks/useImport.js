@@ -16,7 +16,7 @@ import { REP_ACCOUNTS } from '../constants/index.js';
 
 export function useImport(){
   const ctx = useCompanyContext();
-  const { companies, setCompanies, saved, setSaved, setCopied, currentUser, repData, setRepData, fxRates, setFxRates, specialWeights, setSpecialWeights, benchmarkWeights, setBenchmarkWeights, breakdownHistory, setBreakdownHistory, calLastUpdated, setCalLastUpdated, calLastUpdatedBy, setCalLastUpdatedBy, repLastUpdated, setRepLastUpdated, fxLastUpdated, setFxLastUpdated, applyPerfBulk } = ctx;
+  const { companies, setCompanies, saved, setSaved, setCopied, currentUser, repData, setRepData, fxRates, setFxRates, specialWeights, setSpecialWeights, benchmarkWeights, setBenchmarkWeights, breakdownHistory, setBreakdownHistory, calLastUpdated, setCalLastUpdated, calLastUpdatedBy, setCalLastUpdatedBy, repLastUpdated, setRepLastUpdated, fxLastUpdated, setFxLastUpdated, applyPerfBulk, valuationSnapshot, setValuationSnapshot } = ctx;
   /* All import functions surface results / errors via the in-app
      alert dialog (instead of native window.alert). Keeps look + feel
      consistent with the rest of the app and unblocks Test/CI environments
@@ -309,7 +309,43 @@ export function useImport(){
   }
   function applyWeightsImport(){if(!weightsImportText.trim())return;var lines=weightsImportText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});var count=0;var newSpecial={};lines.forEach(function(l){var delim=l.indexOf("\t")>=0?"\t":",";var p=l.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});var nm=p[0].toUpperCase();if(nm==="CASH"||nm==="DIVACC"){newSpecial[nm]={GL:p[1]||"",FGL:p[2]||"",IV:p[3]||"",FIV:p[4]||"",EM:p[5]||"",SC:p[6]||""};}});if(Object.keys(newSpecial).length>0){setSpecialWeights(function(prev){var updated=Object.assign({},prev,newSpecial);supaUpsert("meta",{key:"specialWeights",value:JSON.stringify(updated)});return updated;});}setCompanies(function(prev){return prev.map(function(c){var cname=(c.name||"").toLowerCase().trim();var match=lines.find(function(l){var delim=l.indexOf("\t")>=0?"\t":",";var parts=l.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});return parts[0].toLowerCase().trim()===cname;});if(!match)return c;var delim=match.indexOf("\t")>=0?"\t":",";var p=match.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});var newWeights=Object.assign({},c.portWeights||{},{GL:p[1]||"",FGL:p[2]||"",IV:p[3]||"",FIV:p[4]||"",EM:p[5]||"",SC:p[6]||""});count++;return Object.assign({},c,{portWeights:newWeights});});});setTimeout(function(){alertFn("Updated weights for "+count+" companies.");setWeightsImportText("");},100);}
   function applyValImport(){if(!valImportText.trim())return;var lines=valImportText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});var count=0;setCompanies(function(prev){return prev.map(function(c){var cname=(c.name||"").toLowerCase().trim();var match=lines.find(function(l){var delim=l.indexOf("\t")>=0?"\t":",";var parts=l.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});return parts[0].toLowerCase().trim()===cname;});if(!match)return c;var delim=match.indexOf("\t")>=0?"\t":",";var p=match.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});var newVal=Object.assign({},c.valuation||{},{pe:p[1]||"",fyMonth:p[2]||"",currency:p[3]||"",fy1:p[4]||"",eps1:p[5]||"",w1:p[6]||"",fy2:p[7]||"",eps2:p[8]||"",w2:p[9]||""});count++;return Object.assign({},c,{valuation:newVal});});});setTimeout(function(){alertFn("Updated valuation for "+count+" companies.");setValImportText("");},100);}
-  function applyEstImport(){if(!estImportText.trim())return;var lines=estImportText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});var count=0;setCompanies(function(prev){return prev.map(function(c){var cname=(c.name||"").toLowerCase().trim();var match=lines.find(function(l){var delim=l.indexOf("\t")>=0?"\t":",";var parts=l.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});return parts[0].toLowerCase().trim()===cname;});if(!match)return c;var delim=match.indexOf("\t")>=0?"\t":",";var p=match.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});var newVal=Object.assign({},c.valuation||{},{pe:p[1]||"",peCurrent:p[2]||"",peLow5:p[3]||"",peHigh5:p[4]||"",peAvg5:p[5]||"",peMed5:p[6]||"",fyMonth:p[7]||"",currency:p[8]||"",fy1:p[9]||"",eps1:p[10]||"",w1:p[11]||"",fy2:p[12]||"",eps2:p[13]||"",w2:p[14]||""});if(p[15]!==undefined&&p[15]!==""){newVal.tpFixed=p[15];newVal.tpFixedDate=todayStr();}count++;return Object.assign({},c,{valuation:newVal});});});setTimeout(function(){alertFn("Updated estimates for "+count+" companies.");setEstImportText("");},100);}
+  function applyEstImport(){
+    if(!estImportText.trim())return;
+    var lines=estImportText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});
+    var count=0;
+    /* snapshotPatch — pins the per-FY values (pe, fy1, eps1, w1, fy2,
+       eps2, w2) from this Valuation Upload to c.valuationSnapshot so
+       TP Suggest can seed from these analyst values even after a
+       subsequent daily refresh overwrites c.valuation.eps1/eps2. */
+    var snapshotPatch = {};
+    setCompanies(function(prev){
+      return prev.map(function(c){
+        var cname=(c.name||"").toLowerCase().trim();
+        var match=lines.find(function(l){var delim=l.indexOf("\t")>=0?"\t":",";var parts=l.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});return parts[0].toLowerCase().trim()===cname;});
+        if(!match)return c;
+        var delim=match.indexOf("\t")>=0?"\t":",";
+        var p=match.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});
+        var newVal=Object.assign({},c.valuation||{},{pe:p[1]||"",peCurrent:p[2]||"",peLow5:p[3]||"",peHigh5:p[4]||"",peAvg5:p[5]||"",peMed5:p[6]||"",fyMonth:p[7]||"",currency:p[8]||"",fy1:p[9]||"",eps1:p[10]||"",w1:p[11]||"",fy2:p[12]||"",eps2:p[13]||"",w2:p[14]||""});
+        if(p[15]!==undefined&&p[15]!==""){newVal.tpFixed=p[15];newVal.tpFixedDate=todayStr();}
+        snapshotPatch[c.id]={
+          pe:    p[1]  || "",
+          fy1:   p[9]  || "",
+          eps1:  p[10] || "",
+          w1:    p[11] || "",
+          fy2:   p[12] || "",
+          eps2:  p[13] || "",
+          w2:    p[14] || "",
+          uploadedAt: todayStr(),
+        };
+        count++;
+        return Object.assign({},c,{valuation:newVal});
+      });
+    });
+    if(Object.keys(snapshotPatch).length>0 && typeof setValuationSnapshot === "function"){
+      setValuationSnapshot(function(prev){ return Object.assign({}, prev || {}, snapshotPatch); });
+    }
+    setTimeout(function(){alertFn("Updated estimates for "+count+" companies.");setEstImportText("");},100);
+  }
   /* Metrics upload — 31 columns matching the Excel Metrics tab exactly:
      Company, Ord Ticker, MktCap, F P/E +1, F P/E +2,
      FCF Yld +1, FCF Yld +2, Div Yld +1, Div Yld +2,

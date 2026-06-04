@@ -56,7 +56,7 @@ function computeImpliedTP(pe, eps1, eps2, w1, w2) {
 }
 
 export default function TpSuggestPanel({ selCo, pv, tpFixed, activeCurrency }) {
-  var { submitTpApproval, currentUser, tpApprovals } = useCompanyContext();
+  var { submitTpApproval, currentUser, tpApprovals, valuationSnapshot } = useCompanyContext();
   var [open, setOpen] = useState(false);
   var [proposal, setProposal] = useState(null);   /* lazy-init on open */
   var [rationale, setRationale] = useState("");
@@ -90,15 +90,22 @@ export default function TpSuggestPanel({ selCo, pv, tpFixed, activeCurrency }) {
   });
 
   function openPanel() {
-    /* Seed the proposal with Live values (most common starting point
-       — "FactSet's numbers, want to lock them in"). User edits or
-       copies Fixed values via the "Use Fixed" path. */
+    /* Seed the proposal preferring valuationSnapshot (pinned analyst
+       values from the most recent Valuation Upload) so subsequent
+       daily refreshes that clobber c.valuation.eps1/eps2 don't bleed
+       into TP Suggest. Falls back to Live (c.valuation.*) when no
+       snapshot exists for this company. */
+    var snap = (valuationSnapshot && valuationSnapshot[selCo.id]) || null;
+    function pick(k) {
+      if (snap && snap[k] !== undefined && snap[k] !== null && snap[k] !== "") return String(snap[k]);
+      return live[k] != null ? String(live[k]) : "";
+    }
     setProposal({
-      pe:   live.pe   != null ? String(live.pe)   : "",
-      eps1: live.eps1 != null ? String(live.eps1) : "",
-      eps2: live.eps2 != null ? String(live.eps2) : "",
-      w1:   live.w1   != null ? String(live.w1)   : "",
-      w2:   live.w2   != null ? String(live.w2)   : "",
+      pe:   pick("pe"),
+      eps1: pick("eps1"),
+      eps2: pick("eps2"),
+      w1:   pick("w1"),
+      w2:   pick("w2"),
     });
     setRationale("");
     setOverrideTp("");

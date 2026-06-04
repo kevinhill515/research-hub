@@ -81,7 +81,7 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
   /* fxRates is needed to convert local-currency sales/EPS into USD for
      the secondary line on the stats strip. fxRates[ccy] is stored as
      local-per-USD (so amountUSD = amountLocal / fxRates[ccy]). */
-  var { fxRates, submitTpApproval, editTpApproval, tpApprovals, currentUser } = useCompanyContext();
+  var { fxRates, submitTpApproval, editTpApproval, tpApprovals, currentUser, valuationSnapshot } = useCompanyContext();
   /* Local UI feedback after submitting a TP change for approval. Set
      to a short status string for ~3s, then cleared. Avoids needing a
      toast system. */
@@ -676,14 +676,30 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
                           Import value) when no horizon resolves. */
                   var epsFromHorizon1 = resolveEpsForFY(company, v.fy1);
                   var epsFromHorizon2 = resolveEpsForFY(company, v.fy2);
+                  /* Prefill priority (highest first):
+                       0. valuationSnapshot — pinned analyst values from
+                          the most recent Valuation Upload. Trumps both
+                          epsRevisions and live c.valuation so daily
+                          FactSet refreshes can't bleed into the form.
+                       1. epsRevisions horizon match — daily FactSet
+                          line for the matching FY label.
+                       2. v.eps1 / v.eps2 — fallback. */
+                  var snap = (valuationSnapshot && valuationSnapshot[company.id]) || null;
+                  function snapVal(k){
+                    if(!snap) return null;
+                    var s = snap[k];
+                    return (s !== undefined && s !== null && s !== "") ? s : null;
+                  }
                   setTpForm({
-                    pe:   v.pe   != null && v.pe   !== "" ? String(v.pe)   : "",
-                    eps1: epsFromHorizon1 != null ? String(epsFromHorizon1)
-                          : (v.eps1 != null && v.eps1 !== "" ? String(v.eps1) : ""),
-                    eps2: epsFromHorizon2 != null ? String(epsFromHorizon2)
-                          : (v.eps2 != null && v.eps2 !== "" ? String(v.eps2) : ""),
-                    w1:   v.w1   != null && v.w1   !== "" ? String(v.w1)   : "",
-                    w2:   v.w2   != null && v.w2   !== "" ? String(v.w2)   : "",
+                    pe:   snapVal("pe")  || (v.pe   != null && v.pe   !== "" ? String(v.pe)   : ""),
+                    eps1: snapVal("eps1") ||
+                          (epsFromHorizon1 != null ? String(epsFromHorizon1)
+                          : (v.eps1 != null && v.eps1 !== "" ? String(v.eps1) : "")),
+                    eps2: snapVal("eps2") ||
+                          (epsFromHorizon2 != null ? String(epsFromHorizon2)
+                          : (v.eps2 != null && v.eps2 !== "" ? String(v.eps2) : "")),
+                    w1:   snapVal("w1")  || (v.w1   != null && v.w1   !== "" ? String(v.w1)   : ""),
+                    w2:   snapVal("w2")  || (v.w2   != null && v.w2   !== "" ? String(v.w2)   : ""),
                   });
                   var hist = company.tpHistory || [];
                   var priorApproval = null;
