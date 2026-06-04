@@ -11,3 +11,8 @@ scripts/__pycache__/
 # even if a copy accidentally lands inside the working tree.
 life-tracker/
 calisthenics-tracker/
+
+# Local backup files — never commit (contains all portfolio data)
+backup/
+*.backup.json
+research-hub-backup-*.json
