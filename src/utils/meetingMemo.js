@@ -250,16 +250,23 @@ function buildFvUpdates(companies, ports, repData, consolidated) {
   }
   const byPort = {};
   ports.forEach(function (p) { byPort[p] = []; });
+  /* One row per (company, port) — keep the freshest recent approval.
+     Without this dedup, re-approving the same name during a meeting
+     (or two separate pending records each getting approved) lands
+     N copies of the same ticker on the FV Target Changes list. */
   (companies || []).forEach(function (c) {
+    var freshest = null;
     (c.tpHistory || []).forEach(function (h) {
       if (h.source !== "approval") return;
       if (!isRecent(h.date)) return;
-      const tpStr = h.tp != null && isFinite(h.tp) ? Number(h.tp).toFixed(2) : "";
-      const pfx = ccyPrefix(h.currency || (c.valuation && c.valuation.currency) || "USD");
-      (c.portfolios || []).forEach(function (p) {
-        if (ports.indexOf(p) < 0) return;
-        byPort[p].push({ company: c, newTp: tpStr, pfx: pfx });
-      });
+      if (!freshest || (h.date || "") > (freshest.date || "")) freshest = h;
+    });
+    if (!freshest) return;
+    const tpStr = freshest.tp != null && isFinite(freshest.tp) ? Number(freshest.tp).toFixed(2) : "";
+    const pfx = ccyPrefix(freshest.currency || (c.valuation && c.valuation.currency) || "USD");
+    (c.portfolios || []).forEach(function (p) {
+      if (ports.indexOf(p) < 0) return;
+      byPort[p].push({ company: c, newTp: tpStr, pfx: pfx });
     });
   });
   return formatPortfolioSection(byPort, ports, repData, function (it) {

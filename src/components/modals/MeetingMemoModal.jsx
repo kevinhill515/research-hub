@@ -474,7 +474,25 @@ function AgendaSummary({ profilePorts, pendingByPort, recentChanges, targetChang
               </div>
               {rows.length > 0 && (() => {
                 var trades = rows.filter(function (r) { return !!r.action; });
-                var allocChanges = rows.filter(function (r) { return !r.action; });
+                /* Allocation Changes mirrors the memo's logic: include
+                   target-only rows AND action rows whose effective new
+                   weight differs from the committed portWeights value
+                   by more than 0.05 ppt. Without this, a Pare/Sell
+                   stamp tied to a target reduction (rus-ca, jen-de,
+                   6323-jp, brav-se in INSC) showed under Trades but
+                   was missing from the Allocation Changes block where
+                   the user expected to see the weight transition. */
+                var allocChanges = rows.filter(function (r) {
+                  if (!r.action) return !!r.target;
+                  var newW = r.target
+                    ? parseFloat(r.target.newWeight)
+                    : parseFloat(r.action.newWeight);
+                  if (!isFinite(newW)) return false;
+                  var committedRaw = (r.co.portWeights || {})[port];
+                  var committed = parseFloat(committedRaw);
+                  if (!isFinite(committed)) committed = 0;
+                  return Math.abs(newW - committed) > 0.05;
+                });
                 /* Build a single render function for either group so the
                    trades block and the allocation-changes block share all
                    the badge / weight / comment logic. */
@@ -501,9 +519,33 @@ function AgendaSummary({ profilePorts, pendingByPort, recentChanges, targetChang
                     }
                     targetNewW = targetEntry.newWeight;
                   }
-                  /* weightStr — action-aware. */
+                  /* weightStr — action-aware, with different framing
+                     depending on which block this row is rendered in.
+                     For the Allocation Changes block (isAlloc=true)
+                     the "from" side is the COMMITTED TARGET weight —
+                     the row reads as a target-to-target transition.
+                     For the Trades block (isAlloc=false), the "from"
+                     side is the rep-account weight so the trader can
+                     see how much they're moving from current holdings. */
                   var weightStr = null;
-                  if (actionEntry && actionEntry.action === "Sell") {
+                  if (isAlloc) {
+                    /* Target-from-target framing. */
+                    var committedAlloc = parseFloat((c.portWeights || {})[port]);
+                    var fromAlloc = targetEntry
+                      ? fmtPct(targetOldW)
+                      : (isFinite(committedAlloc) ? fmtPct(committedAlloc) : "?");
+                    var toAlloc;
+                    if (targetEntry) {
+                      toAlloc = fmtPct(targetNewW);
+                    } else if (actionEntry && actionEntry.action === "Sell") {
+                      toAlloc = "0.00%";
+                    } else if (actionEntry) {
+                      toAlloc = isFinite(committedAlloc) ? fmtPct(committedAlloc) : "?";
+                    } else {
+                      toAlloc = "?";
+                    }
+                    weightStr = fromAlloc + " → " + toAlloc;
+                  } else if (actionEntry && actionEntry.action === "Sell") {
                     weightStr = (repStr || "?") + " → 0.00%";
                   } else if (actionEntry && targetEntry) {
                     weightStr = (repStr || "?") + " → " + fmtPct(targetNewW);

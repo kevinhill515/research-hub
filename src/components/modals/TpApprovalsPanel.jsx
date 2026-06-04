@@ -17,7 +17,7 @@
  * takes an optional reason — the suggester can edit + resubmit if needed.
  */
 import { useState, useMemo, useEffect } from "react";
-import { TEAM_COLORS } from "../../constants/index.js";
+import { TEAM_COLORS, PORTFOLIOS } from "../../constants/index.js";
 import { useCompanyContext } from "../../context/CompanyContext.jsx";
 import { ccyPrefix, calcMOS } from "../../utils/index.js";
 
@@ -512,8 +512,23 @@ function ApprovalCard({ rec, company, companyName, onApprove, onReject, onWithdr
 }
 
 export function TpApprovalsPanel({ open, onClose, onNavigate }){
-  var { tpApprovals, companies, approveTpApproval, rejectTpApproval, withdrawTpApproval } = useCompanyContext();
+  var { tpApprovals, companies, approveTpApproval, rejectTpApproval, withdrawTpApproval, refreshCompaniesFromSupabase } = useCompanyContext();
   var [view, setView] = useState("pending"); /* "pending" | "approved" | "rejected" */
+  var [refreshing, setRefreshing] = useState(false);
+  /* Portfolio filter for the Approved tab — quick way to see only
+     the approvals that hit a specific sleeve (e.g. just EM ahead of
+     the Thursday meeting). "All" = no filter. */
+  var [approvedPortFilter, setApprovedPortFilter] = useState("All");
+  /* Cross-user sync: if a teammate just decided on a record, our local
+     tpApprovals doesn't pick it up automatically — we need to re-pull
+     from Supabase. This button gives a manual refresh without
+     requiring a full page reload. */
+  async function doRefresh() {
+    if (refreshing || !refreshCompaniesFromSupabase) return;
+    setRefreshing(true);
+    try { await refreshCompaniesFromSupabase(); } catch (e) {}
+    setRefreshing(false);
+  }
 
   /* Lookup the full company by id. Used by ApprovalCard to display the
      name, derive the current ord-ticker price, and pick the currency
@@ -558,6 +573,15 @@ export function TpApprovalsPanel({ open, onClose, onNavigate }){
           <button onClick={function(){setView("rejected");}} className={"text-[11px] px-2.5 py-1 rounded-full border cursor-pointer " + (view==="rejected"?"bg-rose-100 dark:bg-rose-900/40 border-rose-300 dark:border-rose-700 text-rose-800 dark:text-rose-200 font-semibold":"border-slate-200 dark:border-slate-700 text-gray-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800")}>
             Rejected {rejected.length>0 && <span className="ml-1">({rejected.length})</span>}
           </button>
+          {/* Refresh — pulls latest tpApprovals from Supabase so
+              cross-user decisions (a teammate approving on another
+              machine) show up without a full page reload. */}
+          <button
+            onClick={doRefresh}
+            disabled={refreshing}
+            className="text-[11px] px-2.5 py-1 rounded-full border border-slate-200 dark:border-slate-700 text-gray-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer disabled:opacity-50"
+            title="Pull the latest approvals state from Supabase — use this if a teammate just decided on a record on another machine"
+          >{refreshing ? "Refreshing…" : "↻ Refresh"}</button>
           {/* Pop out — separate browser window so the panel stays
               visible alongside the main app. Hidden inside the popout
               itself (no window.opener means we ARE the popout). */}
@@ -575,11 +599,38 @@ export function TpApprovalsPanel({ open, onClose, onNavigate }){
           )}
           <button onClick={onClose} className={"text-xs text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300 cursor-pointer " + ((typeof window === "undefined" || !window.opener) ? "" : "ml-auto")}>Close ✕</button>
         </div>
+        {/* Portfolio filter — Approved tab only. Filters by membership
+            on the linked company's portfolios array. "All" disables. */}
+        {view === "approved" && approved.length > 0 && (
+          <div className="px-4 pt-3 flex items-center gap-1.5 flex-wrap border-b border-slate-200 dark:border-slate-700 pb-2.5">
+            <span className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-semibold mr-1">Portfolio:</span>
+            {["All"].concat(PORTFOLIOS).map(function(p){
+              var active = approvedPortFilter === p;
+              return (
+                <button
+                  key={p}
+                  onClick={function(){ setApprovedPortFilter(p); }}
+                  className={"text-[11px] px-2 py-0.5 rounded-full border cursor-pointer transition-colors " + (active
+                    ? "bg-emerald-100 dark:bg-emerald-900/40 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200 font-semibold"
+                    : "border-slate-200 dark:border-slate-700 text-gray-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800")}
+                >{p}</button>
+              );
+            })}
+          </div>
+        )}
         <div className="overflow-y-auto p-4 flex-1">
           {(function(){
             var list = view === "pending" ? pending : view === "approved" ? approved : rejected;
+            if (view === "approved" && approvedPortFilter !== "All") {
+              list = list.filter(function(rec){
+                var co = coById[rec.companyId];
+                return co && (co.portfolios || []).indexOf(approvedPortFilter) >= 0;
+              });
+            }
             var emptyMsg = view === "pending" ? "No TP changes pending approval."
-                         : view === "approved" ? "No approved TP changes yet."
+                         : view === "approved" ? (approvedPortFilter !== "All"
+                             ? "No approved TP changes for " + approvedPortFilter + "."
+                             : "No approved TP changes yet.")
                          : "No rejected TP changes yet.";
             if (list.length === 0) {
               return <div className="text-sm text-gray-500 dark:text-slate-400 italic text-center py-8">{emptyMsg}</div>;
