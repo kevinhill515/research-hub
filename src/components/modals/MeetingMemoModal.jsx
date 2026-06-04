@@ -67,7 +67,7 @@ function daysAgo(iso) {
 export function MeetingMemoModal({ open, onClose }) {
   const {
     companies, setCompanies, repData, fxRates, currentUser,
-    memoLog, addMemoLog, deleteMemoLog,
+    memoLog, addMemoLog, deleteMemoLog, revertMemoLog,
     wednesdayNotes, setWednesdayNotes,
     targetChangeReads, markTargetChangeRead, commitProposedWeights,
     discardAgendaEntries, refreshCompaniesFromSupabase, commentOnAgendaEntry,
@@ -340,6 +340,15 @@ export function MeetingMemoModal({ open, onClose }) {
               onDelete={function (id) {
                 if (typeof window !== "undefined" && window.confirm && !window.confirm("Delete this memo log entry? This cannot be undone.")) return;
                 deleteMemoLog(id);
+                if (expandedLogId === id) setExpandedLogId(null);
+              }}
+              onRevert={function (id) {
+                if (typeof window !== "undefined" && window.confirm && !window.confirm(
+                  "Revert this lock-in?\n\n" +
+                  "All target-weight commits and B/A/P/S agenda stamps flipped during this log will return to pending (isAgenda:true), and portWeights will be restored to their pre-commit values. The log entry itself is deleted.\n\n" +
+                  "Use this when the meeting was logged too early — undoes the commit so the IC can finish editing."
+                )) return;
+                revertMemoLog(id);
                 if (expandedLogId === id) setExpandedLogId(null);
               }}
             />
@@ -846,7 +855,7 @@ function WednesdayNotesView({ text, setText, copied, onCopy, onSaveToLog }) {
 
 /* ===== LOG TAB ===== */
 
-function LogTab({ entries, expandedId, onToggle, onDelete }) {
+function LogTab({ entries, expandedId, onToggle, onDelete, onRevert }) {
   if (!entries.length) {
     return (
       <div className="text-sm text-gray-500 dark:text-slate-400">
@@ -877,6 +886,20 @@ function LogTab({ entries, expandedId, onToggle, onDelete }) {
                 {e.author ? <span className="text-gray-500 dark:text-slate-400 ml-2">· {e.author}</span> : null}
                 <span className="text-gray-400 dark:text-slate-500 ml-2">{expanded ? "▾" : "▸"}</span>
               </button>
+              {/* Revert lock-in — flips committed entries back to
+                  pending so the IC can finish editing if the meeting
+                  was logged too early. Only meaningful for Tuesday /
+                  Thursday (Wednesday has no associated weight
+                  commits). */}
+              {e.profile !== "wednesday" && onRevert && (
+                <button
+                  onClick={function () { onRevert(e.id); }}
+                  className="text-xs px-2 py-0.5 rounded text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20 cursor-pointer"
+                  title="Undo this lock-in — restores agenda items and deletes the log"
+                >
+                  ↶ Revert
+                </button>
+              )}
               <button
                 onClick={function () { onDelete(e.id); }}
                 className="text-xs px-2 py-0.5 rounded text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 cursor-pointer"

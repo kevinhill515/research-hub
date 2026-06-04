@@ -1341,6 +1341,66 @@ export function CompanyProvider({children}){
   function deleteMemoLog(id){
     setMemoLog(function(prev){return(prev||[]).filter(function(e){return e.id!==id;});});
   }
+  /* Undo a memo log entry — flips its associated commits back to
+     agenda state so the IC team can finish editing as if the lock-in
+     never happened. Strategy:
+       1. Look up the log entry (gives us date + profile).
+       2. Resolve the profile's portfolios.
+       3. For each company, walk portWeightHistory: any non-agenda
+          entry on those ports whose committedAt (preferred) or date
+          (fallback for legacy entries pre-committedAt) matches the
+          log's date gets flipped back to isAgenda:true. Target
+          proposals also restore portWeights[port] to oldWeight so
+          the committed weight isn't left stranded.
+       4. Delete the memo log entry itself.
+     Pre-committedAt fallback covers IC entries proposed and
+     committed on the same day — same date stamp on both events. */
+  function revertMemoLog(logId){
+    var logEntry = (memoLog || []).find(function(e){ return e.id === logId; });
+    if(!logEntry) return;
+    /* MEETING_PROFILES is defined in meetingMemo.js. To avoid a
+       circular import, hard-code the port lists here — kept in sync
+       with that file's PROFILES constant. */
+    var PROFILE_PORTS = {
+      tuesday: ["FIN","IN","FGL","GL"],
+      wednesday: [],
+      thursday: ["EM","SC"],
+    };
+    var ports = PROFILE_PORTS[logEntry.profile] || [];
+    if(ports.length === 0){
+      /* Wednesday is freeform — nothing to revert besides deleting
+         the log row itself. */
+      deleteMemoLog(logId);
+      return;
+    }
+    setCompanies(function(cs){
+      return cs.map(function(c){
+        var hist = c.portWeightHistory || [];
+        var changed = false;
+        var newPortWeights = Object.assign({}, c.portWeights || {});
+        var newHist = hist.map(function(h){
+          if(!h || h.isAgenda) return h;
+          if(ports.indexOf(h.portfolio) < 0) return h;
+          var commitMark = h.committedAt || h.date;
+          if(commitMark !== logEntry.date) return h;
+          var isProposalShape = !h.action && h.newWeight !== undefined && h.newWeight !== null;
+          var isActionShape = !!h.action;
+          if(!isProposalShape && !isActionShape) return h;
+          changed = true;
+          if(isProposalShape){
+            var ow = parseFloat(h.oldWeight);
+            if(isFinite(ow)) newPortWeights[h.portfolio] = String(ow);
+          }
+          var reverted = Object.assign({}, h, { isAgenda: true });
+          delete reverted.committedAt;
+          return reverted;
+        });
+        if(!changed) return c;
+        return Object.assign({}, c, { portWeights: newPortWeights, portWeightHistory: newHist });
+      });
+    });
+    setMemoLog(function(prev){ return (prev || []).filter(function(e){ return e.id !== logId; }); });
+  }
   /* Target-change acknowledgment. historyEntryId can be any string —
      for portWeightHistory entries we use entry.id (auto-assigned at
      write time) or a deterministic synthetic key like
@@ -1698,19 +1758,21 @@ export function CompanyProvider({children}){
         var newPortWeights = Object.assign({}, c.portWeights || {});
         var newHist = hist.map(function(h){
           if(!h || !h.isAgenda || h.portfolio !== portfolio) return h;
-          /* Target proposal — write committed weight. */
+          /* Target proposal — write committed weight. committedAt
+             stamps the entry so a later revertMemoLog can identify
+             exactly which entries this commit pass touched. */
           if(!h.action && h.newWeight !== undefined && h.newWeight !== null){
             var nw = parseFloat(h.newWeight);
             if(isFinite(nw)){
               newPortWeights[portfolio] = String(nw);
             }
             changed = true;
-            return Object.assign({}, h, { isAgenda: false });
+            return Object.assign({}, h, { isAgenda: false, committedAt: todayStr() });
           }
           /* B/A/P/S stamp — flip to executed. */
           if(h.action){
             changed = true;
-            return Object.assign({}, h, { isAgenda: false });
+            return Object.assign({}, h, { isAgenda: false, committedAt: todayStr() });
           }
           return h;
         });
@@ -1945,7 +2007,7 @@ export function CompanyProvider({children}){
     researchAssignments,setResearchAssignments,setResearchSlot,setReorgSlot,
     perfData,setPerfData,setPerfSeries,addPerfSeries,removePerfSeries,movePerfSeries,setPerfSeriesOrder,setPerfReturn,setPerfLastMonthEMV,applyPerfBulk,
     feedback,setFeedback,addFeedback,updateFeedback,removeFeedback,moveFeedback,
-    memoLog,setMemoLog,addMemoLog,deleteMemoLog,
+    memoLog,setMemoLog,addMemoLog,deleteMemoLog,revertMemoLog,
     wednesdayNotes,setWednesdayNotes,
     targetChangeReads,setTargetChangeReads,markTargetChangeRead,
     marketsSnapshot,setMarketsSnapshot,marketsStatus,ensureMarketsSnapshot,

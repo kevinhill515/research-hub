@@ -27,7 +27,7 @@
  * exists but no shares have been bought yet.
  */
 
-import { parseDate, todayStr, repShares } from './index.js';
+import { parseDate, todayStr, repShares, ccyPrefix } from './index.js';
 
 /* Memo-style port labels. These are the abbreviations the IC uses in
  * compliance emails — distinct from the internal storage codes. */
@@ -175,8 +175,10 @@ function formatAgendaLines(company, entries, repData) {
       verb = "Pare to";
     } else if (action === "Add") {
       verb = "Add to";
+    } else if (action === "Buy") {
+      verb = "Buy to";
     } else {
-      verb = action; /* "Buy" */
+      verb = action;
     }
     const portsText = group
       .map(function (e) { return fmtWeight(e.newW) + "% (" + (PORT_MEMO_LABELS[e.port] || e.port) + ")"; })
@@ -236,7 +238,12 @@ function buildFvUpdates(companies, ports, repData, consolidated) {
           if (tk) { heldTicker = tk; break; }
         }
         if (!heldTicker) heldTicker = c.ticker || "?";
-        rows.push(heldTicker + " (" + (c.name || "?") + ") $" + tpStr);
+        /* Use the tpHistory entry's stored currency (set by
+           applyApprovalToCompany at approval time); fall back to the
+           company's valuation currency, then USD. Avoids the prior
+           hardcoded "$" prefix that misreported every non-USD name. */
+        var pfx = ccyPrefix(h.currency || (c.valuation && c.valuation.currency) || "USD");
+        rows.push(heldTicker + " (" + (c.name || "?") + ") " + pfx + tpStr);
       });
     });
     return rows.join(", ");
@@ -248,14 +255,15 @@ function buildFvUpdates(companies, ports, repData, consolidated) {
       if (h.source !== "approval") return;
       if (!isRecent(h.date)) return;
       const tpStr = h.tp != null && isFinite(h.tp) ? Number(h.tp).toFixed(2) : "";
+      const pfx = ccyPrefix(h.currency || (c.valuation && c.valuation.currency) || "USD");
       (c.portfolios || []).forEach(function (p) {
         if (ports.indexOf(p) < 0) return;
-        byPort[p].push({ company: c, newTp: tpStr });
+        byPort[p].push({ company: c, newTp: tpStr, pfx: pfx });
       });
     });
   });
   return formatPortfolioSection(byPort, ports, repData, function (it) {
-    return "$" + it.newTp;
+    return (it.pfx || "$") + it.newTp;
   });
 }
 
@@ -280,13 +288,37 @@ function partitionWeightChanges(companies, ports) {
   const allocByPort = {};
   ports.forEach(function (p) { allocByPort[p] = []; });
   (companies || []).forEach(function (c) {
+    /* Index target proposals by port so action stamps can borrow the
+       latest proposed newWeight for their display. Without this, a
+       Buy stamp recorded before the user typed the target % keeps
+       newWeight=0 ("Buy 0.0%") even though a 2% proposal exists. */
+    var targetProposalByPort = {};
+    (c.portWeightHistory || []).forEach(function (h) {
+      if (!h || !h.isAgenda || h.action) return;
+      if (h.newWeight === undefined || h.newWeight === null) return;
+      /* Newest wins — they're prepended, so first hit per port is the
+         freshest proposal. */
+      if (targetProposalByPort[h.portfolio] === undefined) {
+        var nw = parseFloat(h.newWeight);
+        if (isFinite(nw)) targetProposalByPort[h.portfolio] = nw;
+      }
+    });
     (c.portWeightHistory || []).forEach(function (h) {
       if (ports.indexOf(h.portfolio) < 0) return;
       const hasAction = !!h.action;
       if (hasAction && h.isAgenda) {
+        /* Override the stamp's stored newWeight with the target
+           proposal value if one is pending on the same port — the
+           proposal is the live source of truth for "what target are
+           we Buying/Paring to". Sell is unaffected (it always goes
+           to 0). */
+        var effectiveNewW = h.newWeight;
+        if (h.action !== "Sell" && targetProposalByPort[h.portfolio] !== undefined) {
+          effectiveNewW = targetProposalByPort[h.portfolio];
+        }
         (agendaByCo[c.id] = agendaByCo[c.id] || []).push({
           company: c, port: h.portfolio,
-          oldW: h.oldWeight, newW: h.newWeight,
+          oldW: h.oldWeight, newW: effectiveNewW,
           action: h.action,
         });
         /* An action stamp whose newWeight differs from the committed
@@ -371,15 +403,33 @@ export function buildMeetingMemo(companies, profileName, repData) {
   const agendaByCo = part.agendaByCo;
   const executedByPort = part.executedByPort;
 
-  /* Trading Agenda. */
+  /* Trading Agenda — ordered by the company's primary port in
+     profile.ports order (Thursday: EM before SC, Tuesday: FIN before
+     IN/FGL/GL). Within a primary-port bucket, ties broken by company
+     name. Replaces the prior alphabetic sort which interleaved sleeves. */
   const agendaLines = [];
-  Object.keys(agendaByCo).forEach(function (cid) {
+  function primaryPortIdx(entries) {
+    var best = -1;
+    for (var i = 0; i < entries.length; i++) {
+      var idx = profile.ports.indexOf(entries[i].port);
+      if (idx >= 0 && (best < 0 || idx < best)) best = idx;
+    }
+    return best < 0 ? 999 : best;
+  }
+  const sortedCids = Object.keys(agendaByCo).sort(function (a, b) {
+    var ap = primaryPortIdx(agendaByCo[a]);
+    var bp = primaryPortIdx(agendaByCo[b]);
+    if (ap !== bp) return ap - bp;
+    var aName = (agendaByCo[a][0].company.name || "");
+    var bName = (agendaByCo[b][0].company.name || "");
+    return aName.localeCompare(bName);
+  });
+  sortedCids.forEach(function (cid) {
     const entries = agendaByCo[cid];
     if (!entries.length) return;
     const company = entries[0].company;
     formatAgendaLines(company, entries, repData).forEach(function (l) { agendaLines.push(l); });
   });
-  agendaLines.sort();
 
   /* Allocation Changes — target-% changes (proposed + recently
      committed). partitionWeightChanges already populated the entries
