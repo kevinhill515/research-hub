@@ -121,7 +121,7 @@ export function PortfoliosTable(props) {
   const {
     companies, repData, fxRates, specialWeights, annotations, dark,
     updateTargetWeight, markTradeAgenda, alertRules, lastPriceUpdate,
-    proposeTargetWeight, clearProposedWeight, commitProposedWeights,
+    proposeTargetWeight, clearProposedWeight,
     refreshCompaniesFromSupabase,
   } = useCompanyContext();
   const [refreshing, setRefreshing] = useState(false);
@@ -639,11 +639,11 @@ export function PortfoliosTable(props) {
         )}
       </div>
 
-      {/* Sticky proposals bar — visible only when pending changes exist
-          on the active portfolio. "Lock in all" commits every pending
-          target-% proposal + B/A/P/S stamp on this portfolio in one
-          shot via commitProposedWeights. No per-row lock-in button —
-          meetings commit in batches, the bar is one click away. */}
+      {/* Pending-changes summary bar — visible only when pending
+          changes exist on the active portfolio. Per-portfolio lock-in
+          was removed: commits go through the Meeting Memo modal's
+          single "Commit & Log" button so locking and logging stay
+          in lockstep. */}
       {(pendingSummary.targetCount + pendingSummary.stampCount) > 0 && (
         <div className="mb-2 px-3 py-2 rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 flex items-center gap-3 flex-wrap no-print sticky top-0 z-10">
           <span className="text-sm font-semibold text-amber-900 dark:text-amber-200">
@@ -654,20 +654,6 @@ export function PortfoliosTable(props) {
             {pendingSummary.targetCount > 0 && " · " + pendingSummary.targetCount + " target " + (pendingSummary.targetCount === 1 ? "change" : "changes")}
             {pendingSummary.stampCount > 0 && " · " + pendingSummary.stampCount + " " + (pendingSummary.stampCount === 1 ? "trade" : "trades") + " (B/A/P/S)"}
           </span>
-          <button
-            onClick={function () {
-              if (typeof window !== "undefined" && window.confirm) {
-                var msg = "Lock in " + (pendingSummary.targetCount + pendingSummary.stampCount) + " proposed change(s) in " + portTab + "?\n\n" +
-                  "Target % proposals will be written to committed portWeights. B/A/P/S trades will flip to executed. This is the equivalent of \"Clear agenda (mark executed)\" but scoped to just this portfolio.";
-                if (!window.confirm(msg)) return;
-              }
-              commitProposedWeights(portTab);
-            }}
-            className="text-xs px-3 py-1 rounded-md font-semibold bg-amber-600 hover:bg-amber-700 text-white cursor-pointer ml-auto"
-            title={"Commit every pending change for " + portTab + " — target % proposals become committed, B/A/P/S trades flip to executed."}
-          >
-            Lock in {portTab}
-          </button>
         </div>
       )}
 
