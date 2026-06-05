@@ -16,3 +16,7 @@ calisthenics-tracker/
 backup/
 *.backup.json
 research-hub-backup-*.json
+
+# Runtime logs from the FactSet scheduler / pull (machine-local)
+scripts/scheduler.log
+scripts/factset_pull.log
