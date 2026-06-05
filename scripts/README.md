@@ -2,7 +2,7 @@
 
 `factset_pull.py` reads market data from `Research Hub Upload.xlsx` (via the
 FactSet Excel add-in) and pushes it to Supabase. Designed to run unattended
-on a Windows machine via Task Scheduler at 7:30 AM PT, weekdays.
+on a Windows machine via Task Scheduler at 7:30 AM PT, Monday–Saturday.
 
 ## What gets updated
 
@@ -50,8 +50,8 @@ Supabase. Watch the log file: `H:\Research Hub\factset_pull.log`.
 Open **Task Scheduler** (Start menu → search). Create Basic Task:
 
 - **Name:** Research Hub FactSet Pull
-- **Trigger:** Daily, start 7:30 AM, recur every 1 day
-- **Days of week:** Monday-Friday (set under the trigger's "Repeat" / advanced)
+- **Trigger:** Weekly, start 7:30 AM
+- **Days of week:** Monday–Saturday
 - **Action:** Start a program
   - Program: `python.exe`  *(or full path to it, e.g. `C:\Users\khill\AppData\Local\Programs\Python\Python312\python.exe`)*
   - Arguments: `"Y:\Research Hub\research-hub-main\scripts\factset_pull.py"`
