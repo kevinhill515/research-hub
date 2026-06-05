@@ -14,23 +14,6 @@ import {
 } from "../../utils/index.js";
 import FpeRangeMini from "../ui/FpeRangeMini.jsx";
 import { TEAM_COLORS } from "../../constants/index.js";
-import { useCompanyContext } from "../../context/CompanyContext.jsx";
-
-const RECENT_TARGET_CHANGE_DAYS = 6;
-/* Build the same stable key the Meeting Memo modal uses for target-change
-   acknowledgments. Both surfaces have to agree on the key or "mark as
-   seen" in one place won't quiet the pill in the other. */
-function targetChangeKey(co, h) {
-  if (h && h.id) return h.id;
-  return (co.id || "") + "|" + (h.portfolio || "") + "|" + (h.date || "") + "|" +
-    (h.newWeight != null ? h.newWeight : h.weight);
-}
-function _daysAgo(iso) {
-  if (!iso) return Infinity;
-  var d = new Date(iso);
-  if (isNaN(d.getTime())) return Infinity;
-  return Math.floor((Date.now() - d.getTime()) / 86400000);
-}
 
 /* whitespace-nowrap at the Cell level — applies to every cell rendered
    via <Cell/>. Without this, cells with longer content (foreign ord
@@ -167,30 +150,10 @@ function PortfolioRow(props) {
     }
     return null;
   })();
-  /* Recent committed (non-agenda) target-weight change on this row's
-     portfolio that the current user hasn't acknowledged yet. Surfaces
-     as an amber ⏳ pill next to the Target % cell so a teammate's
-     overnight change jumps out — without forcing the user to dig
-     through the Meeting Memo modal. */
-  const { targetChangeReads, currentUser, markTargetChangeRead } = useCompanyContext();
-  const unreadTargetChange = (function () {
-    const hist = company.portWeightHistory || [];
-    const reads = targetChangeReads || {};
-    for (let i = 0; i < hist.length; i++) {
-      const h = hist[i];
-      if (!h || h.isAgenda) continue;
-      if (h.portfolio !== portTab) continue;
-      if (_daysAgo(h.date) > RECENT_TARGET_CHANGE_DAYS) continue;
-      const key = targetChangeKey(company, h);
-      const seenBy = reads[key] || [];
-      if (seenBy.indexOf(currentUser) >= 0) continue;
-      /* Don't surface a "change" if the user themselves made it. They
-         already know. */
-      if ((h.author || h.user) === currentUser) continue;
-      return { key: key, h: h };
-    }
-    return null;
-  })();
+  /* ⏳ unread-target-change indicator removed per IC feedback — the
+     click-to-acknowledge friction outweighed the awareness benefit.
+     Recent target changes still appear in the Meeting Memo Agenda
+     view for cross-team visibility; the per-row pill is gone. */
   const TRADE_BTNS = [
     ["B", "Buy",  "#16a34a"],
     ["A", "Add",  "#0891b2"],
@@ -638,15 +601,9 @@ function PortfolioRow(props) {
                     className="text-amber-700 dark:text-amber-400 hover:text-amber-900 cursor-pointer text-[11px] leading-none font-bold"
                   >✕</span>
                 )}
-                {unreadTargetChange && !showProposed && (
-                  <span
-                    onClick={function (e) { e.stopPropagation(); markTargetChangeRead(unreadTargetChange.key); }}
-                    title={"Target changed " + unreadTargetChange.h.date +
-                      (unreadTargetChange.h.author ? " by " + unreadTargetChange.h.author : "") +
-                      " — click to mark seen"}
-                    className="text-amber-600 dark:text-amber-400 hover:text-amber-800 cursor-pointer text-[11px] leading-none"
-                  >⏳</span>
-                )}
+                {/* ⏳ unread-target-change pill removed — the team
+                    found the click-to-acknowledge friction worse than
+                    the awareness benefit. */}
               </span>
             )}
           </Cell>
