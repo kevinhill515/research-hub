@@ -22,9 +22,12 @@ jobs:
           node-version: 22
 
       - name: Install dependencies
-        run: |
-          rm -rf node_modules package-lock.json
-          npm install
+        # npm ci instead of `rm -rf node_modules package-lock.json && npm install`
+        # — deterministic, faster, atomic. The destructive prelude was
+        # racing the esbuild postinstall on GitHub runners (ETXTBSY:
+        # spawning the binary while npm was still writing it). The
+        # Cloudflare workflow doesn't do the rm and never sees this.
+        run: npm ci
 
       # No VITE_ANTHROPIC_KEY env — the app now reads the Anthropic
       # key from each user's localStorage (set via the in-app Settings
