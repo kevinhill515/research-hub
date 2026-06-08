@@ -40,7 +40,7 @@ PULL_SCRIPT = os.path.join(SCRIPT_DIR, "factset_pull.py")
 LOG_PATH = os.path.join(SCRIPT_DIR, "scheduler.log")
 
 TARGET_HOUR = 7
-TARGET_MIN  = 30
+TARGET_MIN  = 0
 # Days the script runs. Monday=0 ... Sunday=6. Skip Sunday (6).
 RUN_DAYS = {0, 1, 2, 3, 4, 5}  # Mon-Sat
 
