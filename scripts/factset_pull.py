@@ -53,7 +53,7 @@ SUPA_KEY = "sb_publishable_7kqbGZlL_im9kIpgFXLA-A_9CdqsyiT"
 
 # How long to wait after each refresh trigger.
 REP_WAIT_SECONDS      = 25   # Refresh Positions — user said ~15s, give buffer
-FACTSET_WAIT_SECONDS  = 320  # FactSet full workbook refresh — initially
+FACTSET_WAIT_SECONDS  = 400  # FactSet full workbook refresh — initially
                               # 120s, bumped to 240s after a May 20 2026
                               # run captured stale Hitachi 1D (+3.4 vs
                               # the post-refresh +0.3 in the workbook).
@@ -69,6 +69,13 @@ FACTSET_WAIT_SECONDS  = 320  # FactSet full workbook refresh — initially
                               # the day prior took 290s and barely
                               # made it; +20s of headroom for noisier
                               # mornings.
+                              # Bumped to 400s in June 2026 — June 8
+                              # run finished at t=310s, close to the
+                              # wire again. Polling exits as soon as
+                              # the sample perf cells populate, so a
+                              # generous ceiling has no cost on fast
+                              # mornings and saves an abort on slow
+                              # ones.
 
 # Position of FactSet "Refresh Workbook" in the Quick Access Toolbar
 # (1 = leftmost). Set after FactSet (May 2026) removed every other
@@ -1258,30 +1265,32 @@ class ExcelSession:
                 log(f"    CHANGED [{kind}] {sh}!R{r}C{c}: {b!r} → {a!r}")
             for sh, r, c, b, kind in unchanged_samples:
                 log(f"    unchanged [{kind}] {sh}!R{r}C{c}: still {b!r}")
-            # Hard fail when ZERO perf cells changed. FactSet's FDS UDFs
-            # (TODAY %, 5D %) drive every ranking and ratio in the app;
-            # if they're stuck on yesterday's values, uploading is worse
-            # than skipping the day.
-            if perf_changed == 0:
-                msg = ("FactSet perf cells (TODAY %, 5D %) did NOT change "
-                       "vs pre-refresh baseline. The FDS UDF layer did not "
+            # Hard fail when fewer than HALF of the perf cells changed.
+            # FactSet's FDS UDFs (TODAY %, 5D %) drive every ranking and
+            # ratio in the app; if even half of them are stuck on
+            # yesterday's values, the upload is worse than skipping the
+            # day. Was "perf_changed == 0" originally — bumped to the
+            # 50% threshold after a June 8 run pushed despite obvious
+            # partial-refresh symptoms downstream. Caller's preference
+            # is to fail fast and re-run rather than persist mixed
+            # fresh/stale data to Supabase.
+            min_perf_changed = max(1, (total_perf + 1) // 2)  # ceil(total/2)
+            if perf_changed < min_perf_changed:
+                msg = (f"FactSet perf cells: only {perf_changed}/{total_perf} "
+                       f"changed vs pre-refresh baseline (need at least "
+                       f"{min_perf_changed}). The FDS UDF layer did not fully "
                        "recompute even though RTD prices may have ticked. "
-                       "Refusing to upload stale 1D / 5D rankings. "
+                       "Refusing to upload mixed fresh/stale 1D / 5D rankings. "
                        "Common causes: SendKeys Alt+"
                        f"{FACTSET_REFRESH_QAT_POS} didn't focus the FactSet "
                        "ribbon (Excel had a dialog or wasn't foreground), "
-                       "FactSet add-in not signed in, or the QAT slot moved. "
-                       "Try: (1) bring Excel to focus and click Refresh "
-                       "Workbook manually, (2) confirm Alt+5 is still the "
-                       "QAT slot for Refresh Workbook, (3) re-run.")
+                       "FactSet add-in not signed in, FACTSET_WAIT_SECONDS "
+                       "too short, or the QAT slot moved. Try: (1) bring "
+                       "Excel to focus and click Refresh Workbook manually, "
+                       "(2) confirm Alt+5 is still the QAT slot for Refresh "
+                       "Workbook, (3) re-run.")
                 log(f"  ABORT: {msg}")
                 raise RuntimeError(msg)
-            # Soft warn when perf moved but most cells didn't — maybe a
-            # partial refresh, or markets just closed. Still proceeds.
-            elif perf_changed < max(2, total_perf // 3):
-                log(f"  WARNING: only {perf_changed}/{total_perf} perf cells moved. "
-                    f"Refresh may have partially fired. Proceeding but spot-check "
-                    f"the uploaded 1D / 5D values.")
 
     def cell(self, sheet_name: str, row: int, col: int):
         """Read a cell's value, retrying on RPC_E_CALL_REJECTED which Excel
