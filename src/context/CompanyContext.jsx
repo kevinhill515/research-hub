@@ -134,6 +134,14 @@ export function CompanyProvider({children}){
      Shape: [{ id, date, profile:"tuesday"|"thursday", author, memo }]
      Order: newest first (matches feedback/annotations convention). */
   const [memoLog,setMemoLog]=useState([]);
+  /* Research-assignment disposition log. Records what happened to each
+     name on the Companies > Assignments board after it was cleared
+     (added to portfolio, kept on watchlist, removed from coverage,
+     etc.). Shape:
+       [{ id, date, member, category, companyId, companyName,
+          disposition: "added"|"watchlist"|"removed"|"other",
+          note, loggedBy }] */
+  const [researchLog,setResearchLog]=useState([]);
   /* Wednesday Notes — shared free-form text for the Wednesday
      meeting. Persisted to Supabase so all attendees see the same
      content as it's edited (last-write-wins with ~500ms debounce).
@@ -446,6 +454,7 @@ export function CompanyProvider({children}){
           if (snap.targetChangeReads)  setTargetChangeReads(snap.targetChangeReads);
           if (snap.wednesdayNotes != null) setWednesdayNotes(snap.wednesdayNotes);
           if (snap.valuationSnapshot)  setValuationSnapshot(snap.valuationSnapshot);
+          if (snap.researchLog)        setResearchLog(snap.researchLog);
           setLoadStatus({ companies: snap.companies.length, library: (snap.saved || []).length });
           setReady(true);
           fastPathTaken = true;
@@ -473,7 +482,7 @@ export function CompanyProvider({children}){
       "lastPriceUpdate","entryComments","calLastUpdated","repData","fxRates",
       "specialWeights","annotations","researchAssignments","perfData","feedback",
       "benchmarkWeights","alertRules","tpApprovals","memoLog",
-      "targetChangeReads","wednesdayNotes","valuationSnapshot",
+      "targetChangeReads","wednesdayNotes","valuationSnapshot","researchLog",
     ];
     var [r, r2, metaMap] = await Promise.all([
       safe(supaGet("library","id","shared")),
@@ -505,6 +514,7 @@ export function CompanyProvider({children}){
     var rTCR = _m.get("targetChangeReads")  || null;
     var rWN  = _m.get("wednesdayNotes")     || null;
     var rVS  = _m.get("valuationSnapshot")  || null;
+    var rRL  = _m.get("researchLog")        || null;
     try{if(r){var d=JSON.parse(r.data);if(Array.isArray(d)&&d.length){var libMig=migrateTags(d);setSaved(libMig.data);libOk=libMig.data.length;if(libMig.changed)supaUpsert("library",{id:"shared",data:JSON.stringify(libMig.data)});}}}catch(e){}
     try{if(r2&&Array.isArray(r2)){
       /* Two formats coexist during migration:
@@ -836,6 +846,7 @@ export function CompanyProvider({children}){
       setWednesdayNotes(wnRaw);
     }}catch(e){}
     try{if(rVS&&rVS.value){var vs=JSON.parse(rVS.value);if(vs&&typeof vs==="object")setValuationSnapshot(vs);}}catch(e){}
+    try{if(rRL&&rRL.value){var rl=JSON.parse(rRL.value);if(Array.isArray(rl))setResearchLog(rl);}}catch(e){}
     try{if(r10&&r10.value){var ra=JSON.parse(r10.value);if(ra&&typeof ra==="object"){if(!ra.byMember)ra.byMember={};if(!Array.isArray(ra.reorgs))ra.reorgs=[];/* Migrate legacy category keys: gbl→gl, intl→in, intSmall→sc */var RA_RENAMES={gbl:"gl",intl:"in",intSmall:"sc"};var raChanged=false;Object.keys(ra.byMember).forEach(function(m){var mb=ra.byMember[m]||{};Object.keys(RA_RENAMES).forEach(function(oldK){if(mb[oldK]!==undefined){mb[RA_RENAMES[oldK]]=mb[oldK];delete mb[oldK];raChanged=true;}});ra.byMember[m]=mb;});setResearchAssignments(ra);if(raChanged)supaUpsert("meta",{key:"researchAssignments",value:JSON.stringify(ra)});}}}catch(e){}
     try{if(r11&&r11.value){var pd=JSON.parse(r11.value);if(pd&&typeof pd==="object")setPerfData(pd);}}catch(e){}
     try{if(r12&&r12.value){var fb=JSON.parse(r12.value);if(Array.isArray(fb))setFeedback(fb);}}catch(e){}
@@ -879,6 +890,7 @@ export function CompanyProvider({children}){
         try { if (rTCR && rTCR.value)snapToCache.targetChangeReads= JSON.parse(rTCR.value);}catch(_){}
         try { if (rWN && rWN.value!=null){var wn=rWN.value;try{var pp=JSON.parse(wn);if(typeof pp==="string")wn=pp;}catch(_){};snapToCache.wednesdayNotes=wn;}}catch(_){}
         try { if (rVS && rVS.value)snapToCache.valuationSnapshot  = JSON.parse(rVS.value);}catch(_){}
+        try { if (rRL && rRL.value)snapToCache.researchLog        = JSON.parse(rRL.value);}catch(_){}
         cacheSet("raw", snapToCache);
       } catch(_e){}
     }
@@ -1302,6 +1314,7 @@ export function CompanyProvider({children}){
      but the value column gets the raw text. */
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(wednesdayNotes);autoSendBlob("wednesdayNotes",j,"meta",{key:"wednesdayNotes",value:wednesdayNotes||""});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[wednesdayNotes,ready]);
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(valuationSnapshot);autoSendBlob("valuationSnapshot",j,"meta",{key:"valuationSnapshot",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[valuationSnapshot,ready]);
+  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(researchLog);autoSendBlob("researchLog",j,"meta",{key:"researchLog",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[researchLog,ready]);
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(benchmarkWeights);autoSendBlob("benchmarkWeights",j,"meta",{key:"benchmarkWeights",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[benchmarkWeights,ready]);
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(breakdownHistory);autoSendBlob("breakdownHistory",j,"meta",{key:"breakdownHistory",value:j});},DEBOUNCE_HEAVY_MS);return function(){clearTimeout(t);};},[breakdownHistory,ready]);
 
@@ -1479,6 +1492,28 @@ export function CompanyProvider({children}){
   }
   function deleteMemoLog(id){
     setMemoLog(function(prev){return(prev||[]).filter(function(e){return e.id!==id;});});
+  }
+  /* Research-assignment disposition log mutators. Used by the
+     Companies > Assignments board when a name is cleared from a
+     slot: we record what happened (added to portfolio, kept on
+     watchlist, removed from coverage, other) instead of silently
+     deleting. */
+  function addResearchLog(entry){
+    var e = Object.assign({
+      id: newId(),
+      date: todayStr(),
+      loggedBy: currentUser || "Unknown",
+      member: "",
+      category: "",
+      companyId: "",
+      companyName: "",
+      disposition: "other",
+      note: "",
+    }, entry || {});
+    setResearchLog(function(prev){return [e].concat(prev || []);});
+  }
+  function deleteResearchLog(id){
+    setResearchLog(function(prev){return(prev||[]).filter(function(e){return e.id!==id;});});
   }
   /* Undo a memo log entry — flips its associated commits back to
      agenda state so the IC team can finish editing as if the lock-in
@@ -2147,6 +2182,7 @@ export function CompanyProvider({children}){
     perfData,setPerfData,setPerfSeries,addPerfSeries,removePerfSeries,movePerfSeries,setPerfSeriesOrder,setPerfReturn,setPerfLastMonthEMV,applyPerfBulk,
     feedback,setFeedback,addFeedback,updateFeedback,removeFeedback,moveFeedback,
     memoLog,setMemoLog,addMemoLog,deleteMemoLog,revertMemoLog,
+    researchLog,setResearchLog,addResearchLog,deleteResearchLog,
     wednesdayNotes,setWednesdayNotes,
     valuationSnapshot,setValuationSnapshot,
     targetChangeReads,setTargetChangeReads,markTargetChangeRead,

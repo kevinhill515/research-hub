@@ -15,12 +15,84 @@ const SLOTS_PER_SECTION = 3;
 const EXISTING_SLOTS = 5;
 const REORG_SLOTS = 8;
 
+/* Disposition options for clearing a slot. The keys are stored verbatim
+   in researchLog entries; the labels render in the dialog + the log
+   table. "other" exists so a user with a non-standard outcome can still
+   log + keep auditability. */
+const DISPOSITIONS = [
+  { key: "added",     label: "Added to portfolio" },
+  { key: "watchlist", label: "Kept on watchlist" },
+  { key: "removed",   label: "Removed from coverage" },
+  { key: "other",     label: "Other" },
+];
+const DISPOSITION_LABEL = DISPOSITIONS.reduce(function(acc, d){ acc[d.key] = d.label; return acc; }, {});
+const DISPOSITION_STYLE = {
+  added:     { bg: "#dcfce7", color: "#166534" },
+  watchlist: { bg: "#fef9c3", color: "#854d0e" },
+  removed:   { bg: "#fee2e2", color: "#991b1b" },
+  other:     { bg: "#e2e8f0", color: "#334155" },
+};
+
+/* Disposition popover — captures what happened to the cleared name
+   and writes a researchLog entry. "Clear without logging" exists for
+   the typo/reassignment case where no real disposition occurred. */
+function DispositionDialog({ company, member, category, onLog, onClearSilent, onCancel }) {
+  const [disposition, setDisposition] = useState("added");
+  const [note, setNote] = useState("");
+  return (
+    <div
+      onMouseDown={function(e){ e.stopPropagation(); }}
+      onClick={function(e){ e.stopPropagation(); }}
+      className="absolute z-30 top-5 left-0 w-72 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-md shadow-lg p-2.5"
+    >
+      <div className="text-[11px] font-semibold text-gray-700 dark:text-slate-200 mb-1">
+        What happened to <span className="text-blue-700 dark:text-blue-300">{truncName(company.name || "(unknown)", 24)}</span>?
+      </div>
+      <div className="flex flex-col gap-0.5 mb-2">
+        {DISPOSITIONS.map(function(d){
+          var active = disposition === d.key;
+          var ps = DISPOSITION_STYLE[d.key] || {};
+          return (
+            <label key={d.key} className="flex items-center gap-1.5 text-[11px] cursor-pointer text-gray-900 dark:text-slate-100">
+              <input type="radio" checked={active} onChange={function(){setDisposition(d.key);}} className="cursor-pointer"/>
+              <span className="px-1.5 py-0 rounded-full text-[10px] font-medium" style={{ background: ps.bg, color: ps.color }}>{d.label}</span>
+            </label>
+          );
+        })}
+      </div>
+      <input
+        value={note}
+        onChange={function(e){ setNote(e.target.value); }}
+        placeholder="Optional note…"
+        className="w-full text-xs px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 mb-2"
+      />
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <button
+          onClick={function(){ onLog(disposition, note); }}
+          className="text-[11px] px-2.5 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
+        >Log &amp; clear</button>
+        <span
+          onClick={onClearSilent}
+          className="text-[10px] text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 cursor-pointer"
+        >Clear without logging</span>
+        <span
+          onClick={onCancel}
+          className="text-[10px] text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 cursor-pointer ml-auto"
+        >Cancel</span>
+      </div>
+    </div>
+  );
+}
+
 const BTN_SM = "text-xs px-2 py-0.5 font-medium rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors";
 
-/* Compact cell — click to pick (or unpick) a company */
-function Slot({ companyId, eligible, onChange, onOpenCompany }){
+/* Compact cell — click name to open the company, click × to open the
+   disposition dialog. The disposition dialog can either log+clear or
+   clear silently (typo / reassign). */
+function Slot({ companyId, eligible, onChange, onOpenCompany, onLogDisposition, member, categoryKey }){
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
+  const [dispOpen, setDispOpen] = useState(false);
   const co = companyId ? eligible.find(c=>c.id===companyId) || { id: companyId, name: "(unknown)", __missing:true } : null;
   /* Even if selected company isn't in `eligible` (e.g., portfolio changed after assignment), show it anyway */
   const matches = useMemo(function(){
@@ -31,9 +103,37 @@ function Slot({ companyId, eligible, onChange, onOpenCompany }){
 
   if(co){
     return (
-      <div className="inline-flex items-center gap-1 text-xs">
+      <div className="inline-flex items-center gap-1 text-xs relative">
         <span onClick={function(){onOpenCompany(co);}} className="cursor-pointer hover:underline text-gray-900 dark:text-slate-100 font-medium" title={co.name||"(unknown)"}>{truncName(co.name||"(unknown)",15)}</span>
-        <span onClick={function(){onChange(null);}} className="cursor-pointer text-red-500 dark:text-red-400 hover:text-red-700" title="Clear">×</span>
+        <span
+          onClick={function(){ setDispOpen(true); }}
+          className="cursor-pointer text-red-500 dark:text-red-400 hover:text-red-700"
+          title="Log disposition + clear"
+        >×</span>
+        {dispOpen && (
+          <DispositionDialog
+            company={co}
+            member={member}
+            category={categoryKey}
+            onLog={function(disposition, note){
+              onLogDisposition({
+                member: member,
+                category: categoryKey,
+                companyId: co.id,
+                companyName: co.name || "(unknown)",
+                disposition: disposition,
+                note: note,
+              });
+              onChange(null);
+              setDispOpen(false);
+            }}
+            onClearSilent={function(){
+              onChange(null);
+              setDispOpen(false);
+            }}
+            onCancel={function(){ setDispOpen(false); }}
+          />
+        )}
       </div>
     );
   }
@@ -59,7 +159,7 @@ function Slot({ companyId, eligible, onChange, onOpenCompany }){
 
 export function ResearchBoard(props){
   const { setSelCo, setTab, setCoView, setSelCoOrigin } = props;
-  const { companies, researchAssignments, setResearchSlot, setReorgSlot } = useCompanyContext();
+  const { companies, researchAssignments, setResearchSlot, setReorgSlot, researchLog, addResearchLog, deleteResearchLog } = useCompanyContext();
 
   function openCompany(c){
     if(setSelCoOrigin) setSelCoOrigin("research");
@@ -121,7 +221,15 @@ export function ResearchBoard(props){
                     {TEAM_MEMBERS.map(function(m){
                       const id = getMemberSlot(m, cat.key, "primary", pos);
                       return <td key={m} className={colMember}>
-                        <Slot companyId={id} eligible={eligibleFor(cat.key)} onChange={function(cid){setResearchSlot(m,cat.key,"primary",pos,cid);}} onOpenCompany={openCompany}/>
+                        <Slot
+                          companyId={id}
+                          eligible={eligibleFor(cat.key)}
+                          onChange={function(cid){setResearchSlot(m,cat.key,"primary",pos,cid);}}
+                          onOpenCompany={openCompany}
+                          onLogDisposition={addResearchLog}
+                          member={m}
+                          categoryKey={cat.label + " Primary"}
+                        />
                       </td>;
                     })}
                   </tr>;
@@ -136,7 +244,15 @@ export function ResearchBoard(props){
                     {TEAM_MEMBERS.map(function(m){
                       const id = getMemberSlot(m, cat.key, "secondary", pos);
                       return <td key={m} className={colMember}>
-                        <Slot companyId={id} eligible={eligibleFor(cat.key)} onChange={function(cid){setResearchSlot(m,cat.key,"secondary",pos,cid);}} onOpenCompany={openCompany}/>
+                        <Slot
+                          companyId={id}
+                          eligible={eligibleFor(cat.key)}
+                          onChange={function(cid){setResearchSlot(m,cat.key,"secondary",pos,cid);}}
+                          onOpenCompany={openCompany}
+                          onLogDisposition={addResearchLog}
+                          member={m}
+                          categoryKey={cat.label + " Secondary"}
+                        />
                       </td>;
                     })}
                   </tr>;
@@ -155,7 +271,15 @@ export function ResearchBoard(props){
                 {TEAM_MEMBERS.map(function(m){
                   const id = getMemberSlot(m, "existingHlds", null, pos);
                   return <td key={m} className={colMember}>
-                    <Slot companyId={id} eligible={eligibleFor("existingHlds")} onChange={function(cid){setResearchSlot(m,"existingHlds",null,pos,cid);}} onOpenCompany={openCompany}/>
+                    <Slot
+                      companyId={id}
+                      eligible={eligibleFor("existingHlds")}
+                      onChange={function(cid){setResearchSlot(m,"existingHlds",null,pos,cid);}}
+                      onOpenCompany={openCompany}
+                      onLogDisposition={addResearchLog}
+                      member={m}
+                      categoryKey={"Existing Hlds"}
+                    />
                   </td>;
                 })}
               </tr>;
@@ -174,7 +298,15 @@ export function ResearchBoard(props){
                     const id = (researchAssignments.reorgs||[])[pos] || null;
                     return <div key={"ro_"+pos} className="flex items-center gap-1">
                       <span className="text-[11px] text-gray-400 dark:text-slate-500 min-w-[16px]">{pos+1})</span>
-                      <Slot companyId={id} eligible={eligibleFor("reorgs")} onChange={function(cid){setReorgSlot(pos,cid);}} onOpenCompany={openCompany}/>
+                      <Slot
+                        companyId={id}
+                        eligible={eligibleFor("reorgs")}
+                        onChange={function(cid){setReorgSlot(pos,cid);}}
+                        onOpenCompany={openCompany}
+                        onLogDisposition={addResearchLog}
+                        member={""}
+                        categoryKey={"Reorgs"}
+                      />
                     </div>;
                   })}
                 </div>
@@ -183,6 +315,64 @@ export function ResearchBoard(props){
           </tbody>
         </table>
       </div>
+
+      {/* Disposition log — what's happened to cleared assignments
+          recently. Click × on any row to remove it from the log if
+          it was a mistake. */}
+      {(researchLog || []).length > 0 && (
+        <div className="mt-5">
+          <div className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-1.5">Recent dispositions</div>
+          <div className="text-[11px] text-gray-500 dark:text-slate-400 mb-2">
+            What happened to each cleared assignment. Most recent first.
+          </div>
+          <div className="border border-slate-200 dark:border-slate-700 rounded-md overflow-hidden">
+            <table className="w-full text-xs">
+              <thead className="bg-slate-50 dark:bg-slate-800/60">
+                <tr>
+                  <th className="text-left px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium">Date</th>
+                  <th className="text-left px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium">Who</th>
+                  <th className="text-left px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium">Member · Category</th>
+                  <th className="text-left px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium">Company</th>
+                  <th className="text-left px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium">Outcome</th>
+                  <th className="text-left px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium">Note</th>
+                  <th className="px-2 py-1"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {researchLog.map(function(e){
+                  var ps = DISPOSITION_STYLE[e.disposition] || DISPOSITION_STYLE.other;
+                  var memberColor = (TEAM_COLORS || {})[e.member] || "#94a3b8";
+                  return (
+                    <tr key={e.id} className="border-t border-slate-100 dark:border-slate-700">
+                      <td className="px-2 py-1 tabular-nums whitespace-nowrap text-gray-700 dark:text-slate-300">{e.date}</td>
+                      <td className="px-2 py-1 whitespace-nowrap text-gray-700 dark:text-slate-300">{e.loggedBy}</td>
+                      <td className="px-2 py-1 whitespace-nowrap">
+                        <span style={{ color: memberColor, fontWeight: 600 }}>{e.member || "—"}</span>
+                        <span className="text-gray-400 dark:text-slate-500"> · </span>
+                        <span className="text-gray-700 dark:text-slate-300">{e.category || "—"}</span>
+                      </td>
+                      <td className="px-2 py-1 whitespace-nowrap text-gray-900 dark:text-slate-100 font-medium">{e.companyName || "(unknown)"}</td>
+                      <td className="px-2 py-1 whitespace-nowrap">
+                        <span className="text-[10px] px-1.5 py-0 rounded-full font-medium" style={{ background: ps.bg, color: ps.color }}>
+                          {DISPOSITION_LABEL[e.disposition] || e.disposition}
+                        </span>
+                      </td>
+                      <td className="px-2 py-1 text-gray-700 dark:text-slate-300">{e.note || ""}</td>
+                      <td className="px-2 py-1 text-right">
+                        <span
+                          onClick={function(){ if(window.confirm("Delete this log entry? This cannot be undone.")) deleteResearchLog(e.id); }}
+                          className="text-[10px] text-red-500 dark:text-red-400 cursor-pointer hover:text-red-700 dark:hover:text-red-300"
+                          title="Remove this log entry"
+                        >×</span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
