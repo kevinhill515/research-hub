@@ -89,12 +89,22 @@ const BTN_SM = "text-xs px-2 py-0.5 font-medium rounded border border-slate-200 
 /* Compact cell — click name to open the company, click × to open the
    disposition dialog. The disposition dialog can either log+clear or
    clear silently (typo / reassign). */
-function Slot({ companyId, eligible, onChange, onOpenCompany, onLogDisposition, member, categoryKey }){
+function Slot({ companyId, eligible, allCompanies, onChange, onOpenCompany, onLogDisposition, member, categoryKey }){
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [dispOpen, setDispOpen] = useState(false);
-  const co = companyId ? eligible.find(c=>c.id===companyId) || { id: companyId, name: "(unknown)", __missing:true } : null;
-  /* Even if selected company isn't in `eligible` (e.g., portfolio changed after assignment), show it anyway */
+  /* Display lookup falls back to the FULL companies array before
+     showing "(unknown)". `eligible` is the pickable set for NEW
+     assignments (filtered by tier per category) — but a company
+     that's been assigned still has a name even after its tier moved
+     it out of that filter. Without this fallback, Bravida (Focus SC
+     → SC4 after being added to the portfolio) rendered as "(unknown)"
+     on Bob's assignment row. */
+  const co = companyId
+    ? (eligible.find(c=>c.id===companyId)
+        || (allCompanies || []).find(c=>c.id===companyId)
+        || { id: companyId, name: "(unknown)", __missing:true })
+    : null;
   const matches = useMemo(function(){
     const needle = q.trim().toLowerCase();
     if(!needle) return eligible.slice(0, 30);
@@ -224,6 +234,7 @@ export function ResearchBoard(props){
                         <Slot
                           companyId={id}
                           eligible={eligibleFor(cat.key)}
+                          allCompanies={companies}
                           onChange={function(cid){setResearchSlot(m,cat.key,"primary",pos,cid);}}
                           onOpenCompany={openCompany}
                           onLogDisposition={addResearchLog}
@@ -247,6 +258,7 @@ export function ResearchBoard(props){
                         <Slot
                           companyId={id}
                           eligible={eligibleFor(cat.key)}
+                          allCompanies={companies}
                           onChange={function(cid){setResearchSlot(m,cat.key,"secondary",pos,cid);}}
                           onOpenCompany={openCompany}
                           onLogDisposition={addResearchLog}
@@ -274,6 +286,7 @@ export function ResearchBoard(props){
                     <Slot
                       companyId={id}
                       eligible={eligibleFor("existingHlds")}
+                      allCompanies={companies}
                       onChange={function(cid){setResearchSlot(m,"existingHlds",null,pos,cid);}}
                       onOpenCompany={openCompany}
                       onLogDisposition={addResearchLog}
@@ -301,6 +314,7 @@ export function ResearchBoard(props){
                       <Slot
                         companyId={id}
                         eligible={eligibleFor("reorgs")}
+                        allCompanies={companies}
                         onChange={function(cid){setReorgSlot(pos,cid);}}
                         onOpenCompany={openCompany}
                         onLogDisposition={addResearchLog}
