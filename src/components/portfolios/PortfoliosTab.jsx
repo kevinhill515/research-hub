@@ -16,6 +16,7 @@ import { todayStr } from '../../utils/index.js';
 import { OverlapTable } from './OverlapTable.jsx';
 import { OverlapMatrix } from '../tables/index.js';
 import { PortfoliosTable } from './PortfoliosTable.jsx';
+import OutliersView from './OutliersView.jsx';
 
 /* Tailwind class strings duplicated from App.jsx so this component
    stays self-contained. If we ever extract a shared styles module
@@ -55,6 +56,7 @@ export default function PortfoliosTab(props) {
       <div className="flex gap-1.5 mb-4 flex-wrap border-b border-slate-200 dark:border-slate-700 pb-2.5">
         <button key="overlap" className={portTab === "overlap" ? TABST_ACTIVE : TABST_INACTIVE} onClick={function () { setPortTab("overlap"); }}>Overlap</button>
         <button key="overlap-matrix" className={portTab === "overlap-matrix" ? TABST_ACTIVE : TABST_INACTIVE} onClick={function () { setPortTab("overlap-matrix"); }}>Overlap Matrix</button>
+        <button key="outliers" className={portTab === "outliers" ? TABST_ACTIVE : TABST_INACTIVE} onClick={function () { setPortTab("outliers"); }}>Outliers</button>
         {PORTFOLIOS.map(function (p) {
           return <button key={p} className={portTab === p ? TABST_ACTIVE : TABST_INACTIVE} onClick={function () { setPortTab(p); }}>{PORT_NAMES[p] || p}</button>;
         })}
@@ -70,6 +72,8 @@ export default function PortfoliosTab(props) {
           <div className="text-sm font-medium mb-3 text-gray-900 dark:text-slate-100">Portfolio Overlap</div>
           <OverlapMatrix companies={companies} />
         </div>
+      ) : portTab === "outliers" ? (
+        <OutliersView />
       ) : (
         <PortfoliosTable
           portTab={portTab}
@@ -89,6 +93,7 @@ export default function PortfoliosTab(props) {
           }}
         />
       )}
+      {PORTFOLIOS.indexOf(portTab) >= 0 && (
       <div className="mt-5 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 px-3.5 py-3 mb-3 no-print">
         {missingFromRep.length === 0 && missingFromApp.length === 0 ? (
           <div className="text-xs text-gray-500 dark:text-slate-400">{"✓"} No discrepancies found.</div>
@@ -114,6 +119,7 @@ export default function PortfoliosTab(props) {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

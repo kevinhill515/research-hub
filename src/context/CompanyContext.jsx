@@ -142,6 +142,17 @@ export function CompanyProvider({children}){
           disposition: "added"|"watchlist"|"removed"|"other",
           note, loggedBy }] */
   const [researchLog,setResearchLog]=useState([]);
+  /* Account holdings — periodic upload of every account's positions
+     across every portfolio. Drives the Portfolios > Outliers subtab
+     which surfaces accounts whose weight in a given holding deviates
+     from the portfolio-wide mean.
+     Shape:
+       { [portfolio]: { [accountCode]: { [parentTicker]: weight % } } }
+     Notes keyed by "{portfolio}|{account}|{ticker}":
+       { [key]: { status: "intentional"|"action"|"", text: string, updatedAt, updatedBy } } */
+  const [accountHoldings,setAccountHoldings]=useState({});
+  const [accountHoldingsUploadedAt,setAccountHoldingsUploadedAt]=useState("");
+  const [accountHoldingsNotes,setAccountHoldingsNotes]=useState({});
   /* Wednesday Notes — shared free-form text for the Wednesday
      meeting. Persisted to Supabase so all attendees see the same
      content as it's edited (last-write-wins with ~500ms debounce).
@@ -455,6 +466,9 @@ export function CompanyProvider({children}){
           if (snap.wednesdayNotes != null) setWednesdayNotes(snap.wednesdayNotes);
           if (snap.valuationSnapshot)  setValuationSnapshot(snap.valuationSnapshot);
           if (snap.researchLog)        setResearchLog(snap.researchLog);
+          if (snap.accountHoldings)    setAccountHoldings(snap.accountHoldings);
+          if (snap.accountHoldingsUploadedAt != null) setAccountHoldingsUploadedAt(snap.accountHoldingsUploadedAt);
+          if (snap.accountHoldingsNotes) setAccountHoldingsNotes(snap.accountHoldingsNotes);
           setLoadStatus({ companies: snap.companies.length, library: (snap.saved || []).length });
           setReady(true);
           fastPathTaken = true;
@@ -483,6 +497,7 @@ export function CompanyProvider({children}){
       "specialWeights","annotations","researchAssignments","perfData","feedback",
       "benchmarkWeights","alertRules","tpApprovals","memoLog",
       "targetChangeReads","wednesdayNotes","valuationSnapshot","researchLog",
+      "accountHoldings","accountHoldingsUploadedAt","accountHoldingsNotes",
     ];
     var [r, r2, metaMap] = await Promise.all([
       safe(supaGet("library","id","shared")),
@@ -515,6 +530,9 @@ export function CompanyProvider({children}){
     var rWN  = _m.get("wednesdayNotes")     || null;
     var rVS  = _m.get("valuationSnapshot")  || null;
     var rRL  = _m.get("researchLog")        || null;
+    var rAH  = _m.get("accountHoldings")    || null;
+    var rAHA = _m.get("accountHoldingsUploadedAt") || null;
+    var rAHN = _m.get("accountHoldingsNotes") || null;
     try{if(r){var d=JSON.parse(r.data);if(Array.isArray(d)&&d.length){var libMig=migrateTags(d);setSaved(libMig.data);libOk=libMig.data.length;if(libMig.changed)supaUpsert("library",{id:"shared",data:JSON.stringify(libMig.data)});}}}catch(e){}
     try{if(r2&&Array.isArray(r2)){
       /* Two formats coexist during migration:
@@ -847,6 +865,9 @@ export function CompanyProvider({children}){
     }}catch(e){}
     try{if(rVS&&rVS.value){var vs=JSON.parse(rVS.value);if(vs&&typeof vs==="object")setValuationSnapshot(vs);}}catch(e){}
     try{if(rRL&&rRL.value){var rl=JSON.parse(rRL.value);if(Array.isArray(rl))setResearchLog(rl);}}catch(e){}
+    try{if(rAH&&rAH.value){var ah=JSON.parse(rAH.value);if(ah&&typeof ah==="object")setAccountHoldings(ah);}}catch(e){}
+    try{if(rAHA&&rAHA.value!=null){var ahaRaw=rAHA.value;try{var pp=JSON.parse(ahaRaw);if(typeof pp==="string")ahaRaw=pp;}catch(_){};setAccountHoldingsUploadedAt(ahaRaw);}}catch(e){}
+    try{if(rAHN&&rAHN.value){var ahn=JSON.parse(rAHN.value);if(ahn&&typeof ahn==="object")setAccountHoldingsNotes(ahn);}}catch(e){}
     try{if(r10&&r10.value){var ra=JSON.parse(r10.value);if(ra&&typeof ra==="object"){if(!ra.byMember)ra.byMember={};if(!Array.isArray(ra.reorgs))ra.reorgs=[];/* Migrate legacy category keys: gbl→gl, intl→in, intSmall→sc */var RA_RENAMES={gbl:"gl",intl:"in",intSmall:"sc"};var raChanged=false;Object.keys(ra.byMember).forEach(function(m){var mb=ra.byMember[m]||{};Object.keys(RA_RENAMES).forEach(function(oldK){if(mb[oldK]!==undefined){mb[RA_RENAMES[oldK]]=mb[oldK];delete mb[oldK];raChanged=true;}});ra.byMember[m]=mb;});setResearchAssignments(ra);if(raChanged)supaUpsert("meta",{key:"researchAssignments",value:JSON.stringify(ra)});}}}catch(e){}
     try{if(r11&&r11.value){var pd=JSON.parse(r11.value);if(pd&&typeof pd==="object")setPerfData(pd);}}catch(e){}
     try{if(r12&&r12.value){var fb=JSON.parse(r12.value);if(Array.isArray(fb))setFeedback(fb);}}catch(e){}
@@ -891,6 +912,9 @@ export function CompanyProvider({children}){
         try { if (rWN && rWN.value!=null){var wn=rWN.value;try{var pp=JSON.parse(wn);if(typeof pp==="string")wn=pp;}catch(_){};snapToCache.wednesdayNotes=wn;}}catch(_){}
         try { if (rVS && rVS.value)snapToCache.valuationSnapshot  = JSON.parse(rVS.value);}catch(_){}
         try { if (rRL && rRL.value)snapToCache.researchLog        = JSON.parse(rRL.value);}catch(_){}
+        try { if (rAH && rAH.value)snapToCache.accountHoldings    = JSON.parse(rAH.value);}catch(_){}
+        try { if (rAHA && rAHA.value!=null){var ahaC=rAHA.value;try{var ppC=JSON.parse(ahaC);if(typeof ppC==="string")ahaC=ppC;}catch(_){};snapToCache.accountHoldingsUploadedAt=ahaC;}}catch(_){}
+        try { if (rAHN && rAHN.value)snapToCache.accountHoldingsNotes = JSON.parse(rAHN.value);}catch(_){}
         cacheSet("raw", snapToCache);
       } catch(_e){}
     }
@@ -1315,6 +1339,9 @@ export function CompanyProvider({children}){
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(wednesdayNotes);autoSendBlob("wednesdayNotes",j,"meta",{key:"wednesdayNotes",value:wednesdayNotes||""});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[wednesdayNotes,ready]);
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(valuationSnapshot);autoSendBlob("valuationSnapshot",j,"meta",{key:"valuationSnapshot",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[valuationSnapshot,ready]);
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(researchLog);autoSendBlob("researchLog",j,"meta",{key:"researchLog",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[researchLog,ready]);
+  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(accountHoldings);autoSendBlob("accountHoldings",j,"meta",{key:"accountHoldings",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[accountHoldings,ready]);
+  useEffect(function(){if(!ready)return;var t=setTimeout(function(){autoSendBlob("accountHoldingsUploadedAt",accountHoldingsUploadedAt,"meta",{key:"accountHoldingsUploadedAt",value:accountHoldingsUploadedAt||""});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[accountHoldingsUploadedAt,ready]);
+  useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(accountHoldingsNotes);autoSendBlob("accountHoldingsNotes",j,"meta",{key:"accountHoldingsNotes",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[accountHoldingsNotes,ready]);
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(benchmarkWeights);autoSendBlob("benchmarkWeights",j,"meta",{key:"benchmarkWeights",value:j});},DEBOUNCE_MS);return function(){clearTimeout(t);};},[benchmarkWeights,ready]);
   useEffect(function(){if(!ready)return;var t=setTimeout(function(){var j=JSON.stringify(breakdownHistory);autoSendBlob("breakdownHistory",j,"meta",{key:"breakdownHistory",value:j});},DEBOUNCE_HEAVY_MS);return function(){clearTimeout(t);};},[breakdownHistory,ready]);
 
@@ -1514,6 +1541,25 @@ export function CompanyProvider({children}){
   }
   function deleteResearchLog(id){
     setResearchLog(function(prev){return(prev||[]).filter(function(e){return e.id!==id;});});
+  }
+  /* Account-holdings outlier note setter. key = "portfolio|account|ticker"
+     so the note follows that specific (portfolio, account, holding)
+     triple across uploads. patch = { status, text }. Empty status +
+     empty text removes the note entirely (keeps the blob tidy). */
+  function setAccountHoldingsNote(key, patch){
+    if(!key) return;
+    setAccountHoldingsNotes(function(prev){
+      var next = Object.assign({}, prev || {});
+      var existing = next[key] || {};
+      var merged = Object.assign({}, existing, patch || {}, {
+        updatedAt: todayStr(),
+        updatedBy: currentUser || "Unknown",
+      });
+      var isEmpty = (!merged.status || merged.status === "") && (!merged.text || merged.text.trim() === "");
+      if(isEmpty){ delete next[key]; }
+      else { next[key] = merged; }
+      return next;
+    });
   }
   /* Undo a memo log entry — flips its associated commits back to
      agenda state so the IC team can finish editing as if the lock-in
@@ -2183,6 +2229,9 @@ export function CompanyProvider({children}){
     feedback,setFeedback,addFeedback,updateFeedback,removeFeedback,moveFeedback,
     memoLog,setMemoLog,addMemoLog,deleteMemoLog,revertMemoLog,
     researchLog,setResearchLog,addResearchLog,deleteResearchLog,
+    accountHoldings,setAccountHoldings,
+    accountHoldingsUploadedAt,setAccountHoldingsUploadedAt,
+    accountHoldingsNotes,setAccountHoldingsNotes,setAccountHoldingsNote,
     wednesdayNotes,setWednesdayNotes,
     valuationSnapshot,setValuationSnapshot,
     targetChangeReads,setTargetChangeReads,markTargetChangeRead,

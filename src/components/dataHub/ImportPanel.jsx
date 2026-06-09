@@ -30,7 +30,8 @@ const TABS = [
   ["prices", "Prices"], ["valuation", "Valuation"], ["epsrev", "E[EPS]"],
   ["guidance", "Guidance"], ["metrics", "Metrics"], ["benchmarks", "Benchmarks"],
   ["dashboard", "Dashboard"], ["weights", "Target Weights"], ["earnings", "Earnings Dates"],
-  ["fx", "FX Rates"], ["rep", "Rep Holdings"], ["tx", "Transactions"],
+  ["fx", "FX Rates"], ["rep", "Rep Holdings"], ["accountHoldings", "Account Holdings"],
+  ["tx", "Transactions"],
   ["perf", "Performance"], ["ratios", "Ratio Analysis"], ["financials", "Financials"],
   ["segments", "Segments"], ["pricehistory", "Price History"],
 ];
@@ -56,6 +57,7 @@ export default function ImportPanel({ imports, benchmarkWeights, calLastUpdated,
     epsRevImportText, setEpsRevImportText, applyEpsRevImport,
     guidanceImportText, setGuidanceImportText, applyGuidanceImport,
     priceHistoryImportText, setPriceHistoryImportText, applyPriceHistoryImport,
+    accountHoldingsText, setAccountHoldingsText, applyAccountHoldingsImport,
   } = imports;
 
   return (
@@ -150,6 +152,24 @@ export default function ImportPanel({ imports, benchmarkWeights, calLastUpdated,
           <div className="text-xs text-gray-500 dark:text-slate-400 mb-2">Columns: Account Number, Ticker, Shares, Avg Cost (local ccy). {repLastUpdated && "Last loaded by " + repLastUpdated}</div>
           <textarea value={repText} onChange={function (e) { setRepText(e.target.value); }} placeholder="LWGA0013  SHEL  1500  24.80" rows={8} className={TA_BASE + " font-mono mb-2"} style={{ minHeight: 120 }} />
           <button onClick={applyRepImport} disabled={!repText.trim()} className={BTN_SM}>Load</button>
+        </div>
+      )}
+
+      {dataHubTab === "accountHoldings" && (
+        <div>
+          <div className="text-sm font-medium text-gray-900 dark:text-slate-100 mb-1">All Accounts — Holdings</div>
+          <div className="text-xs text-gray-500 dark:text-slate-400 mb-2">
+            4 columns: Account, Parent Ticker, % Weight, Portfolio. Header row auto-detected. Re-uploading REPLACES the prior snapshot. Drives the Portfolios → Outliers subtab — surfaces accounts whose weight in a given holding deviates from the portfolio-wide mean.
+          </div>
+          <textarea
+            value={accountHoldingsText || ""}
+            onChange={function (e) { setAccountHoldingsText(e.target.value); }}
+            placeholder={"LWGA0013\tSHEL\t3.50\tFGL\nLWGA0014\tSHEL\t3.45\tFGL\nLWGA0015\tSHEL\t3.55\tFGL\n…"}
+            rows={10}
+            className={TA_BASE + " font-mono mb-2"}
+            style={{ minHeight: 160 }}
+          />
+          <button onClick={applyAccountHoldingsImport} disabled={!accountHoldingsText || !accountHoldingsText.trim()} className={BTN_SM}>Load Account Holdings</button>
         </div>
       )}
 

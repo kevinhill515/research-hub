@@ -16,7 +16,7 @@ import { REP_ACCOUNTS } from '../constants/index.js';
 
 export function useImport(){
   const ctx = useCompanyContext();
-  const { companies, setCompanies, saved, setSaved, setCopied, currentUser, repData, setRepData, fxRates, setFxRates, specialWeights, setSpecialWeights, benchmarkWeights, setBenchmarkWeights, breakdownHistory, setBreakdownHistory, calLastUpdated, setCalLastUpdated, calLastUpdatedBy, setCalLastUpdatedBy, repLastUpdated, setRepLastUpdated, fxLastUpdated, setFxLastUpdated, applyPerfBulk, valuationSnapshot, setValuationSnapshot } = ctx;
+  const { companies, setCompanies, saved, setSaved, setCopied, currentUser, repData, setRepData, fxRates, setFxRates, specialWeights, setSpecialWeights, benchmarkWeights, setBenchmarkWeights, breakdownHistory, setBreakdownHistory, calLastUpdated, setCalLastUpdated, calLastUpdatedBy, setCalLastUpdatedBy, repLastUpdated, setRepLastUpdated, fxLastUpdated, setFxLastUpdated, applyPerfBulk, valuationSnapshot, setValuationSnapshot, setAccountHoldings, setAccountHoldingsUploadedAt } = ctx;
   /* All import functions surface results / errors via the in-app
      alert dialog (instead of native window.alert). Keeps look + feel
      consistent with the rest of the app and unblocks Test/CI environments
@@ -37,6 +37,9 @@ export function useImport(){
   const [calImportText,setCalImportText]=useState("");
   const [repText,setRepText]=useState("");
   const [fxText,setFxText]=useState("");
+  /* Account-holdings paste — 4-col: Account, Parent Ticker, % Weight,
+     Portfolio. Drives the Portfolios > Outliers subtab. */
+  const [accountHoldingsText,setAccountHoldingsText]=useState("");
   const [txText,setTxText]=useState("");
   /* When true, applyTxImport WIPES existing transactions for every
      company that has at least one incoming row before inserting the
@@ -211,6 +214,48 @@ export function useImport(){
     },100);
   }
   function applyRepImport(){if(!repText.trim())return;var lines=repText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});var data={};lines.forEach(function(line){var delim=line.indexOf("\t")>=0?"\t":",";var parts=line.split(delim).map(function(s){return s.trim();});if(parts.length>=3){var acct=parts[0].toUpperCase();var ticker=parts[1].toUpperCase();var shares=parseFloat(parts[2]);var avgCost=parts.length>=4?parseFloat(parts[3]):0;if(isNaN(avgCost))avgCost=0;if(!isNaN(shares)){var port=REP_ACCOUNTS[acct];if(port){if(!data[port])data[port]={};var prev=data[port][ticker];var prevShares=(prev&&typeof prev==="object")?(prev.shares||0):(prev||0);var prevCost=(prev&&typeof prev==="object")?(prev.avgCost||0):0;var newShares=prevShares+shares;/* Weighted average when the same ticker appears twice in one import */var newAvgCost=newShares>0?((prevShares*prevCost)+(shares*avgCost))/newShares:avgCost;data[port][ticker]={shares:newShares,avgCost:newAvgCost};}}}});setRepData(data);setRepLastUpdated(currentUser+" "+todayStr());setRepText("");supaUpsert("meta",{key:"repData",value:JSON.stringify(data)});}
+
+  /* All-accounts upload — 4 columns: Account, Parent Ticker, % Weight,
+     Portfolio. Replaces (not merges) the prior accountHoldings blob so
+     a fresh upload reflects current state cleanly. First row may be a
+     header (auto-detected by checking for non-numeric weight in col 3).
+     Rows with missing portfolio or unparseable weight are skipped
+     silently. Drives the Portfolios > Outliers subtab. */
+  function applyAccountHoldingsImport(){
+    if(!accountHoldingsText.trim())return;
+    var lines=accountHoldingsText.trim().split("\n").map(function(l){return l.replace("\r","");}).filter(function(l){return l.trim();});
+    if(lines.length===0)return;
+    /* Header detection: if the 3rd cell of row 1 isn't a number, treat
+       row 1 as a header and skip. */
+    var firstDelim=lines[0].indexOf("\t")>=0?"\t":",";
+    var firstParts=lines[0].split(firstDelim).map(function(s){return s.trim();});
+    var startIdx = (firstParts.length >= 3 && isNaN(parseFloat(firstParts[2]))) ? 1 : 0;
+    var data={}; var rows=0; var skipped=0;
+    for(var i=startIdx; i<lines.length; i++){
+      var line=lines[i];
+      var delim=line.indexOf("\t")>=0?"\t":",";
+      var p=line.split(delim).map(function(s){return s.trim().replace(/^"|"$/g,"");});
+      if(p.length<4){skipped++;continue;}
+      var account=(p[0]||"").toUpperCase();
+      var ticker=(p[1]||"").toUpperCase();
+      var weight=parseFloat(String(p[2]||"").replace(/%/g,""));
+      var portfolio=(p[3]||"").toUpperCase();
+      if(!account||!ticker||!portfolio||!isFinite(weight)){skipped++;continue;}
+      if(!data[portfolio])data[portfolio]={};
+      if(!data[portfolio][account])data[portfolio][account]={};
+      data[portfolio][account][ticker]=weight;
+      rows++;
+    }
+    setAccountHoldings(data);
+    var stamp = (currentUser||"Unknown")+" "+todayStr();
+    setAccountHoldingsUploadedAt(stamp);
+    supaUpsert("meta",{key:"accountHoldings",value:JSON.stringify(data)});
+    supaUpsert("meta",{key:"accountHoldingsUploadedAt",value:stamp});
+    setTimeout(function(){
+      alertFn("Loaded "+rows+" account-holdings row"+(rows===1?"":"s")+(skipped>0?" ("+skipped+" skipped)":"")+".");
+      setAccountHoldingsText("");
+    },100);
+  }
   /* Earnings Dates upload — 13 columns:
        Ticker, Next Rpt Date, Last Rpt Date,
        Sales Est, Sales Actual, Sales Surp Nom, Sales Surp %,
@@ -1334,6 +1379,7 @@ export function useImport(){
     guidanceImportText,setGuidanceImportText,
     priceHistoryImportText,setPriceHistoryImportText,
     applyFxImport,applyRepImport,applyTxImport,applyPerfImport,applyCalImport,applyWeightsImport,applyValImport,applyEstImport,applyMetricsImport,applyBenchmarkImport,applyDashboardImport,applyRatioImport,applyFinancialsImport,applySegmentsImport,applyEpsRevImport,applyGuidanceImport,applyPriceHistoryImport,
+    accountHoldingsText,setAccountHoldingsText,applyAccountHoldingsImport,
     importAll,exportAll,downloadBackup
   };
 }
