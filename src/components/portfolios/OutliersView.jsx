@@ -134,6 +134,14 @@ export default function OutliersView() {
            — pure noise. The held position itself is always emitted
            regardless of majority; only the absence rows are gated. */
         const isMajority = stats.count > accountList.length / 2;
+        /* "Minority hold" = a ticker that fewer than half the accounts
+           own. Surfaces deliberate substitutions (LWGV0005 holds
+           URNM-US in place of SRUUF, BBRINTV holds FLEX in place of
+           ATD-CA). These rows always render — they bypass the
+           deviation-threshold filter — because for a 1-of-N holder the
+           mean equals the weight, so dev would be 0 and the row would
+           otherwise be hidden. */
+        const isMinorityHold = !isMajority;
         accountList.forEach(function(account){
           const w = stats.weightByAccount[account];
           const isMissing = (w === undefined);
@@ -151,6 +159,7 @@ export default function OutliersView() {
             count: stats.count,        /* holders only */
             totalAccts: accountList.length,
             isMissing: isMissing,
+            isMinorityHold: !isMissing && isMinorityHold,
             key: p + "|" + account + "|" + tk,
           });
         });
@@ -170,7 +179,14 @@ export default function OutliersView() {
 
   const filtered = useMemo(function(){
     if(showAll) return rows;
-    return rows.filter(function(r){ return r.absDev > threshold; });
+    return rows.filter(function(r){
+      /* Minority holds always show — for a 1-of-N holder, the mean
+         equals the weight, so dev=0 and they'd otherwise be hidden.
+         These are the deliberate-substitution rows the user wants
+         visible (e.g. LWGV0005 holds URNM-US in place of SRUUF). */
+      if(r.isMinorityHold) return true;
+      return r.absDev > threshold;
+    });
   }, [rows, showAll, threshold]);
 
   /* Group by portfolio → account for display. */
@@ -319,6 +335,9 @@ export default function OutliersView() {
                               {r.ticker}
                               {r.isMissing && (
                                 <span className="ml-1.5 text-[9px] px-1 py-0 rounded-full font-semibold" style={{ background: "#fee2e2", color: "#991b1b" }} title={"This account doesn't hold " + r.ticker + " but " + r.count + " other account" + (r.count===1?"":"s") + " in this portfolio do(es)."}>missing</span>
+                              )}
+                              {r.isMinorityHold && (
+                                <span className="ml-1.5 text-[9px] px-1 py-0 rounded-full font-semibold" style={{ background: "#dbeafe", color: "#1e40af" }} title={"Only " + r.count + " of " + r.totalAccts + " accounts hold " + r.ticker + ". Likely a deliberate substitution."}>minority</span>
                               )}
                             </td>
                             <td className="px-2 py-1 text-gray-700 dark:text-slate-300 truncate" title={name} style={{maxWidth:"260px"}}>{name}</td>
