@@ -26,23 +26,41 @@ const THRESHOLDS = [0.25, 0.5, 1.0];
 export default function OutliersView() {
   const { accountHoldings, accountHoldingsUploadedAt, accountHoldingsNotes, setAccountHoldingsNote, companies } = useCompanyContext();
 
-  /* Ticker → company name lookup so the table can show "Shell" next
-     to SHEL-GB. Built from companies[*].tickers[*].ticker. */
+  /* Ticker → company name lookup. Indexes both the raw ticker AND a
+     "-US" / "-USD"-stripped variant so an uploaded "SHEL-US" matches
+     a company stored with the bare "SHEL". Same for the reverse —
+     stripping handles either direction depending on which side carries
+     the suffix. */
   const tickerToName = useMemo(function(){
     const m = {};
+    function add(tk, name){
+      if(!tk) return;
+      var u = String(tk).toUpperCase();
+      if(!m[u]) m[u] = name || "";
+      /* Index a suffix-stripped variant too — handles uploads with
+         "-US" appended to US-listed tickers. */
+      var stripped = u.replace(/-(US|USD)$/i, "");
+      if(stripped !== u && !m[stripped]) m[stripped] = name || "";
+    }
     (companies || []).forEach(function(c){
       (c.tickers || []).forEach(function(t){
-        var tk = (t && t.ticker ? String(t.ticker) : "").toUpperCase();
-        if(tk && !m[tk]) m[tk] = c.name || "";
+        add(t && t.ticker, c.name);
       });
-      /* Also map the primary ticker if it isn't already covered. */
-      if(c.ticker){
-        var pk = String(c.ticker).toUpperCase();
-        if(!m[pk]) m[pk] = c.name || "";
-      }
+      if(c.ticker) add(c.ticker, c.name);
     });
     return m;
   }, [companies]);
+  /* Look up a ticker by trying the raw form first, then the
+     "-US" / "-USD"-stripped variant. Mirrors the indexing above so the
+     match works regardless of which side carries the suffix. */
+  function lookupName(tk){
+    if(!tk) return "";
+    var u = String(tk).toUpperCase();
+    if(tickerToName[u]) return tickerToName[u];
+    var stripped = u.replace(/-(US|USD)$/i, "");
+    if(stripped !== u && tickerToName[stripped]) return tickerToName[stripped];
+    return "";
+  }
   const [portFilter, setPortFilter] = useState("All");
   const [threshold, setThreshold] = useState(0.5);
   const [showAll, setShowAll] = useState(false); /* false = only show outliers */
@@ -251,7 +269,7 @@ export default function OutliersView() {
                           : r.dev < 0
                             ? "text-rose-700 dark:text-rose-300"
                             : "text-gray-500 dark:text-slate-400";
-                        const name = tickerToName[r.ticker] || "";
+                        const name = lookupName(r.ticker);
                         return (
                           <tr key={r.key} className={borderCls + " " + rowBg}>
                             <td className="px-2 py-1 font-mono text-gray-700 dark:text-slate-300 align-top">
