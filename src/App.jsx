@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { evaluateAlertsForCompany } from './utils/alerts.js';
 import { PORTFOLIOS, TIER_ORDER, SECTOR_ORDER, COUNTRY_ORDER, SECTOR_COLORS, SECTOR_SHORT, COUNTRY_GROUPS, COUNTRY_COLORS, REGION_COLORS, REGION_GROUPS, STATUS_RANK, CURRENCY_MAP, ALL_CURRENCIES, MONTHS, CO_SORTS, FORMATS, TONES, LIB_SORTS, PRESET_TAGS, UPLOAD_TYPES, TEMPLATE_SECTIONS, SECTION_SUBHEADINGS, THESIS_STATUSES, TP_CHANGES, AVG_WPM, ALL_COLS, COMPACT_COLS, COMPANY_COLUMNS, SHORTCUTS, CONF_BG, CONF_COLOR, ACTIONS, TEAM_MEMBERS, TEAM_COLORS, REP_ACCOUNTS, PORT_NAMES, FLAG_STYLES } from './constants/index.js';
 import { shortSector, sectorStyle, countryStyle, getRegion, getTiers, getCurrency, calcNormEPS, calcTP, calcMOS, fmtPrice, fmtTP, fmtMOS, mosBg, impliedFYLabel, tierPillStyle, tierBg, fmtTime, getCore, getConf, escHTML, toHTML, toMD, simScore, downloadMD, detectCompanyTags, todayStr, parseDate, daysSince, reviewedColor, getStatusRank, getTierIndex, getCompanyMOS, blankEarnings, sortCos, synPrompt, tierToStatus, repShares, repAvgCost, getInitiatedDate, monthsSince, isInitiationTx, printPage } from './utils/index.js';
-import { supaGet, supaUpsert, ANTHROPIC_KEY, apiCall, setAnthropicKey, hasAnthropicKey } from './api/index.js';
+import { supaGet, supaUpsert, ANTHROPIC_KEY, apiCall, setAnthropicKey, hasAnthropicKey, MODEL_TASKS, MODEL_OPTIONS, getModel, setModel } from './api/index.js';
 import { getDataStatus, statusBadge, staleReason } from './utils/dataStatus.js';
 import AlertsPanel from './components/dashboard/AlertsPanel.jsx';
 import ThisWeekEarnings from './components/dashboard/ThisWeekEarnings.jsx';
@@ -459,10 +459,10 @@ export default function App(){
       {(!currentUser||showUserPicker)&&(<div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center"><div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-7 w-80 shadow-2xl"><div className="text-base font-semibold text-gray-900 dark:text-slate-100 mb-1.5">Who are you?</div><div className="text-sm text-gray-500 dark:text-slate-400 mb-4">Select your name so edits are tracked correctly.</div><div className="flex flex-col gap-2">{TEAM_MEMBERS.map(function(name){return(<button key={name} onClick={function(){setCurrentUser(name);setShowUserPicker(false);}} className={"py-2.5 px-4 text-sm border rounded-lg cursor-pointer text-left transition-colors " + (currentUser===name ? "font-semibold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700" : "font-normal bg-slate-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700")}>{name}</button>);})}</div>{currentUser&&<div className="mt-3 text-xs text-gray-500 dark:text-slate-400 text-right cursor-pointer hover:text-gray-700 dark:hover:text-slate-300" onClick={function(){setShowUserPicker(false);}}>Cancel</div>}</div></div>)}
       {showShortcuts&&(<div className="fixed inset-0 bg-black/40 z-[1000] flex items-center justify-center" onClick={function(){setShowShortcuts(false);}}><div onClick={function(e){e.stopPropagation();}} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-6 py-5 min-w-[320px] shadow-2xl"><div className="text-[15px] font-semibold text-gray-900 dark:text-slate-100 mb-3.5">Keyboard Shortcuts</div>{SHORTCUTS.map(function(s){return(<div key={s.key} className="flex items-center gap-3 mb-2"><span className="text-xs px-2 py-0.5 rounded-[5px] border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-mono text-gray-900 dark:text-slate-100 min-w-[28px] text-center">{s.key}</span><span className="text-sm text-gray-500 dark:text-slate-400">{s.desc}</span></div>);})}<div className="mt-3.5 text-xs text-gray-500 dark:text-slate-400 text-right cursor-pointer hover:text-gray-700 dark:hover:text-slate-300" onClick={function(){setShowShortcuts(false);}}>Close (Esc)</div></div></div>)}
       {showSettings&&(<div className="fixed inset-0 bg-black/40 z-[1000] flex items-center justify-center" onClick={function(){setShowSettings(false);}}>
-        <div onClick={function(e){e.stopPropagation();}} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-6 py-5 w-[460px] max-w-[92vw] shadow-2xl">
+        <div onClick={function(e){e.stopPropagation();}} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-6 py-5 w-[520px] max-w-[92vw] shadow-2xl">
           <div className="text-[15px] font-semibold text-gray-900 dark:text-slate-100 mb-1">API</div>
           <div className="text-xs text-gray-500 dark:text-slate-400 mb-4">Anthropic API key. Per-browser. Not shared with teammates. Currently unused — AI-dependent features are hidden until the key is reinstated.</div>
-          <div className="mb-3">
+          <div className="mb-4">
             <label className="text-xs font-medium text-gray-700 dark:text-slate-300 block mb-1">Anthropic API Key</label>
             <div className="text-[11px] text-gray-500 dark:text-slate-400 mb-2">Required for AI features (synthesis, auto-fill, recall, etc.). Get a key at <span className="font-mono">console.anthropic.com</span>. Stored only in your browser's localStorage — never in the codebase or any team-shared storage.</div>
             <input
@@ -475,6 +475,28 @@ export default function App(){
             />
             {hasAnthropicKey()&&!apiKeyDraft&&<div className="text-[11px] text-amber-700 dark:text-amber-400 mt-1">⚠ Saving will clear the existing key.</div>}
           </div>
+          {/* Per-task Claude model picker. Per-browser like the key. */}
+          <div className="text-[15px] font-semibold text-gray-900 dark:text-slate-100 mb-1">Claude model per task</div>
+          <div className="text-xs text-gray-500 dark:text-slate-400 mb-3">Defaults are the durable Claude family. Pick a faster / cheaper or more capable model per task if you want. Settings are per-browser.</div>
+          {MODEL_TASKS.map(function(task){
+            var label = task === "synth" ? "Synthesis / Recall / Macro"
+                      : task === "extract" ? "Valuation prose → JSON extract"
+                      : "Full template parse";
+            return (
+              <div key={task} className="mb-2.5 flex items-center gap-2">
+                <label className="text-xs font-medium text-gray-700 dark:text-slate-300 w-[200px] shrink-0">{label}</label>
+                <select
+                  defaultValue={getModel(task)}
+                  onChange={function(e){ setModel(task, e.target.value); }}
+                  className={INP + " flex-1 font-mono text-xs"}
+                >
+                  {MODEL_OPTIONS.map(function(opt){
+                    return <option key={opt.id} value={opt.id}>{opt.label}</option>;
+                  })}
+                </select>
+              </div>
+            );
+          })}
           <div className="flex gap-2 justify-end mt-4">
             <button onClick={function(){setShowSettings(false);}} className={BTN}>Cancel</button>
             {hasAnthropicKey()&&<button onClick={function(){setAnthropicKey("");setApiKeyDraft("");setShowSettings(false);}} className="text-xs px-3 py-1 rounded-md border border-red-200 dark:border-red-900 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30">Clear key</button>}

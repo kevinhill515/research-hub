@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useCompanyContext } from '../context/CompanyContext.jsx';
 import { PORTFOLIOS, TIER_ORDER, SECTOR_ORDER, COUNTRY_ORDER, ALL_COLS, COMPACT_COLS, TEMPLATE_SECTIONS, UPLOAD_TYPES, REP_ACCOUNTS } from '../constants/index.js';
 import { getCurrency, calcNormEPS, calcTP, calcMOS, fmtPrice, fmtTP, fmtMOS, impliedFYLabel, todayStr, parseDate, sortCos, OVERLAP_PORT_ORDER, blankEarnings, toHTML, downloadMD, getTiers, inferQuarter } from '../utils/index.js';
-import { ANTHROPIC_KEY, apiCall, supaUpsert, supaGet } from '../api/index.js';
+import { ANTHROPIC_KEY, apiCall, supaUpsert, supaGet, getModel } from '../api/index.js';
 import { mergePriceSeries } from '../utils/priceHistoryParser.js';
 import { invalidatePriceHistory } from './usePriceHistory.js';
 import { useAlert } from '../components/ui/DialogProvider.jsx';
@@ -423,7 +423,7 @@ export function useCompanies(){
     if(!tmplRaw.trim())return;setTmplLoading(true);
     try{
       var allKeys=[...TEMPLATE_SECTIONS].map(function(s){return'"'+s+'"';}).join(", ");
-      var res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":ANTHROPIC_KEY,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:4000,system:"You are a JSON extractor. Extract the following sections from the provided company research template and return ONLY a valid JSON object with exactly these keys: "+allKeys+". If a section is not found, use an empty string. Return nothing else — no markdown, no backticks, no explanation.",messages:[{role:"user",content:[{type:"text",text:tmplRaw.slice(0,20000)}]}]})});
+      var res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":ANTHROPIC_KEY,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:getModel("template"),max_tokens:4000,system:"You are a JSON extractor. Extract the following sections from the provided company research template and return ONLY a valid JSON object with exactly these keys: "+allKeys+". If a section is not found, use an empty string. Return nothing else — no markdown, no backticks, no explanation.",messages:[{role:"user",content:[{type:"text",text:tmplRaw.slice(0,20000)}]}]})});
       var json=await res.json();if(json.error){alertFn("API error: "+JSON.stringify(json.error));setTmplLoading(false);return;}
       var raw=(json.content||[]).map(function(b){return b.text||"";}).join("");
       var clean=raw.replace(/```json/g,"").replace(/```/g,"").trim();

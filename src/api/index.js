@@ -89,10 +89,52 @@ export function setAnthropicKey(k) {
 }
 export function hasAnthropicKey() { return !!ANTHROPIC_KEY; }
 
+/* Per-task Claude model selection.
+ *
+ * Three task keys, each picked from durable Claude family members so a
+ * "newest model" deprecation can't break shipped behavior:
+ *   - synth:    open-ended writing (Synthesis, Recall, Macro). Sonnet
+ *               4.6 is the balanced default.
+ *   - extract:  small structured JSON (Valuation prose → pe/eps/fy).
+ *               Haiku 4.5 — fast, cheap, good enough.
+ *   - template: large structured JSON (full research template parse,
+ *               4000-token output). Sonnet 4.6.
+ *
+ * User can override any of these in Settings; choices persist per-
+ * browser. Fable 5 / Opus 4.8 available in the picker but NOT in the
+ * defaults (per user request — short-lived models shouldn't be
+ * baked into runtime config). */
+const MODEL_DEFAULTS = {
+  synth:    "claude-sonnet-4-6",
+  extract:  "claude-haiku-4-5-20251001",
+  template: "claude-sonnet-4-6",
+};
+export const MODEL_TASKS = ["synth", "extract", "template"];
+export const MODEL_OPTIONS = [
+  { id: "claude-haiku-4-5-20251001", label: "Haiku 4.5 (fast / cheap)" },
+  { id: "claude-sonnet-4-6",         label: "Sonnet 4.6 (balanced)" },
+  { id: "claude-opus-4-8",           label: "Opus 4.8 (best reasoning)" },
+  { id: "claude-fable-5",            label: "Fable 5 (newest — short-lived)" },
+];
+function modelLsKey(task){ return "ccd:model:" + task; }
+export function getModel(task) {
+  try {
+    var v = localStorage.getItem(modelLsKey(task));
+    if (v) return v;
+  } catch (e) {}
+  return MODEL_DEFAULTS[task] || MODEL_DEFAULTS.synth;
+}
+export function setModel(task, modelId) {
+  try {
+    if (modelId) localStorage.setItem(modelLsKey(task), modelId);
+    else localStorage.removeItem(modelLsKey(task));
+  } catch (e) {}
+}
+
 export async function apiCall(system,content,maxTokens){
   if(!ANTHROPIC_KEY) throw new Error("Anthropic API key not set. Open Settings (top-right ⚙) and paste your key.");
   var mt=maxTokens||1200;var blocks=typeof content==="string"?[{type:"text",text:content}]:content;
-  var res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":ANTHROPIC_KEY,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:mt,system,messages:[{role:"user",content:blocks}]})});
+  var res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":ANTHROPIC_KEY,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:getModel("synth"),max_tokens:mt,system,messages:[{role:"user",content:blocks}]})});
   var data=await res.json();if(data.error)throw new Error(JSON.stringify(data.error));
   return(data.content||[]).map(function(b){return b.text||"";}).join("");
 }
