@@ -65,6 +65,7 @@ export default function OutliersView() {
   const [threshold, setThreshold] = useState(0.25);
   const [showAll, setShowAll] = useState(false); /* false = only show outliers */
   const [hideCash, setHideCash] = useState(true);   /* hide CASH-US / DIVACC pseudo-tickers */
+  const [statusFilter, setStatusFilter] = useState("all"); /* all | undecided | intentional | action */
 
   /* Tickers we consider "cash placeholders" — uninteresting noise on
      the outliers view. CASH-US is the canonical USD cash bucket; we
@@ -178,8 +179,7 @@ export default function OutliersView() {
   }, [accountHoldings, portFilter, hideCash, threshold]);
 
   const filtered = useMemo(function(){
-    if(showAll) return rows;
-    return rows.filter(function(r){
+    var base = showAll ? rows : rows.filter(function(r){
       /* Minority holds always show — for a 1-of-N holder, the mean
          equals the weight, so dev=0 and they'd otherwise be hidden.
          These are the deliberate-substitution rows the user wants
@@ -187,7 +187,15 @@ export default function OutliersView() {
       if(r.isMinorityHold) return true;
       return r.absDev > threshold;
     });
-  }, [rows, showAll, threshold]);
+    if(statusFilter === "all") return base;
+    return base.filter(function(r){
+      var s = ((accountHoldingsNotes || {})[r.key] || {}).status || "";
+      if(statusFilter === "undecided")  return s === "";
+      if(statusFilter === "intentional")return s === "intentional";
+      if(statusFilter === "action")     return s === "action";
+      return true;
+    });
+  }, [rows, showAll, threshold, statusFilter, accountHoldingsNotes]);
 
   /* Group by portfolio → account for display. */
   const byPortAccount = useMemo(function(){
@@ -265,6 +273,25 @@ export default function OutliersView() {
             <input type="checkbox" checked={hideCash} onChange={function(e){setHideCash(e.target.checked);}} className="cursor-pointer"/>
             Hide cash
           </label>
+          <span className="text-[11px] text-gray-500 dark:text-slate-400 uppercase ml-2">Status:</span>
+          {[
+            ["all",         "All",         "#e2e8f0", "#334155"],
+            ["undecided",   "Undecided",   "#fef3c7", "#92400e"],
+            ["intentional", "Intentional", "#dcfce7", "#166534"],
+            ["action",      "Action",      "#fee2e2", "#991b1b"],
+          ].map(function(s){
+            var active = statusFilter === s[0];
+            return (
+              <button
+                key={s[0]}
+                onClick={function(){ setStatusFilter(s[0]); }}
+                className={"text-[11px] px-2 py-0.5 rounded-full border cursor-pointer " + (active ? "font-semibold" : "")}
+                style={active
+                  ? { background: s[2], color: s[3], borderColor: s[3] }
+                  : { background: "transparent", color: "#64748b", borderColor: "#cbd5e1" }}
+              >{s[1]}</button>
+            );
+          })}
         </div>
       </div>
 
