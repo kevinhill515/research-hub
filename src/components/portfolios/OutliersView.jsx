@@ -24,7 +24,25 @@ const STATUS_STYLE = STATUS_OPTIONS.reduce(function(acc, s){ acc[s.key]=s; retur
 const THRESHOLDS = [0.25, 0.5, 1.0];
 
 export default function OutliersView() {
-  const { accountHoldings, accountHoldingsUploadedAt, accountHoldingsNotes, setAccountHoldingsNote } = useCompanyContext();
+  const { accountHoldings, accountHoldingsUploadedAt, accountHoldingsNotes, setAccountHoldingsNote, companies } = useCompanyContext();
+
+  /* Ticker → company name lookup so the table can show "Shell" next
+     to SHEL-GB. Built from companies[*].tickers[*].ticker. */
+  const tickerToName = useMemo(function(){
+    const m = {};
+    (companies || []).forEach(function(c){
+      (c.tickers || []).forEach(function(t){
+        var tk = (t && t.ticker ? String(t.ticker) : "").toUpperCase();
+        if(tk && !m[tk]) m[tk] = c.name || "";
+      });
+      /* Also map the primary ticker if it isn't already covered. */
+      if(c.ticker){
+        var pk = String(c.ticker).toUpperCase();
+        if(!m[pk]) m[pk] = c.name || "";
+      }
+    });
+    return m;
+  }, [companies]);
   const [portFilter, setPortFilter] = useState("All");
   const [threshold, setThreshold] = useState(0.5);
   const [showAll, setShowAll] = useState(false); /* false = only show outliers */
@@ -82,13 +100,14 @@ export default function OutliersView() {
         });
       });
     });
-    /* Sort outliers-first (biggest abs deviation), then by portfolio /
-       ticker / account for stable secondary order. */
+    /* Sort by portfolio → account → biggest abs deviation per account
+       → ticker. Groups all of one account's rows together; outliers
+       within each account float to the top of their block. */
     out.sort(function(a, b){
-      if(b.absDev !== a.absDev) return b.absDev - a.absDev;
       if(a.portfolio !== b.portfolio) return a.portfolio.localeCompare(b.portfolio);
-      if(a.ticker !== b.ticker) return a.ticker.localeCompare(b.ticker);
-      return a.account.localeCompare(b.account);
+      if(a.account !== b.account) return a.account.localeCompare(b.account);
+      if(b.absDev !== a.absDev) return b.absDev - a.absDev;
+      return a.ticker.localeCompare(b.ticker);
     });
     return out;
   }, [accountHoldings, portFilter, hideCash]);
@@ -98,12 +117,13 @@ export default function OutliersView() {
     return rows.filter(function(r){ return r.absDev > threshold; });
   }, [rows, showAll, threshold]);
 
-  /* Group by portfolio for display. */
-  const byPort = useMemo(function(){
+  /* Group by portfolio → account for display. */
+  const byPortAccount = useMemo(function(){
     const m = {};
     filtered.forEach(function(r){
-      if(!m[r.portfolio]) m[r.portfolio] = [];
-      m[r.portfolio].push(r);
+      if(!m[r.portfolio]) m[r.portfolio] = {};
+      if(!m[r.portfolio][r.account]) m[r.portfolio][r.account] = [];
+      m[r.portfolio][r.account].push(r);
     });
     return m;
   }, [filtered]);
@@ -176,81 +196,101 @@ export default function OutliersView() {
         </div>
       </div>
 
-      {/* Per-portfolio outlier tables */}
-      {Object.keys(byPort).length === 0 ? (
+      {/* Per-portfolio → per-account outlier tables */}
+      {Object.keys(byPortAccount).length === 0 ? (
         <div className="rounded-lg bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 px-4 py-6 text-center text-sm text-gray-500 dark:text-slate-400">
           No outliers above {threshold} ppt. Lower the threshold or toggle "Show all" to see every row.
         </div>
       ) : (
-        Object.keys(byPort).sort().map(function(p){
+        Object.keys(byPortAccount).sort().map(function(p){
+          const accounts = byPortAccount[p];
+          const accountList = Object.keys(accounts).sort();
+          const portRowCount = accountList.reduce(function(acc, a){ return acc + accounts[a].length; }, 0);
           return (
             <div key={p} className="mb-5">
               <div className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-1.5">
                 {PORT_NAMES[p] || p}
                 <span className="text-[11px] font-normal text-gray-500 dark:text-slate-400 ml-2">
-                  {totalAccountsByPort[p] || 0} account{totalAccountsByPort[p] === 1 ? "" : "s"} · {byPort[p].length} row{byPort[p].length === 1 ? "" : "s"} {showAll ? "shown" : "above " + threshold + " ppt"}
+                  {totalAccountsByPort[p] || 0} account{totalAccountsByPort[p] === 1 ? "" : "s"} · {portRowCount} row{portRowCount === 1 ? "" : "s"} {showAll ? "shown" : "above " + threshold + " ppt"}
                 </span>
               </div>
               <div className="border border-slate-200 dark:border-slate-700 rounded-md overflow-hidden">
                 <table className="w-full text-xs">
                   <thead className="bg-slate-50 dark:bg-slate-800/60">
                     <tr>
-                      <th className="text-left px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium">Ticker</th>
-                      <th className="text-left px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium">Account</th>
+                      <th className="text-left  px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium" style={{width:"110px"}}>Account</th>
+                      <th className="text-left  px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium" style={{width:"120px"}}>Ticker</th>
+                      <th className="text-left  px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium">Name</th>
                       <th className="text-right px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium">Weight</th>
                       <th className="text-right px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium">Port mean</th>
                       <th className="text-right px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium"># accts</th>
                       <th className="text-right px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium">Δ ppt</th>
-                      <th className="text-left  px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium">Status</th>
+                      <th className="text-left  px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium" style={{width:"110px"}}>Status</th>
                       <th className="text-left  px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium">Note</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {byPort[p].map(function(r){
-                      const note = (accountHoldingsNotes || {})[r.key] || { status: "", text: "" };
-                      const sStyle = STATUS_STYLE[note.status || ""] || STATUS_STYLE[""];
-                      /* Row tint when the row is an outlier and has no
-                         status set — pulls attention to undecided rows. */
-                      const needsAttention = r.absDev > threshold && !note.status;
-                      const rowBg = needsAttention ? "bg-amber-50/40 dark:bg-amber-950/20" : "";
-                      const devColor = r.dev > 0
-                        ? "text-emerald-700 dark:text-emerald-300"
-                        : r.dev < 0
-                          ? "text-rose-700 dark:text-rose-300"
-                          : "text-gray-500 dark:text-slate-400";
-                      return (
-                        <tr key={r.key} className={"border-t border-slate-100 dark:border-slate-700 " + rowBg}>
-                          <td className="px-2 py-1 font-mono font-medium text-gray-900 dark:text-slate-100">{r.ticker}</td>
-                          <td className="px-2 py-1 font-mono text-gray-700 dark:text-slate-300">{r.account}</td>
-                          <td className="px-2 py-1 text-right tabular-nums font-mono text-gray-900 dark:text-slate-100">{r.weight.toFixed(2)}%</td>
-                          <td className="px-2 py-1 text-right tabular-nums font-mono text-gray-500 dark:text-slate-400">{r.mean.toFixed(2)}%</td>
-                          <td className="px-2 py-1 text-right tabular-nums font-mono text-gray-500 dark:text-slate-400">{r.count}</td>
-                          <td className={"px-2 py-1 text-right tabular-nums font-mono font-semibold " + devColor}>
-                            {r.dev >= 0 ? "+" : ""}{r.dev.toFixed(2)}
-                          </td>
-                          <td className="px-2 py-1">
-                            <select
-                              value={note.status || ""}
-                              onChange={function(e){ setAccountHoldingsNote(r.key, { status: e.target.value, text: note.text || "" }); }}
-                              className="text-[10px] px-1 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 font-mono"
-                              style={{ background: sStyle.bg, color: sStyle.color }}
-                            >
-                              {STATUS_OPTIONS.map(function(s){
-                                return <option key={s.key} value={s.key}>{s.label}</option>;
-                              })}
-                            </select>
-                          </td>
-                          <td className="px-2 py-1">
-                            <input
-                              type="text"
-                              value={note.text || ""}
-                              onChange={function(e){ setAccountHoldingsNote(r.key, { status: note.status || "", text: e.target.value }); }}
-                              placeholder="add note…"
-                              className="text-[11px] w-full px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-                            />
-                          </td>
-                        </tr>
-                      );
+                    {accountList.map(function(acct){
+                      const accountRows = accounts[acct];
+                      return accountRows.map(function(r, idx){
+                        const note = (accountHoldingsNotes || {})[r.key] || { status: "", text: "" };
+                        const sStyle = STATUS_STYLE[note.status || ""] || STATUS_STYLE[""];
+                        const needsAttention = r.absDev > threshold && !note.status;
+                        /* Visually group rows by account: only the first
+                           row of each account shows the account code; the
+                           rest leave it blank, and the LAST row of the
+                           group draws a thicker separator. */
+                        const isFirstOfAccount = idx === 0;
+                        const isLastOfAccount = idx === accountRows.length - 1;
+                        const rowBg = needsAttention ? "bg-amber-50/40 dark:bg-amber-950/20" : "";
+                        const borderCls = isLastOfAccount
+                          ? "border-b-2 border-slate-200 dark:border-slate-700"
+                          : "border-b border-slate-100 dark:border-slate-800";
+                        const devColor = r.dev > 0
+                          ? "text-emerald-700 dark:text-emerald-300"
+                          : r.dev < 0
+                            ? "text-rose-700 dark:text-rose-300"
+                            : "text-gray-500 dark:text-slate-400";
+                        const name = tickerToName[r.ticker] || "";
+                        return (
+                          <tr key={r.key} className={borderCls + " " + rowBg}>
+                            <td className="px-2 py-1 font-mono text-gray-700 dark:text-slate-300 align-top">
+                              {isFirstOfAccount ? (
+                                <span className="font-semibold text-gray-900 dark:text-slate-100">{acct}</span>
+                              ) : null}
+                            </td>
+                            <td className="px-2 py-1 font-mono font-medium text-gray-900 dark:text-slate-100">{r.ticker}</td>
+                            <td className="px-2 py-1 text-gray-700 dark:text-slate-300 truncate" title={name} style={{maxWidth:"260px"}}>{name}</td>
+                            <td className="px-2 py-1 text-right tabular-nums font-mono text-gray-900 dark:text-slate-100">{r.weight.toFixed(2)}%</td>
+                            <td className="px-2 py-1 text-right tabular-nums font-mono text-gray-500 dark:text-slate-400">{r.mean.toFixed(2)}%</td>
+                            <td className="px-2 py-1 text-right tabular-nums font-mono text-gray-500 dark:text-slate-400">{r.count}</td>
+                            <td className={"px-2 py-1 text-right tabular-nums font-mono font-semibold " + devColor}>
+                              {r.dev >= 0 ? "+" : ""}{r.dev.toFixed(2)}
+                            </td>
+                            <td className="px-2 py-1">
+                              <select
+                                value={note.status || ""}
+                                onChange={function(e){ setAccountHoldingsNote(r.key, { status: e.target.value, text: note.text || "" }); }}
+                                className="text-[10px] px-1 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 font-mono"
+                                style={{ background: sStyle.bg, color: sStyle.color }}
+                              >
+                                {STATUS_OPTIONS.map(function(s){
+                                  return <option key={s.key} value={s.key}>{s.label}</option>;
+                                })}
+                              </select>
+                            </td>
+                            <td className="px-2 py-1">
+                              <input
+                                type="text"
+                                value={note.text || ""}
+                                onChange={function(e){ setAccountHoldingsNote(r.key, { status: note.status || "", text: e.target.value }); }}
+                                placeholder="add note…"
+                                className="text-[11px] w-full px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                              />
+                            </td>
+                          </tr>
+                        );
+                      });
                     })}
                   </tbody>
                 </table>
