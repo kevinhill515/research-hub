@@ -62,7 +62,7 @@ export default function OutliersView() {
     return "";
   }
   const [portFilter, setPortFilter] = useState("All");
-  const [threshold, setThreshold] = useState(0.5);
+  const [threshold, setThreshold] = useState(0.25);
   const [showAll, setShowAll] = useState(false); /* false = only show outliers */
   const [hideCash, setHideCash] = useState(true);   /* hide CASH-US / DIVACC pseudo-tickers */
 
@@ -85,35 +85,49 @@ export default function OutliersView() {
     });
     ports.forEach(function(p){
       const accounts = accountHoldings[p] || {};
-      /* tickerStats: { [ticker]: { count, sum, mean, accountWeights:[{account,weight}] } } */
+      const accountList = Object.keys(accounts);
+      /* tickerStats: { [ticker]: { count, sum, mean, weightByAccount } } */
       const tickerStats = {};
-      Object.keys(accounts).forEach(function(account){
+      accountList.forEach(function(account){
         const tickers = accounts[account] || {};
         Object.keys(tickers).forEach(function(tk){
           if(hideCash && isCashTicker(tk)) return;
           const w = parseFloat(tickers[tk]);
-          if(!isFinite(w)) return;
-          if(!tickerStats[tk]) tickerStats[tk] = { count: 0, sum: 0, accountWeights: [] };
+          if(!isFinite(w) || w <= 0) return;
+          if(!tickerStats[tk]) tickerStats[tk] = { count: 0, sum: 0, weightByAccount: {} };
           tickerStats[tk].count++;
           tickerStats[tk].sum += w;
-          tickerStats[tk].accountWeights.push({ account: account, weight: w });
+          tickerStats[tk].weightByAccount[account] = w;
         });
       });
+      /* Emit one row per (account × every ticker that ANY account in
+         this portfolio holds). Accounts missing a ticker get a row
+         with weight=0 — surfaces "BBRINTV is missing ATD-CA but the
+         rest of the portfolio has ~3.7%" as a large negative
+         deviation. Mean is computed only across accounts that
+         actually hold the ticker (so it reads as "what the holders
+         own on average"); the missing account compares against that
+         same benchmark. */
       Object.keys(tickerStats).forEach(function(tk){
         const stats = tickerStats[tk];
         const mean = stats.count > 0 ? stats.sum / stats.count : 0;
-        stats.accountWeights.forEach(function(aw){
-          const dev = aw.weight - mean;
+        accountList.forEach(function(account){
+          const w = stats.weightByAccount[account];
+          const isMissing = (w === undefined);
+          const weight = isMissing ? 0 : w;
+          const dev = weight - mean;
           out.push({
             portfolio: p,
             ticker: tk,
-            account: aw.account,
-            weight: aw.weight,
+            account: account,
+            weight: weight,
             mean: mean,
             dev: dev,
             absDev: Math.abs(dev),
-            count: stats.count,
-            key: p + "|" + aw.account + "|" + tk,
+            count: stats.count,        /* holders only */
+            totalAccts: accountList.length,
+            isMissing: isMissing,
+            key: p + "|" + account + "|" + tk,
           });
         });
       });
@@ -241,7 +255,7 @@ export default function OutliersView() {
                       <th className="text-left  px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium">Name</th>
                       <th className="text-right px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium">Weight</th>
                       <th className="text-right px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium">Port mean</th>
-                      <th className="text-right px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium"># accts</th>
+                      <th className="text-right px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium" title="Holders / total accounts in portfolio">Held</th>
                       <th className="text-right px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium">Δ ppt</th>
                       <th className="text-left  px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium" style={{width:"110px"}}>Status</th>
                       <th className="text-left  px-2 py-1 text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-400 font-medium">Note</th>
@@ -277,11 +291,18 @@ export default function OutliersView() {
                                 <span className="font-semibold text-gray-900 dark:text-slate-100">{acct}</span>
                               ) : null}
                             </td>
-                            <td className="px-2 py-1 font-mono font-medium text-gray-900 dark:text-slate-100">{r.ticker}</td>
+                            <td className="px-2 py-1 font-mono font-medium text-gray-900 dark:text-slate-100">
+                              {r.ticker}
+                              {r.isMissing && (
+                                <span className="ml-1.5 text-[9px] px-1 py-0 rounded-full font-semibold" style={{ background: "#fee2e2", color: "#991b1b" }} title={"This account doesn't hold " + r.ticker + " but " + r.count + " other account" + (r.count===1?"":"s") + " in this portfolio do(es)."}>missing</span>
+                              )}
+                            </td>
                             <td className="px-2 py-1 text-gray-700 dark:text-slate-300 truncate" title={name} style={{maxWidth:"260px"}}>{name}</td>
-                            <td className="px-2 py-1 text-right tabular-nums font-mono text-gray-900 dark:text-slate-100">{r.weight.toFixed(2)}%</td>
+                            <td className={"px-2 py-1 text-right tabular-nums font-mono " + (r.isMissing ? "italic text-gray-400 dark:text-slate-500" : "text-gray-900 dark:text-slate-100")}>
+                              {r.isMissing ? "—" : r.weight.toFixed(2) + "%"}
+                            </td>
                             <td className="px-2 py-1 text-right tabular-nums font-mono text-gray-500 dark:text-slate-400">{r.mean.toFixed(2)}%</td>
-                            <td className="px-2 py-1 text-right tabular-nums font-mono text-gray-500 dark:text-slate-400">{r.count}</td>
+                            <td className="px-2 py-1 text-right tabular-nums font-mono text-gray-500 dark:text-slate-400">{r.count}/{r.totalAccts}</td>
                             <td className={"px-2 py-1 text-right tabular-nums font-mono font-semibold " + devColor}>
                               {r.dev >= 0 ? "+" : ""}{r.dev.toFixed(2)}
                             </td>
