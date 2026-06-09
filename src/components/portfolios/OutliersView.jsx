@@ -111,9 +111,17 @@ export default function OutliersView() {
       Object.keys(tickerStats).forEach(function(tk){
         const stats = tickerStats[tk];
         const mean = stats.count > 0 ? stats.sum / stats.count : 0;
+        /* "Missing" rows only emitted for tickers held by a majority
+           of accounts in the portfolio. Otherwise a quirky 1-account
+           position (BBRINTV holds FLEX as an ATD-CA substitute, etc.)
+           would generate a "missing FLEX" row for every other account
+           — pure noise. The held position itself is always emitted
+           regardless of majority; only the absence rows are gated. */
+        const isMajority = stats.count > accountList.length / 2;
         accountList.forEach(function(account){
           const w = stats.weightByAccount[account];
           const isMissing = (w === undefined);
+          if(isMissing && !isMajority) return; /* skip noise */
           const weight = isMissing ? 0 : w;
           const dev = weight - mean;
           out.push({
