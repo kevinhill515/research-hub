@@ -28,6 +28,16 @@ export default function OutliersView() {
   const [portFilter, setPortFilter] = useState("All");
   const [threshold, setThreshold] = useState(0.5);
   const [showAll, setShowAll] = useState(false); /* false = only show outliers */
+  const [hideCash, setHideCash] = useState(true);   /* hide CASH-US / DIVACC pseudo-tickers */
+
+  /* Tickers we consider "cash placeholders" — uninteresting noise on
+     the outliers view. CASH-US is the canonical USD cash bucket; we
+     also drop DIVACC and bare CASH for the same reason. Matched case-
+     insensitively against the parent ticker. */
+  function isCashTicker(tk) {
+    var u = String(tk || "").toUpperCase();
+    return u === "CASH-US" || u === "CASH" || u === "DIVACC" || u === "CASH-USD" || u === "USD-CASH";
+  }
 
   /* Build rows: for each (portfolio, ticker), compute mean across
      accounts and emit one row per (portfolio, ticker, account) with
@@ -44,6 +54,7 @@ export default function OutliersView() {
       Object.keys(accounts).forEach(function(account){
         const tickers = accounts[account] || {};
         Object.keys(tickers).forEach(function(tk){
+          if(hideCash && isCashTicker(tk)) return;
           const w = parseFloat(tickers[tk]);
           if(!isFinite(w)) return;
           if(!tickerStats[tk]) tickerStats[tk] = { count: 0, sum: 0, accountWeights: [] };
@@ -80,7 +91,7 @@ export default function OutliersView() {
       return a.account.localeCompare(b.account);
     });
     return out;
-  }, [accountHoldings, portFilter]);
+  }, [accountHoldings, portFilter, hideCash]);
 
   const filtered = useMemo(function(){
     if(showAll) return rows;
@@ -157,6 +168,10 @@ export default function OutliersView() {
           <label className="inline-flex items-center gap-1.5 text-[11px] text-gray-700 dark:text-slate-300 cursor-pointer ml-2 select-none">
             <input type="checkbox" checked={showAll} onChange={function(e){setShowAll(e.target.checked);}} className="cursor-pointer"/>
             Show all
+          </label>
+          <label className="inline-flex items-center gap-1.5 text-[11px] text-gray-700 dark:text-slate-300 cursor-pointer ml-2 select-none" title="Hide CASH-US / CASH / DIVACC pseudo-ticker rows (uninteresting noise on the outliers view).">
+            <input type="checkbox" checked={hideCash} onChange={function(e){setHideCash(e.target.checked);}} className="cursor-pointer"/>
+            Hide cash
           </label>
         </div>
       </div>
