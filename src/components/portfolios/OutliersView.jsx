@@ -110,7 +110,23 @@ export default function OutliersView() {
          same benchmark. */
       Object.keys(tickerStats).forEach(function(tk){
         const stats = tickerStats[tk];
-        const mean = stats.count > 0 ? stats.sum / stats.count : 0;
+        /* Two-pass mean so outliers don't drag the benchmark.
+           Pass 1: provisional mean over all holders.
+           Pass 2: drop holders whose weight is > threshold ppt from the
+           provisional mean; recompute mean over the rest.
+           If every holder is an outlier (rare — usually means bimodal
+           distribution), fall back to the provisional mean so the row
+           still has a benchmark. */
+        const provMean = stats.count > 0 ? stats.sum / stats.count : 0;
+        var inlierSum = 0, inlierCount = 0;
+        Object.keys(stats.weightByAccount).forEach(function(account){
+          var w = stats.weightByAccount[account];
+          if(Math.abs(w - provMean) <= threshold){
+            inlierSum += w;
+            inlierCount++;
+          }
+        });
+        const mean = inlierCount > 0 ? inlierSum / inlierCount : provMean;
         /* "Missing" rows only emitted for tickers held by a majority
            of accounts in the portfolio. Otherwise a quirky 1-account
            position (BBRINTV holds FLEX as an ATD-CA substitute, etc.)
@@ -150,7 +166,7 @@ export default function OutliersView() {
       return a.ticker.localeCompare(b.ticker);
     });
     return out;
-  }, [accountHoldings, portFilter, hideCash]);
+  }, [accountHoldings, portFilter, hideCash, threshold]);
 
   const filtered = useMemo(function(){
     if(showAll) return rows;
