@@ -243,7 +243,12 @@ export function useImport(){
       if(!account||!ticker||!portfolio||!isFinite(weight)){skipped++;continue;}
       if(!data[portfolio])data[portfolio]={};
       if(!data[portfolio][account])data[portfolio][account]={};
-      data[portfolio][account][ticker]=weight;
+      /* Sum if the same (portfolio, account, ticker) appears more than
+         once. Common case: multiple CASH-US / DIVACC line items per
+         account need to roll up into one weight, not overwrite each
+         other (which the prior `=` did). */
+      var prev = data[portfolio][account][ticker];
+      data[portfolio][account][ticker] = (isFinite(prev) ? prev : 0) + weight;
       rows++;
     }
     setAccountHoldings(data);
