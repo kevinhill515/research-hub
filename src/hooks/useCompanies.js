@@ -140,14 +140,24 @@ export function useCompanies(){
         var numCols = dataRows.reduce(function(m,r){return Math.max(m, r.length);}, 0);
         var STATUS_RE = /^(buy|own|focus|watch|sold)$/i;
         var DATE_RE = /^\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}$|^\d{4}-\d{1,2}-\d{1,2}$/;
-        var TICKER_RE = /^[A-Z0-9]+-[A-Z]{2}$|^[A-Z]{1,6}$/;
+        /* Tickers include dotted-share-class forms (EKTA.B-SE, BRK.B,
+           etc.) — the original `[A-Z0-9]+-[A-Z]{2}` rejected EKTA.B-SE
+           because of the dot, which then cascaded into mis-classifying
+           every downstream column. */
+        var TICKER_RE = /^[A-Z0-9.]+-[A-Z]{2}$|^[A-Z]{1,6}(?:\.[A-Z])?$/;
         var ACTION_RE = /^(increase|decrease|no action|hold|maintain|up|down|raise|cut|lower).*tp?$|^(increase|decrease|no action|hold|maintain|up|down|raise|cut|lower)\s*tp\b/i;
         var countrySet = new Set(COUNTRY_ORDER.map(function(s){return s.toLowerCase();}));
         var sectorSet  = new Set(SECTOR_ORDER.map(function(s){return s.toLowerCase();}));
         var tierSet    = new Set(TIER_ORDER.map(function(s){return s.toLowerCase();}));
         var portSet    = new Set(PORTFOLIOS);
         idx = {name:-1,ordTicker:-1,usTicker:-1,usTickerName:-1,ticker:-1,portfolio:-1,port:-1,country:-1,sector:-1,lastReviewed:-1,action:-1,takeaway:-1,status:-1,tier:-1};
-        var nameCandidate = -1, nameCandLen = 0;
+        /* Collect ALL text-shaped columns (in column order) and ALL
+           ticker-shaped columns. We need to disambiguate which text
+           column is the company name vs the US security name, and
+           which ticker is ord vs US — keying off column order rather
+           than a single "longest text" / "first ticker" heuristic. */
+        var textCols = [];   /* [{c, avgLen, samples}] */
+        var tickerCols = []; /* [c] */
         for (var c = 0; c < numCols; c++) {
           var samples = dataRows.map(function(r){return (r[c]||"").trim();}).filter(function(s){return s.length;});
           if (!samples.length) continue;
@@ -160,15 +170,30 @@ export function useCompanies(){
           if (idx.portfolio<0 && all(function(s){return s.split(/[\s,]+/).filter(Boolean).every(function(t){return portSet.has(t.toUpperCase());});})) { idx.portfolio = c; continue; }
           if (idx.lastReviewed<0 && all(function(s){return DATE_RE.test(s);})) { idx.lastReviewed = c; continue; }
           if (idx.action<0 && any(function(s){return ACTION_RE.test(s);})) { idx.action = c; continue; }
-          if (idx.ticker<0 && all(function(s){return TICKER_RE.test(s);})) { idx.ticker = c; continue; }
-          /* Name candidate — longest average-length text column not
-             already claimed. Pick AFTER classifying everything else. */
-          var avgLen = samples.reduce(function(s,x){return s + x.length;}, 0) / samples.length;
-          if (avgLen > nameCandLen && avgLen > 5) {
-            nameCandLen = avgLen; nameCandidate = c;
+          if (all(function(s){return TICKER_RE.test(s);})) {
+            tickerCols.push(c);
+            continue;
           }
+          var avgLen = samples.reduce(function(s,x){return s + x.length;}, 0) / samples.length;
+          if (avgLen > 5) textCols.push({c: c, avgLen: avgLen});
         }
-        if (idx.name < 0 && nameCandidate >= 0) idx.name = nameCandidate;
+        /* Ord vs US ticker — leftmost ticker column wins ord (Excel
+           templates put ord ticker before US). When only one ticker
+           column exists, it's the generic ticker (caller falls back to
+           ordTicker downstream). */
+        if (tickerCols.length >= 2) {
+          idx.ordTicker = tickerCols[0];
+          idx.usTicker = tickerCols[1];
+        } else if (tickerCols.length === 1) {
+          idx.ticker = tickerCols[0];
+        }
+        /* Name vs US security name — leftmost text column wins the
+           company name (the original "longest avg" heuristic mis-
+           assigned when the US-security column carried "Unsponsored
+           ADR" suffixes that pushed it past the company name's length).
+           A SECOND text column after the name becomes usTickerName. */
+        if (textCols.length >= 1) idx.name = textCols[0].c;
+        if (textCols.length >= 2 && idx.usTickerName < 0) idx.usTickerName = textCols[textCols.length - 1].c;
       }
       var rows=dataRowLines.map(function(line){
         var cols=parseRow(line);function get(i){return i>-1?(cols[i]||""):""}
