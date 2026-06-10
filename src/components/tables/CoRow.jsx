@@ -26,6 +26,8 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
   var [hovered, setHovered] = useState(false);
   var [showMenu, setShowMenu] = useState(false);
   var menuRef = useRef();
+  var menuTriggerRef = useRef();
+  var [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
   /* Port add menu — opened by clicking anywhere in the Portfolio cell.
      Click on the cell shouldn't navigate to the company page, so the
      handler stops propagation. Menu lets the user pick whether to add
@@ -55,6 +57,11 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
     var r = tierMenuRef.current.getBoundingClientRect();
     setTierPopPos({ top: r.bottom + 2, left: r.left });
   }, [tierMenuOpen]);
+  useLayoutEffect(function () {
+    if (!showMenu || !menuTriggerRef.current) return;
+    var r = menuTriggerRef.current.getBoundingClientRect();
+    setMenuPos({ top: r.bottom + 2, left: r.left });
+  }, [showMenu]);
   useLayoutEffect(function () {
     if (!portMenuOpen || !portMenuRef.current) return;
     var r = portMenuRef.current.getBoundingClientRect();
@@ -289,15 +296,21 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
             )}
 
             {hovered && (
-              <div className="relative inline-block" onClick={function (e) { e.stopPropagation(); }} ref={menuRef}>
+              <div className="relative inline-block" onClick={function (e) { e.stopPropagation(); }}>
                 <span
+                  ref={menuTriggerRef}
                   onClick={function () { setShowMenu(function (s) { return !s; }); }}
                   className="text-[10px] text-gray-500 dark:text-slate-400 cursor-pointer px-1 py-0.5 rounded border border-slate-200 dark:border-slate-700 ml-0.5 transition-colors hover:bg-slate-100 dark:hover:bg-slate-700"
                 >
                   &#x22EF;
                 </span>
-                {showMenu && (
-                  <div className="absolute top-full left-0 mt-0.5 z-[200] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md p-1 shadow-lg min-w-[160px]">
+                {showMenu && createPortal(
+                  <div
+                    ref={menuRef}
+                    onClick={function (e) { e.stopPropagation(); }}
+                    className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md p-1 shadow-lg min-w-[160px]"
+                    style={{ position: "fixed", top: menuPos.top, left: menuPos.left, zIndex: 1000 }}
+                  >
                     <div
                       onClick={function () { setShowMenu(false); onQuickUpload(company); }}
                       className="text-xs px-2.5 py-1.5 cursor-pointer rounded text-gray-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
@@ -322,7 +335,8 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
                         ✕ Delete company
                       </div>
                     )}
-                  </div>
+                  </div>,
+                  document.body
                 )}
               </div>
             )}
