@@ -195,7 +195,13 @@ function evalGuidanceRevised(company, params) {
     }
     const lm = mid(last), pm = mid(prev);
     if (!isFiniteNum(lm) || !isFiniteNum(pm) || pm === 0) return;
-    const isPctMetric = PCT_METRIC_RE.test(m);
+    /* Require BOTH the name pattern AND a plausible percent magnitude
+       (max |value| ≤ 100). Catches the edge case where a metric like
+       "Cash Flow from Operations (Y/Y %)" has "%" in the name but the
+       stored values are dollar amounts in millions (4850 → 4550), not
+       percents — formerly produced "-300.00 ppt". */
+    const valueLooksPct = Math.max(Math.abs(lm), Math.abs(pm)) <= 100;
+    const isPctMetric = PCT_METRIC_RE.test(m) && valueLooksPct;
     /* For pct-valued metrics, change is in ppt (raw diff). For dollar
        / unit metrics, change is fractional (delta / |base|). */
     const change = isPctMetric ? (lm - pm) : (lm - pm) / Math.abs(pm);
