@@ -310,6 +310,18 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
                     >
                       &#x2713; Mark reviewed today
                     </div>
+                    {onDelete && (
+                      <div
+                        onClick={function () {
+                          setShowMenu(false);
+                          if (typeof window !== "undefined" && window.confirm && !window.confirm("Delete " + (company.name || "this company") + "?\n\nRemoves it from the local state. The Supabase row is also dropped on next save.")) return;
+                          onDelete(company.id);
+                        }}
+                        className="text-xs px-2.5 py-1.5 cursor-pointer rounded text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors border-t border-slate-100 dark:border-slate-800 mt-0.5 pt-1.5"
+                      >
+                        ✕ Delete company
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
