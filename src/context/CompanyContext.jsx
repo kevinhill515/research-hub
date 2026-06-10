@@ -695,6 +695,33 @@ export function CompanyProvider({children}){
           });
           if (dupChanged) coMig.changed = true;
         } catch(_e){}
+        /* One-time tier rename: "Remove" → "Removed". Tier is stored
+           as a comma-separated list (e.g. "FIN1, Remove"), so we
+           split on comma, swap matching tokens, rejoin. Gated by a
+           meta flag so it only runs once. tierPillStyle / tierBg
+           accept both spellings, but we want the canonical "Removed"
+           token in storage so the tier dropdown reflects reality. */
+        try {
+          var rTierRenameFlag = await supaGet("meta","key","tier_remove_to_removed_2026_06");
+          if (!(rTierRenameFlag && rTierRenameFlag.value)) {
+            var tierRenameChanged = false;
+            coMig.data.forEach(function(c){
+              if (!c || !c.tier) return;
+              var parts = String(c.tier).split(",").map(function(s){return s.trim();}).filter(Boolean);
+              var any = false;
+              var next = parts.map(function(t){
+                if (t === "Remove") { any = true; return "Removed"; }
+                return t;
+              });
+              if (any) {
+                c.tier = next.join(", ");
+                tierRenameChanged = true;
+              }
+            });
+            if (tierRenameChanged) coMig.changed = true;
+            supaUpsert("meta", { key: "tier_remove_to_removed_2026_06", value: "1" });
+          }
+        } catch(_e){}
         /* Baseline tpHistory backfill — DISABLED.
            Migration was crashing the initial load on at least one
            data set. Reverted to a no-op while we diagnose. The live
