@@ -19,7 +19,7 @@ const WINDOWS = [
   { id: "YTD", label: "YTD" },
 ];
 
-const STATUSES = ["All", "Own", "Focus", "Watch", "Sold"];
+const STATUSES = ["All", "Own", "Focus", "Watch", "Sold", "Removed"];
 
 /* USD-preferred ticker pick — mirror of the alerts/PricesTab logic so
  * the numbers shown here match what's used elsewhere. */
@@ -64,10 +64,10 @@ export default function TopBottomMovers({ onSelectCompany }) {
     setStatusFilter(function (prev) {
       const next = new Set(prev);
       if (s === "All") {
-        if (next.has("Own") && next.has("Focus") && next.has("Watch") && next.has("Sold")) {
+        if (next.has("Own") && next.has("Focus") && next.has("Watch") && next.has("Sold") && next.has("Removed")) {
           return new Set();
         }
-        return new Set(["Own", "Focus", "Watch", "Sold"]);
+        return new Set(["Own", "Focus", "Watch", "Sold", "Removed"]);
       }
       if (next.has(s)) next.delete(s);
       else next.add(s);
@@ -75,7 +75,7 @@ export default function TopBottomMovers({ onSelectCompany }) {
     });
   }
 
-  const allOn = statusFilter.has("Own") && statusFilter.has("Focus") && statusFilter.has("Watch") && statusFilter.has("Sold");
+  const allOn = statusFilter.has("Own") && statusFilter.has("Focus") && statusFilter.has("Watch") && statusFilter.has("Sold") && statusFilter.has("Removed");
 
   /* Filter to selected statuses + companies that have a parseable perf
      value for the selected window. Sorted desc; top = first N, bottom

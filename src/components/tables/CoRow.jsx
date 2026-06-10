@@ -134,10 +134,11 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
   var rBold = daysSince(company.lastReviewed) > 60;
 
   var sCfg = {
-    "Own":   { bg: "#dcfce7", color: "#166534" },
-    "Focus": { bg: "#dbeafe", color: "#1e40af" },
-    "Watch": { bg: "#fef9c3", color: "#854d0e" },
-    "Sold":  { bg: "#fee2e2", color: "#991b1b" }
+    "Own":     { bg: "#dcfce7", color: "#166534" },
+    "Focus":   { bg: "#dbeafe", color: "#1e40af" },
+    "Watch":   { bg: "#fef9c3", color: "#854d0e" },
+    "Sold":    { bg: "#fee2e2", color: "#991b1b" },
+    "Removed": { bg: "#e2e8f0", color: "#475569" }
   }[company.status] || { bg: undefined, color: undefined };
 
   var val = company.valuation || {};

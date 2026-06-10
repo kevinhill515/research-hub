@@ -78,7 +78,7 @@ const RULE_EDITOR_SCHEMA = [
 
 const STATUS_FILTER_DEFAULT = ["Own", "Focus", "Watch"];
 const STATUS_FILTER_KEY = "ccd:alertStatusFilter";
-const ALL_STATUSES = ["Own", "Focus", "Watch", "Sold"];
+const ALL_STATUSES = ["Own", "Focus", "Watch", "Sold", "Removed"];
 
 export default function AlertsPanel({ onJumpToCompany }) {
   const { companies, alertRules, setAlertRules, lastPriceUpdate } = useCompanyContext();
@@ -270,7 +270,7 @@ export default function AlertsPanel({ onJumpToCompany }) {
                   const on = (statusFilter || []).indexOf(s) >= 0;
                   /* Status-specific colors so the pills read like the
                      status pills used elsewhere in the app. */
-                  const cfg = { Own: ["#dcfce7","#166534","#86efac"], Focus: ["#dbeafe","#1e40af","#93c5fd"], Watch: ["#fef9c3","#854d0e","#fde047"], Sold: ["#fee2e2","#991b1b","#fca5a5"] }[s];
+                  const cfg = { Own: ["#dcfce7","#166534","#86efac"], Focus: ["#dbeafe","#1e40af","#93c5fd"], Watch: ["#fef9c3","#854d0e","#fde047"], Sold: ["#fee2e2","#991b1b","#fca5a5"], Removed: ["#e2e8f0","#475569","#cbd5e1"] }[s];
                   const style = on
                     ? { background: cfg[0], color: cfg[1], borderColor: cfg[2] }
                     : {};
