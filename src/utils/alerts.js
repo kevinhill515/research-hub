@@ -217,21 +217,28 @@ function evalEpsRevisionsTrend(company, params) {
   const fy1 = er.series.find(function (s) { return s.horizon === 1; });
   if (!fy1 || !fy1.monthly || fy1.monthly.length < need + 1) return null;
   const m = fy1.monthly;
-  /* Walk back from the latest month; count consecutive negatives. */
+  /* Walk back from the latest month; count consecutive negatives and
+     remember the EPS value at the START of the chain. Total = actual
+     cumulative percent change from chain-start to latest, NOT a sum
+     of per-step percents (which overstate the drop because each
+     step's denominator shrinks — a 50%→25%→12.5% trajectory summed
+     as -50%+-50% = -100%, but the real cumulative is -75%). */
   let count = 0;
-  let total = 0;
+  let baselineEps = null;
   let i = m.length - 1;
   while (i > 0) {
     const cur = m[i], prev = m[i - 1];
     if (!isFiniteNum(cur) || !isFiniteNum(prev) || prev === 0) break;
-    const d = (cur - prev) / Math.abs(prev);
-    if (d >= 0) break;
+    if (cur >= prev) break;
     count++;
-    total += d;
+    baselineEps = prev;
     i--;
     if (count >= need + 4) break;
   }
-  if (count < need || Math.abs(total) < ths) return null;
+  const latest = m[m.length - 1];
+  if (count < need || !isFiniteNum(latest) || !isFiniteNum(baselineEps) || baselineEps === 0) return null;
+  const total = (latest - baselineEps) / Math.abs(baselineEps);
+  if (Math.abs(total) < ths) return null;
   return {
     severity: "warn",
     message: "FY+1 EPS revised down " + count + "M in a row, total " + (total * 100).toFixed(1) + "%",

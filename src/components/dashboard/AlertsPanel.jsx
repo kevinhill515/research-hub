@@ -223,8 +223,8 @@ export default function AlertsPanel({ onJumpToCompany }) {
     ? "bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-700 hover:bg-amber-200 dark:hover:bg-amber-900/50"
     : "bg-slate-50 dark:bg-slate-800 text-gray-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700";
 
-  function jumpTo(companyId) {
-    if (typeof onJumpToCompany === "function") onJumpToCompany(companyId);
+  function jumpTo(companyId, ruleId) {
+    if (typeof onJumpToCompany === "function") onJumpToCompany(companyId, ruleId);
     setOpen(false);
   }
 
@@ -326,7 +326,7 @@ export default function AlertsPanel({ onJumpToCompany }) {
                       <button
                         key={a.companyId + ":" + a.ruleId + ":" + i}
                         type="button"
-                        onClick={function () { jumpTo(a.companyId); }}
+                        onClick={function () { jumpTo(a.companyId, a.ruleId); }}
                         className="block w-full text-left px-3 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                       >
                         <div className="flex items-center gap-2 text-[12px]">

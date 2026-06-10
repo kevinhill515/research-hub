@@ -630,7 +630,26 @@ export default function App(){
             TP Approvals / IC Meeting / Alerts) sit together on the
             left side of the toolbar \u2014 instead of Alerts being
             stranded at the far right. */}
-        <AlertsPanel onJumpToCompany={function(cid){var co=companies.find(function(c){return c.id===cid;});if(co){setSelCo(co);setTab("companies");}}}/>
+        <AlertsPanel onJumpToCompany={function(cid, ruleId){
+          var co=companies.find(function(c){return c.id===cid;});
+          if(!co) return;
+          /* Route each warn-level rule to the most actionable subtab.
+             - eps-revisions-trend → E[EPS] Revisions chart
+             - guidance-revised    → Guidance tab
+             - mos-divergence      → Valuation section (TP Suggest lives here)
+             - price-1d            → Prices tab
+             Other rules fall through to whatever coView was last open. */
+          var ruleToView = {
+            "eps-revisions-trend": "epsrev",
+            "guidance-revised":    "guidance",
+            "mos-divergence":      "section:Valuation",
+            "price-1d":            "prices",
+          };
+          var view = ruleToView[ruleId];
+          setSelCo(co);
+          setTab("companies");
+          if(view) setCoView(view);
+        }}/>
         {/* "Compact / Default" toggle moved to the Companies tab's
             Columns picker (top of the dropdown) \u2014 that toggle only
             ever affected the Standard view's column set, so housing
