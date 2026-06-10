@@ -14,6 +14,7 @@
  * Centralizing here so any future chart change happens in one place. */
 
 import { isFiniteNum } from './numbers.js';
+import { ccyPrefix } from './index.js';
 
 /* ============================ Range / scale ============================ */
 
@@ -153,22 +154,30 @@ export function pathFromPoints(pts) {
 
 /* ============================ Format helpers ============================ */
 
-/* Format a money value (in millions of reporting currency) with
- * appropriate scale + comma thousands.
- *   19,520 EUR-millions   → "19.5 B EUR"
- *   9,774,930 JPY-millions → "9.77 T JPY"
- *   880 USD-millions      → "880 M USD" */
+/* Format a money value (in millions of reporting currency) using a
+ * currency-symbol PREFIX (no space) for clarity / compactness.
+ *   19,520 EUR-millions    → "€19.5B"
+ *   9,774,930 JPY-millions → "¥9.77T"
+ *   880 USD-millions       → "$880M"
+ *   500 CHF-millions       → "CHF 500M"  (no single-glyph symbol → text + space)
+ * Empty ccy → no prefix. */
 export function fmtMoney(v, ccy) {
   if (!isFiniteNum(v)) return "--";
   const a = Math.abs(v);
-  const tag = ccy ? " " + ccy : "";
+  const pfx = ccy ? ccyPrefix(ccy) : "";
+  let num;
+  let unit;
   if (a >= 1000000) {
-    return (v / 1000000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " T" + tag;
+    num = (v / 1000000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    unit = "T";
+  } else if (a >= 1000) {
+    num = (v / 1000).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    unit = "B";
+  } else {
+    num = v.toLocaleString(undefined, { maximumFractionDigits: 0 });
+    unit = "M";
   }
-  if (a >= 1000) {
-    return (v / 1000).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " B" + tag;
-  }
-  return v.toLocaleString(undefined, { maximumFractionDigits: 0 }) + " M" + tag;
+  return pfx + num + unit;
 }
 
 /* Short axis-tick form — no currency tag. */
