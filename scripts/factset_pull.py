@@ -2182,6 +2182,128 @@ MARKETS_PERIOD_COLS = [
 ]
 
 
+def read_eps_revisions(xl: ExcelSession) -> dict[str, dict]:
+    """Read the E[EPS] Revisions sheet.
+
+    Layout (matches what the manual paste expects in
+    src/utils/epsRevisionsParser.js):
+      Row 1:
+        A: 'Ticker', B: 'x', C: 'Company', D: 'EPS0',
+        E1:Q1  = 13 monthly anchor dates for EPS0 horizon
+        R: 'EPS1', S1:AE1 = 13 dates for EPS+1
+        AF: 'EPS2', AG1:AS1 = 13 dates for EPS+2
+        AT: 'EPS3', AU1:BG1 = 13 dates for EPS+3
+      Row 2+ (per company):
+        A=ticker, C=name,
+        D = EPS0 anchor (FY-end date label, not used downstream),
+        E:Q = 13 monthly EPS0 consensus values
+        R = EPS1 anchor, S:AE = 13 monthly EPS+1
+        AF = EPS2 anchor, AG:AS = 13 monthly EPS+2
+        AT = EPS3 anchor, AU:BG = 13 monthly EPS+3
+      Total = 59 columns (A..BG).
+
+    Returns dict mapping uppercase ticker -> { asOf, dates, series }
+    in the shape the chart consumes (matches what applyEpsRevImport
+    writes to c.epsRevisions). 4 horizons, 13 monthly points each.
+    """
+    out: dict[str, dict] = {}
+    SHEET = "E[EPS] Revisions"
+
+    def to_iso(v) -> str | None:
+        if v is None or v == "": return None
+        try:
+            if hasattr(v, "year"):
+                return f"{v.year:04d}-{v.month:02d}-{v.day:02d}"
+            if isinstance(v, (int, float)):
+                d = _excel_serial_to_date(float(v))
+                return f"{d.year:04d}-{d.month:02d}-{d.day:02d}"
+            s = str(v).strip()
+            if not s: return None
+            import re as _re
+            m = _re.match(r"^(\d{4})-(\d{1,2})-(\d{1,2})", s)
+            if m: return f"{int(m.group(1)):04d}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
+            m = _re.match(r"^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})", s)
+            if m:
+                mo, dy, yr = int(m.group(1)), int(m.group(2)), int(m.group(3))
+                if yr < 100: yr += 2000
+                return f"{yr:04d}-{mo:02d}-{dy:02d}"
+        except Exception:
+            pass
+        return None
+
+    # Header row — pull the 13 dates from E1:Q1. They apply across all
+    # 4 horizons (the parser only uses the EPS0 dates as the canonical
+    # x-axis since they're identical in practice).
+    try:
+        header = xl.read_range(SHEET, "E1:Q1")
+    except Exception as e:
+        log(f"  E[EPS] Revisions: header read failed ({e}) — skipping")
+        return out
+    if not header or not header[0]:
+        log("  E[EPS] Revisions: empty header row — skipping")
+        return out
+    raw_dates = header[0]
+    dates: list[str] = []
+    for d in raw_dates:
+        iso = to_iso(d)
+        if iso: dates.append(iso)
+    if len(dates) < 6:
+        log(f"  E[EPS] Revisions: only {len(dates)} parseable dates in header — skipping")
+        return out
+
+    # Data — 59 cols A..BG. Anchor columns at D(4), R(18), AF(32), AT(46).
+    # Monthly blocks are 13 cells each immediately after the anchor:
+    #   EPS0 monthly: E..Q  (indices 4..16)
+    #   EPS1 monthly: S..AE (indices 18..30)
+    #   EPS2 monthly: AG..AS (indices 32..44)
+    #   EPS3 monthly: AU..BG (indices 46..58)
+    try:
+        rows = xl.read_range(SHEET, f"A2:BG{MAX_COMPANY_ROW}")
+    except Exception as e:
+        log(f"  E[EPS] Revisions: data read failed ({e}) — skipping")
+        return out
+
+    HORIZON_BLOCKS = [
+        (0, "EPS",       3,  4, 17),    # anchor col D=3 (0-idx), monthly E..Q = 4..16 inclusive
+        (1, "E[EPS] +1", 17, 18, 31),
+        (2, "E[EPS] +2", 31, 32, 45),
+        (3, "E[EPS] +3", 45, 46, 59),
+    ]
+
+    as_of = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    for row in rows:
+        while len(row) < 59: row.append(None)
+        tk = _str(row[0])
+        if not tk: continue
+        tk = tk.upper()
+        name = _str(row[2]) or ""
+        series = []
+        any_value = False
+        for horizon, label, anchor_idx, m_start, m_end in HORIZON_BLOCKS:
+            # anchor cell carries an FY-end date in the user's workbook
+            # rather than the canonical "anchor EPS value" the parser
+            # docstring describes. We don't need it for the chart, so
+            # store null. Keeps the data shape consistent with the
+            # manual paste path (which parses the date as NaN -> null).
+            monthly = []
+            for i in range(m_start, m_end + 1):
+                v = _num(row[i]) if i < len(row) else None
+                monthly.append(v if v is not None else None)
+                if v is not None: any_value = True
+            series.append({
+                "horizon": horizon,
+                "label": label,
+                "anchor": None,
+                "monthly": monthly,
+            })
+        if not any_value:
+            continue
+        out[tk] = {"asOf": as_of, "dates": dates, "series": series, "name": name}
+
+    log(f"  E[EPS] Revisions: {len(out)} tickers, {len(dates)} months")
+    return out
+
+
 def read_markets(xl: ExcelSession) -> dict:
     """Bulk-read Dashboard A..J for the entire scan range, then iterate
     in-memory to detect sections and FX matrix blocks. Was thousands of
@@ -2286,6 +2408,49 @@ def read_markets(xl: ExcelSession) -> dict:
 # ----------------------------------------------------------------------
 # Merge helpers
 # ----------------------------------------------------------------------
+def merge_eps_revisions(companies: list[dict], eps_rev: dict[str, dict]) -> int:
+    """Attach EPS revisions dict to each matching company under
+    .epsRevisions. Replaces the prior value wholesale — unlike metrics,
+    the EPS revisions chart needs ALL 4 horizons + 13 monthly snapshots
+    coherent with one another (anchor dates apply to every horizon).
+    Merging field-by-field would risk mixing fresh and stale horizons.
+
+    Matches by any ticker on the company (uppercase). Falls back to a
+    fuzzy normalized-name match — mirrors findCompanyByTickerOrName
+    in the JS paste path so a -US suffix on either side doesn't break
+    the link."""
+    import re as _re
+    n = 0
+    # Build ticker → eps_rev key map of variants so SHEL on the sheet
+    # matches SHEL-US in the company tickers and vice versa.
+    eps_variants: dict[str, str] = {}
+    for tk in eps_rev:
+        eps_variants[tk] = tk
+        stripped = _re.sub(r"-(US|USD)$", "", tk)
+        if stripped != tk and stripped not in eps_variants:
+            eps_variants[stripped] = tk
+    for c in companies:
+        all_tks = [(t.get("ticker") or "").upper() for t in (c.get("tickers") or [])]
+        if not all_tks and c.get("ticker"):
+            all_tks.append(c["ticker"].upper())
+        matched_key = None
+        for tk in all_tks:
+            if tk in eps_variants: matched_key = eps_variants[tk]; break
+            stripped = _re.sub(r"-(US|USD)$", "", tk)
+            if stripped in eps_variants: matched_key = eps_variants[stripped]; break
+        if not matched_key: continue
+        payload = eps_rev[matched_key]
+        # Drop the auxiliary 'name' key from the payload — not in the
+        # shape the chart expects (it reads asOf / dates / series).
+        c["epsRevisions"] = {
+            "asOf": payload.get("asOf"),
+            "dates": payload.get("dates") or [],
+            "series": payload.get("series") or [],
+        }
+        n += 1
+    return n
+
+
 def merge_metrics(companies: list[dict], metrics: dict[str, dict]) -> int:
     """Attach metrics dict to each matching company under `.metrics`.
     Matches by any ticker on the company. Uses dict.update() so existing
@@ -2582,6 +2747,7 @@ def main() -> int:
             rep_hold   = read_rep_holdings(xl)
             markets    = read_markets(xl)
             metrics    = read_metrics(xl)
+            eps_rev    = read_eps_revisions(xl)
             tx_rows    = read_transactions(xl)
     except Exception as e:
         log(f"FATAL during Excel session: {e}\n{traceback.format_exc()}")
@@ -2607,9 +2773,10 @@ def main() -> int:
             log(f"  Cleaned legacy error values: {n_cleaned_co} company fields, {n_cleaned_fx} fx rates")
         n_p, n_v, n_e = merge_companies(cos, prices, valuations, earnings)
         n_m = merge_metrics(cos, metrics)
+        n_er = merge_eps_revisions(cos, eps_rev)
         n_tx, n_tx_cos, unmatched_tx = merge_transactions(cos, tx_rows)
         supa_put_companies(cos)
-        log(f"  Companies: prices+={n_p}, valuations+={n_v}, earnings+={n_e}, metrics+={n_m}")
+        log(f"  Companies: prices+={n_p}, valuations+={n_v}, earnings+={n_e}, metrics+={n_m}, epsRev+={n_er}")
         if price_history:
             push_price_history(price_history)
         if tx_rows:
