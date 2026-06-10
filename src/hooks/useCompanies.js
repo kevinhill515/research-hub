@@ -138,7 +138,7 @@ export function useCompanies(){
            best matches that field's signature. */
         var dataRows = dataRowLines.map(parseRow);
         var numCols = dataRows.reduce(function(m,r){return Math.max(m, r.length);}, 0);
-        var STATUS_RE = /^(buy|own|focus|watch|sold)$/i;
+        var STATUS_RE = /^(buy|own|focus|watch|sold|removed?)$/i;
         var DATE_RE = /^\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}$|^\d{4}-\d{1,2}-\d{1,2}$/;
         /* Tickers include dotted-share-class forms (EKTA.B-SE, BRK.B,
            etc.) — the original `[A-Z0-9]+-[A-Z]{2}` rejected EKTA.B-SE
@@ -199,7 +199,7 @@ export function useCompanies(){
         var cols=parseRow(line);function get(i){return i>-1?(cols[i]||""):""}
         var portRaw=get(idx.portfolio).toUpperCase();var portTokens=portRaw.split(/[\s,]+/).filter(Boolean);
         var portfoliosArr=PORTFOLIOS.filter(function(p){return portTokens.indexOf(p)>=0;}).filter(function(p,i,a){return a.indexOf(p)===i;});
-        var status=get(idx.status).trim();status=(/^buy$/i.test(status)||/^own$/i.test(status))?"Own":/^focus$/i.test(status)?"Focus":/^watch$/i.test(status)?"Watch":/^sold$/i.test(status)?"Sold":"";
+        var status=get(idx.status).trim();status=(/^buy$/i.test(status)||/^own$/i.test(status))?"Own":/^focus$/i.test(status)?"Focus":/^watch$/i.test(status)?"Watch":/^sold$/i.test(status)?"Sold":/^removed?$/i.test(status)?"Removed":"";
         var action=get(idx.action);action=/increase|up|raise/i.test(action)?"Increase TP":/decrease|down|cut|lower/i.test(action)?"Decrease TP":/no action|hold|maintain/i.test(action)?"No Action":action||"";
         var ordT=(get(idx.ordTicker)||get(idx.ticker)).toUpperCase();
         var usT=get(idx.usTicker).toUpperCase();

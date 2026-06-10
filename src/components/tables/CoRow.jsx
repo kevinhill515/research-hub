@@ -729,6 +729,7 @@ function CoRow({ company, onSelect, onDelete, onUpdate, compact, visibleCols, se
             <option>Focus</option>
             <option>Watch</option>
             <option>Sold</option>
+            <option>Removed</option>
           </select>
         </div>
       )}
