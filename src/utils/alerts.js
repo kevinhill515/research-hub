@@ -215,23 +215,30 @@ function evalGuidanceRevised(company, params) {
   });
   if (flagged.length === 0) return null;
 
-  /* Pick the largest absolute change for the headline. For sort order,
-     normalize ppt changes by 100 so a 1 ppt move ranks like a 1%
-     fractional move (mirrors mos-divergence's magnitude convention). */
+  /* Sort by absolute magnitude. Ppt changes normalized by 100 so a
+     1 ppt move ranks like a 1% fractional move (mirrors
+     mos-divergence's magnitude convention). */
   flagged.sort(function (a, b) {
     const ma = a.isPctMetric ? Math.abs(a.change) / 100 : Math.abs(a.change);
     const mb = b.isPctMetric ? Math.abs(b.change) / 100 : Math.abs(b.change);
     return mb - ma;
   });
+  function fmtChange(f) {
+    const s = f.change >= 0 ? "+" : "";
+    return f.isPctMetric ? s + f.change.toFixed(2) + " ppt" : s + (f.change * 100).toFixed(1) + "%";
+  }
+  /* Message lists every revised metric, biggest move first, separated
+     by " · " so the row stays one line in the flag panel. Direction
+     is determined by the biggest move (warn for down, info for up).
+     Context: null — everything's in the message now. */
   const top = flagged[0];
-  const sign = top.change >= 0 ? "+" : "";
-  const valueText = top.isPctMetric
-    ? sign + top.change.toFixed(2) + " ppt"
-    : sign + (top.change * 100).toFixed(1) + "%";
+  const msg = flagged
+    .map(function (f) { return f.metric + " " + (f.dir === "down" ? "↓" : "↑") + " " + fmtChange(f); })
+    .join(" · ");
   return {
     severity: top.dir === "down" ? "warn" : "info",
-    message: top.metric + " guidance revised " + top.dir + " " + valueText,
-    context: flagged.length > 1 ? (flagged.length - 1) + " other metric" + (flagged.length > 2 ? "s" : "") + " also revised" : null,
+    message: "Guidance revised: " + msg,
+    context: null,
     magnitude: top.isPctMetric ? Math.abs(top.change) / 100 : Math.abs(top.change),
   };
 }
