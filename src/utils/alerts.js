@@ -170,6 +170,13 @@ function evalGuidanceRevised(company, params) {
 
   const byMetric = {};
   history.forEach(function (r) { if (r.period === period) (byMetric[r.item] = byMetric[r.item] || []).push(r); });
+  /* Metrics already expressed as a percentage — Organic Growth %,
+     EBIT Margin %, ROE %, Div Yld, Payout Ratio, etc. For these we
+     report the change in PERCENTAGE POINTS (ppt), not "percent-of-
+     percent", which inflates 2.0% → 0.75% to "-62.5%" instead of
+     the meaningful "-1.25 ppt". Pattern matches the metric name
+     case-insensitively. */
+  const PCT_METRIC_RE = /(%|growth|margin|mgn|roe|roa|roic|yld|yield|payout|ratio|rate)/i;
   const flagged = [];
   Object.keys(byMetric).forEach(function (m) {
     const arr = byMetric[m].slice().sort(function (a, b) { return (a.date || "").localeCompare(b.date || ""); });
@@ -188,22 +195,38 @@ function evalGuidanceRevised(company, params) {
     }
     const lm = mid(last), pm = mid(prev);
     if (!isFiniteNum(lm) || !isFiniteNum(pm) || pm === 0) return;
-    const change = (lm - pm) / Math.abs(pm);
-    if (Math.abs(change) < 0.005) return;
+    const isPctMetric = PCT_METRIC_RE.test(m);
+    /* For pct-valued metrics, change is in ppt (raw diff). For dollar
+       / unit metrics, change is fractional (delta / |base|). */
+    const change = isPctMetric ? (lm - pm) : (lm - pm) / Math.abs(pm);
+    /* Tolerance: skip a 0.05 ppt move on pct metrics (noise); skip
+       0.5% on fractional metrics. */
+    const tol = isPctMetric ? 0.05 : 0.005;
+    if (Math.abs(change) < tol) return;
     const dir = change > 0 ? "up" : "down";
     if (dirs.indexOf(dir) < 0) return;
-    flagged.push({ metric: m, change: change, dir: dir });
+    flagged.push({ metric: m, change: change, dir: dir, isPctMetric: isPctMetric });
   });
   if (flagged.length === 0) return null;
 
-  /* Pick the largest absolute change for the headline. */
-  flagged.sort(function (a, b) { return Math.abs(b.change) - Math.abs(a.change); });
+  /* Pick the largest absolute change for the headline. For sort order,
+     normalize ppt changes by 100 so a 1 ppt move ranks like a 1%
+     fractional move (mirrors mos-divergence's magnitude convention). */
+  flagged.sort(function (a, b) {
+    const ma = a.isPctMetric ? Math.abs(a.change) / 100 : Math.abs(a.change);
+    const mb = b.isPctMetric ? Math.abs(b.change) / 100 : Math.abs(b.change);
+    return mb - ma;
+  });
   const top = flagged[0];
+  const sign = top.change >= 0 ? "+" : "";
+  const valueText = top.isPctMetric
+    ? sign + top.change.toFixed(2) + " ppt"
+    : sign + (top.change * 100).toFixed(1) + "%";
   return {
     severity: top.dir === "down" ? "warn" : "info",
-    message: top.metric + " guidance revised " + top.dir + " " + (top.change >= 0 ? "+" : "") + (top.change * 100).toFixed(1) + "%",
+    message: top.metric + " guidance revised " + top.dir + " " + valueText,
     context: flagged.length > 1 ? (flagged.length - 1) + " other metric" + (flagged.length > 2 ? "s" : "") + " also revised" : null,
-    magnitude: Math.abs(top.change),
+    magnitude: top.isPctMetric ? Math.abs(top.change) / 100 : Math.abs(top.change),
   };
 }
 
