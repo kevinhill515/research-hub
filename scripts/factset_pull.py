@@ -2207,7 +2207,7 @@ def read_eps_revisions(xl: ExcelSession) -> dict[str, dict]:
     writes to c.epsRevisions). 4 horizons, 13 monthly points each.
     """
     out: dict[str, dict] = {}
-    SHEET = "E[EPS] Revisions"
+    SHEET = "E EPS"
 
     def to_iso(v) -> str | None:
         if v is None or v == "": return None
