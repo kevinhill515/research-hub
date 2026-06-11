@@ -648,7 +648,10 @@ function ProposalRow({ company, port, heldTicker, actionEntry, targetEntry, acti
     if (!editableTo) return;
     var v = parseFloat(toDraft);
     if (!isFinite(v) || v < 0) { setToDraft(initialTo.toFixed(2)); return; }
-    if (Math.abs(v - initialTo) < 1e-6) return;
+    /* Always call the mutator on blur — even when v equals the current
+       stored value — so the agendaEditedNewWeight flag gets stamped.
+       Without this, re-blurring an already-edited cell with no actual
+       change is a no-op and the alloc-shadow skip never engages. */
     onEditNewWeight(company.id, actionEntry.id, v);
   }
   /* For Pare/Add editable case, split the existing weightStr on " → "
