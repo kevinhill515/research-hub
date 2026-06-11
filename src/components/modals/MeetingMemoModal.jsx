@@ -485,6 +485,11 @@ function AgendaSummary({ profilePorts, pendingByPort, recentChanges, targetChang
                    the user expected to see the weight transition. */
                 var allocChanges = rows.filter(function (r) {
                   if (!r.action) return !!r.target;
+                  /* Skip action stamps whose "to" weight was manually
+                     edited from the IC Agenda — those are intermediate
+                     trades, not target reallocations. Mirrors the
+                     same gate in meetingMemo.js partitionWeightChanges. */
+                  if (r.action.agendaEditedNewWeight && !r.target) return false;
                   var newW = r.target
                     ? parseFloat(r.target.newWeight)
                     : parseFloat(r.action.newWeight);
