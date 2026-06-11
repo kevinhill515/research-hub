@@ -21,7 +21,7 @@
  * directly on the row, and the visual treatment + Lock-in bar lives
  * on the Portfolios page itself.
  */
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useCompanyContext } from "../../context/CompanyContext.jsx";
 import { buildMeetingMemo, clearAgendaFlags, MEETING_PROFILES, pickHeldTicker } from "../../utils/meetingMemo.js";
 import { TEAM_COLORS } from "../../constants/index.js";
@@ -67,7 +67,7 @@ function daysAgo(iso) {
 export function MeetingMemoModal({ open, onClose }) {
   const {
     companies, setCompanies, repData, fxRates, currentUser,
-    memoLog, addMemoLog, deleteMemoLog, revertMemoLog,
+    memoLog, addMemoLog, deleteMemoLog, revertMemoLog, editAgendaEntryNewWeight,
     wednesdayNotes, setWednesdayNotes,
     targetChangeReads, markTargetChangeRead, commitProposedWeights,
     discardAgendaEntries, refreshCompaniesFromSupabase, commentOnAgendaEntry,
@@ -331,6 +331,7 @@ export function MeetingMemoModal({ open, onClose }) {
               onComment={commentOnAgendaEntry}
               onEditComment={editAgendaComment}
               onDeleteComment={deleteAgendaComment}
+              onEditNewWeight={editAgendaEntryNewWeight}
             />
           ) : tab === "log" ? (
             <LogTab
@@ -397,7 +398,7 @@ export function MeetingMemoModal({ open, onClose }) {
 
 /* ===== AGENDA TAB (read-only summary) ===== */
 
-function AgendaSummary({ profilePorts, pendingByPort, recentChanges, targetChangeReads, currentUser, repData, fxRates, repWeightCtx, onMarkTargetRead, onComment, onEditComment, onDeleteComment }) {
+function AgendaSummary({ profilePorts, pendingByPort, recentChanges, targetChangeReads, currentUser, repData, fxRates, repWeightCtx, onMarkTargetRead, onComment, onEditComment, onDeleteComment, onEditNewWeight }) {
   /* Compute current rep weight (actual holding as % of port AUM) for a
      given (company, port). Uses the precomputed per-port context so
      totalMV isn't recomputed per row. Returns null when port has zero
@@ -596,6 +597,8 @@ function AgendaSummary({ profilePorts, pendingByPort, recentChanges, targetChang
                       onComment={onComment}
                       onEditComment={onEditComment}
                       onDeleteComment={onDeleteComment}
+                      onEditNewWeight={onEditNewWeight}
+                      isAlloc={isAlloc}
                     />
                   );
                 }
@@ -627,11 +630,31 @@ function AgendaSummary({ profilePorts, pendingByPort, recentChanges, targetChang
 
 /* ===== PROPOSAL ROW (with comments) ===== */
 
-function ProposalRow({ company, port, heldTicker, actionEntry, targetEntry, actionColor, authorColor, authors, date, weightStr, tgtBadge, comments, currentUser, onComment, onEditComment, onDeleteComment }) {
+function ProposalRow({ company, port, heldTicker, actionEntry, targetEntry, actionColor, authorColor, authors, date, weightStr, tgtBadge, comments, currentUser, onComment, onEditComment, onDeleteComment, onEditNewWeight, isAlloc }) {
   const [showComment, setShowComment] = useState(false);
   const [commentText, setCommentText] = useState("");
   const [editingCommentId, setEditingCommentId] = useState(null);
   const [editingText, setEditingText] = useState("");
+  /* Editable "to" weight for Pare/Add action stamps. Lets us show e.g.
+     "Pare to 2.5%" while leaving the committed target at 2.0% — an
+     intermediate trade vs. the final committed target. */
+  const editableTo = !isAlloc && actionEntry && (actionEntry.action === "Add" || actionEntry.action === "Pare") && !!onEditNewWeight;
+  const committedW = parseFloat((company.portWeights || {})[port]);
+  const stampedNew = parseFloat(actionEntry && actionEntry.newWeight);
+  const initialTo = isFinite(stampedNew) && stampedNew > 0 ? stampedNew : (isFinite(committedW) ? committedW : 0);
+  const [toDraft, setToDraft] = useState(editableTo ? initialTo.toFixed(2) : "");
+  useEffect(function(){ if (editableTo) setToDraft(initialTo.toFixed(2)); /* eslint-disable-next-line */ }, [stampedNew, committedW]);
+  function commitTo(){
+    if (!editableTo) return;
+    var v = parseFloat(toDraft);
+    if (!isFinite(v) || v < 0) { setToDraft(initialTo.toFixed(2)); return; }
+    if (Math.abs(v - initialTo) < 1e-6) return;
+    onEditNewWeight(company.id, actionEntry.id, v);
+  }
+  /* For Pare/Add editable case, split the existing weightStr on " → "
+     to keep the "from" side (rep / oldNum text) identical to the
+     non-editable rendering. */
+  const fromStr = editableTo && weightStr ? (weightStr.indexOf(" → ") >= 0 ? weightStr.split(" → ")[0] : weightStr) : null;
   /* Which entry to attach NEW comments to — prefer the target entry
      if present, else the action stamp. Existing comments may live on
      either; we look them up below by walking both entries. */
@@ -695,8 +718,26 @@ function ProposalRow({ company, port, heldTicker, actionEntry, targetEntry, acti
             {heldTicker}
             <span className="text-gray-500 dark:text-slate-400 font-normal ml-1.5">{company.name || ""}</span>
           </span>
-          {weightStr && (
+          {weightStr && !editableTo && (
             <span className="font-mono text-amber-800 dark:text-amber-300 text-[11px]">{weightStr}</span>
+          )}
+          {editableTo && (
+            <span className="font-mono text-amber-800 dark:text-amber-300 text-[11px]">
+              {fromStr}
+              {" → "}
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={toDraft}
+                onChange={function(e){ setToDraft(e.target.value); }}
+                onBlur={commitTo}
+                onKeyDown={function(e){ if (e.key === "Enter") { e.currentTarget.blur(); } else if (e.key === "Escape") { setToDraft(initialTo.toFixed(2)); e.currentTarget.blur(); } }}
+                className="font-mono text-amber-800 dark:text-amber-300 text-[11px] bg-transparent border-b border-dashed border-amber-400 dark:border-amber-600 focus:border-solid focus:border-amber-600 dark:focus:border-amber-400 focus:outline-none w-12 text-right px-0.5"
+                title="Edit the displayed 'to' weight for this Pare/Add. Does not change the committed target."
+              />
+              %
+            </span>
           )}
         </div>
         <div className="text-[10px] text-gray-400 dark:text-slate-500 shrink-0 mt-0.5 text-right">

@@ -2043,6 +2043,27 @@ export function CompanyProvider({children}){
      comment: { id, author, date, text }. Lives on the entry itself
      (entry.comments[]) so it stays attached even after lock-in (the
      entry persists with isAgenda:false). */
+  /* Override an action-stamp's newWeight from the IC Agenda. Used
+     when a Pare/Add is meant to land on a non-committed-target weight
+     (e.g. Pare to 2.5% but keep target at 2.0% — an intermediate
+     trade). The memo's Trades-block reads h.newWeight as the "to"
+     value, so editing it here changes what the memo + agenda show.
+     Leaves committed portWeights untouched (the target stays put). */
+  function editAgendaEntryNewWeight(companyId, entryId, newWeight){
+    var nw = parseFloat(newWeight);
+    if(!isFinite(nw)) return;
+    setCompanies(function(cs){
+      return cs.map(function(c){
+        if(c.id !== companyId) return c;
+        var hist = c.portWeightHistory || [];
+        var newHist = hist.map(function(h){
+          if(!h || h.id !== entryId) return h;
+          return Object.assign({}, h, { newWeight: nw });
+        });
+        return Object.assign({}, c, { portWeightHistory: newHist });
+      });
+    });
+  }
   function commentOnAgendaEntry(companyId, entryId, text){
     if(!currentUser || !text || !text.trim()) return;
     setCompanies(function(cs){
@@ -2249,7 +2270,7 @@ export function CompanyProvider({children}){
     addAnnotation,updateAnnotation,deleteAnnotation,resolveAnnotation,unresolveAnnotation,addReply,markAnnotationRead,parseMentions,
     updateTargetWeight,markTradeAgenda,addTargetHistoryEntry,deleteTargetHistoryEntry,
     proposeTargetWeight,clearProposedWeight,commitProposedWeights,discardAgendaEntries,
-    refreshCompaniesFromSupabase,loadBreakdownHistoryIfNeeded,commentOnAgendaEntry,editAgendaComment,deleteAgendaComment,
+    refreshCompaniesFromSupabase,loadBreakdownHistoryIfNeeded,commentOnAgendaEntry,editAgendaComment,deleteAgendaComment,editAgendaEntryNewWeight,
     addTransaction,deleteTransaction,setTxInitOverride,setTxCashFlow,updateInitiatedDate,
     researchAssignments,setResearchAssignments,setResearchSlot,setReorgSlot,
     perfData,setPerfData,setPerfSeries,addPerfSeries,removePerfSeries,movePerfSeries,setPerfSeriesOrder,setPerfReturn,setPerfLastMonthEMV,applyPerfBulk,
