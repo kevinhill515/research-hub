@@ -362,6 +362,14 @@ function partitionWeightChanges(companies, ports) {
         var committed = (c.portWeights || {})[h.portfolio];
         var committedNum2 = parseFloat(committed);
         var oldW = isFinite(committedNum2) ? committedNum2 : 0;
+        /* Skip no-op target proposals (committed already equals
+           proposed target). Surfaces when a target was committed and
+           a stale matching proposal remains, or when a Pare/Add stamp
+           lives alongside a target proposal at the same weight.
+           Otherwise we'd render "2.0% → 2.0%" in Allocation Changes,
+           which is meaningless. */
+        var newNum2 = parseFloat(h.newWeight);
+        if (isFinite(newNum2) && Math.abs(newNum2 - oldW) <= 0.05) return;
         allocByPort[h.portfolio].push({
           company: c,
           oldW: oldW,
