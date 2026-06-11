@@ -342,7 +342,14 @@ function partitionWeightChanges(companies, ports) {
         var committedNum = parseFloat(committedRaw);
         var oldForAlloc = isFinite(committedNum) ? committedNum : (parseFloat(h.oldWeight) || 0);
         var newForAlloc = parseFloat(h.newWeight);
-        if (isFinite(newForAlloc) && Math.abs(newForAlloc - oldForAlloc) > 0.05) {
+        /* If the user manually edited this stamp's "to" weight from the
+           IC Agenda (agendaEditedNewWeight flag), it represents an
+           intermediate trade — committed target is NOT moving. Skip the
+           shadow so we don't render a phantom Allocation Change like
+           "2.0% → 2.5%" when only the displayed trade size was tweaked. */
+        if (h.agendaEditedNewWeight) {
+          // explicit intermediate trade — no allocation change
+        } else if (isFinite(newForAlloc) && Math.abs(newForAlloc - oldForAlloc) > 0.05) {
           allocByPort[h.portfolio].push({
             company: c,
             oldW: oldForAlloc,

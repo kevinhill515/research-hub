@@ -2058,7 +2058,7 @@ export function CompanyProvider({children}){
         var hist = c.portWeightHistory || [];
         var newHist = hist.map(function(h){
           if(!h || h.id !== entryId) return h;
-          return Object.assign({}, h, { newWeight: nw });
+          return Object.assign({}, h, { newWeight: nw, agendaEditedNewWeight: true });
         });
         return Object.assign({}, c, { portWeightHistory: newHist });
       });
