@@ -877,7 +877,7 @@ export function CompanyDetail(props){
                   /* Case A signal: tpHistory tip vs valuation. */
                   var latestHistTp = latestHistEntry ? parseFloat(latestHistEntry.tp) : NaN;
                   var histDesync = isFinite(latestHistTp) && (
-                    !isFinite(fixedTp) || Math.abs(latestHistTp - fixedTp) > 0.01
+                    fixedTp === null || !isFinite(fixedTp) || Math.abs(latestHistTp - fixedTp) > 0.01
                   );
                   /* Case B signal: latest APPROVED tpApprovals record
                      for this company, sorted by approvedAt desc. */
@@ -887,7 +887,7 @@ export function CompanyDetail(props){
                   var latestApprovedRec = approvedRecs[0];
                   var latestApprovedTp = latestApprovedRec ? parseFloat(latestApprovedRec.toTP) : NaN;
                   var recDesync = isFinite(latestApprovedTp) && (
-                    !isFinite(fixedTp) || Math.abs(latestApprovedTp - fixedTp) > 0.01
+                    fixedTp === null || !isFinite(fixedTp) || Math.abs(latestApprovedTp - fixedTp) > 0.01
                   );
                   if (!histDesync && !recDesync) return null;
                   /* Pick the source of truth — prefer the approved
@@ -1032,7 +1032,7 @@ export function CompanyDetail(props){
                       <span>⚠</span>
                       <span>
                         <span className="font-semibold">TP Fixed out of sync</span>
-                        <span className="ml-2 opacity-80">— latest approval ({fmtDateUS(latestApproval.date)}) committed {activeCurrency} {latestTp.toFixed(2)} to history but TP Fixed still reads {isFinite(fixedTp)?activeCurrency+" "+fixedTp.toFixed(2):"—"}.</span>
+                        <span className="ml-2 opacity-80">— latest approval ({fmtDateUS(latestApproval && latestApproval.date)}) committed {activeCurrency} {latestTp.toFixed(2)} to history but TP Fixed still reads {fixedTp !== null && isFinite(fixedTp)?activeCurrency+" "+fixedTp.toFixed(2):"—"}.</span>
                       </span>
                       <button
                         onClick={reconcile}
