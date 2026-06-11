@@ -947,6 +947,38 @@ function WednesdayNotesView({ text, setText, copied, onCopy, onSaveToLog }) {
 /* ===== LOG TAB ===== */
 
 function LogTab({ entries, expandedId, onToggle, onDelete, onRevert }) {
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const profLabelOf = function (p) {
+    return p === "tuesday" ? "Tuesday (MultiCap)"
+      : p === "wednesday" ? "Wednesday (Notes)"
+      : p === "thursday" ? "Thursday (EM+SC)"
+      : (p || "?");
+  };
+  const filtered = !q ? entries : entries.filter(function (e) {
+    var hay = ((e.memo || "") + " " + (e.date || "") + " " + profLabelOf(e.profile) + " " + (e.author || "")).toLowerCase();
+    return hay.indexOf(q) >= 0;
+  });
+  /* Highlight all occurrences of the query in a memo body. Splits on
+     case-insensitive matches and wraps hits in a <mark>. */
+  function renderMemoWithHighlight(text) {
+    if (!q || !text) return text;
+    var lower = text.toLowerCase();
+    var parts = [];
+    var i = 0;
+    while (i < text.length) {
+      var hit = lower.indexOf(q, i);
+      if (hit < 0) { parts.push(text.slice(i)); break; }
+      if (hit > i) parts.push(text.slice(i, hit));
+      parts.push(
+        <mark key={hit} className="bg-yellow-200 dark:bg-yellow-700/60 text-gray-900 dark:text-yellow-50 px-0.5 rounded">
+          {text.slice(hit, hit + q.length)}
+        </mark>
+      );
+      i = hit + q.length;
+    }
+    return parts;
+  }
   if (!entries.length) {
     return (
       <div className="text-sm text-gray-500 dark:text-slate-400">
@@ -956,15 +988,32 @@ function LogTab({ entries, expandedId, onToggle, onDelete, onRevert }) {
   }
   return (
     <div className="space-y-2">
-      {entries.map(function (e) {
-        const expanded = expandedId === e.id;
-        const profLabel = e.profile === "tuesday"
-          ? "Tuesday (MultiCap)"
-          : e.profile === "wednesday"
-          ? "Wednesday (Notes)"
-          : e.profile === "thursday"
-          ? "Thursday (EM+SC)"
-          : (e.profile || "?");
+      <div className="flex items-center gap-2 mb-1">
+        <input
+          type="search"
+          value={query}
+          onChange={function (e) { setQuery(e.target.value); }}
+          placeholder="Search logged memos (ticker, name, text)…"
+          className="flex-1 text-xs px-2 py-1 border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
+        />
+        {q && (
+          <span className="text-[11px] text-gray-500 dark:text-slate-400 shrink-0">
+            {filtered.length} / {entries.length}
+          </span>
+        )}
+        {q && (
+          <button
+            onClick={function () { setQuery(""); }}
+            className="text-[11px] px-2 py-1 rounded text-gray-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+          >Clear</button>
+        )}
+      </div>
+      {filtered.length === 0 && (
+        <div className="text-xs text-gray-500 dark:text-slate-400 italic">No memos match.</div>
+      )}
+      {filtered.map(function (e) {
+        const expanded = expandedId === e.id || !!q;
+        const profLabel = profLabelOf(e.profile);
         return (
           <div key={e.id} className="border border-slate-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-900">
             <div className="flex items-center gap-2 px-3 py-2">
@@ -1000,7 +1049,7 @@ function LogTab({ entries, expandedId, onToggle, onDelete, onRevert }) {
               </button>
             </div>
             {expanded ? (
-              <pre className="text-xs font-mono px-3 py-2 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 whitespace-pre-wrap overflow-x-auto leading-relaxed">{e.memo}</pre>
+              <pre className="text-xs font-mono px-3 py-2 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 whitespace-pre-wrap overflow-x-auto leading-relaxed">{renderMemoWithHighlight(e.memo)}</pre>
             ) : null}
           </div>
         );
