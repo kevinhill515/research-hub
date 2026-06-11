@@ -428,6 +428,36 @@ export function useCompanies(){
     var u=Object.assign({},co,updates);
     setSelCo(u);setCompanies(function(cs){return cs.map(function(c){return c.id===u.id?u:c;});});
   }
+  /* Delete an earnings entry AND add its reportDate to the company's
+     ignoredReportDates list so the daily FactSet pull won't recreate
+     it the next morning. Useful for phantom entries from semi-annual
+     reporters (e.g. Hengan 1044-HK getting a spurious Q1 FY26 quarter
+     from FactSet's calendar). */
+  function hideEarningsEntry(co, id){
+    var entry = (co.earningsEntries || []).find(function(e){return e.id === id;});
+    var reportDate = entry && entry.reportDate;
+    var entries = (co.earningsEntries || []).filter(function(e){return e.id !== id;});
+    var ignored = (co.ignoredReportDates || []).slice();
+    if (reportDate && ignored.indexOf(reportDate) < 0) ignored.push(reportDate);
+    var updates = { earningsEntries: entries, ignoredReportDates: ignored };
+    if (entries.length > 0) {
+      var latest = entries[0];
+      if (latest.shortTakeaway) updates.takeaway = latest.shortTakeaway;
+      if (latest.extendedTakeaway) updates.takeawayLong = latest.extendedTakeaway;
+    }
+    var u = Object.assign({}, co, updates);
+    setSelCo(u);
+    setCompanies(function(cs){ return cs.map(function(c){ return c.id === u.id ? u : c; }); });
+  }
+  /* Remove a date from ignoredReportDates so future imports for that
+     date will re-create the entry. Used by the "unhide" affordance on
+     the earnings tab. */
+  function unhideReportDate(co, isoDate){
+    var ignored = (co.ignoredReportDates || []).filter(function(d){ return d !== isoDate; });
+    var u = Object.assign({}, co, { ignoredReportDates: ignored });
+    setSelCo(u);
+    setCompanies(function(cs){ return cs.map(function(c){ return c.id === u.id ? u : c; }); });
+  }
   function acceptQuickDiff(company,diff,meta){
     var ns=Object.assign({},company.sections);diff.forEach(function(d){ns[d.section]=d.after;});
     var today=todayStr();var log={date:today,type:meta.type||"Update",summary:meta.summary||"",changes:diff.map(function(d){return d.section;})};
@@ -848,7 +878,7 @@ export function useCompanies(){
     dupeGroups,setDupeGroups,dupeKeep,setDupeKeep,quickUploadCo,setQuickUploadCo,
     linkLibOpen,setLinkLibOpen,showTmplSearch,setShowTmplSearch,searchRef,
     addCompany,parseBulk,confirmBulk,applyBulkEdit,toggleSelect,selectAll,clearSelected,
-    findDupes,applyDedupe,commitValuation,saveEarningsEntry,deleteEarningsEntry,
+    findDupes,applyDedupe,commitValuation,saveEarningsEntry,deleteEarningsEntry,hideEarningsEntry,unhideReportDate,
     acceptQuickDiff,acceptDiff,importTemplate,processUpload,applyPriceImport,
     handleSortClick,exportCompanyPDF,exportToPDF,exportCSV,
     displayedCos,flaggedCos,usedCountries,usedSectors

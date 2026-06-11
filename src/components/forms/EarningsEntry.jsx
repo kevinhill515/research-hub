@@ -77,7 +77,7 @@ function AutoGrowTextarea(props) {
   return <textarea ref={ref} {...props} />;
 }
 
-function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
+function EarningsEntry({ entry, onSave, onDelete, onHide, currency, company }) {
   /* fxRates is needed to convert local-currency sales/EPS into USD for
      the secondary line on the stats strip. fxRates[ccy] is stored as
      local-per-USD (so amountUSD = amountLocal / fxRates[ccy]). */
@@ -800,9 +800,25 @@ function EarningsEntry({ entry, onSave, onDelete, currency, company }) {
             >
               Close
             </button>
+            {onHide && (
+              <span
+                onClick={function () {
+                  if (typeof window !== "undefined" && window.confirm && !window.confirm(
+                    "Hide this entry AND ignore future imports for " + (entry && entry.reportDate || "this date") + "?\n\n" +
+                    "Use for phantom dates the daily FactSet pull keeps recreating (e.g. an off-cycle Q1 for a semi-annual reporter).\n\n" +
+                    "You can un-ignore later from the Earnings tab's 'Hidden dates' section."
+                  )) return;
+                  onHide();
+                }}
+                className="text-xs text-amber-700 dark:text-amber-400 cursor-pointer ml-auto py-1.5 hover:text-amber-900 dark:hover:text-amber-300 transition-colors"
+                title="Delete this entry AND tell the daily script to skip re-importing this date"
+              >
+                Hide &amp; ignore future imports
+              </span>
+            )}
             <span
               onClick={onDelete}
-              className="text-xs text-red-600 dark:text-red-400 cursor-pointer ml-auto py-1.5 hover:text-red-800 dark:hover:text-red-300 transition-colors"
+              className={"text-xs text-red-600 dark:text-red-400 cursor-pointer py-1.5 hover:text-red-800 dark:hover:text-red-300 transition-colors " + (onHide ? "" : "ml-auto")}
             >
               Delete entry
             </span>

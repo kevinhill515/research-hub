@@ -2549,6 +2549,18 @@ def merge_companies(companies, prices, valuations, earnings):
                 nxt = info.get("next")
                 last = info.get("last")
                 entries = c.setdefault("earningsEntries", [])
+                # User-maintained ignore list — phantom dates the daily
+                # pull keeps recreating (e.g. semi-annual reporters
+                # getting an off-cycle Q1 from FactSet's calendar). Set
+                # in-app via the earnings entry's "Hide & ignore future
+                # imports" button.
+                ignored_dates = set(c.get("ignoredReportDates") or [])
+                if nxt and nxt in ignored_dates:
+                    log(f"  Skipping ignored next-report date {nxt} for {tk}")
+                    nxt = None
+                if last and last in ignored_dates:
+                    log(f"  Skipping ignored last-report date {last} for {tk}")
+                    last = None
 
                 def _new_entry(date):
                     return {

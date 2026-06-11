@@ -56,7 +56,7 @@ export function CompanyDetail(props){
     selCo, setSelCo, coView, setCoView, coTabs, pendingVal, setPendingVal,
     tmplRaw, setTmplRaw, tmplLoading, tmplSearch, setTmplSearch, tmplHighlight, setTmplHighlight, flashSections,
     upText, setUpText, upType, setUpType, upLoading, pendingDiff, setPendingDiff, pendingMeta, setPendingMeta,
-    commitValuation, saveEarningsEntry, deleteEarningsEntry, acceptDiff, importTemplate, processUpload, exportCompanyPDF,
+    commitValuation, saveEarningsEntry, deleteEarningsEntry, hideEarningsEntry, unhideReportDate, acceptDiff, importTemplate, processUpload, exportCompanyPDF,
     linkLibOpen, setLinkLibOpen,
     setTab, selCoOrigin, setSelCoOrigin,
     showAddTargetHist, setShowAddTargetHist, newTargetHist, setNewTargetHist,
@@ -1662,9 +1662,34 @@ export function CompanyDetail(props){
                   company={selCo}
                   onSave={function(saved){saveEarningsEntry(selCo,saved);}}
                   onDelete={function(){deleteEarningsEntry(selCo,entry.id);}}
+                  onHide={hideEarningsEntry?function(){hideEarningsEntry(selCo,entry.id);}:undefined}
                 />
               </div>
             );})}
+            {/* Hidden dates — report dates the user has flagged as
+                phantom (e.g. a semi-annual reporter getting an off-
+                cycle Q1 from FactSet's calendar). The daily script
+                skips re-importing these. Click × to un-hide. */}
+            {(selCo.ignoredReportDates || []).length > 0 && (
+              <div className="mt-3 rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-3 py-2">
+                <div className="text-[11px] font-semibold text-amber-900 dark:text-amber-200 mb-1">Hidden dates ({(selCo.ignoredReportDates || []).length})</div>
+                <div className="text-[10px] text-amber-700 dark:text-amber-400 mb-1.5">The daily FactSet pull won't recreate entries for these dates. Click × to un-hide.</div>
+                <div className="flex flex-wrap gap-1">
+                  {(selCo.ignoredReportDates || []).slice().sort().map(function(d){
+                    return (
+                      <span key={d} className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 font-mono">
+                        {fmtDateUS(d)}
+                        <span
+                          onClick={function(){ if(unhideReportDate) unhideReportDate(selCo, d); }}
+                          className="cursor-pointer text-amber-600 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-200"
+                          title="Un-hide this date — the next FactSet pull will create a fresh entry for it"
+                        >×</span>
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>)}
 
           {/* LINKED */}
